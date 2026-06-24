@@ -103,6 +103,7 @@ export function CommandPalette() {
             onKeyDown={onListKey}
             placeholder={t.common.search}
             className="flex-1 bg-transparent outline-none focus:outline-none focus-visible:outline-none py-3 text-sm text-foreground placeholder:text-muted-fg"
+            style={{ outline: 'none', boxShadow: 'none' }}
           />
           <kbd className="text-xs text-muted-fg border border-border rounded px-1.5 py-0.5">Esc</kbd>
         </div>
