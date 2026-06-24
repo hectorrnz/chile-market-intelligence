@@ -22,7 +22,11 @@ type Region = 'CL' | 'US'
 type Timeframe = 1 | 3 | 5 | 10
 const TIMEFRAMES: Timeframe[] = [1, 3, 5, 10]
 
-const RATE_HIST: Record<string, string> = { 'tpm-tna': 'tpm', btu10: 'btu10-ref' }
+const RATE_HIST: Record<string, string> = {
+  'tpm-tna': 'tpm', btu10: 'btu10-ref',
+  btp10: 'btp10', btu5: 'btu5', bcu5: 'bcu5',
+  swap2y: 'swap2y', swap1y: 'swap1y', pdbc90: 'pdbc90',
+}
 const CL_FX = ['clp', 'eurclp', 'clpcop', 'usdbrl', 'usdars', 'usdmxn', 'usdcop', 'usdpen']
 const US_FX = ['dxy', 'eurusd', 'gbpusd', 'usdjpy', 'usdcny', 'usdcad', 'usdchf', 'usdkrw']
 

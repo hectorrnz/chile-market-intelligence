@@ -14,8 +14,8 @@ export const metadata: Metadata = {
   authors: [{ name: 'Nevada Inversiones' }],
   robots: { index: false, follow: false },
   icons: {
-    icon: '/favicon.svg',
-    shortcut: '/favicon.svg',
+    icon: '/favicon.svg?v=2',
+    shortcut: '/favicon.svg?v=2',
   },
   openGraph: {
     type: 'website',

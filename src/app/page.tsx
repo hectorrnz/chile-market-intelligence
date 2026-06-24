@@ -241,7 +241,7 @@ export default function HomePage() {
               <div className="mb-2">
                 <div className="ui-label text-muted-fg mb-1">{t.home.upcoming}</div>
                 {upcoming.map(e => (
-                  <div key={e.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 py-1 border-b border-border last:border-0">
+                  <div key={e.id} className="grid grid-cols-3 items-center py-1 border-b border-border last:border-0">
                     <Link href={`/companies/${e.ticker}`} className="text-xs font-mono text-primary hover:underline">{e.ticker}</Link>
                     <span className="text-xs text-muted text-center">{e.period}</span>
                     <span className="text-xs ui-number text-muted-fg text-right">{e.reportDate}</span>
