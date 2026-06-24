@@ -5,14 +5,18 @@ import {
   bcchSeriesManualMap, isManualSeriesLive, verifiedCount,
 } from '../src/config/bcchSeriesManualMap.ts'
 
-test('manual map: every entry is unverified with a null seriesId (no guessed codes)', () => {
-  const entries = Object.values(bcchSeriesManualMap)
+test('manual map: unverified entries have null seriesId; verified entries have a seriesId', () => {
+  const entries = Object.entries(bcchSeriesManualMap)
   assert.ok(entries.length >= 16)
-  for (const e of entries) {
-    assert.equal(e.seriesId, null)
-    assert.equal(e.verified, false)
+  for (const [key, e] of entries) {
+    if (e.verified) {
+      assert.ok(e.seriesId !== null, `verified entry "${key}" must have a non-null seriesId`)
+    } else {
+      assert.equal(e.seriesId, null, `unverified entry "${key}" must keep seriesId=null (no guessing)`)
+    }
   }
-  assert.equal(verifiedCount(), 0)
+  // Phase 4B.1 mapped 6 series
+  assert.ok(verifiedCount() >= 6, `expected at least 6 verified entries, got ${verifiedCount()}`)
 })
 
 test('manual map: includes the required indicator keys', () => {
@@ -25,10 +29,15 @@ test('manual map: includes the required indicator keys', () => {
 })
 
 test('isManualSeriesLive: only verified + seriesId counts as live', () => {
+  // Use a known-unverified entry (ipc-mom remains pending)
+  const unverified = bcchSeriesManualMap['ipc-mom']
   assert.equal(isManualSeriesLive(undefined), false)
-  assert.equal(isManualSeriesLive({ ...bcchSeriesManualMap.tpm }), false) // unverified
-  assert.equal(isManualSeriesLive({ ...bcchSeriesManualMap.tpm, verified: true }), false) // no seriesId
-  assert.equal(isManualSeriesLive({ ...bcchSeriesManualMap.tpm, verified: true, seriesId: 'X.Y.Z' }), true)
+  assert.equal(isManualSeriesLive({ ...unverified }), false)                    // verified=false, seriesId=null
+  assert.equal(isManualSeriesLive({ ...unverified, verified: true }), false)    // verified but no seriesId
+  assert.equal(isManualSeriesLive({ ...unverified, verified: true, seriesId: 'X.Y.Z' }), true)
+  // Confirmed live entries should return true
+  assert.equal(isManualSeriesLive(bcchSeriesManualMap.tpm), true)
+  assert.equal(isManualSeriesLive(bcchSeriesManualMap.uf), true)
 })
 
 test('every manual entry has a staticId for the fallback path', () => {
