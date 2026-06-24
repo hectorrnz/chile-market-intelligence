@@ -10,34 +10,38 @@ import { useState } from 'react'
  * paint (the inline script in layout.tsx), the swap on theme toggle is instant
  * with no flash — no JS state, no hydration flicker.
  *
- * Files (PNG with transparent background) go in /public:
- *   - /nevada-logo-light.png  → shown in LIGHT mode
- *   - /nevada-logo-dark.png   → shown in DARK mode
+ * Files go in /public (paths must match the actual filenames there):
+ *   - /nevada-logo-light.jpg  → shown in LIGHT mode (navy logo on the white top bar)
+ *   - /nevada-logo-dark.png   → shown in DARK mode (white/transparent logo on the dark top bar)
  *
- * Each image starts hidden and only reveals once it has loaded successfully.
- * That means a missing file shows NOTHING (no broken-image glyph, no alt text) —
- * the logo simply appears the moment the file is added to /public.
+ * Each image renders by default (so a cached image shows instantly) and removes
+ * itself only if it fails to load (onError) — so a missing file degrades to
+ * nothing instead of a broken-image glyph, while present files always show.
  */
 export function BrandLogo({ className = '', alt = 'Nevada Inversiones' }: { className?: string; alt?: string }) {
-  const [lightOk, setLightOk] = useState(false)
-  const [darkOk, setDarkOk] = useState(false)
+  const [lightErr, setLightErr] = useState(false)
+  const [darkErr, setDarkErr] = useState(false)
 
   return (
     <>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/nevada-logo-light.png"
-        alt={alt}
-        onLoad={() => setLightOk(true)}
-        className={`${lightOk ? 'block dark:hidden' : 'hidden'} ${className}`}
-      />
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/nevada-logo-dark.png"
-        alt={alt}
-        onLoad={() => setDarkOk(true)}
-        className={`${darkOk ? 'hidden dark:block' : 'hidden'} ${className}`}
-      />
+      {!lightErr && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src="/nevada-logo-light.jpg"
+          alt={alt}
+          onError={() => setLightErr(true)}
+          className={`brand-logo-light ${className}`}
+        />
+      )}
+      {!darkErr && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src="/nevada-logo-dark.png"
+          alt={alt}
+          onError={() => setDarkErr(true)}
+          className={`brand-logo-dark ${className}`}
+        />
+      )}
     </>
   )
 }

@@ -241,6 +241,18 @@ aside :focus-visible {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
+   BRAND LOGO — theme swap
+   Keyed off the `.dark` class on <html> (the app's own theme switch), NOT the
+   prefers-color-scheme media query that Tailwind's `dark:` variant uses by
+   default. The `.dark` class is applied before paint, so the swap is instant
+   with no flash.
+───────────────────────────────────────────────────────────────────────────── */
+.brand-logo-light { display: block; }
+.brand-logo-dark  { display: none; }
+.dark .brand-logo-light { display: none; }
+.dark .brand-logo-dark  { display: block; }
+
+/* ─────────────────────────────────────────────────────────────────────────────
    PRINT — one-page tearsheet
    Hide app chrome (.no-print), unlock the nested scroll/height containers, and
    print on a white page with readable ink. Cards avoid breaking across pages.
