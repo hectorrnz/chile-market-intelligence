@@ -11,9 +11,16 @@
 // Safety: fails gracefully with no credentials, never prints credentials, never
 // runs during build, never makes the app depend on BCCh availability.
 
+// @next/env is CJS — import via default, then destructure after all imports.
+import pkg from '@next/env'
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+// Load .env.local (and .env) exactly as Next.js does, so credentials are
+// available in process.env before the credential check below.
+const { loadEnvConfig } = pkg
+loadEnvConfig(process.cwd())
 
 const DEFAULT_BASE = 'https://si3.bcentral.cl/SieteRestWS/SieteRestWS.ashx'
 const FREQUENCIES = ['DAILY', 'MONTHLY', 'QUARTERLY', 'ANNUAL'] as const

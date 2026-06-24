@@ -11,10 +11,17 @@
 // Safety: fails gracefully with no credentials, never prints credentials, never
 // runs during build.
 
+// @next/env is CJS — import via default, then destructure after all imports.
+import pkg from '@next/env'
 import { fetchBcchSeries } from '../../src/lib/providers/bcchClient.ts'
 import { isPlausible, plausibilityReason } from '../../src/lib/providers/plausibility.ts'
 import { bcchSeriesManualMap, isManualSeriesLive } from '../../src/config/bcchSeriesManualMap.ts'
 import { deriveValueChange } from '../../src/lib/providers/transforms.ts'
+
+// Load .env.local (and .env) exactly as Next.js does, so credentials are
+// available in process.env before the credential check below.
+const { loadEnvConfig } = pkg
+loadEnvConfig(process.cwd())
 
 function firstDateFor(years: number): string {
   const d = new Date()
