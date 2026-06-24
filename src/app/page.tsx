@@ -111,19 +111,6 @@ export default function HomePage() {
     return () => ro.disconnect()
   }, [])
 
-  // Macro card drives the top region's height; tracked/FX and earnings/hechos
-  // columns match it and scroll internally (replaces the old fixed 653px).
-  const macroRef = useRef<HTMLDivElement>(null)
-  const [macroH, setMacroH] = useState(0)
-  useLayoutEffect(() => {
-    const el = macroRef.current
-    if (!el) return
-    const update = () => setMacroH(el.offsetHeight)
-    update()
-    const ro = new ResizeObserver(update)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
 
   return (
     <div className="w-full space-y-4">
@@ -142,11 +129,11 @@ export default function HomePage() {
       </div>
 
       {/* ── Top region: Macro · (Tracked stocks + FX) · (Earnings + Hechos) ── */}
-      {/* Macro card (natural height) drives the region; the other columns match it and scroll. */}
-      <div className="grid grid-cols-3 gap-4 items-start">
+      {/* All three columns stretch to the tallest column's height. */}
+      <div className="grid grid-cols-3 gap-4">
 
         {/* Column 1 — Macro Chile + US (one card, highlighted region bands) */}
-        <div ref={macroRef} className="bg-surface border border-border rounded flex flex-col overflow-hidden">
+        <div className="bg-surface border border-border rounded flex flex-col overflow-hidden">
           <div className="px-4 py-2.5 border-b border-border shrink-0">
             <span className="ui-label text-muted-fg">{t.home.macroTitle.split('·')[0].trim()}</span>
           </div>
@@ -166,7 +153,7 @@ export default function HomePage() {
         </div>
 
         {/* Column 2 — Tracked stocks (max 5, scroll) + FX (fill, scroll) */}
-        <div className="flex flex-col gap-4 min-h-0" style={{ height: macroH || undefined }}>
+        <div className="flex flex-col gap-4 min-h-0 h-full">
           <div className="bg-surface border border-border rounded overflow-hidden shrink-0 flex flex-col">
             <div className="px-4 py-2.5 border-b border-border flex items-center justify-between shrink-0">
               <span className="ui-label text-muted-fg">{t.home.trackedStocks}</span>
@@ -233,7 +220,7 @@ export default function HomePage() {
         </div>
 
         {/* Column 3 — Earnings + Hechos recent */}
-        <div className="flex flex-col gap-4 min-h-0" style={{ height: macroH || undefined }}>
+        <div className="flex flex-col gap-4 min-h-0 h-full">
           <div className="bg-surface border border-border rounded p-4 shrink-0">
             <div className="ui-label text-muted-fg mb-2">{t.home.upcomingEarnings}</div>
             {upcoming.length > 0 && (
