@@ -1,0 +1,271 @@
+'use client'
+
+import { Fragment, useEffect, useState } from 'react'
+import Link from 'next/link'
+import { SectionHeader } from '@/components/ui/SectionHeader'
+import { SourceNote } from '@/components/ui/SourceNote'
+import { useLang } from '@/components/providers/LangProvider'
+import { usePersistentState } from '@/lib/usePersistentState'
+import { useEscape } from '@/lib/useEscape'
+import { getAllIndicators } from '@/lib/data/macro'
+import { getChileanRates } from '@/lib/data/chileanRates'
+import { getFxRates } from '@/lib/data/fxRates'
+import { getYieldCurve } from '@/lib/data/yieldCurves'
+import { getMacroHistoryForTimeframe } from '@/lib/data/macroHistory'
+import { getEventsForDay, getCalendarForWeek, weekStartOf, todayUTC, dateStr, dayLabel } from '@/lib/data/calendar'
+import { changeColor, formatMacroValue, formatMacroChange, formatFx, formatPct } from '@/lib/formatters'
+import { LineChart } from '@/components/charts/LineChart'
+import { YieldCurveChart } from '@/components/charts/YieldCurveChart'
+import type { MacroIndicator } from '@/types'
+
+type Region = 'CL' | 'US'
+type Timeframe = 1 | 3 | 5 | 10
+const TIMEFRAMES: Timeframe[] = [1, 3, 5, 10]
+
+const RATE_HIST: Record<string, string> = { 'tpm-tna': 'tpm', btu10: 'btu10-ref' }
+const CL_FX = ['clp', 'eurclp', 'clpcop', 'usdbrl', 'usdars', 'usdmxn', 'usdcop', 'usdpen']
+const US_FX = ['dxy', 'eurusd', 'gbpusd', 'usdjpy', 'usdcny', 'usdcad', 'usdchf', 'usdkrw']
+
+interface Row {
+  id: string; label: string; value: number; unit: string
+  change?: number; changeLabel?: string; period: string; source: string
+  implication?: string; histId?: string
+}
+
+export default function MacroPage() {
+  const { t } = useLang()
+  const [region, setRegion] = usePersistentState<Region>('cmi.macroRegion', 'CL')
+  const [selected, setSelected] = useState<Row | null>(null)
+  const [timeframe, setTimeframe] = useState<Timeframe>(5)
+  const [fxSort, setFxSort] = useState<{ key: 'pair' | 'last' | 'day' | 'ytd'; dir: 'asc' | 'desc' } | null>(null)
+  useEscape(!!selected, () => setSelected(null))
+
+  // Region is driven by the sidebar Macro dropdown (Chile / US)
+  useEffect(() => {
+    const h = (e: Event) => { const d = (e as CustomEvent).detail; if (d === 'CL' || d === 'US') { setRegion(d); setSelected(null) } }
+    window.addEventListener('macro:region', h)
+    return () => window.removeEventListener('macro:region', h)
+  }, [setRegion])
+
+  const catLabel: Record<string, string> = {
+    Rates: t.macro.monetary, 'US Rates': t.macro.monetary,
+    Inflation: t.macro.inflation, 'US Inflation': t.macro.inflation,
+    FX: t.macro.fx, 'US FX': t.macro.fx,
+    Activity: t.macro.activity, 'US Activity': t.macro.activity,
+    Labor: t.macro.labor, 'US Labor': t.macro.labor,
+    Commodities: t.macro.commodities, Crypto: t.macro.crypto,
+  }
+
+  const toRow = (i: MacroIndicator): Row => ({
+    id: i.id, label: i.shortName, value: i.value, unit: i.unit, change: i.change,
+    changeLabel: i.changeLabel, period: i.period, source: i.source, implication: i.marketImplication, histId: i.id,
+  })
+  const indicators = getAllIndicators().filter(i => (region === 'CL' ? (!i.region || i.region === 'CL') : i.region === 'US'))
+  const indByCat = (cats: string[]) =>
+    cats.map(cat => ({ cat, rows: indicators.filter(i => i.category === cat).map(toRow) })).filter(g => g.rows.length > 0)
+
+  const clRatesRows: Row[] = getChileanRates().map(r => ({
+    id: r.id, label: r.name, value: r.value, unit: r.unit, change: r.change, changeLabel: r.changeLabel,
+    period: 'Jun 2025', source: r.source, implication: r.fullName, histId: RATE_HIST[r.id],
+  }))
+
+  const groups = region === 'CL'
+    ? [{ cat: 'Rates', rows: clRatesRows }, ...indByCat(['Inflation', 'FX', 'Activity', 'Commodities', 'Labor'])]
+    : indByCat(['US Rates', 'US Inflation', 'US Activity', 'US Labor', 'US FX', 'Crypto'])
+
+  const curve = getYieldCurve(region)
+  const fxIds = region === 'CL' ? CL_FX : US_FX
+  const fx = getFxRates().filter(f => fxIds.includes(f.id)).sort((a, b) => fxIds.indexOf(a.id) - fxIds.indexOf(b.id))
+  const sortedFx = (() => {
+    if (!fxSort) return fx
+    const get = (f: typeof fx[number]) => fxSort.key === 'pair' ? f.pair : fxSort.key === 'last' ? f.last : fxSort.key === 'day' ? f.dayChangePct : f.ytdChangePct
+    return [...fx].sort((a, b) => {
+      const av = get(a), bv = get(b)
+      const cmp = typeof av === 'string' ? av.localeCompare(bv as string) : (av as number) - (bv as number)
+      return fxSort.dir === 'asc' ? cmp : -cmp
+    })
+  })()
+  const toggleFx = (key: 'pair' | 'last' | 'day' | 'ytd') =>
+    setFxSort(prev => (prev?.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: key === 'pair' ? 'asc' : 'desc' }))
+  const fxArrow = (key: string) => (fxSort?.key === key ? (fxSort.dir === 'asc' ? ' ↑' : ' ↓') : '')
+
+  const today = todayUTC()
+  const todayStr = dateStr(today)
+  const todays = getEventsForDay(today, e => e.country === region)
+  const weekAhead = getCalendarForWeek(weekStartOf(today), e => e.country === region).filter(e => e.date >= todayStr)
+  const calRows = todays.length ? todays : weekAhead.slice(0, 5)
+
+  const openRow = (r: Row) => { if (r.histId) { setSelected(r); setTimeframe(5) } }
+  const historyData = selected?.histId
+    ? getMacroHistoryForTimeframe(selected.histId, timeframe).map(p => ({ date: p.date, value: p.value }))
+    : []
+
+  return (
+    <div className="w-full space-y-4">
+      <SectionHeader
+        tag={t.macro.tag}
+        title={t.macro.title}
+        subtitle={t.macro.subtitle}
+        asOf
+        actions={<span className="text-xs px-2.5 py-1 rounded bg-surface-2 border border-border text-foreground font-medium">{region === 'CL' ? 'Chile' : 'US'}</span>}
+      />
+
+      {/* Economic calendar — today's releases (top of page) */}
+      <div className="bg-surface border border-border rounded overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
+          <span className="ui-label text-muted-fg">{t.macro.calToday}</span>
+          <Link href="/macro/calendar" className="text-xs text-primary hover:underline">{t.macro.viewFull}</Link>
+        </div>
+        {calRows.length === 0 ? (
+          <div className="px-4 py-4 text-xs text-muted-fg">{t.cal.noToday}</div>
+        ) : (
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border bg-surface-2">
+                <th className="text-left py-2 pl-4 pr-3 ui-table-header text-muted-fg">{t.cal.time}</th>
+                <th className="text-left py-2 px-3 ui-table-header text-muted-fg">{t.cal.event}</th>
+                <th className="text-right py-2 px-3 ui-table-header text-muted-fg">{t.cal.forecast}</th>
+                <th className="text-right py-2 px-3 ui-table-header text-muted-fg">{t.cal.actual}</th>
+                <th className="text-right py-2 px-3 pr-4 ui-table-header text-muted-fg">{t.cal.prior}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {calRows.map(e => {
+                const high = e.importance === 'High'
+                return (
+                  <tr key={e.id} className="border-b border-border last:border-0" style={high ? { borderLeft: '3px solid var(--negative)', backgroundColor: 'color-mix(in oklab, var(--negative) 5%, var(--surface))' } : { borderLeft: '3px solid transparent' }}>
+                    <td className="py-2 pl-4 pr-3 ui-number text-muted-fg whitespace-nowrap">{todays.length ? e.time : dayLabel(e.date)}</td>
+                    <td className={`py-2 px-3 ${high ? 'font-semibold text-foreground' : 'text-foreground'}`}>{e.name}</td>
+                    <td className="py-2 px-3 text-right ui-number text-muted-fg">{e.forecast != null ? `${e.forecast}${e.unit}` : '—'}</td>
+                    <td className={`py-2 px-3 text-right ui-number ${e.actual != null ? 'text-foreground' : 'text-muted-fg'}`}>{e.actual != null ? `${e.actual}${e.unit}` : '—'}</td>
+                    <td className="py-2 px-3 pr-4 text-right ui-number text-muted-fg">{e.prior != null ? `${e.prior}${e.unit}` : '—'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* One indicators table with highlighted category bands */}
+      <div className="bg-surface border border-border rounded overflow-hidden">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-border bg-surface-2">
+              <th className="text-left py-2.5 pl-4 pr-3 ui-table-header text-muted-fg w-44">{t.macro.indicator}</th>
+              <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg w-32">{t.macro.value}</th>
+              <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg w-24">{t.macro.change}</th>
+              <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg w-28">{t.macro.period}</th>
+              <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg w-40">{t.macro.source}</th>
+              <th className="text-left py-2.5 px-3 pr-4 ui-table-header text-muted-fg">{t.macro.implication}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map(({ cat, rows }) => (
+              <Fragment key={cat}>
+                <tr>
+                  <td colSpan={6} className="bg-surface-2 px-4 py-1.5" style={{ borderLeft: '3px solid var(--accent)' }}>
+                    <span className="ui-label text-foreground">{catLabel[cat] ?? cat}</span>
+                  </td>
+                </tr>
+                {rows.map(r => {
+                  const isSel = selected?.id === r.id
+                  return (
+                    <tr key={r.id} onClick={() => openRow(r)}
+                      className={`border-b border-border last:border-0 transition-colors ${r.histId ? 'cursor-pointer hover:bg-surface-2' : ''} ${isSel ? 'bg-surface-2' : ''}`}>
+                      <td className="py-2.5 pl-4 pr-3 text-foreground">
+                        {r.label}
+                        {r.histId && <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-accent align-middle" title="Chartable" />}
+                      </td>
+                      <td className="py-2.5 px-3 text-right ui-number text-foreground">{formatMacroValue(r.value, r.unit)}</td>
+                      <td className={`py-2.5 px-3 text-right ui-number ${r.change != null ? changeColor(r.change) : 'text-muted-fg'}`}>{r.changeLabel ? formatMacroChange(r.changeLabel) : '—'}</td>
+                      <td className="py-2.5 px-3 text-muted-fg whitespace-nowrap">{r.period}</td>
+                      <td className="py-2.5 px-3 text-muted-fg"><span className="block truncate max-w-[180px]" title={r.source}>{r.source}</span></td>
+                      <td className="py-2.5 px-3 pr-4 text-muted italic max-w-xs"><span className="block truncate" title={r.implication}>{r.implication ?? '—'}</span></td>
+                    </tr>
+                  )
+                })}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+        <div className="px-4 py-2 border-t border-border"><p className="text-xs text-muted-fg">{t.macro.clickToChart}</p></div>
+      </div>
+
+      {/* Fixed-income (yield curve) + FX depth */}
+      <div className="grid grid-cols-2 gap-4 items-start">
+        <div className="bg-surface border border-border rounded p-4">
+          <div className="ui-label text-muted-fg mb-1">{t.macro.yieldCurve}</div>
+          <div className="text-xs text-muted-fg mb-3">{curve.label}</div>
+          <YieldCurveChart
+            tenors={curve.tenors}
+            unit={curve.unit}
+            series={[
+              { label: t.macro.curveToday, color: 'var(--primary)', values: curve.today },
+              { label: t.macro.curveWeek, color: 'var(--accent)', values: curve.weekAgo },
+              { label: t.macro.curveYearEnd, color: 'var(--muted)', dashed: true, values: curve.yearEnd },
+            ]}
+            height={240}
+          />
+          <p className="text-xs text-muted-fg mt-2">{curve.source}</p>
+        </div>
+
+        <div className="bg-surface border border-border rounded overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-border"><span className="ui-label text-muted-fg">{t.macro.fxDepth}</span></div>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border bg-surface-2">
+                <th onClick={() => toggleFx('pair')} className="text-left py-2 pl-4 pr-3 ui-table-header text-muted-fg cursor-pointer hover:text-foreground select-none">{t.macro.pair}{fxArrow('pair')}</th>
+                <th onClick={() => toggleFx('last')} className="text-right py-2 px-3 ui-table-header text-muted-fg cursor-pointer hover:text-foreground select-none">{t.home.last}{fxArrow('last')}</th>
+                <th onClick={() => toggleFx('day')} className="text-right py-2 px-3 ui-table-header text-muted-fg cursor-pointer hover:text-foreground select-none">{t.home.dayChg}{fxArrow('day')}</th>
+                <th onClick={() => toggleFx('ytd')} className="text-right py-2 px-3 pr-4 ui-table-header text-muted-fg cursor-pointer hover:text-foreground select-none">{t.home.ytd}{fxArrow('ytd')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedFx.map(f => (
+                <tr key={f.id} className="border-b border-border last:border-0">
+                  <td className="py-2 pl-4 pr-3 text-foreground">{f.pair}</td>
+                  <td className="py-2 px-3 text-right ui-number text-foreground">{formatFx(f.last, f.decimals ?? 2)}</td>
+                  <td className={`py-2 px-3 text-right ui-number ${changeColor(f.dayChangePct)}`}>{formatPct(f.dayChangePct)}</td>
+                  <td className={`py-2 px-3 pr-4 text-right ui-number ${changeColor(f.ytdChangePct)}`}>{formatPct(f.ytdChangePct)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <SourceNote>{t.common.mvpNote}</SourceNote>
+
+      {/* Chart popup modal (monthly frequency) */}
+      {selected && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'color-mix(in oklab, var(--foreground) 40%, transparent)' }} onClick={() => setSelected(null)} role="dialog" aria-modal="true">
+          <div className="bg-surface border border-border rounded shadow-lg w-full max-w-3xl p-5 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <div>
+                <div className="ui-label text-muted-fg mb-0.5">{selected.label}</div>
+                <div className="flex items-baseline gap-1.5 mt-1.5">
+                  <span className="text-sm ui-number text-foreground">{formatMacroValue(selected.value, selected.unit)}</span>
+                  {selected.changeLabel && <span className={`text-xs ui-number ${selected.change != null ? changeColor(selected.change) : 'text-muted-fg'}`}>({formatMacroChange(selected.changeLabel)})</span>}
+                  <span className="text-xs text-muted-fg ml-1">{selected.period}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                {TIMEFRAMES.map(tf => (
+                  <button key={tf} onClick={() => setTimeframe(tf)} className={`px-2.5 py-1 text-xs rounded transition-colors ${timeframe === tf ? 'bg-surface-2 text-foreground border border-border' : 'text-muted-fg hover:text-foreground'}`}>{tf}Y</button>
+                ))}
+                <button onClick={() => setSelected(null)} className="ml-2 text-sm text-muted-fg hover:text-foreground px-2 py-1" aria-label="Close chart">✕</button>
+              </div>
+            </div>
+            {historyData.length >= 2 ? (
+              <LineChart data={historyData} unit={selected.unit === '%' ? '%' : ''} height={240} />
+            ) : (
+              <div className="flex items-center justify-center h-40 text-xs text-muted-fg border border-border rounded">{t.macro.noHistory}</div>
+            )}
+            <p className="text-xs text-muted-fg mt-3">{t.macro.chartSource} · {t.macro.monthlyFreq}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

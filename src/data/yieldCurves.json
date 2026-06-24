@@ -1,0 +1,20 @@
+{
+  "US": {
+    "label": "US Treasury Curve",
+    "unit": "%",
+    "tenors": ["1M", "3M", "6M", "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "20Y", "30Y"],
+    "today":   [5.30, 5.25, 5.05, 4.75, 4.45, 4.30, 4.25, 4.28, 4.22, 4.55, 4.40],
+    "weekAgo": [5.31, 5.26, 5.08, 4.80, 4.50, 4.34, 4.29, 4.31, 4.26, 4.58, 4.43],
+    "yearEnd": [5.40, 5.38, 5.20, 4.60, 4.25, 4.20, 4.38, 4.45, 4.57, 4.85, 4.78],
+    "source": "FRED / US Treasury — Static MVP sample"
+  },
+  "CL": {
+    "label": "Chile Sovereign Curve (BTP, nominal)",
+    "unit": "%",
+    "tenors": ["3M", "6M", "1Y", "2Y", "5Y", "10Y", "20Y"],
+    "today":   [5.10, 5.05, 4.95, 4.75, 5.20, 5.85, 6.05],
+    "weekAgo": [5.12, 5.07, 4.99, 4.80, 5.18, 5.80, 6.00],
+    "yearEnd": [5.60, 5.55, 5.40, 5.30, 5.55, 6.00, 6.15],
+    "source": "Banco Central · BCS — Static MVP sample"
+  }
+}

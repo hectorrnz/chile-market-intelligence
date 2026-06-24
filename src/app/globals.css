@@ -1,0 +1,272 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TAILWIND THEME REGISTRATION
+   Defines semantic color tokens as Tailwind utilities via CSS variable
+   references. Light/dark values are set in :root and .dark below.
+   Usage: bg-background, text-foreground, border-border, text-positive, etc.
+───────────────────────────────────────────────────────────────────────────── */
+@theme inline {
+  /* Font stacks — system fonts only, no web font downloads */
+  --font-sans: "Helvetica Neue", Helvetica, Arial, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', 'Fira Mono', 'Roboto Mono', monospace;
+
+  /* Page / layout */
+  --color-background:    var(--background);
+  --color-surface:       var(--surface);
+  --color-surface-2:     var(--surface-2);
+
+  /* Text */
+  --color-foreground:    var(--foreground);
+  --color-muted:         var(--muted);
+  --color-muted-fg:      var(--muted-fg);
+
+  /* Borders */
+  --color-border:        var(--border);
+  --color-border-strong: var(--border-strong);
+
+  /* Brand / primary institutional blue */
+  --color-primary:       var(--primary);
+  --color-primary-fg:    var(--primary-fg);
+
+  /* Accent — softer blue */
+  --color-accent:        var(--accent);
+  --color-accent-fg:     var(--accent-fg);
+
+  /* Link / action */
+  --color-link:          var(--link);
+
+  /* Signal */
+  --color-positive:      var(--positive);
+  --color-negative:      var(--negative);
+  --color-warning:       var(--warning);
+
+  /* Navigation */
+  --color-sidebar:       var(--sidebar);
+  --color-sidebar-fg:    var(--sidebar-fg);
+  --color-topbar:        var(--topbar);
+  --color-topbar-fg:     var(--topbar-fg);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   LIGHT THEME  (default)
+   Palette inspired by institutional finance — Goldman-style
+   #004A64 deep navy · #7399C6 institutional blue · #F1F1F1 background
+───────────────────────────────────────────────────────────────────────────── */
+:root {
+  /* Backgrounds */
+  --background:     #F1F1F1;
+  --surface:        #FFFFFF;
+  --surface-2:      #E8EAEB;
+
+  /* Text */
+  --foreground:     #231F20;
+  --muted:          #58575A;
+  --muted-fg:       #8A8887;
+
+  /* Borders */
+  --border:         #D0D0D0;
+  --border-strong:  #ABABAB;
+
+  /* Primary — deep institutional navy */
+  --primary:        #004A64;
+  --primary-fg:     #FFFFFF;
+
+  /* Accent — medium institutional blue */
+  --accent:         #7399C6;
+  --accent-fg:      #FFFFFF;
+
+  /* Link / interactive */
+  --link:           #007FC3;
+
+  /* Signal colors — dark variants for readability on white */
+  --positive:       #1A6630;
+  --negative:       #8B0E04;
+  --warning:        #7A5200;
+
+  /* Sidebar — always dark navy, even in light mode */
+  --sidebar:        #004A64;
+  --sidebar-fg:     #FFFFFF;
+  --sidebar-muted:  rgba(255, 255, 255, 0.52);
+  --sidebar-active: rgba(255, 255, 255, 0.10);
+  --sidebar-accent: #88CBDF;
+  --sidebar-border: transparent;
+
+  /* Top bar */
+  --topbar:         #FFFFFF;
+  --topbar-fg:      #231F20;
+  --topbar-border:  #D0D0D0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   DARK THEME
+   Applied when <html class="dark">. Derived from same palette — not invented.
+───────────────────────────────────────────────────────────────────────────── */
+.dark {
+  /* Backgrounds */
+  --background:     #202324;
+  --surface:        #2A2D2E;
+  --surface-2:      #333638;
+
+  /* Text */
+  --foreground:     #E6E5E4;
+  --muted:          #9A9897;
+  --muted-fg:       #6E6C6B;
+
+  /* Borders */
+  --border:         #3A3D3E;
+  --border-strong:  #545758;
+
+  /* Primary — lighter blue readable on dark */
+  --primary:        #7399C6;
+  --primary-fg:     #FFFFFF;
+
+  /* Accent */
+  --accent:         #88CBDF;
+  --accent-fg:      #191C1D;
+
+  /* Link */
+  --link:           #ACD4F1;
+
+  /* Signal — lighter for contrast on dark backgrounds */
+  --positive:       #3DAA60;
+  --negative:       #D05050;
+  --warning:        #CC9010;
+
+  /* Sidebar — deep institutional navy, distinct from #202324 page background */
+  --sidebar:        #0B2437;
+  --sidebar-fg:     #E8EFF5;
+  --sidebar-muted:  rgba(200, 222, 240, 0.62);
+  --sidebar-active: rgba(136, 203, 223, 0.16);
+  --sidebar-accent: #88CBDF;
+  --sidebar-border: rgba(136, 203, 223, 0.12);
+
+  /* Top bar */
+  --topbar:         #2A2D2E;
+  --topbar-fg:      #E6E5E4;
+  --topbar-border:  #3A3D3E;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TYPOGRAPHY UTILITY CLASSES
+   Use these instead of font-mono + tracking-wide on UI labels.
+   Data values (prices, numbers, tickers, codes) still use font-mono directly.
+───────────────────────────────────────────────────────────────────────────── */
+@layer components {
+  /* Section titles, card titles, panel headers, eyebrow labels */
+  .ui-label {
+    font-family: var(--font-sans);
+    font-size: 0.6875rem; /* 11px */
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* Table column headers — use alongside text-left text-muted-fg in className */
+  .ui-table-header {
+    font-family: var(--font-sans);
+    font-size: 0.6875rem; /* 11px */
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+
+  /*
+   * Numeric display — body font with tabular figure alignment.
+   * Use this instead of font-mono on prices, percentages, dates, market caps,
+   * valuation multiples, macro values, and all other non-ticker numbers.
+   * Only tickers and version strings may use font-mono.
+   */
+  .ui-number {
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   BASE STYLES
+───────────────────────────────────────────────────────────────────────────── */
+html, body { height: 100%; margin: 0; }
+
+/* Root rem bumped from the 16px default so all rem-based text scales up
+   slightly for readability across the app. */
+/* min-width keeps the layout intact on narrow viewports — this is a
+   desktop-first institutional terminal, so horizontal scrolling is
+   preferable to a crushed 3-column grid at <1200px. */
+html { font-size: 17px; min-width: 1200px; }
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 0.875rem; /* ~14.9px */
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+/* Theme-aware scrollbars — adapt to light/dark via tokens (fixes the stuck
+   light-mode scrollbar in dark mode). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background-color: var(--border-strong);
+  border-radius: 6px;
+  border: 2px solid var(--background);
+}
+::-webkit-scrollbar-thumb:hover { background-color: var(--muted-fg); }
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ACCESSIBILITY — keyboard focus
+   A single visible focus ring for keyboard users on every interactive element
+   (links, buttons, inputs, selects, custom widgets with tabindex). Mouse clicks
+   do not trigger :focus-visible, so the ring only appears on keyboard nav.
+───────────────────────────────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+/* Don't double-draw on the sidebar's dark navy — use the accent there. */
+[style*="--sidebar"] :focus-visible,
+aside :focus-visible {
+  outline-color: var(--sidebar-accent);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PRINT — one-page tearsheet
+   Hide app chrome (.no-print), unlock the nested scroll/height containers, and
+   print on a white page with readable ink. Cards avoid breaking across pages.
+───────────────────────────────────────────────────────────────────────────── */
+@media print {
+  .no-print { display: none !important; }
+
+  html, body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    font-size: 12px;
+  }
+
+  /* Cards and table rows should not be split across page boundaries. */
+  .bg-surface { break-inside: avoid; }
+  table { break-inside: auto; }
+  tr, .grid > * { break-inside: avoid; }
+
+  /* Let measured/fixed-height regions expand to their full content. */
+  [style*="height"] { height: auto !important; max-height: none !important; }
+  .overflow-y-auto, .overflow-auto, .overflow-x-auto { overflow: visible !important; }
+
+  @page { margin: 12mm; }
+}
+
+/* Utility: only render when printing (e.g. a tearsheet footer). */
+.print-only { display: none; }
+@media print { .print-only { display: block; } }

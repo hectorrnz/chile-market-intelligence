@@ -1,0 +1,13 @@
+[
+  { "id": "ipsa", "name": "IPSA", "country": "Chile", "region": "LatAm", "value": 6421.3, "currency": "CLP", "dayChangePct": 0.41, "ytdChangePct": 8.2, "date": "2025-06-17", "source": "Bolsa de Comercio de Santiago" },
+  { "id": "sp500", "name": "S&P 500", "country": "USA", "region": "North America", "value": 5305.1, "currency": "USD", "dayChangePct": 0.28, "ytdChangePct": 12.1, "date": "2025-06-17", "source": "NYSE / CBOE" },
+  { "id": "ibovespa", "name": "Ibovespa", "country": "Brazil", "region": "LatAm", "value": 128520.0, "currency": "BRL", "dayChangePct": -0.35, "ytdChangePct": 5.4, "date": "2025-06-17", "source": "B3" },
+  { "id": "ipc-mexico", "name": "IPC México", "country": "Mexico", "region": "LatAm", "value": 52810.0, "currency": "MXN", "dayChangePct": 0.18, "ytdChangePct": -2.3, "date": "2025-06-17", "source": "BMV" },
+  { "id": "colcap", "name": "COLCAP", "country": "Colombia", "region": "LatAm", "value": 1541.2, "currency": "COP", "dayChangePct": -0.52, "ytdChangePct": -4.1, "date": "2025-06-17", "source": "Bolsa de Valores de Colombia" },
+  { "id": "bvl-peru", "name": "S&P/BVL Peru", "country": "Peru", "region": "LatAm", "value": 724.8, "currency": "PEN", "dayChangePct": 0.21, "ytdChangePct": 6.8, "date": "2025-06-17", "source": "Bolsa de Valores de Lima" },
+  { "id": "eurostoxx50", "name": "Euro Stoxx 50", "country": "Eurozone", "region": "Europe", "value": 4980.0, "currency": "EUR", "dayChangePct": 0.32, "ytdChangePct": 9.4, "date": "2025-06-17", "source": "STOXX" },
+  { "id": "ftse100", "name": "FTSE 100", "country": "UK", "region": "Europe", "value": 8240.0, "currency": "GBP", "dayChangePct": 0.15, "ytdChangePct": 6.2, "date": "2025-06-17", "source": "LSE" },
+  { "id": "nikkei225", "name": "Nikkei 225", "country": "Japan", "region": "Asia", "value": 38500.0, "currency": "JPY", "dayChangePct": 0.45, "ytdChangePct": 14.8, "date": "2025-06-17", "source": "JPX" },
+  { "id": "hangseng", "name": "Hang Seng", "country": "Hong Kong", "region": "Asia", "value": 18200.0, "currency": "HKD", "dayChangePct": -0.62, "ytdChangePct": 7.1, "date": "2025-06-17", "source": "HKEX" },
+  { "id": "kospi", "name": "KOSPI", "country": "South Korea", "region": "Asia", "value": 2720.0, "currency": "KRW", "dayChangePct": 0.28, "ytdChangePct": 9.9, "date": "2025-06-17", "source": "KRX" }
+]

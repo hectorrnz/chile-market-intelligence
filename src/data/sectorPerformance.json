@@ -1,0 +1,12 @@
+[
+  { "sector": "Banking", "dayChangePct": 0.62, "ytdChangePct": 8.2, "numberOfStocks": 5, "topContributor": "BSANTANDER", "topContributorPct": 0.83, "worstContributor": "ITAUCORP", "worstContributorPct": -0.41, "lastUpdated": "2025-06-17" },
+  { "sector": "Retail", "dayChangePct": 1.08, "ytdChangePct": 12.4, "numberOfStocks": 3, "topContributor": "FALABELLA", "topContributorPct": 1.16, "worstContributor": "RIPLEY", "worstContributorPct": -0.57, "lastUpdated": "2025-06-17" },
+  { "sector": "Utilities", "dayChangePct": 0.41, "ytdChangePct": 9.8, "numberOfStocks": 4, "topContributor": "ENELCHILE", "topContributorPct": 0.94, "worstContributor": "AGUAS-A", "worstContributorPct": -0.35, "lastUpdated": "2025-06-17" },
+  { "sector": "Mining / Lithium", "dayChangePct": -1.28, "ytdChangePct": -18.5, "numberOfStocks": 3, "topContributor": "CAP", "topContributorPct": -0.59, "worstContributor": "SQM-B", "worstContributorPct": -1.92, "lastUpdated": "2025-06-17" },
+  { "sector": "Pulp & Forestry", "dayChangePct": -0.52, "ytdChangePct": -6.2, "numberOfStocks": 2, "topContributor": "ARAUCO", "topContributorPct": 0.15, "worstContributor": "CMPC", "worstContributorPct": -0.69, "lastUpdated": "2025-06-17" },
+  { "sector": "Industrials", "dayChangePct": 0.18, "ytdChangePct": 4.1, "numberOfStocks": 3, "topContributor": "COPEC", "topContributorPct": 0.42, "worstContributor": "FORUS", "worstContributorPct": -0.34, "lastUpdated": "2025-06-17" },
+  { "sector": "Real Estate / Malls", "dayChangePct": 0.75, "ytdChangePct": 6.5, "numberOfStocks": 3, "topContributor": "PARAUCO", "topContributorPct": 1.10, "worstContributor": "MALLPLAZA", "worstContributorPct": 0.19, "lastUpdated": "2025-06-17" },
+  { "sector": "Telecom", "dayChangePct": 0.09, "ytdChangePct": 2.8, "numberOfStocks": 2, "topContributor": "ENTEL", "topContributorPct": 0.31, "worstContributor": "CLARO", "worstContributorPct": -0.22, "lastUpdated": "2025-06-17" },
+  { "sector": "Consumer", "dayChangePct": 0.88, "ytdChangePct": 10.1, "numberOfStocks": 4, "topContributor": "CENCOSUD", "topContributorPct": 1.20, "worstContributor": "CCU", "worstContributorPct": -0.46, "lastUpdated": "2025-06-17" },
+  { "sector": "Transport / Airlines", "dayChangePct": 0.44, "ytdChangePct": 15.2, "numberOfStocks": 2, "topContributor": "LTM", "topContributorPct": 2.11, "worstContributor": "SKY", "worstContributorPct": -0.83, "lastUpdated": "2025-06-17" }
+]

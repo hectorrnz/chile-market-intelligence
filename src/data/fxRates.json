@@ -1,0 +1,30 @@
+[
+  { "id": "clp", "pair": "CLP", "section": "Key FX", "last": 934.5, "dayChangePct": 0.34, "ytdChangePct": -2.1, "decimals": 1, "source": "Banco Central de Chile" },
+  { "id": "clpcop", "pair": "CLPCOP", "section": "Key FX", "last": 4.33, "dayChangePct": 0.12, "ytdChangePct": 1.8, "decimals": 2, "source": "Bloomberg" },
+  { "id": "eurclp", "pair": "EURCLP", "section": "Key FX", "last": 1014.0, "dayChangePct": 0.21, "ytdChangePct": 0.6, "decimals": 1, "source": "Bloomberg" },
+  { "id": "dxy", "pair": "DXY", "section": "Key FX", "last": 104.8, "dayChangePct": -0.18, "ytdChangePct": -2.0, "decimals": 1, "source": "ICE / FRED" },
+  { "id": "btcusd", "pair": "Bitcoin", "section": "Key FX", "last": 67500, "dayChangePct": -1.4, "ytdChangePct": -11.2, "decimals": 0, "source": "CoinMarketCap" },
+
+  { "id": "eurusd", "pair": "EURUSD", "section": "# USD per", "last": 1.0850, "dayChangePct": 0.15, "ytdChangePct": 1.9, "decimals": 4, "source": "Bloomberg" },
+  { "id": "gbpusd", "pair": "GBPUSD", "section": "# USD per", "last": 1.2720, "dayChangePct": 0.10, "ytdChangePct": 2.4, "decimals": 4, "source": "Bloomberg" },
+  { "id": "audusd", "pair": "AUDUSD", "section": "# USD per", "last": 0.6650, "dayChangePct": -0.22, "ytdChangePct": -1.1, "decimals": 4, "source": "Bloomberg" },
+  { "id": "nzdusd", "pair": "NZDUSD", "section": "# USD per", "last": 0.6120, "dayChangePct": -0.18, "ytdChangePct": -1.6, "decimals": 4, "source": "Bloomberg" },
+
+  { "id": "usdmxn", "pair": "USDMXN", "section": "# of currency per USD", "last": 18.45, "dayChangePct": 0.28, "ytdChangePct": 8.2, "decimals": 2, "source": "Bloomberg" },
+  { "id": "usdcop", "pair": "USDCOP", "section": "# of currency per USD", "last": 4050, "dayChangePct": 0.32, "ytdChangePct": 3.1, "decimals": 0, "source": "Bloomberg" },
+  { "id": "usdbrl", "pair": "USDBRL", "section": "# of currency per USD", "last": 5.42, "dayChangePct": 0.41, "ytdChangePct": 6.7, "decimals": 2, "source": "Bloomberg" },
+  { "id": "usdpen", "pair": "USDPEN", "section": "# of currency per USD", "last": 3.72, "dayChangePct": -0.08, "ytdChangePct": 0.4, "decimals": 2, "source": "Bloomberg" },
+  { "id": "usduyu", "pair": "USDUYU", "section": "# of currency per USD", "last": 39.80, "dayChangePct": 0.14, "ytdChangePct": 1.9, "decimals": 2, "source": "Bloomberg" },
+  { "id": "usdars", "pair": "USDARS", "section": "# of currency per USD", "last": 920.0, "dayChangePct": 0.55, "ytdChangePct": 12.4, "decimals": 1, "source": "Bloomberg" },
+  { "id": "usdkrw", "pair": "USDKRW", "section": "# of currency per USD", "last": 1375, "dayChangePct": 0.22, "ytdChangePct": 5.1, "decimals": 0, "source": "Bloomberg" },
+  { "id": "usdjpy", "pair": "USDJPY", "section": "# of currency per USD", "last": 157.20, "dayChangePct": 0.18, "ytdChangePct": 6.9, "decimals": 2, "source": "Bloomberg" },
+  { "id": "usdcny", "pair": "USDCNY", "section": "# of currency per USD", "last": 7.25, "dayChangePct": 0.05, "ytdChangePct": 1.2, "decimals": 2, "source": "Bloomberg" },
+  { "id": "usdcad", "pair": "USDCAD", "section": "# of currency per USD", "last": 1.367, "dayChangePct": -0.06, "ytdChangePct": 0.9, "decimals": 3, "source": "Bloomberg" },
+  { "id": "usdchf", "pair": "USDCHF", "section": "# of currency per USD", "last": 0.892, "dayChangePct": -0.12, "ytdChangePct": -1.4, "decimals": 3, "source": "Bloomberg" },
+  { "id": "usdhkd", "pair": "USDHKD", "section": "# of currency per USD", "last": 7.81, "dayChangePct": 0.01, "ytdChangePct": 0.1, "decimals": 2, "source": "Bloomberg" },
+  { "id": "usdtry", "pair": "USDTRY", "section": "# of currency per USD", "last": 32.10, "dayChangePct": 0.30, "ytdChangePct": 9.5, "decimals": 2, "source": "Bloomberg" },
+
+  { "id": "eurjpy", "pair": "EURJPY", "section": "# of Yen per", "last": 170.60, "dayChangePct": 0.24, "ytdChangePct": 8.7, "decimals": 2, "source": "Bloomberg" },
+  { "id": "gbpjpy", "pair": "GBPJPY", "section": "# of Yen per", "last": 200.00, "dayChangePct": 0.20, "ytdChangePct": 9.3, "decimals": 2, "source": "Bloomberg" },
+  { "id": "chfjpy", "pair": "CHFJPY", "section": "# of Yen per", "last": 176.20, "dayChangePct": 0.16, "ytdChangePct": 8.1, "decimals": 2, "source": "Bloomberg" }
+]
