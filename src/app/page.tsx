@@ -1,14 +1,16 @@
 'use client'
 
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useLang } from '@/components/providers/LangProvider'
 import { usePersistentState } from '@/lib/usePersistentState'
 import { StatusPill } from '@/components/ui/StatusPill'
 import { AsOfBadge } from '@/components/ui/AsOfBadge'
+import { DataSourceBadge } from '@/components/ui/DataSourceBadge'
+import type { DataSourceStatus } from '@/lib/providers/types'
 import { getAllCompanies } from '@/lib/data/companies'
 import { getAllSnapshots } from '@/lib/data/stocks'
-import { getAllIndicators } from '@/lib/data/macro'
+import { getAllIndicators, fetchMacroIndicators } from '@/lib/data/macro'
 import { getChileanRates } from '@/lib/data/chileanRates'
 import { getFxBySection } from '@/lib/data/fxRates'
 import { getRecentHechos } from '@/lib/data/hechos'
@@ -112,6 +114,15 @@ export default function HomePage() {
     return () => ro.disconnect()
   }, [])
 
+  // Phase 4A: subtle macro source/status badge. Status-only fetch (the Home
+  // macro panel stays static for stability; the Macro page does the live swap).
+  const [macroStatus, setMacroStatus] = useState<DataSourceStatus>('static')
+  useEffect(() => {
+    const ac = new AbortController()
+    fetchMacroIndicators(undefined, ac.signal).then(res => { if (res) setMacroStatus(res.metadata.status) })
+    return () => ac.abort()
+  }, [])
+
   // Heat map drives the second region's height; rates & markets match it exactly.
   const heatRef = useRef<HTMLDivElement>(null)
   const [heatH, setHeatH] = useState(0)
@@ -148,8 +159,9 @@ export default function HomePage() {
 
         {/* Column 1 — Macro Chile + US (one card, highlighted region bands) */}
         <div ref={macroRef} className="bg-surface border border-border rounded flex flex-col overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-border shrink-0">
+          <div className="px-4 py-2.5 border-b border-border shrink-0 flex items-center justify-between">
             <span className="ui-label text-muted-fg">{t.home.macroTitle.split('·')[0].trim()}</span>
+            <DataSourceBadge status={macroStatus} />
           </div>
           <div>
             <div className="px-4 py-1.5 bg-surface-2 border-y border-border" style={{ borderLeft: '2px solid var(--accent)' }}>

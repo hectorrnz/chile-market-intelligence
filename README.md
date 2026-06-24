@@ -61,16 +61,65 @@ npm test           # 13/13 must pass
 
 ## Data Sources
 
-**All data is currently static MVP sample data.** Values are realistic but not live-sourced.
+**Default is static MVP sample data.** Phase 4A adds a live-data architecture for
+macro (Banco Central de Chile) that is opt-in via env vars and always falls back
+to static.
 
-| Data | Planned live source | Phase |
+| Data | Live source | Status |
 |---|---|---|
-| Macro indicators | Banco Central BDE API | Phase 4 |
-| Stock prices | Bolsa de Santiago / Brain Data | Phase 7 |
-| CMF filings | CMF API | Phase 4 |
-| Earnings | CMF FECU | Phase 4 |
-| FX rates | Bloomberg / FRED | Phase 4 |
-| News | Aggregation service (emol, df.cl, CMF, BCCh) | Future |
+| Macro indicators | Banco Central BDE API | **Architecture ready (Phase 4A)** — live disabled until series codes mapped (4B) |
+| Stock prices | Bolsa de Santiago / Brain Data | Static (Phase 4C) |
+| CMF filings | CMF API | Static (later) |
+| Earnings | CMF FECU | Static (later) |
+| FX rates | Bloomberg / FRED | Static (later) |
+| News | Aggregation service (emol, df.cl, CMF, BCCh) | Static (later) |
+
+### Live macro architecture (Phase 4A)
+
+Macro data flows through a provider abstraction so components never call APIs
+directly:
+
+```
+DATA_MODE = static | live | hybrid   (default: hybrid if BCCh creds exist, else static)
+
+page  →  src/lib/data (static, instant)         ← initial render
+      →  fetchMacroIndicators / fetchMacroHistory → /api/macro* (server)
+            → macroProvider → bcchMacroProvider → BCCh (server-only credentials)
+            → staticMacroProvider (fallback)     ← always available
+```
+
+- **Static fallback is mandatory** — with no env vars the app runs entirely on JSON.
+- BCCh credentials are **server-only** (read in `/api/macro*` route handlers).
+- A subtle `DataSourceBadge` shows: Static MVP · Live BCCh · Hybrid fallback · Live unavailable.
+
+### Environment setup
+
+Copy `.env.example` → `.env.local`. All variables are optional; the app works
+with none set. To enable live macro later:
+
+```
+DATA_MODE=hybrid
+BCCH_API_USER=...
+BCCH_API_PASSWORD=...     # server-only — never NEXT_PUBLIC
+```
+
+See `docs/deployment.md` for Vercel env-var setup.
+
+### BCCh series mapping workflow (Phase 4B)
+
+Official BCCh BDE series codes are **verified by a human, never guessed**. The
+controlled mapping lives in `src/config/bcchSeriesManualMap.ts` (all entries are
+currently `null`/unverified → static fallback everywhere).
+
+```
+npm run bcch:search     # discover candidates via official SearchSeries → tmp/bcch-series-candidates.json
+# review candidates, confirm codes, set them in src/config/bcchSeriesManualMap.ts (verified: true)
+npm run bcch:validate   # GetSeries + plausibility + frequency checks for verified series
+```
+
+Both scripts need `BCCH_API_USER` / `BCCH_API_PASSWORD` and **fail gracefully
+without them** (they never run during build). Full guide:
+[`docs/bcch_series_mapping.md`](docs/bcch_series_mapping.md).
 
 ---
 

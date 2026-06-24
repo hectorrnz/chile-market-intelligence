@@ -1,5 +1,6 @@
 import rawHistory from '@/data/macroHistory.json'
 import type { MacroHistoryPoint } from '@/types'
+import type { MacroHistoryResponse } from '@/lib/providers/types'
 
 const history = rawHistory as MacroHistoryPoint[]
 
@@ -50,4 +51,24 @@ export function getMacroHistoryForTimeframe(
   const monthly = monthlyFor(indicatorId)
   if (monthly.length >= 2) return monthly.slice(-years * 12)
   return byType(indicatorId, 'quarterly').slice(-years * 4)
+}
+
+/**
+ * Client-safe live/hybrid history fetch (Phase 4A). Calls /api/macro/history,
+ * which returns live BCCh points when available, else the static fallback.
+ * Returns null on error so the caller keeps its static chart. Only a TYPE is
+ * imported from the provider layer — no server code reaches the browser.
+ */
+export async function fetchMacroHistory(
+  indicatorId: string,
+  timeframe: '1Y' | '3Y' | '5Y' | '10Y',
+  signal?: AbortSignal
+): Promise<MacroHistoryResponse | null> {
+  try {
+    const res = await fetch(`/api/macro/history/${encodeURIComponent(indicatorId)}?timeframe=${timeframe}`, { signal })
+    if (!res.ok) return null
+    return (await res.json()) as MacroHistoryResponse
+  } catch {
+    return null
+  }
 }

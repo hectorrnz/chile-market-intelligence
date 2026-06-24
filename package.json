@@ -7,7 +7,9 @@
                     "build":  "next build",
                     "start":  "next start",
                     "lint":  "eslint",
-                    "test":  "node --test \"tests/*.test.ts\""
+                    "test":  "node --test \"tests/*.test.ts\"",
+                    "bcch:search":  "node scripts/bcch/searchSeries.ts",
+                    "bcch:validate":  "node scripts/bcch/validateSeries.ts"
                 },
     "dependencies":  {
                          "next":  "16.2.9",

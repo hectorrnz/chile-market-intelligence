@@ -120,7 +120,7 @@ When live sources are connected (Phase 4–5), data fetching will move to `src/l
 
 - `.env.local` — contains secrets; already in `.gitignore`
 - `SUPABASE_SERVICE_ROLE_KEY` — has full DB access; server-side only, never prefix with `NEXT_PUBLIC_`
-- `BCCH_API_PASS` — API credential; server-side only
+- `BCCH_API_PASSWORD` — API credential; server-side only (read only in `/api/macro*` route handlers)
 - Any raw portfolio positions or watchlist data before authentication is implemented (Phase 6)
 
 ## Next.js Configuration Notes
@@ -129,3 +129,59 @@ When live sources are connected (Phase 4–5), data fetching will move to `src/l
 - Dynamic routes (`/companies/[ticker]`, `/documents/[id]`) are server-rendered on demand — Vercel handles these automatically as serverless functions.
 - No custom `vercel.json` is required; Vercel auto-detects Next.js.
 - No filesystem access at runtime; all data is imported at build time from JSON.
+
+## Phase 4A — Live Macro Data (BCCh)
+
+The app deploys and runs on **static data with zero env vars**. Live macro data
+is opt-in via environment variables.
+
+### Environment variables
+
+| Variable | Purpose | Scope |
+|---|---|---|
+| `DATA_MODE` | `static` \| `live` \| `hybrid` (default: hybrid if BCCh creds exist, else static) | server |
+| `BCCH_API_USER` | BCCh BDE/SieteRestWS username | **server-only** |
+| `BCCH_API_PASSWORD` | BCCh BDE/SieteRestWS password | **server-only** |
+| `BCCH_API_BASE_URL` | SieteRestWS endpoint (has a sane default) | server |
+
+⚠️ **Never** prefix BCCh variables with `NEXT_PUBLIC_`. They are read only in
+server route handlers (`/api/macro*`) and must never reach the browser bundle.
+Credentials are never logged.
+
+### Setting env vars in Vercel
+
+1. Vercel dashboard → Project → **Settings → Environment Variables**.
+2. Add `BCCH_API_USER`, `BCCH_API_PASSWORD` (and optionally `DATA_MODE=hybrid`)
+   for the **Production** (and Preview) environments. Do **not** mark them as
+   exposed to the browser.
+3. Redeploy for the values to take effect.
+
+Until those are set, **production stays on static MVP data** — the `/api/macro`
+routes return the static fallback with `status: "static"`/`"hybrid-fallback"`,
+and the UI shows a subtle source badge. No build or runtime errors result from
+missing credentials.
+
+### Series codes
+
+Live fetches stay disabled until official BDE series codes are mapped in
+`src/config/macroSeries.ts` (Phase 4B). Even with credentials set, `hybrid`
+mode serves static data and reports `"No live provider series code mapped yet"`
+until then.
+
+## Phase 4B — Enabling live BCCh macro in production
+
+The app deploys and runs on static data with no env vars. To enable live macro
+once official series codes are mapped and validated (see
+`docs/bcch_series_mapping.md`):
+
+1. **Vercel → Settings → Environment Variables** (Production + Preview):
+   - `BCCH_API_USER`, `BCCH_API_PASSWORD` — **not** exposed to the browser.
+   - `DATA_MODE=hybrid` (recommended) so any live failure silently falls back to static.
+2. Redeploy.
+
+**Keeping production safe if BCCh fails:** in `hybrid` mode a timeout, auth
+failure, or implausible value causes the route to serve static data and report
+`status: "hybrid-fallback"` — no errors, no layout change. Only `DATA_MODE=live`
+surfaces a `live-unavailable` status (still serving static data underneath).
+Unmapped indicators always stay on static. Credentials are server-only and never
+logged; the BCCh discovery/validation scripts never run during the Vercel build.

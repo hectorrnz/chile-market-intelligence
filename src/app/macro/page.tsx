@@ -7,11 +7,13 @@ import { SourceNote } from '@/components/ui/SourceNote'
 import { useLang } from '@/components/providers/LangProvider'
 import { usePersistentState } from '@/lib/usePersistentState'
 import { useEscape } from '@/lib/useEscape'
-import { getAllIndicators } from '@/lib/data/macro'
+import { getAllIndicators, fetchMacroIndicators } from '@/lib/data/macro'
 import { getChileanRates } from '@/lib/data/chileanRates'
 import { getFxRates } from '@/lib/data/fxRates'
 import { getYieldCurve } from '@/lib/data/yieldCurves'
-import { getMacroHistoryForTimeframe } from '@/lib/data/macroHistory'
+import { getMacroHistoryForTimeframe, fetchMacroHistory } from '@/lib/data/macroHistory'
+import { DataSourceBadge } from '@/components/ui/DataSourceBadge'
+import type { DataSourceStatus } from '@/lib/providers/types'
 import { getEventsForDay, getCalendarForWeek, weekStartOf, todayUTC, dateStr, dayLabel } from '@/lib/data/calendar'
 import { changeColor, formatMacroValue, formatMacroChange, formatFx, formatPct } from '@/lib/formatters'
 import { LineChart } from '@/components/charts/LineChart'
@@ -51,6 +53,40 @@ export default function MacroPage() {
     return () => window.removeEventListener('macro:region', h)
   }, [setRegion])
 
+  // Phase 4A: static-first, upgrade-if-live. Render static immediately, then
+  // ask /api/macro whether live data is available and swap it in if so.
+  const [macroAll, setMacroAll] = useState<MacroIndicator[]>(() => getAllIndicators())
+  const [srcStatus, setSrcStatus] = useState<DataSourceStatus>('static')
+  useEffect(() => {
+    const ac = new AbortController()
+    fetchMacroIndicators(undefined, ac.signal).then(res => {
+      if (!res) return
+      setSrcStatus(res.metadata.status)
+      if (res.metadata.liveAvailable && res.data.length) setMacroAll(res.data)
+    })
+    return () => ac.abort()
+  }, [])
+
+  // Modal chart: try the live/hybrid history endpoint; fall back to static.
+  // Live data is tagged with its (indicator:timeframe) key so a stale series is
+  // never shown — avoids a synchronous setState reset inside the effect.
+  const [liveHist, setLiveHist] = useState<{ key: string; data: { date: string; value: number }[] } | null>(null)
+  const [histStatus, setHistStatus] = useState<DataSourceStatus>('static')
+  useEffect(() => {
+    const histId = selected?.histId
+    if (!histId) return
+    const key = `${histId}:${timeframe}`
+    const ac = new AbortController()
+    fetchMacroHistory(histId, `${timeframe}Y` as '1Y' | '3Y' | '5Y' | '10Y', ac.signal).then(res => {
+      if (!res) return
+      setHistStatus(res.metadata.status)
+      if (res.metadata.liveAvailable && res.data.length >= 2) setLiveHist({ key, data: res.data })
+    })
+    return () => ac.abort()
+  }, [selected?.histId, timeframe])
+  const histKey = selected?.histId ? `${selected.histId}:${timeframe}` : ''
+  const liveChart = liveHist && liveHist.key === histKey ? liveHist.data : null
+
   const catLabel: Record<string, string> = {
     Rates: t.macro.monetary, 'US Rates': t.macro.monetary,
     Inflation: t.macro.inflation, 'US Inflation': t.macro.inflation,
@@ -64,7 +100,7 @@ export default function MacroPage() {
     id: i.id, label: i.shortName, value: i.value, unit: i.unit, change: i.change,
     changeLabel: i.changeLabel, period: i.period, source: i.source, implication: i.marketImplication, histId: i.id,
   })
-  const indicators = getAllIndicators().filter(i => (region === 'CL' ? (!i.region || i.region === 'CL') : i.region === 'US'))
+  const indicators = macroAll.filter(i => (region === 'CL' ? (!i.region || i.region === 'CL') : i.region === 'US'))
   const indByCat = (cats: string[]) =>
     cats.map(cat => ({ cat, rows: indicators.filter(i => i.category === cat).map(toRow) })).filter(g => g.rows.length > 0)
 
@@ -111,7 +147,12 @@ export default function MacroPage() {
         title={t.macro.title}
         subtitle={t.macro.subtitle}
         asOf
-        actions={<span className="text-xs px-2.5 py-1 rounded bg-surface-2 border border-border text-foreground font-medium">{region === 'CL' ? 'Chile' : 'US'}</span>}
+        actions={
+          <div className="flex items-center gap-2.5">
+            <DataSourceBadge status={srcStatus} />
+            <span className="text-xs px-2.5 py-1 rounded bg-surface-2 border border-border text-foreground font-medium">{region === 'CL' ? 'Chile' : 'US'}</span>
+          </div>
+        }
       />
 
       {/* Economic calendar — today's releases (top of page) */}
@@ -261,12 +302,15 @@ export default function MacroPage() {
                 <button onClick={() => setSelected(null)} className="ml-2 text-sm text-muted-fg hover:text-foreground px-2 py-1" aria-label="Close chart">✕</button>
               </div>
             </div>
-            {historyData.length >= 2 ? (
-              <LineChart data={historyData} unit={selected.unit === '%' ? '%' : ''} height={240} />
+            {(liveChart ?? historyData).length >= 2 ? (
+              <LineChart data={liveChart ?? historyData} unit={selected.unit === '%' ? '%' : ''} height={240} />
             ) : (
               <div className="flex items-center justify-center h-40 text-xs text-muted-fg border border-border rounded">{t.macro.noHistory}</div>
             )}
-            <p className="text-xs text-muted-fg mt-3">{t.macro.chartSource} · {t.macro.monthlyFreq}</p>
+            <div className="flex items-center gap-2 mt-3">
+              <DataSourceBadge status={histStatus} />
+              <span className="text-xs text-muted-fg">· {t.macro.chartSource}</span>
+            </div>
           </div>
         </div>
       )}

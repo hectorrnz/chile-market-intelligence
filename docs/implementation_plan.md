@@ -299,3 +299,46 @@ Claude Code should:
 - Read `CLAUDE.md` and `docs/design_principles.md` before writing any code.
 - Confirm the task before starting implementation.
 - After completing each task, list changed files and suggest the next task.
+
+---
+
+## Phase 4A — Live Macro Architecture (BCCh foundation) ✓
+
+Builds the live-data ingestion architecture and the first live provider
+foundation (Banco Central de Chile macro), without breaking static behavior.
+
+- Data-mode system (`static` / `live` / `hybrid`) with a static-fallback guarantee.
+- Provider abstraction (`src/lib/providers/`) — components never call APIs directly.
+- BCCh BDE/SieteRestWS client (server-only, credential-safe, timeout-guarded).
+- Series registry (`src/config/macroSeries.ts`) — **codes left as TODO until verified (4B)**.
+- API routes: `/api/macro`, `/api/macro/history/[indicatorId]`.
+- UI: static-first, upgrade-if-live; subtle `DataSourceBadge`.
+
+**Still static in production** until BCCh credentials + verified series codes are added.
+
+### Later phases (not in 4A)
+
+- **Phase 4B** — map & verify official BCCh BDE series codes; enable live macro.
+- **Phase 4C** — Chilean stock price provider (Bolsa de Santiago / Brain Data).
+- **Later** — CMF Hechos Esenciales ingestion, CMF earnings ingestion, news ingestion.
+- **Phase 5** — Supabase persistence. **Phase 6** — authentication + watchlist.
+
+CMF (Hechos Esenciales, earnings), stock prices, and news ingestion are
+**explicitly out of scope** until their dedicated phases.
+
+---
+
+## Phase 4B — BCCh Series Mapping & Validation ✓ (workflow)
+
+Reproducible official-catalog workflow + controlled mapping layer + live
+validation harness. **No codes verified yet** (no credentials available during
+this phase) — all series remain disabled and the app serves static data.
+
+- `npm run bcch:search` — official SearchSeries discovery → `tmp/bcch-series-candidates.json` (gitignored).
+- `src/config/bcchSeriesManualMap.ts` — human-verified mapping (all `null`/`verified:false`).
+- `npm run bcch:validate` — GetSeries + plausibility + frequency checks for verified series.
+- `src/lib/providers/transforms.ts` + `plausibility.ts` — value/change transforms + sanity bands.
+- Docs: `docs/bcch_series_mapping.md`.
+
+Next: **Phase 4B.1** — run discovery with credentials, confirm & enable series.
+Later phases (CMF, earnings, stock prices, US macro live, news) remain out of scope.

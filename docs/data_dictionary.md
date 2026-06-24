@@ -204,3 +204,106 @@ src/data/
 ```
 
 These files are the source of truth during MVP. When Supabase is connected, these files are replaced by database queries. The TypeScript types derived from this dictionary must not change between phases — only the data source changes.
+
+---
+
+## Phase 4A — Live-Data Provider Architecture
+
+The MVP serves static JSON. Phase 4A adds a **provider abstraction** that lets
+macro data come from a live source (Banco Central de Chile) while always keeping
+the static JSON as a fallback. The TypeScript entity types above are unchanged —
+only the *source* of a `MacroIndicator` / `MacroHistoryPoint` can change.
+
+### DATA_MODE
+
+A server env var controls sourcing (`src/lib/providers/dataMode.ts`):
+
+| Mode | Behavior |
+|---|---|
+| `static` | Local JSON only. |
+| `live` | Live provider where available; if it fails, serve static and mark `live-unavailable`. |
+| `hybrid` | Try live, silently fall back to static (`hybrid-fallback`). |
+
+Default when unset: `hybrid` if BCCh credentials exist, else `static`. **With no
+env vars at all the app runs fully on static data** — nothing breaks.
+
+### Provider layer (`src/lib/providers/`)
+
+| File | Role |
+|---|---|
+| `types.ts` | Types only (erased at compile) — safe to import from client. |
+| `dataMode.ts` | `parseDataMode`, `getDataMode`, `decideSource` (pure decision logic). |
+| `bcchClient.ts` | **Server-only** BCCh SieteRestWS client (`fetchBcchSeries`) + pure parser `normalizeBcchSeries`. Reads credentials from server env; never logs them. |
+| `staticMacroProvider.ts` | Wraps static JSON behind the `MacroProvider` contract. |
+| `bcchMacroProvider.ts` | **Server-only** live provider (foundation; disabled until series codes are mapped). |
+| `macroProvider.ts` | Orchestrator: applies DATA_MODE, returns `{ data, metadata }`. |
+
+**Rule:** page components never import providers. They call `src/lib/data`
+functions (static, synchronous) for the initial render and the client-safe
+`fetchMacroIndicators` / `fetchMacroHistory` helpers (which hit `/api` routes)
+to optionally upgrade to live. BCCh credentials are server-only.
+
+### Series registry (`src/config/macroSeries.ts`)
+
+One row per indicator: `id`, `displayName`, `region`, `source`,
+`sourceProvider`, `providerSeriesCode`, `unit`, `frequency`, `transformation`,
+`fallbackStaticId`, `enabled`. **Every `providerSeriesCode` is `null` and
+`enabled: false`** until the official BCCh BDE code is verified (Phase 4B). No
+guessed codes.
+
+### Response metadata
+
+Both `/api/macro` and `/api/macro/history/[indicatorId]` return:
+
+```
+{ data, metadata: { dataModeRequested, dataModeUsed, liveAvailable,
+                    status, source, lastUpdated, fallbackReason? } }
+```
+
+`status ∈ { static, live, hybrid-fallback, live-unavailable }` drives the
+`DataSourceBadge`. Live vs static differ only in `source`/`lastUpdated`/value
+freshness — the shape consumed by the UI is identical, so fallback is seamless.
+
+---
+
+## Phase 4B — BCCh Mapping Fields & Transformations
+
+### Controlled mapping (`src/config/bcchSeriesManualMap.ts`)
+
+The human-verified source of truth for live macro. One entry per indicator
+keyed by a `manualKey`:
+
+| Field | Meaning |
+|---|---|
+| `seriesId` | Official BDE code — `null` until verified. **Never guessed.** |
+| `verified` | `true` only after a human confirms the code against the catalog. |
+| `frequency` | `DAILY` / `MONTHLY` / `QUARTERLY` / `ANNUAL`. |
+| `transformation` | How the provider derives value/change (see below). |
+| `staticId` | Static JSON id used for the fallback path. |
+| `sourceName`, `confidence`, `verificationDate`, `verificationMethod`, `notes` | Provenance. |
+
+`src/config/macroSeries.ts` derives each series' `enabled` / `providerSeriesCode`
+/ `transformation` from this map. A series is **live-eligible only when
+`verified === true` AND `seriesId !== null`**; otherwise it stays disabled and
+the static fallback is served.
+
+### Transformation rules (`src/lib/providers/transforms.ts`)
+
+| transformation | value | change |
+|---|---|---|
+| `none` | raw latest | delta vs previous observation |
+| `mom` | month-over-month % from index level | Δ vs prior m/m |
+| `yoy` / `level-to-yoy` | 12-month % from monthly level | Δ vs prior yoy |
+| `bp-to-pct` | value ÷ 100 | rescaled delta |
+
+Plausibility bands (`src/lib/providers/plausibility.ts`) reject a mapped series
+whose latest value falls outside a broad sanity range (e.g. TPM 0–20%, USD/CLP
+300–2000) — this catches a wrong mapping, not normal market moves.
+
+### Live vs static fallback
+
+`/api/macro*` metadata reports `provider` (`"BCCh BDE"` live / `"static"`
+fallback) and, for a single live history series, the `seriesId`. The data shape
+is identical for live and static, so fallback never changes the UI layout. UI
+display convention is unchanged: value first, change second in one pair of
+parentheses, no bp/pp suffixes.

@@ -135,6 +135,12 @@ export const dict = {
       exportCsv:    'Export CSV',
       print:        'Print',
     },
+    dataSource: {
+      static:          'Static MVP',
+      live:            'Live BCCh',
+      hybridFallback:  'Hybrid fallback',
+      liveUnavailable: 'Live unavailable',
+    },
     home: {
       tag:              'Dashboard',
       title:            'Market Overview',
@@ -578,6 +584,12 @@ export const dict = {
       searchBtn:    'Buscar',
       exportCsv:    'Exportar CSV',
       print:        'Imprimir',
+    },
+    dataSource: {
+      static:          'MVP estático',
+      live:            'BCCh en vivo',
+      hybridFallback:  'Respaldo híbrido',
+      liveUnavailable: 'En vivo no disponible',
     },
     home: {
       tag:              'Dashboard',

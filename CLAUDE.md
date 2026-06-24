@@ -24,6 +24,18 @@ Check `docs/implementation_plan.md` for the active phase. Complete one task befo
 ### Do not connect live APIs until instructed
 All data in MVP comes from static JSON files in `src/data/`. No API calls, no external fetch calls, no environment variable references for external services until Phase 4 is authorized.
 
+### Live-data architecture rules (Phase 4A+)
+The live-data provider abstraction exists for **macro only** so far. When working with live data:
+- **Components must not call providers or external APIs directly.** Page/UI components read `src/lib/data/*` (static, synchronous) for the initial render, and use the client-safe `fetch*` helpers in `src/lib/data` (which hit `/api` routes) to optionally upgrade to live.
+- **All live data goes through `src/lib/data` helpers or `/api` route handlers.** Provider modules in `src/lib/providers/` (except `types.ts`) are **server-only** and must never be imported by client components.
+- **Static fallback is mandatory.** The app must build, run, and deploy with no env vars. Missing credentials must never break local dev, `npm run build`, Vercel, or any page.
+- **Never guess BCCh series IDs.** Codes live in `src/config/bcchSeriesManualMap.ts` and must stay `seriesId: null, verified: false` until confirmed. Only official **SearchSeries/GetSeries** verification (via `npm run bcch:search` / `npm run bcch:validate`) is acceptable proof. `macroSeries.ts` derives `enabled`/`providerSeriesCode` from that map — do not hand-set codes there.
+- **No scraping** of websites unless explicitly instructed — official BCCh API only.
+- **BCCh (and all provider) credentials are server-only** — read only in route handlers / server provider code and the `scripts/bcch/*` tools, never prefixed `NEXT_PUBLIC_`, never logged.
+- **Do not run BCCh scripts during build.** `bcch:search`/`bcch:validate` are manual dev tools; the build/Vercel deploy must never depend on BCCh availability.
+- **Live macro must always keep static fallback.** Missing credentials, timeouts, or implausible values must fall back to static — never break local dev, `npm run build`, Vercel, or any page.
+- Do not expand live ingestion beyond the currently-authorized scope (e.g. CMF, earnings, stock prices, US macro live, news) without an explicit phase instruction.
+
 ### Do not add authentication until instructed
 No login pages, no session management, no Supabase Auth, no middleware. Authentication is Phase 6.
 
@@ -368,6 +380,42 @@ docs/                 — Project documentation
 - Build: `npm run build` passes 0 errors (12 routes); `npm test` 13/13 pass; `npm run lint` 0 problems. Runtime-verified (dev server): home/compare/charting render, persistence round-trips, command palette filters, **no console errors or hydration warnings**.
 
 ## Current Phase
+
+**Phase 4B — BCCh Series Mapping & Validation Workflow** ✓ COMPLETE (no codes verified — credentials pending)
+
+Reproducible official-catalog mapping workflow + transformation/plausibility logic + validation harness. **No series enabled** — BCCh credentials were unavailable, so SearchSeries could not be run and every mapping stays `null`/`verified:false`; the app serves static data everywhere. Files added/changed:
+- `scripts/bcch/searchSeries.ts`, `scripts/bcch/validateSeries.ts` — official SearchSeries/GetSeries tooling (npm `bcch:search`/`bcch:validate`); graceful without credentials
+- `src/config/bcchSeriesManualMap.ts` — controlled human-verified mapping (16 indicators, all unverified)
+- `src/config/macroSeries.ts` — refactored to derive `enabled`/`providerSeriesCode`/`transformation` from the manual map
+- `src/lib/providers/transforms.ts` — value/change + series transforms (none/mom/yoy/bp-to-pct); `plausibility.ts` — sanity bands
+- `src/lib/providers/bcchMacroProvider.ts` — applies transform + plausibility; `macroProvider.ts`/`types.ts` — `provider`/`seriesId` metadata
+- `tests/transforms.test.ts`, `tests/bcchMapping.test.ts` — +12 tests (38 total)
+- `.gitignore` (`/tmp`), `tsconfig.json` (`allowImportingTsExtensions`), `package.json` (bcch scripts)
+- Docs: `docs/bcch_series_mapping.md` (new) + data_dictionary/deployment/implementation_plan/README/CLAUDE
+- Build 14 routes · lint 0 · tests 38/38 · runs with no env vars · scripts fail gracefully without credentials
+
+Next: **Phase 4B.1** (run discovery with credentials, confirm & enable series) or **Phase 4C** (stock price provider).
+
+---
+
+**Phase 4A — Live Macro Architecture (BCCh foundation)** ✓ COMPLETE
+
+Live-data ingestion architecture + BCCh macro provider foundation. The app still
+runs on static data in production (live disabled until series codes are mapped in
+Phase 4B). Files added/changed:
+- `src/lib/providers/{types,dataMode,bcchClient,staticMacroProvider,bcchMacroProvider,macroProvider}.ts` — provider abstraction (server-only except `types.ts`)
+- `src/config/macroSeries.ts` — series registry; all `providerSeriesCode: null`, `enabled: false` (codes verified in 4B)
+- `src/app/api/macro/route.ts`, `src/app/api/macro/history/[indicatorId]/route.ts` — live/hybrid API routes with metadata + static fallback
+- `src/lib/data/macro.ts`, `src/lib/data/macroHistory.ts` — added client-safe `fetchMacroIndicators` / `fetchMacroHistory`
+- `src/components/ui/DataSourceBadge.tsx` + `i18n` `dataSource.*` (en/es) — subtle source/status chip
+- `src/app/macro/page.tsx`, `src/app/page.tsx` — static-first, upgrade-if-live; badges wired
+- `tests/dataMode.test.ts`, `tests/bcchClient.test.ts` — 13 new tests (26 total)
+- `.env.example`, `docs/{data_dictionary,deployment,implementation_plan}.md`, `README.md` — DATA_MODE + provider docs
+- Build 14 routes (12 + 2 API) · lint 0 · tests 26/26 · runs with no env vars
+
+Next: **Phase 4B** (map & enable official BCCh BDE series codes) or **Phase 4C** (stock price provider).
+
+---
 
 **Phase 3 — Polish and Vercel Deployment** ✓ COMPLETE
 
