@@ -93,11 +93,11 @@ export function Sidebar() {
     >
       {/* Brand */}
       <div
-        className="px-4 py-4"
+        className="h-14 shrink-0 flex flex-col justify-center px-4"
         style={{ borderBottom: '1px solid var(--sidebar-border)' }}
       >
         <div
-          className="text-xs font-mono font-semibold tracking-wider uppercase"
+          className="text-sm font-mono font-semibold tracking-wider uppercase"
           style={{ color: 'var(--sidebar-accent)' }}
         >
           NMI
