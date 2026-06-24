@@ -70,7 +70,7 @@ export default function HomePage() {
   const fxGroups = getFxBySection()
   const recentHechos = getRecentHechos(8)
   const upcoming = getUpcomingEarnings().slice(0, 2)
-  const recent = getRecentResults().slice(0, 3)
+  const recent = getRecentResults().slice(0, 2)
   const news = getAllNews()
   const sectors = getSectorPerformance()
   const indices = getIndexPerformance()
