@@ -5,6 +5,7 @@ import { getPageTitle } from '@/lib/navigation'
 import { useLang } from '@/components/providers/LangProvider'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { LangToggle } from '@/components/ui/LangToggle'
+import { BrandLogo } from '@/components/ui/BrandLogo'
 
 export function TopBar() {
   const pathname = usePathname()
@@ -29,7 +30,8 @@ export function TopBar() {
     >
       {/* Left: breadcrumb */}
       <div className="flex items-center gap-2">
-        <span className="text-xs font-mono text-muted-fg uppercase tracking-wide">CMI</span>
+        <BrandLogo className="h-6 w-auto shrink-0" />
+        <span className="text-xs font-mono text-muted-fg uppercase tracking-wide">NMI</span>
         <span className="text-muted-fg text-xs">/</span>
         <span className="text-xs text-foreground font-medium">{title}</span>
       </div>

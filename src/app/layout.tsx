@@ -4,14 +4,14 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: {
-    default: 'Chile Market Intelligence',
-    template: '%s · CMI',
+    default: 'Nevada Market Intelligence',
+    template: '%s · NMI',
   },
   description:
     'Chile-focused buyside market intelligence dashboard for equities, macro, earnings, filings, and market news.',
-  applicationName: 'Chile Market Intelligence',
+  applicationName: 'Nevada Market Intelligence',
   keywords: ['Chile', 'equities', 'macro', 'earnings', 'CMF', 'IPSA', 'buyside', 'market intelligence'],
-  authors: [{ name: 'CMI' }],
+  authors: [{ name: 'Nevada Inversiones' }],
   robots: { index: false, follow: false },
   icons: {
     icon: '/favicon.svg',
@@ -19,9 +19,9 @@ export const metadata: Metadata = {
   },
   openGraph: {
     type: 'website',
-    title: 'Chile Market Intelligence',
+    title: 'Nevada Market Intelligence',
     description: 'Buyside market intelligence dashboard — Chilean equities, macro, earnings, and filings.',
-    siteName: 'CMI',
+    siteName: 'NMI',
   },
 }
 

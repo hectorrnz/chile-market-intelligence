@@ -1,6 +1,6 @@
-# Chile Market Intelligence (CMI)
+# Nevada Market Intelligence (NMI)
 
-An internal buyside web terminal for a Chilean family office. Tracks Chilean listed equities, macroeconomic indicators, CMF filings (Hechos Esenciales), and earnings releases.
+An internal buyside web terminal for Nevada Inversiones, a Chilean family office. Tracks Chilean listed equities, macroeconomic indicators, CMF filings (Hechos Esenciales), and earnings releases.
 
 **Current phase:** Phase 2H complete — pre-deployment polish (Phase 3) in progress.
 

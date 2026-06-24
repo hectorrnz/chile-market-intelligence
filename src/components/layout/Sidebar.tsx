@@ -100,10 +100,10 @@ export function Sidebar() {
           className="text-xs font-mono font-semibold tracking-wider uppercase"
           style={{ color: 'var(--sidebar-accent)' }}
         >
-          CMI
+          NMI
         </div>
         <div className="text-xs mt-0.5 leading-tight" style={{ color: 'var(--sidebar-muted)' }}>
-          Chile Market Intelligence
+          Nevada Market Intelligence
         </div>
       </div>
 

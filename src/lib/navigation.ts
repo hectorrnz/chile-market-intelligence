@@ -26,5 +26,5 @@ export function getPageTitle(pathname: string, _lang: Lang, t: Translation): str
     const ticker = pathname.split('/')[2]?.toUpperCase()
     return ticker ? `${t.stocks.tag} · ${ticker}` : t.stocks.tag
   }
-  return 'Chile Market Intelligence'
+  return 'Nevada Market Intelligence'
 }
