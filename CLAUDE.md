@@ -381,6 +381,43 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 5A — CMF Filings Provider Architecture** ✓ COMPLETE
+
+Provider abstraction for CMF Hechos Esenciales, mirroring Phase 4A (BCCh) and Phase 4C (Brain Data).
+Live CMF parser returns `ok:false` until Phase 5A.1 validates the CMF portal HTML structure.
+Static fallback always active; app builds and runs with zero env vars.
+
+Files added/changed:
+- `docs/cmf_provider_discovery.md` — CMF source discovery (HE listing HTML format, fields, robots/rate-limit notes)
+- `src/lib/providers/cmf/types.ts` — `CmfFiling`, `CmfDocument`, `CmfDataMeta`, `CmfProvider`, `CmfFilingFilters`, etc.
+- `src/lib/providers/cmf/cmfDataMode.ts` — `parseCmfDataMode()`, `getCmfDataMode()`, `decideCmfSource()`
+- `src/lib/providers/cmf/cmfClient.ts` — `isCmfLiveConfigured()`, `getCmfBaseUrl()`, `fetchCmfPage()`
+- `src/lib/providers/cmf/staticCmfProvider.ts` — wraps existing hechos/documents data behind `CmfProvider`
+- `src/lib/providers/cmf/cmfHechosProvider.ts` — shell; every method returns `ok:false`; void params
+- `src/lib/providers/cmf/cmfProvider.ts` — orchestrator with `resolveCmfHechos/Hecho/Document` + `cmfErrorResponse`
+- `src/lib/providers/cmf/parsers/hechosListParser.ts` — pure-regex HTML parser; `parserConfidence` 0–1.0; handles whitespace/missing links/malformed rows
+- `src/app/api/cmf/hechos/route.ts` — `GET /api/cmf/hechos`
+- `src/app/api/cmf/hechos/[documentNumber]/route.ts` — `GET /api/cmf/hechos/[documentNumber]`
+- `src/app/api/cmf/documents/[id]/route.ts` — `GET /api/cmf/documents/[id]`
+- `src/lib/data/cmfData.ts` — client-safe async helpers (`fetchCmfHechos`, `fetchCmfHecho`, `fetchCmfDocument`)
+- `src/config/cmfEntityMap.ts` — 25 Chilean tickers, all `verified:false` / `rut:null` / `cmfEntityUrl:null`
+- `src/components/ui/CmfDataSourceBadge.tsx` — CMF-specific source badge
+- `scripts/cmf/discoverHechos.ts` — 1-request discovery tool; `npm run cmf:discover-hechos`
+- `tests/fixtures/cmf/hechos_ultimos_7_dias.html` — 7-row fixture (normal/pdf/whitespace/no-link/malformed/nbsp cases)
+- `tests/cmfDataMode.test.ts` — 11 tests for `parseCmfDataMode` + `decideCmfSource`
+- `tests/cmfProvider.test.ts` — 13 tests for shell provider + entity map invariants
+- `tests/hechosParser.test.ts` — 21 tests for `parseHechosList`, `parseHechosRow`, `parseCmfDate`, `parseCmfTime`
+- `.env.example` — `CMF_DATA_MODE`, `CMF_BASE_URL`, `CMF_USER_AGENT`, `CMF_REQUEST_TIMEOUT_MS`
+- `src/lib/i18n.ts` — `cmfData.*` section (en/es)
+- `package.json` — `cmf:discover-hechos` script
+- Build 22 routes · lint 0 · tests 114/114 · static fallback works with no env vars
+
+Next: **Phase 5A.1** — run `npm run cmf:discover-hechos`, review `parserConfidence`, confirm HTML structure,
+verify entity RUTs from official CMF registros, enable live ingestion.
+Or: **Phase 4C.1** — Brain Data credentials + live market price provider.
+
+---
+
 **Phase 4C — Chilean Market Data Provider Architecture** ✓ COMPLETE
 
 Provider abstraction for Chilean equity/index data (Brain Data / Bolsa de Santiago),
