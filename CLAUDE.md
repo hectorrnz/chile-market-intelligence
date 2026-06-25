@@ -381,40 +381,43 @@ docs/                 — Project documentation
 
 ## Current Phase
 
-**Phase 5A — CMF Filings Provider Architecture** ✓ COMPLETE
+**Phase 5B — Supabase Persistence Foundation** ✓ COMPLETE
 
-Provider abstraction for CMF Hechos Esenciales, mirroring Phase 4A (BCCh) and Phase 4C (Brain Data).
-Live CMF parser returns `ok:false` until Phase 5A.1 validates the CMF portal HTML structure.
+Schema-first, repository-layer-first Supabase integration. No production behaviour changed.
 Static fallback always active; app builds and runs with zero env vars.
+DB_MODE defaults to `static`; set to `supabase` or `hybrid` once a project is linked (Phase 5B.1).
 
 Files added/changed:
-- `docs/cmf_provider_discovery.md` — CMF source discovery (HE listing HTML format, fields, robots/rate-limit notes)
-- `src/lib/providers/cmf/types.ts` — `CmfFiling`, `CmfDocument`, `CmfDataMeta`, `CmfProvider`, `CmfFilingFilters`, etc.
-- `src/lib/providers/cmf/cmfDataMode.ts` — `parseCmfDataMode()`, `getCmfDataMode()`, `decideCmfSource()`
-- `src/lib/providers/cmf/cmfClient.ts` — `isCmfLiveConfigured()`, `getCmfBaseUrl()`, `fetchCmfPage()`
-- `src/lib/providers/cmf/staticCmfProvider.ts` — wraps existing hechos/documents data behind `CmfProvider`
-- `src/lib/providers/cmf/cmfHechosProvider.ts` — shell; every method returns `ok:false`; void params
-- `src/lib/providers/cmf/cmfProvider.ts` — orchestrator with `resolveCmfHechos/Hecho/Document` + `cmfErrorResponse`
-- `src/lib/providers/cmf/parsers/hechosListParser.ts` — pure-regex HTML parser; `parserConfidence` 0–1.0; handles whitespace/missing links/malformed rows
-- `src/app/api/cmf/hechos/route.ts` — `GET /api/cmf/hechos`
-- `src/app/api/cmf/hechos/[documentNumber]/route.ts` — `GET /api/cmf/hechos/[documentNumber]`
-- `src/app/api/cmf/documents/[id]/route.ts` — `GET /api/cmf/documents/[id]`
-- `src/lib/data/cmfData.ts` — client-safe async helpers (`fetchCmfHechos`, `fetchCmfHecho`, `fetchCmfDocument`)
-- `src/config/cmfEntityMap.ts` — 25 Chilean tickers, all `verified:false` / `rut:null` / `cmfEntityUrl:null`
-- `src/components/ui/CmfDataSourceBadge.tsx` — CMF-specific source badge
-- `scripts/cmf/discoverHechos.ts` — 1-request discovery tool; `npm run cmf:discover-hechos`
-- `tests/fixtures/cmf/hechos_ultimos_7_dias.html` — 7-row fixture (normal/pdf/whitespace/no-link/malformed/nbsp cases)
-- `tests/cmfDataMode.test.ts` — 11 tests for `parseCmfDataMode` + `decideCmfSource`
-- `tests/cmfProvider.test.ts` — 13 tests for shell provider + entity map invariants
-- `tests/hechosParser.test.ts` — 21 tests for `parseHechosList`, `parseHechosRow`, `parseCmfDate`, `parseCmfTime`
-- `.env.example` — `CMF_DATA_MODE`, `CMF_BASE_URL`, `CMF_USER_AGENT`, `CMF_REQUEST_TIMEOUT_MS`
-- `src/lib/i18n.ts` — `cmfData.*` section (en/es)
-- `package.json` — `cmf:discover-hechos` script
-- Build 22 routes · lint 0 · tests 114/114 · static fallback works with no env vars
+- `@supabase/supabase-js` + `@supabase/ssr` added to dependencies
+- `src/lib/supabase/types.ts` — `SupabaseConfig`, `SupabaseAdminConfig`
+- `src/lib/supabase/env.ts` — `getSupabasePublicConfig()`, `getSupabaseAdminConfig()`, `isSupabaseConfigured()`
+- `src/lib/supabase/database.types.ts` — provisional manual types (11 tables); replace with `npx supabase gen types` after linking
+- `src/lib/supabase/client.ts` — browser singleton (`'use client'`, `NEXT_PUBLIC_*` only)
+- `src/lib/supabase/server.ts` — server client for route handlers (no cookie management until Phase 6)
+- `src/lib/supabase/admin.ts` — service-role admin client (server-only; bypasses RLS)
+- `src/lib/db/types.ts` — `DbMode`, `DbResult<T>`, `DbListResult<T>`
+- `src/lib/db/dbMode.ts` — `parseDbMode()`, `getDbMode()`, `decideDbSource()`
+- `src/lib/db/repositories/companiesRepository.ts` — `getCompanies()`, `getCompanyByTicker()`
+- `src/lib/db/repositories/macroRepository.ts` — `getMacroIndicators()`, `getMacroHistory()`
+- `src/lib/db/repositories/marketRepository.ts` — `getStockSnapshots()`, `getIndexSnapshots()`, `getSectorPerformance()`
+- `src/lib/db/repositories/cmfRepository.ts` — `getCmfFilings()`, `getCmfFiling()`
+- `src/lib/db/repositories/documentsRepository.ts` — `getDocuments()`, `getDocumentById()`
+- `src/lib/db/repositories/ingestionRunsRepository.ts` — `getIngestionRuns()`, `createIngestionRun()`
+- `supabase/migrations/20260625000000_create_market_intelligence_core.sql` — 11 tables, RLS, updated_at triggers
+- `supabase/seed.sql` — data_sources, companies (25), macro_indicators (25); all `static_mvp` tagged; upsert-safe
+- `scripts/supabase/checkConnection.ts` — `npm run supabase:check`
+- `scripts/supabase/generateSeed.ts` — `npm run supabase:generate-seed`
+- `docs/supabase_persistence.md` — setup guide, architecture, schema reference, security notes
+- `tests/dbMode.test.ts` — 10 tests for `parseDbMode` + `decideDbSource`
+- `tests/supabaseEnv.test.ts` — 4 tests for env detection (no vars)
+- `tests/supabaseSchema.test.ts` — 6 tests for migration + seed file integrity
+- `.env.example` — `DB_MODE`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DATABASE_URL`
+- `package.json` — `supabase:check`, `supabase:generate-seed` scripts
+- Build 22 routes · lint 0 · tests 134/134 · static fallback works with no env vars
 
-Next: **Phase 5A.1** — run `npm run cmf:discover-hechos`, review `parserConfidence`, confirm HTML structure,
-verify entity RUTs from official CMF registros, enable live ingestion.
+Next: **Phase 5B.1** — create a Supabase project, apply migration, seed reference data, set `DB_MODE=hybrid` in `.env.local`, run `npm run supabase:check`, replace provisional database types with generated types.
 Or: **Phase 4C.1** — Brain Data credentials + live market price provider.
+Or: **Phase 5A.2-alt** — CMF alternative ingestion (official CMF API, paid data feed, or manual pipeline).
 
 ---
 
