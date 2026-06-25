@@ -381,6 +381,25 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 5B.1 — Supabase Project Link & Seed** ✓ COMPLETE
+
+Supabase project `nevada-market-intelligence` linked, migration applied via SQL Editor,
+reference data seeded. DB_MODE=hybrid active locally. Static fallback still works with no env vars.
+
+Key fixes applied during 5B.1:
+- `src/lib/supabase/env.ts`: `normalizeProjectUrl()` strips `/rest/v1/` suffix from the URL
+  (Supabase Dashboard REST URL field includes it; the JS client needs the bare project URL)
+- `scripts/supabase/checkConnection.ts`: loads `.env.local` via `@next/env`; fixed false-positive
+  bug where PGRST205 schema-cache errors were misclassified as "present"
+- `scripts/supabase/applySeed.ts`: new JS seed runner (`npm run supabase:seed`) using admin client;
+  idempotent; skips `data_sources` if already seeded (no unique constraint on `provider`)
+- Supabase CLI (`supabase.exe`) is blocked by Windows security policy on this machine —
+  migration and seed were applied via SQL Editor instead; `npm run supabase:check` uses JS client only
+
+Verified state (project cnxfougkpynovlwsmmdz):
+  11 tables present · data_sources 4 · companies 25 · macro_indicators 25
+  Build 22 routes · lint 0 · tests 134/134
+
 **Phase 5B — Supabase Persistence Foundation** ✓ COMPLETE
 
 Schema-first, repository-layer-first Supabase integration. No production behaviour changed.
@@ -391,7 +410,7 @@ Files added/changed:
 - `@supabase/supabase-js` + `@supabase/ssr` added to dependencies
 - `src/lib/supabase/types.ts` — `SupabaseConfig`, `SupabaseAdminConfig`
 - `src/lib/supabase/env.ts` — `getSupabasePublicConfig()`, `getSupabaseAdminConfig()`, `isSupabaseConfigured()`
-- `src/lib/supabase/database.types.ts` — provisional manual types (11 tables); replace with `npx supabase gen types` after linking
+- `src/lib/supabase/database.types.ts` — provisional manual types (11 tables)
 - `src/lib/supabase/client.ts` — browser singleton (`'use client'`, `NEXT_PUBLIC_*` only)
 - `src/lib/supabase/server.ts` — server client for route handlers (no cookie management until Phase 6)
 - `src/lib/supabase/admin.ts` — service-role admin client (server-only; bypasses RLS)
@@ -407,17 +426,18 @@ Files added/changed:
 - `supabase/seed.sql` — data_sources, companies (25), macro_indicators (25); all `static_mvp` tagged; upsert-safe
 - `scripts/supabase/checkConnection.ts` — `npm run supabase:check`
 - `scripts/supabase/generateSeed.ts` — `npm run supabase:generate-seed`
+- `scripts/supabase/applySeed.ts` — `npm run supabase:seed`
 - `docs/supabase_persistence.md` — setup guide, architecture, schema reference, security notes
 - `tests/dbMode.test.ts` — 10 tests for `parseDbMode` + `decideDbSource`
 - `tests/supabaseEnv.test.ts` — 4 tests for env detection (no vars)
 - `tests/supabaseSchema.test.ts` — 6 tests for migration + seed file integrity
 - `.env.example` — `DB_MODE`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DATABASE_URL`
-- `package.json` — `supabase:check`, `supabase:generate-seed` scripts
+- `package.json` — `supabase:check`, `supabase:generate-seed`, `supabase:seed` scripts
 - Build 22 routes · lint 0 · tests 134/134 · static fallback works with no env vars
 
-Next: **Phase 5B.1** — create a Supabase project, apply migration, seed reference data, set `DB_MODE=hybrid` in `.env.local`, run `npm run supabase:check`, replace provisional database types with generated types.
-Or: **Phase 4C.1** — Brain Data credentials + live market price provider.
+Next: **Phase 4C.1** — Brain Data credentials + live market price provider.
 Or: **Phase 5A.2-alt** — CMF alternative ingestion (official CMF API, paid data feed, or manual pipeline).
+Or: **Phase 5C** — Persist BCCh macro observations into Supabase `macro_observations` table.
 
 ---
 
