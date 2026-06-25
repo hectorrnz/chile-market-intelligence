@@ -381,20 +381,33 @@ docs/                 — Project documentation
 
 ## Current Phase
 
-**Phase 4B — BCCh Series Mapping & Validation Workflow** ✓ COMPLETE (no codes verified — credentials pending)
+**Phase 4B — BCCh Series Mapping, Encoding Fix & Production Deploy** ✓ COMPLETE
 
-Reproducible official-catalog mapping workflow + transformation/plausibility logic + validation harness. **No series enabled** — BCCh credentials were unavailable, so SearchSeries could not be run and every mapping stays `null`/`verified:false`; the app serves static data everywhere. Files added/changed:
-- `scripts/bcch/searchSeries.ts`, `scripts/bcch/validateSeries.ts` — official SearchSeries/GetSeries tooling (npm `bcch:search`/`bcch:validate`); graceful without credentials
-- `src/config/bcchSeriesManualMap.ts` — controlled human-verified mapping (16 indicators, all unverified)
-- `src/config/macroSeries.ts` — refactored to derive `enabled`/`providerSeriesCode`/`transformation` from the manual map
-- `src/lib/providers/transforms.ts` — value/change + series transforms (none/mom/yoy/bp-to-pct); `plausibility.ts` — sanity bands
-- `src/lib/providers/bcchMacroProvider.ts` — applies transform + plausibility; `macroProvider.ts`/`types.ts` — `provider`/`seriesId` metadata
-- `tests/transforms.test.ts`, `tests/bcchMapping.test.ts` — +12 tests (38 total)
-- `.gitignore` (`/tmp`), `tsconfig.json` (`allowImportingTsExtensions`), `package.json` (bcch scripts)
-- Docs: `docs/bcch_series_mapping.md` (new) + data_dictionary/deployment/implementation_plan/README/CLAUDE
-- Build 14 routes · lint 0 · tests 38/38 · runs with no env vars · scripts fail gracefully without credentials
+11 Chilean macro series live in Production from BCCh BDE. Production URL: `https://nevada-market-intelligence.vercel.app` (Deployment `dpl_78oUQvyNRfiFma58PAupzGrygggn`).
 
-Next: **Phase 4B.1** (run discovery with credentials, confirm & enable series) or **Phase 4C** (stock price provider).
+Sub-phases completed:
+- **4B (foundation):** SearchSeries/GetSeries tooling, manual mapping framework, all 16 indicators unverified pending credentials.
+- **4B.1:** Ran SearchSeries with credentials; mapped 6 high-confidence series (TPM, UF, BTU 10Y, BTU 5Y, Cámara Swap 2Y, Cámara Swap 1Y).
+- **4B.2:** Fixed BCCh SearchSeries UTF-8/iso-8859-1 encoding Mojibake (`decodeResponseText` in `textDecode.ts`, UTF-8-first sniffing). Mapped 5 additional series (USD/CLP, IPC m/m, IPC 12m, IMACEC 12m via `transformation: 'yoy'`, Desempleo). 11 series verified total, 5 unmapped (copper unit mismatch, BTP-10, BCU-5, PDBC-90d, TPM-TNA).
+- **4B.3:** Deployed to Vercel Preview; diagnosed BOM (`U+FEFF`) on all env vars due to Windows PowerShell stdin piping. Fixed with `stripBom()` in `bcchClient.ts`.
+- **4B.4:** Pushed 5 commits to `origin/master`. Set Production env vars via Vercel API (credentials encrypted, never printed). Deployed `--prod`. Validated all 11 BCCh indicators + 6 history endpoints live on `nevada-market-intelligence.vercel.app`. Production logs clean (no errors, no credential exposure).
+
+Files added/changed (all sub-phases):
+- `src/lib/providers/textDecode.ts` — UTF-8 BOM sniffing + accent-insensitive search normalization
+- `src/lib/providers/bcchClient.ts` — `stripBom()` for all env var reads; `isBcchConfigured()` updated
+- `src/config/bcchSeriesManualMap.ts` — 11 verified entries (6 from 4B.1 + 5 from 4B.2)
+- `scripts/bcch/searchSeries.ts` — encoding fix applied; uses `decodeResponseText`
+- `tests/textDecode.test.ts` (15 tests), `tests/bcchMapping.test.ts` (updated: ≥11 verified)
+- Build 14 routes · lint 0 · tests 53/53 · static fallback works with no env vars
+
+5 unmapped indicators (design/data decisions — see `tmp/bcch-mapping-review.md`):
+- `copper` — BCCh publishes in USD/oz; UI expects CLP/lb. Source from LME in later phase.
+- `btp-10` — no continuous secondary market BTP rate in BCCh catalog (only auction rates).
+- `bcu-5` — BCU bonds stale (last issued 2011-2013); BUF 5Y covers combined BCU/BTU.
+- `pdbc-90d` — BCCh discontinued 90d PDBC; active is 14d. UI label needs update before mapping.
+- `tpm-tna` — TPM IS the nominal annual rate; no distinct TNA series found.
+
+Next: **Phase 4C** (stock price provider) or **Phase 5** (CMF filings ingestion).
 
 ---
 
