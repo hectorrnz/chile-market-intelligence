@@ -134,28 +134,72 @@ export const bcchSeriesManualMap: Record<string, BcchManualEntry> = {
     notes: '360-day nominal Cámara swap (~1Y). No SPC.TIN.AN01.NO exists; TPR.D360.NO is the correct 1Y. Latest 23-06-2026 = 4.498%.',
   },
 
-  // ── Pending — not yet mapped ───────────────────────────────────────────────
+  // ── Verified series (Phase 4B.2 — 2026-06-25) ─────────────────────────────
 
-  // IPC and IMACEC: actual BCCh data was not found in candidates due to encoding
-  // issue in SearchSeries response (UTF-8 served as Latin-1 garbled accented chars).
-  // These series likely exist as MONTHLY in BCCh BDE. Re-run bcch:search after
-  // fixing encoding, or look up on BCCh BDE portal at si3.bcentral.cl.
-  'ipc-mom': pending('ipc-mensual', 'MONTHLY', 'none',
-    'Not found: encoding issue in SearchSeries response masked accented titles. Use the published m/m variation series; else set transformation=mom on the IPC level index.'),
-  'ipc-yoy': pending('ipc-anual', 'MONTHLY', 'none',
-    'Not found: encoding issue in SearchSeries response. Use the published 12-month variation series; else set transformation=yoy on the IPC level index.'),
-  'imacec-yoy': pending('imacec-anual', 'MONTHLY', 'none',
-    'Not found: zero candidates (encoding issue). IMACEC 12-month variation series is published monthly by BCCh. Re-run after encoding fix.'),
+  usdclp: {
+    seriesId: 'F073.TCO.PRE.Z.D',
+    verified: true,
+    frequency: 'DAILY',
+    transformation: 'none',
+    staticId: 'usdclp',
+    sourceName: 'Tipo de cambio nominal (dólar observado $CLP/USD)',
+    confidence: 'high',
+    verificationDate: '2026-06-25',
+    verificationMethod: 'BCCh SearchSeries + GetSeries validation',
+    notes: 'Official dólar observado (CLP per USD). Latest 25-06-2026 = 921.42. Encoding fix was required to discover via SearchSeries.',
+  },
 
-  // USD/CLP: "dólar observado" not found in candidates (accent in "dólar" garbled).
-  // Likely F072.TCO.PRE.Z.D but this is NOT confirmed — do not set seriesId until
-  // verified via SearchSeries or BCCh BDE portal. No guessing.
-  usdclp: pending('usdclp', 'DAILY', 'none',
-    'Not found: encoding issue masked "dólar observado" title. Candidate likely in F072 family. Needs SearchSeries re-run or portal lookup to confirm.'),
+  'ipc-mom': {
+    seriesId: 'F074.IPC.VAR.Z.EP23.C.M',
+    verified: true,
+    frequency: 'MONTHLY',
+    transformation: 'none',
+    staticId: 'ipc-mensual',
+    sourceName: 'Serie Empalmada IPC Diciembre 2009 a la fecha, Variación Mensual, base 2023 = 100',
+    confidence: 'high',
+    verificationDate: '2026-06-25',
+    verificationMethod: 'BCCh SearchSeries + GetSeries validation',
+    notes: 'Directly the m/m % change (not index level). Serie empalmada base 2023=100. Latest May-2026 = 0.2%. Encoding fix required to discover.',
+  },
 
-  // Unemployment: not found in candidates. May be in MONTHLY BCCh BDE (INE via BDE).
-  unemployment: pending('desempleo', 'MONTHLY', 'none',
-    'Not found: zero candidates. INE unemployment data may be in MONTHLY frequency. Re-run after encoding fix.'),
+  'ipc-yoy': {
+    seriesId: 'F074.IPC.V12.Z.EP23.C.M',
+    verified: true,
+    frequency: 'MONTHLY',
+    transformation: 'none',
+    staticId: 'ipc-anual',
+    sourceName: 'Serie Empalmada IPC Diciembre 2009 a la fecha, Variación 12 Meses, base 2023 = 100',
+    confidence: 'high',
+    verificationDate: '2026-06-25',
+    verificationMethod: 'BCCh SearchSeries + GetSeries validation',
+    notes: 'Directly the 12-month % change. Base 2023=100 spliced from Dec 2009. Latest May-2026 = 3.9%. Encoding fix required to discover.',
+  },
+
+  'imacec-yoy': {
+    seriesId: 'F032.IMC.IND.Z.Z.EP18.Z.Z.0.M',
+    verified: true,
+    frequency: 'MONTHLY',
+    transformation: 'yoy',
+    staticId: 'imacec-anual',
+    sourceName: 'Imacec a costo de factores, serie empalmada (índice 2018=100)',
+    confidence: 'high',
+    verificationDate: '2026-06-25',
+    verificationMethod: 'BCCh SearchSeries + GetSeries validation',
+    notes: 'IMACEC level index (base 2018=100). No direct 12m variation series found in BCCh catalog; transformation=yoy derives the yoy % change. Latest Apr-2026 = 114.24 (index level). Encoding fix required to discover.',
+  },
+
+  unemployment: {
+    seriesId: 'F049.DES.TAS.INE.10.M',
+    verified: true,
+    frequency: 'MONTHLY',
+    transformation: 'none',
+    staticId: 'desempleo',
+    sourceName: 'Tasa de desocupación, total | Ajustada estacionalmente | INE | Mensual | Porcentaje',
+    confidence: 'high',
+    verificationDate: '2026-06-25',
+    verificationMethod: 'BCCh SearchSeries + GetSeries validation',
+    notes: 'INE total unemployment rate, seasonally adjusted, national. Latest Apr-2026 = 8.9%. Encoding fix required to discover.',
+  },
 
   // Copper: BCCh series is USD/oz (F019.PPB.PRE.100.D). UI expects CLP/lb. Unit
   // mismatch — keep disabled here; source externally in a later phase.

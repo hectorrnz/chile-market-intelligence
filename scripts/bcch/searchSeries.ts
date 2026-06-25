@@ -16,6 +16,7 @@ import pkg from '@next/env'
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { decodeResponseText, normalizeSearchText } from '../../src/lib/providers/textDecode.ts'
 
 // Load .env.local (and .env) exactly as Next.js does, so credentials are
 // available in process.env before the credential check below.
@@ -30,9 +31,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const OUT_DIR = join(__dirname, '..', '..', 'tmp')
 const OUT_FILE = join(OUT_DIR, 'bcch-series-candidates.json')
 
-function strip(s: string): string {
-  return (s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
-}
+// Alias for keyword-matching normalization (accent-insensitive, lowercase).
+const strip = normalizeSearchText
 
 // Keyword tiers per indicator. `qualifier` (when present) must also appear to
 // reach high confidence — used to separate m/m from 12m variants.
@@ -100,7 +100,10 @@ async function searchFrequency(base: string, user: string, pass: string, frequen
   try {
     const res = await fetch(`${base}?${params.toString()}`, { signal: controller.signal, headers: { Accept: 'application/json' } })
     if (!res.ok) { console.warn(`  SearchSeries(${frequency}) HTTP ${res.status}`); return [] }
-    return extractSeries(await res.json())
+    // Use decodeResponseText instead of res.json() to handle BCCh's encoding
+    // (Content-Type may lack a charset declaration; content is often ISO-8859-1).
+    const text = await decodeResponseText(res)
+    return extractSeries(JSON.parse(text))
   } catch (e) {
     const aborted = e instanceof Error && e.name === 'AbortError'
     console.warn(`  SearchSeries(${frequency}) ${aborted ? 'timed out' : 'failed'}`)

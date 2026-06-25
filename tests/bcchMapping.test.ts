@@ -15,8 +15,8 @@ test('manual map: unverified entries have null seriesId; verified entries have a
       assert.equal(e.seriesId, null, `unverified entry "${key}" must keep seriesId=null (no guessing)`)
     }
   }
-  // Phase 4B.1 mapped 6 series
-  assert.ok(verifiedCount() >= 6, `expected at least 6 verified entries, got ${verifiedCount()}`)
+  // Phase 4B.1 mapped 6, Phase 4B.2 added 5 more = 11 total
+  assert.ok(verifiedCount() >= 11, `expected at least 11 verified entries, got ${verifiedCount()}`)
 })
 
 test('manual map: includes the required indicator keys', () => {
@@ -29,8 +29,8 @@ test('manual map: includes the required indicator keys', () => {
 })
 
 test('isManualSeriesLive: only verified + seriesId counts as live', () => {
-  // Use a known-unverified entry (ipc-mom remains pending)
-  const unverified = bcchSeriesManualMap['ipc-mom']
+  // Use a known-unverified entry (copper remains pending — unit mismatch)
+  const unverified = bcchSeriesManualMap['copper']
   assert.equal(isManualSeriesLive(undefined), false)
   assert.equal(isManualSeriesLive({ ...unverified }), false)                    // verified=false, seriesId=null
   assert.equal(isManualSeriesLive({ ...unverified, verified: true }), false)    // verified but no seriesId
@@ -38,6 +38,9 @@ test('isManualSeriesLive: only verified + seriesId counts as live', () => {
   // Confirmed live entries should return true
   assert.equal(isManualSeriesLive(bcchSeriesManualMap.tpm), true)
   assert.equal(isManualSeriesLive(bcchSeriesManualMap.uf), true)
+  assert.equal(isManualSeriesLive(bcchSeriesManualMap['ipc-mom']), true)
+  assert.equal(isManualSeriesLive(bcchSeriesManualMap['ipc-yoy']), true)
+  assert.equal(isManualSeriesLive(bcchSeriesManualMap['usdclp']), true)
 })
 
 test('every manual entry has a staticId for the fallback path', () => {
