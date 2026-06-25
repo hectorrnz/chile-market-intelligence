@@ -29,9 +29,24 @@ There is also a dedicated API for the banking sector:
   could significantly affect share price. Examples: dividends, M&A, debt issuance, management changes.
 - **II (Información de Interés):** Supplementary filings of general investor interest.
 
-### Public listing pages
+### Portal redesign (confirmed 2025-06-25 during Phase 5A.1 discovery)
 
-The CMF publishes a rolling listing of recent HE/II filings on its portal. Observed entry structure:
+**The old `/sitio/aplic/serdoc/` path is completely dead.** All legacy PHP paths return HTTP 404.
+CMF has migrated to the Newtenberg CMS platform. New base URL: `https://www.cmfchile.cl/portal/principal`.
+
+**Current HE page:** `https://www.cmfchile.cl/institucional/hechos/hechos.php`
+
+This page is a **search form**, not a passive listing. It POSTs/GETs to `hechos2.php` with:
+- Tipo de Entidad (dropdown)
+- Entidad (text), Fecha desde/hasta, Días, Materia
+- **CAPTCHA (required):** `/biblioteca/captcha2/captcha_hechos.php`
+
+### ⚠ CAPTCHA GATE — live scraping blocked
+
+The CMF HE search form requires image CAPTCHA validation before returning results.
+Automated bypass is **prohibited** by project scope rules. This blocks HTML scraping of HE data.
+
+### Expected filing fields (from prior portal — structure likely preserved in results)
 
 | Field | Description |
 |---|---|
@@ -40,29 +55,28 @@ The CMF publishes a rolling listing of recent HE/II filings on its portal. Obser
 | Nro. Documento | Document number — the primary filing identifier |
 | Entidad | Legal entity name (usually uppercase) |
 | Materia | Subject/topic (Spanish, varies by company) |
-| Link | Typically a link to the PDF or HTML filing on cmfchile.cl |
+| Link | Link to PDF or HTML filing on cmfchile.cl |
 
 ### Access
 
-- **Status:** Appears publicly accessible without authentication
-- **Format:** HTML table (Bootstrap-style, server-rendered)
-- **Structure stability:** Moderate — CMF has redesigned its portal before. Parser must be robust
-  to class name and whitespace changes.
-- **Update frequency:** Near real-time during market hours; filings available shortly after submission
-- **Parser difficulty:** Medium — Spanish date formats, inconsistent entity names, link patterns vary
+- **Status:** Search form accessible publicly; results require CAPTCHA — **not automatable via HTML**
+- **Format:** Unknown (results served by `hechos2.php`; not yet inspected due to CAPTCHA)
+- **Update frequency:** Near real-time during market hours
+- **Parser difficulty:** N/A until CAPTCHA-free path found
 
 ### Rate limit / robots
 
-- No published API rate limit for public HTML pages
-- Must use a conservative User-Agent and request interval
-- **Do not hammer the portal.** One request per discovery run is sufficient for a 7-day sample.
-- Check robots.txt before any automated ingestion in Phase 5A.1
+- CAPTCHA itself functions as an access control
+- Must use a conservative User-Agent; never hammer the portal
+- Subscription service available: `/institucional/publicaciones/suscripcion_interes/`
 
 ### Recommended phase
 
-- **5A:** Architecture, parser design, fixture-based tests (current)
-- **5A.1:** Run `discoverHechos.ts`, validate parser against real output, confirm field extraction
-- **5B+:** Scheduled ingestion with Supabase persistence
+- **5A:** Architecture, parser design, fixture-based tests ✓ COMPLETE
+- **5A.1:** Portal discovery run ✓ COMPLETE — CAPTCHA gate found, live HTML scraping blocked
+- **5A.2-alt:** Identify CAPTCHA-free access path (CMF API, licensed data feed, or broker provider)
+  before enabling live CMF HE ingestion
+- **5B+:** Supabase persistence design — proceed with static data
 
 ### Known caveats
 
@@ -169,11 +183,34 @@ The CMF publishes quarterly and annual financial statements in XBRL format for i
 
 ---
 
-## Phase 5A.1 Next Steps
+## Phase 5A.1 — Discovery Results (2026-06-25)
 
-1. Run `npm run cmf:discover-hechos` to fetch and parse the public HE listing.
-2. Inspect `tmp/cmf-hechos-discovery.json` for field coverage and parser confidence.
-3. Confirm entity name → ticker mapping for top 10 issuers in `cmfEntityMap.ts`.
-4. If parser confidence is ≥ 0.8 for most rows, proceed to scheduled ingestion design.
-5. Document any format issues or missing fields in this file.
-6. Confirm robots.txt policy at cmfchile.cl before any scheduled runs.
+Discovery ran successfully. Findings:
+
+1. **Old `/sitio/aplic/serdoc/` paths:** All HTTP 404 — legacy portal completely offline.
+2. **Current HE URL:** `https://www.cmfchile.cl/institucional/hechos/hechos.php`
+   (found via homepage link extraction).
+3. **CAPTCHA gate confirmed:** Form requires image CAPTCHA before serving results.
+   Automated HTML scraping blocked — CAPTCHA bypass prohibited by project rules.
+4. **Parser status:** `hechosListParser.ts` is correct for HTML tables; 0 rows returned
+   because no table data is served without CAPTCHA. All 114 tests pass.
+5. **Entity mapping:** All 25 entries remain `verified:false` — no official CMF data obtained.
+6. **Subscription service found:** `/institucional/publicaciones/suscripcion_interes/` —
+   manual email alerts only, not machine-readable.
+
+## Phase 5A.2-alt — Paths to CAPTCHA-Free Access
+
+Before enabling live CMF HE ingestion, confirm one of:
+
+1. **CMF api.cmf.cl** — banking/insurance API; verify if Mercado de Valores HE are covered.
+2. **Direct `hechos2.php` URL with known params** — test if CAPTCHA is only client-side validation;
+   if server enforces it (expected), this path fails. Do not attempt bypass.
+3. **CMF licensed data feed** — CMF may offer institutional data feeds; contact CMF directly.
+4. **Brain Data / broker aggregator** — Phase 4C provider may include CMF HE data in their feed.
+5. **Discovery script `discoverHechos.ts`** — now probes multi-candidate URLs and saves homepage
+   for structural analysis. Update `CMF_HECHOS_CANDIDATES` if a new path is found.
+
+## Next Phase Recommendation
+
+**Proceed to Phase 5B — Supabase persistence design** with static CMF data.
+Live CMF HE ingestion via public HTML is blocked until a CAPTCHA-free path is confirmed.
