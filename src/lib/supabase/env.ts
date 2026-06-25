@@ -4,12 +4,17 @@
 
 import type { SupabaseConfig, SupabaseAdminConfig } from './types'
 
+/** Strip accidental /rest/v1 suffix that the Supabase Dashboard shows in some URL fields. */
+function normalizeProjectUrl(raw: string): string {
+  return raw.replace(/\/rest\/v1\/?$/, '').replace(/\/$/, '')
+}
+
 /** Returns the public Supabase config if both public vars are present, else null. */
 export function getSupabasePublicConfig(): SupabaseConfig | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim()
   if (!url || !key) return null
-  return { url, publishableKey: key }
+  return { url: normalizeProjectUrl(url), publishableKey: key }
 }
 
 /** Returns the admin config if all required server-only vars are present, else null.

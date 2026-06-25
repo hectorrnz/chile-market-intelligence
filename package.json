@@ -12,7 +12,8 @@
         "bcch:validate": "node scripts/bcch/validateSeries.ts",
         "cmf:discover-hechos": "node scripts/cmf/discoverHechos.ts",
         "supabase:check": "node scripts/supabase/checkConnection.ts",
-        "supabase:generate-seed": "node scripts/supabase/generateSeed.ts"
+        "supabase:generate-seed": "node scripts/supabase/generateSeed.ts",
+        "supabase:seed": "node scripts/supabase/applySeed.ts"
     },
     "dependencies": {
         "@supabase/ssr": "^0.12.0",
@@ -28,6 +29,7 @@
         "@types/react-dom": "^19",
         "eslint": "^9",
         "eslint-config-next": "16.2.9",
+        "supabase": "^2.108.0",
         "tailwindcss": "^4",
         "typescript": "^5"
     }
