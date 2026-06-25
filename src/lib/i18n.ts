@@ -141,6 +141,12 @@ export const dict = {
       hybridFallback:  'Hybrid fallback',
       liveUnavailable: 'Live unavailable',
     },
+    marketData: {
+      static:          'Static market data',
+      live:            'Live Bolsa de Santiago',
+      hybridFallback:  'Hybrid fallback',
+      liveUnavailable: 'Market data unavailable',
+    },
     home: {
       tag:              'Dashboard',
       title:            'Market Overview',
@@ -590,6 +596,12 @@ export const dict = {
       live:            'BCCh en vivo',
       hybridFallback:  'Respaldo híbrido',
       liveUnavailable: 'En vivo no disponible',
+    },
+    marketData: {
+      static:          'Datos de mercado estáticos',
+      live:            'Bolsa de Santiago en vivo',
+      hybridFallback:  'Respaldo híbrido',
+      liveUnavailable: 'Datos de mercado no disponibles',
     },
     home: {
       tag:              'Dashboard',

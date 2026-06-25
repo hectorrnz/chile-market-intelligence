@@ -381,6 +381,39 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 4C — Chilean Market Data Provider Architecture** ✓ COMPLETE
+
+Provider abstraction for Chilean equity/index data (Brain Data / Bolsa de Santiago),
+mirroring the BCCh macro pattern. All Brain Data methods return `ok:false` (shell)
+until Phase 4C.1 obtains official credentials and confirms endpoint paths.
+
+Files added/changed:
+- `.env.example` — `MARKET_DATA_MODE`, `BRAIN_DATA_API_BASE_URL`, `BRAIN_DATA_API_KEY` placeholders
+- `docs/market_data_provider_discovery.md` — Brain Data discovery document (auth unknown, all endpoints `❓`)
+- `src/lib/providers/market/types.ts` — provider-facing types: `StockSnapshot`, `StockHistoryPoint`, `IndexSnapshot`, `SectorSnapshot`, `MarketProvider`, `MarketDataMeta`
+- `src/lib/providers/market/marketDataMode.ts` — `parseMarketDataMode()`, `decideMarketSource()`
+- `src/lib/providers/market/staticMarketProvider.ts` — wraps JSON data layer behind `MarketProvider` contract
+- `src/lib/providers/market/brainDataProvider.ts` — shell; every method returns `ok:false` with clear reason; `void param` for unused typed args
+- `src/lib/providers/market/marketProvider.ts` — orchestrator with 5 `resolve*` functions
+- `src/app/api/market/stocks/route.ts` — `GET /api/market/stocks`
+- `src/app/api/market/stocks/[ticker]/route.ts` — `GET /api/market/stocks/[ticker]`
+- `src/app/api/market/stocks/[ticker]/history/route.ts` — `GET /api/market/stocks/[ticker]/history?timeframe=`
+- `src/app/api/market/indices/route.ts` — `GET /api/market/indices`
+- `src/app/api/market/sectors/route.ts` — `GET /api/market/sectors`
+- `src/lib/data/marketData.ts` — client-safe async fetch helpers (`fetchStockSnapshots`, etc.)
+- `src/config/tickerMap.ts` — 25 Chilean equity ticker mappings, all `verified:false` / `providerSymbol:null`
+- `src/config/marketDataProviders.ts` — Brain Data config + `isBrainDataConfigured()`
+- `src/components/ui/MarketDataSourceBadge.tsx` — market-specific source badge
+- `src/lib/i18n.ts` — `marketData.*` section (en/es)
+- `tests/marketDataMode.test.ts` — 9 tests for `parseMarketDataMode` + `decideMarketSource`
+- `tests/marketProvider.test.ts` — 10 tests for Brain Data shell + ticker map invariants
+- Build 19 routes · lint 0 · tests 72/72 · static fallback works with no env vars
+
+Next: **Phase 4C.1** (obtain Brain Data credentials, confirm endpoints, implement actual provider calls)
+or **Phase 5** (Supabase persistence).
+
+---
+
 **Phase 4B — BCCh Series Mapping, Encoding Fix & Production Deploy** ✓ COMPLETE
 
 11 Chilean macro series live in Production from BCCh BDE. Production URL: `https://nevada-market-intelligence.vercel.app` (Deployment `dpl_78oUQvyNRfiFma58PAupzGrygggn`).
@@ -406,8 +439,6 @@ Files added/changed (all sub-phases):
 - `bcu-5` — BCU bonds stale (last issued 2011-2013); BUF 5Y covers combined BCU/BTU.
 - `pdbc-90d` — BCCh discontinued 90d PDBC; active is 14d. UI label needs update before mapping.
 - `tpm-tna` — TPM IS the nominal annual rate; no distinct TNA series found.
-
-Next: **Phase 4C** (stock price provider) or **Phase 5** (CMF filings ingestion).
 
 ---
 

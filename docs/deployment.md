@@ -93,10 +93,17 @@ Add these in the Vercel dashboard under **Settings → Environment Variables**, 
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | Phase 5 |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase public anon key | Phase 5 |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase server-side key (secret) | Phase 5 |
-| `BCCH_API_USER` | Banco Central BDE API username | Phase 4 |
-| `BCCH_API_PASS` | Banco Central BDE API password | Phase 4 |
-| `CMF_API_KEY` | CMF filing API key (if required) | Phase 4 |
-| `MARKET_DATA_API_KEY` | Bolsa/Brain Data price feed key | Phase 7 |
+| `DATA_MODE` | `static`/`live`/`hybrid` for BCCh macro (`static` default) | Phase 4A |
+| `BCCH_API_USER` | Banco Central BDE API username | Phase 4B |
+| `BCCH_API_PASSWORD` | Banco Central BDE API password | Phase 4B |
+| `BCCH_API_BASE_URL` | BCCh BDE base URL (optional override) | Phase 4B |
+| `MARKET_DATA_MODE` | `static`/`live`/`hybrid` for market prices (`static` default) | Phase 4C |
+| `BRAIN_DATA_API_BASE_URL` | Brain Data / Bolsa de Santiago base URL | Phase 4C.1 |
+| `BRAIN_DATA_API_KEY` | Brain Data API key | Phase 4C.1 |
+| `CMF_API_KEY` | CMF filing API key (if required) | Future |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | Phase 5 |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase public anon key | Phase 5 |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase server-side key (secret) | Phase 5 |
 | `NEWS_API_KEY` | News ingestion API key | Future |
 
 **Never commit `.env.local` to version control.** It is listed in `.gitignore`.

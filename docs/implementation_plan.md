@@ -342,3 +342,25 @@ this phase) — all series remain disabled and the app serves static data.
 
 Next: **Phase 4B.1** — run discovery with credentials, confirm & enable series.
 Later phases (CMF, earnings, stock prices, US macro live, news) remain out of scope.
+
+---
+
+## Phase 4C — Chilean Market Data Provider Architecture ✓
+
+Provider abstraction for Chilean equity/index data (Brain Data / Bolsa de Santiago),
+mirroring the Phase 4A BCCh pattern. App continues to serve static data in production;
+all Brain Data methods return `ok:false` until Phase 4C.1 obtains official credentials.
+
+- `MARKET_DATA_MODE` env var (separate from `DATA_MODE`): `static` / `live` / `hybrid`.
+- Provider abstraction: `src/lib/providers/market/` — types, mode, static, brainData, orchestrator.
+- 5 API routes: `/api/market/stocks`, `/api/market/stocks/[ticker]`, `/api/market/stocks/[ticker]/history`, `/api/market/indices`, `/api/market/sectors`.
+- Client-safe helpers: `src/lib/data/marketData.ts` (`fetchStockSnapshots`, etc.).
+- Ticker map: `src/config/tickerMap.ts` — 25 Chilean equities, all `verified:false` / `providerSymbol:null`.
+- Config: `src/config/marketDataProviders.ts` — Brain Data endpoints (all `status:'pending'`).
+- Discovery doc: `docs/market_data_provider_discovery.md`.
+- `MarketDataSourceBadge` component + `marketData.*` i18n keys.
+- Tests: `tests/marketDataMode.test.ts` (9), `tests/marketProvider.test.ts` (10). Total suite: 72/72.
+- Build: 19 routes · lint 0 · tests 72/72.
+
+Next: **Phase 4C.1** — obtain Brain Data API credentials, confirm endpoints and auth method,
+implement actual provider calls, confirm ticker symbol mappings against securities master, deploy to Preview.
