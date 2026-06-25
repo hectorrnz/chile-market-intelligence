@@ -20,9 +20,14 @@ export interface BcchSeriesPoint {
   value: number | null  // null for missing/NaN observations
 }
 
+/** Strip UTF-8 BOM (U+FEFF) that Windows editors or piped stdin may prepend to env var values. */
+function stripBom(s: string | undefined): string | undefined {
+  return s?.replace(/^﻿/, '').trim()
+}
+
 /** True only when both BCCh credentials are present in server env. */
 export function isBcchConfigured(): boolean {
-  return Boolean(process.env.BCCH_API_USER && process.env.BCCH_API_PASSWORD)
+  return Boolean(stripBom(process.env.BCCH_API_USER) && stripBom(process.env.BCCH_API_PASSWORD))
 }
 
 /** BCCh returns observation dates as DD-MM-YYYY → normalize to YYYY-MM-DD. */
@@ -79,9 +84,9 @@ export async function fetchBcchSeries(
   seriesCode: string,
   opts?: { firstDate?: string; lastDate?: string }
 ): Promise<ProviderResult<BcchSeriesPoint[]>> {
-  const user = process.env.BCCH_API_USER
-  const pass = process.env.BCCH_API_PASSWORD
-  const base = process.env.BCCH_API_BASE_URL || DEFAULT_BASE_URL
+  const user = stripBom(process.env.BCCH_API_USER)
+  const pass = stripBom(process.env.BCCH_API_PASSWORD)
+  const base = stripBom(process.env.BCCH_API_BASE_URL) || DEFAULT_BASE_URL
   if (!user || !pass) return { ok: false, reason: 'BCCh credentials not configured' }
   if (!seriesCode) return { ok: false, reason: 'No BCCh series code provided' }
 
