@@ -147,6 +147,12 @@ export const dict = {
       hybridFallback:  'Hybrid fallback',
       liveUnavailable: 'Market data unavailable',
     },
+    cmfData: {
+      static:          'Static CMF sample',
+      live:            'Live CMF',
+      hybridFallback:  'Hybrid fallback',
+      liveUnavailable: 'CMF unavailable',
+    },
     home: {
       tag:              'Dashboard',
       title:            'Market Overview',
@@ -602,6 +608,12 @@ export const dict = {
       live:            'Bolsa de Santiago en vivo',
       hybridFallback:  'Respaldo híbrido',
       liveUnavailable: 'Datos de mercado no disponibles',
+    },
+    cmfData: {
+      static:          'Muestra CMF estática',
+      live:            'CMF en vivo',
+      hybridFallback:  'Respaldo híbrido',
+      liveUnavailable: 'CMF no disponible',
     },
     home: {
       tag:              'Dashboard',

@@ -100,7 +100,10 @@ Add these in the Vercel dashboard under **Settings → Environment Variables**, 
 | `MARKET_DATA_MODE` | `static`/`live`/`hybrid` for market prices (`static` default) | Phase 4C |
 | `BRAIN_DATA_API_BASE_URL` | Brain Data / Bolsa de Santiago base URL | Phase 4C.1 |
 | `BRAIN_DATA_API_KEY` | Brain Data API key | Phase 4C.1 |
-| `CMF_API_KEY` | CMF filing API key (if required) | Future |
+| `CMF_DATA_MODE` | `static`/`live`/`hybrid` for CMF Hechos Esenciales (`static` default) | Phase 5A |
+| `CMF_BASE_URL` | CMF portal base URL (optional override, default cmfchile.cl) | Phase 5A |
+| `CMF_USER_AGENT` | Custom User-Agent for CMF requests | Phase 5A |
+| `CMF_REQUEST_TIMEOUT_MS` | Per-request timeout in ms for CMF (default: 8000) | Phase 5A |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | Phase 5 |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase public anon key | Phase 5 |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase server-side key (secret) | Phase 5 |

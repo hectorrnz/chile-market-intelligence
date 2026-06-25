@@ -364,3 +364,27 @@ all Brain Data methods return `ok:false` until Phase 4C.1 obtains official crede
 
 Next: **Phase 4C.1** — obtain Brain Data API credentials, confirm endpoints and auth method,
 implement actual provider calls, confirm ticker symbol mappings against securities master, deploy to Preview.
+
+---
+
+## Phase 5A — CMF Filings Provider Architecture ✓
+
+Provider abstraction for CMF Hechos Esenciales, mirroring Phase 4A (BCCh) and Phase 4C (Brain Data) patterns.
+App continues to serve static CMF data; live parser returns `ok:false` until Phase 5A.1 validates the
+CMF portal HTML structure and confirms safe access.
+
+- Discovery document: `docs/cmf_provider_discovery.md` — page structure, field mapping, robots/rate-limit notes.
+- `CMF_DATA_MODE` env var (independent from `DATA_MODE` / `MARKET_DATA_MODE`): `static` / `live` / `hybrid`. Defaults to `static`.
+- Provider abstraction: `src/lib/providers/cmf/` — `types.ts`, `cmfDataMode.ts`, `cmfClient.ts`, `staticCmfProvider.ts`, `cmfHechosProvider.ts` (shell, returns `ok:false`), `cmfProvider.ts` (orchestrator).
+- HTML parser: `src/lib/providers/cmf/parsers/hechosListParser.ts` — pure regex, no external library; `parserConfidence` 0–1.0 per row; test fixture at `tests/fixtures/cmf/hechos_ultimos_7_dias.html`.
+- 3 API routes: `/api/cmf/hechos`, `/api/cmf/hechos/[documentNumber]`, `/api/cmf/documents/[id]` — all return HTTP 200 with static fallback and metadata.
+- Client-safe helpers: `src/lib/data/cmfData.ts` (`fetchCmfHechos`, `fetchCmfHecho`, `fetchCmfDocument`).
+- Entity map: `src/config/cmfEntityMap.ts` — 25 Chilean tickers, all `verified:false` / `rut:null` / `cmfEntityUrl:null`.
+- `CmfDataSourceBadge` component + `cmfData.*` i18n keys (en/es).
+- Discovery script: `scripts/cmf/discoverHechos.ts` — one request per run, 10s timeout; `npm run cmf:discover-hechos`.
+- Tests: `tests/cmfDataMode.test.ts` (11), `tests/cmfProvider.test.ts` (13), `tests/hechosParser.test.ts` (21). Total suite: 83/83.
+- Build: 22 routes · lint 0 · tests 83/83.
+
+Next: **Phase 5A.1** — run `npm run cmf:discover-hechos`, review parser confidence, confirm HTML structure,
+update `cmfEntityMap.ts` with verified RUTs and entity URLs from official CMF registros, then enable live ingestion.
+Or: **Phase 4C.1** — Brain Data credentials + live market price provider.
