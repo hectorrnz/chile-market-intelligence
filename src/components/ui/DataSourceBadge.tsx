@@ -7,11 +7,12 @@ import type { DataSourceStatus } from '@/lib/providers/types'
  * Compact source/status chip (Phase 4A). Subtle by design — a small dot + label
  * so a static fallback never looks like an error. Mirrors AsOfBadge styling.
  */
-const STATUS_KEY: Record<DataSourceStatus, 'static' | 'live' | 'hybridFallback' | 'liveUnavailable'> = {
+const STATUS_KEY: Record<DataSourceStatus, 'static' | 'live' | 'hybridFallback' | 'liveUnavailable' | 'persisted'> = {
   static: 'static',
   live: 'live',
   'hybrid-fallback': 'hybridFallback',
   'live-unavailable': 'liveUnavailable',
+  persisted: 'persisted',
 }
 
 const DOT_COLOR: Record<DataSourceStatus, string> = {
@@ -19,6 +20,7 @@ const DOT_COLOR: Record<DataSourceStatus, string> = {
   live: 'var(--positive)',
   'hybrid-fallback': 'var(--accent)',
   'live-unavailable': 'var(--warning)',
+  persisted: 'var(--accent)',
 }
 
 export function DataSourceBadge({ status, className = '' }: { status: DataSourceStatus; className?: string }) {

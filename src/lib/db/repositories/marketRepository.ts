@@ -1,4 +1,4 @@
-// Phase 5B — Market data repository.
+﻿// Phase 5B â€” Market data repository.
 // Static source: src/data/stockSnapshots.json + indexPerformance.json + sectorPerformance.json
 // Supabase source: stock_snapshots, index_snapshots, sector_performance tables
 // Falls back to static when DB_MODE=static or Supabase not configured.
@@ -142,7 +142,7 @@ export async function getSectorPerformance(): Promise<DbListResult<SectorSnapsho
 function loadStaticStocks(): StockSnapshotRecord[] {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const raw = require('../../data/companies.json') as Array<Record<string, unknown>>
+    const raw = require('../../../data/companies.json') as Array<Record<string, unknown>>
     return raw
       .filter((c) => c.isTracked)
       .map((c) => ({
@@ -159,7 +159,7 @@ function loadStaticStocks(): StockSnapshotRecord[] {
 function loadStaticIndices(): IndexSnapshotRecord[] {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const raw = require('../../data/indexPerformance.json') as Array<Record<string, unknown>>
+    const raw = require('../../../data/indexPerformance.json') as Array<Record<string, unknown>>
     return raw.map((r) => ({
       indexId: r.id as string,
       name: r.name as string,
@@ -176,7 +176,7 @@ function loadStaticIndices(): IndexSnapshotRecord[] {
 function loadStaticSectors(): SectorSnapshotRecord[] {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const raw = require('../../data/sectorPerformance.json') as Array<Record<string, unknown>>
+    const raw = require('../../../data/sectorPerformance.json') as Array<Record<string, unknown>>
     return raw.map((r) => ({
       sector: r.sector as string,
       dayChangePct: r.dayChangePct as number | undefined,

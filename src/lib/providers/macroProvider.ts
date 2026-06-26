@@ -10,6 +10,11 @@ import { getDataMode, decideSource } from './dataMode'
 import { staticMacroProvider } from './staticMacroProvider'
 import { bcchMacroProvider } from './bcchMacroProvider'
 import { getSeriesByStaticId } from '@/config/macroSeries'
+import { getDbMode, decideDbSource } from '@/lib/db/dbMode'
+import {
+  getMacroObservationsForTimeframe,
+  isSufficientHistory,
+} from '@/lib/db/repositories/macroRepository'
 
 const BCCH_PROVIDER = 'BCCh BDE'
 
@@ -62,18 +67,66 @@ export async function resolveMacroHistory(
   indicatorId: string,
   years: 1 | 3 | 5 | 10
 ): Promise<MacroHistoryResponse> {
-  const requested = getDataMode()
+  const dataMode = getDataMode()
+  const dbMode   = getDbMode()
+  const dbSource = decideDbSource(dbMode)
 
+  // ─── Layer 1: Supabase persisted observations ────────────────────────────
+  if (dbSource === 'supabase') {
+    const persisted = await getMacroObservationsForTimeframe(indicatorId, years)
+    if (persisted.source === 'supabase' && isSufficientHistory(persisted.data, years)) {
+      const latest = persisted.data[persisted.data.length - 1]
+      return {
+        data: persisted.data,
+        metadata: {
+          dataModeRequested: dataMode,
+          dataModeUsed: dataMode,
+          liveAvailable: false,
+          status: 'persisted',
+          source: 'Persisted BCCh via Supabase',
+          lastUpdated: latest?.date ?? '',
+          provider: BCCH_PROVIDER,
+          persistedAvailable: true,
+          observationCount: persisted.data.length,
+          latestObservationDate: latest?.date,
+          dbModeRequested: dbMode,
+          dbModeUsed: 'supabase',
+        },
+      }
+    }
+
+    // Pure supabase mode: no BCCh or static fallback
+    if (dbMode === 'supabase') {
+      return {
+        data: [],
+        metadata: {
+          dataModeRequested: dataMode,
+          dataModeUsed: 'static',
+          liveAvailable: false,
+          status: 'live-unavailable',
+          source: 'Supabase',
+          lastUpdated: '',
+          persistedAvailable: false,
+          fallbackReason: 'Insufficient observations in Supabase for this indicator/timeframe',
+          dbModeRequested: dbMode,
+          dbModeUsed: 'supabase',
+        },
+      }
+    }
+    // DB_MODE=hybrid: fall through to BCCh live or static
+  }
+
+  // ─── Layer 2: BCCh live ──────────────────────────────────────────────────
   let liveOk = false
   let liveReason: string | undefined
   let liveData = null as Awaited<ReturnType<typeof bcchMacroProvider.getHistory>> | null
-  if (requested !== 'static') {
+  if (dataMode !== 'static') {
     liveData = await bcchMacroProvider.getHistory(indicatorId, years)
     if (liveData.ok) liveOk = true
     else liveReason = liveData.reason
   }
 
-  const decision = decideSource(requested, liveOk, liveReason)
+  const decision = decideSource(dataMode, liveOk, liveReason)
 
   if (decision.liveAvailable && liveData && liveData.ok) {
     const points: MacroChartPoint[] = liveData.data.map(p => ({ date: p.date, value: p.value }))
@@ -81,7 +134,7 @@ export async function resolveMacroHistory(
     return {
       data: points,
       metadata: {
-        dataModeRequested: requested,
+        dataModeRequested: dataMode,
         dataModeUsed: decision.dataModeUsed,
         liveAvailable: true,
         status: decision.status,
@@ -89,20 +142,23 @@ export async function resolveMacroHistory(
         lastUpdated: liveData.lastUpdated,
         provider: BCCH_PROVIDER,
         seriesId: seriesId ?? undefined,
+        persistedAvailable: false,
+        dbModeRequested: dbMode,
+        dbModeUsed: 'static',
       },
     }
   }
 
+  // ─── Layer 3: Static fallback ────────────────────────────────────────────
   const stat = await staticMacroProvider.getHistory(indicatorId, years)
   const points: MacroChartPoint[] = stat.ok ? stat.data.map(p => ({ date: p.date, value: p.value })) : []
-  // When no live code is mapped yet, surface that explicitly per spec.
-  const fallbackReason = requested === 'static'
+  const fallbackReason = dataMode === 'static'
     ? undefined
     : (decision.fallbackReason ?? 'No live provider series code mapped yet')
   return {
     data: points,
     metadata: {
-      dataModeRequested: requested,
+      dataModeRequested: dataMode,
       dataModeUsed: 'static',
       liveAvailable: false,
       status: decision.status,
@@ -110,6 +166,9 @@ export async function resolveMacroHistory(
       lastUpdated: stat.ok ? stat.lastUpdated : '',
       fallbackReason,
       provider: 'static',
+      persistedAvailable: false,
+      dbModeRequested: dbMode,
+      dbModeUsed: 'static',
     },
   }
 }

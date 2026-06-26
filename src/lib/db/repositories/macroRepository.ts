@@ -5,7 +5,7 @@
 
 import type { DbListResult } from '../types'
 import type { Json, MacroIndicatorRow, MacroObservationRow } from '../../supabase/database.types'
-import { decideDbSource } from '../dbMode'
+import { decideDbSource } from '../dbMode.ts'
 
 export interface MacroIndicatorRecord {
   id: string
@@ -29,7 +29,7 @@ export interface MacroObservationRecord {
 
 function loadStaticIndicators(): MacroIndicatorRecord[] {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const raw = require('../../data/macroIndicators.json') as Array<Record<string, unknown>>
+  const raw = require('../../../data/macroIndicators.json') as Array<Record<string, unknown>>
   return raw.map((r) => ({
     id: r.id as string,
     region: (r.region as string) ?? 'CL',
@@ -113,7 +113,7 @@ export async function getMacroHistory(
 
 function loadStaticHistory(indicatorId: string, limit: number): MacroObservationRecord[] {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const raw = require('../../data/macroHistory.json') as Array<{ id: string; date: string; value: number }>
+  const raw = require('../../../data/macroHistory.json') as Array<{ id: string; date: string; value: number }>
   return raw
     .filter((r) => r.id === indicatorId)
     .slice(0, limit)
@@ -341,4 +341,154 @@ export async function getMacroIngestionStatus(limit = 10): Promise<{ data: Inges
   }
 
   return { data: [], source: 'static' }
+}
+
+/** Latest ingestion run, optionally filtered by provider / jobType. */
+export async function getLatestIngestionRun(
+  provider?: string,
+  jobType?: string,
+): Promise<{ data: IngestionRunRecord | null; source: 'supabase' | 'static' }> {
+  const source = decideDbSource()
+  if (source !== 'supabase') return { data: null, source: 'static' }
+
+  try {
+    const { getSupabaseServerClient } = await import('../../supabase/server')
+    const db = getSupabaseServerClient()
+    if (db) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let q = (db as any).from('ingestion_runs').select('*').order('started_at', { ascending: false }).limit(1)
+      if (provider) q = q.eq('provider', provider)
+      if (jobType)  q = q.eq('job_type', jobType)
+      const res = await q.maybeSingle()
+      if (!res.error && res.data) {
+        const r = res.data as Record<string, unknown>
+        return {
+          source: 'supabase',
+          data: {
+            id: Number(r.id),
+            provider: String(r.provider ?? ''),
+            jobType: String(r.job_type ?? ''),
+            status: String(r.status ?? ''),
+            startedAt: String(r.started_at ?? ''),
+            finishedAt: r.finished_at != null ? String(r.finished_at) : null,
+            rowsSeen: Number(r.rows_seen ?? 0),
+            rowsInserted: Number(r.rows_inserted ?? 0),
+            errorMessage: r.error_message != null ? String(r.error_message) : null,
+          },
+        }
+      }
+    }
+  } catch { /* fall through */ }
+
+  return { data: null, source: 'static' }
+}
+
+// ─── Chart-ready observation helpers (5C.1) ───────────────────────────────────
+
+/** Last observation per calendar month — preserves ascending sort. */
+export function downsampleMonthly(
+  points: { date: string; value: number }[],
+): { date: string; value: number }[] {
+  const map = new Map<string, { date: string; value: number }>()
+  for (const p of points) map.set(p.date.slice(0, 7), p) // ascending → last wins
+  return [...map.values()].sort((a, b) => a.date.localeCompare(b.date))
+}
+
+/** Last observation per ISO week (Mon–Sun) — preserves ascending sort. */
+export function downsampleWeekly(
+  points: { date: string; value: number }[],
+): { date: string; value: number }[] {
+  const map = new Map<string, { date: string; value: number }>()
+  for (const p of points) {
+    const d = new Date(p.date + 'T00:00:00Z')
+    const day = d.getUTCDay() // 0=Sun
+    const mon = new Date(d)
+    mon.setUTCDate(d.getUTCDate() - ((day + 6) % 7))
+    map.set(mon.toISOString().slice(0, 10), p)
+  }
+  return [...map.values()].sort((a, b) => a.date.localeCompare(b.date))
+}
+
+/** Downsample to chart-appropriate density for the requested timeframe. */
+export function downsampleForTimeframe(
+  points: { date: string; value: number }[],
+  years: 1 | 3 | 5 | 10,
+): { date: string; value: number }[] {
+  if (years === 1) return points          // daily — keep all (~365 max)
+  if (years === 3) return downsampleWeekly(points)
+  return downsampleMonthly(points)        // 5Y / 10Y
+}
+
+/**
+ * True when the data spans at least 70% of the requested timeframe and
+ * the latest point is within the last 6 months (not stale).
+ * Exported for unit testing.
+ */
+export function isSufficientHistory(
+  data: { date: string; value: number }[],
+  years: number,
+): boolean {
+  if (data.length < 2) return false
+  const last = new Date(data[data.length - 1].date + 'T00:00:00Z')
+  const sixMonthsAgo = new Date()
+  sixMonthsAgo.setUTCMonth(sixMonthsAgo.getUTCMonth() - 6)
+  if (last < sixMonthsAgo) return false
+  const first = new Date(data[0].date + 'T00:00:00Z')
+  const spanDays = (last.getTime() - first.getTime()) / 86_400_000
+  return spanDays >= years * 365 * 0.7
+}
+
+/**
+ * Fetch persisted BCCh observations for one indicator from Supabase,
+ * downsampled to chart-appropriate density. Returns `source:'supabase'` on
+ * success, `source:'static'` when Supabase is unconfigured or the query
+ * fails — the caller decides whether to fall back.
+ */
+export async function getMacroObservationsForTimeframe(
+  indicatorId: string,
+  years: 1 | 3 | 5 | 10,
+): Promise<DbListResult<{ date: string; value: number }>> {
+  const src = decideDbSource()
+  if (src !== 'supabase') return { data: [], source: 'static' }
+
+  try {
+    const { getSupabaseServerClient } = await import('../../supabase/server')
+    const db = getSupabaseServerClient()
+    if (!db) return { data: [], source: 'static' }
+
+    // Fetch 1 extra year so yoy-transformed series have enough context
+    const cutoff = new Date()
+    cutoff.setUTCFullYear(cutoff.getUTCFullYear() - years)
+    const fetchFrom = new Date(cutoff)
+    fetchFrom.setUTCFullYear(fetchFrom.getUTCFullYear() - 1)
+
+    const res = await db
+      .from('macro_observations')
+      .select('observation_date, value')
+      .eq('indicator_id', indicatorId)
+      .gte('observation_date', fetchFrom.toISOString().slice(0, 10))
+      .order('observation_date', { ascending: true })
+
+    if (res.error || !res.data) {
+      return { data: [], source: 'static', error: res.error?.message }
+    }
+
+    const cutoffStr = cutoff.toISOString().slice(0, 10)
+    const valid = (res.data as Array<{ observation_date: string; value: number | null }>)
+      .filter(r => r.value != null && r.observation_date >= cutoffStr)
+      .map(r => ({ date: r.observation_date, value: Number(r.value) }))
+
+    return { data: downsampleForTimeframe(valid, years), source: 'supabase' }
+  } catch {
+    return { data: [], source: 'static', error: 'Supabase query failed' }
+  }
+}
+
+/** Thin helper — true when persisted Supabase data is sufficient for the timeframe. */
+export async function hasSufficientMacroHistory(
+  indicatorId: string,
+  years: 1 | 3 | 5 | 10,
+): Promise<boolean> {
+  const result = await getMacroObservationsForTimeframe(indicatorId, years)
+  return result.source === 'supabase' && isSufficientHistory(result.data, years)
 }

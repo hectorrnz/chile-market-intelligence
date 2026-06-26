@@ -8,6 +8,7 @@ const STATUS_KEY: Record<DataSourceStatus, keyof ReturnType<typeof useLang>['t']
   live: 'live',
   'hybrid-fallback': 'hybridFallback',
   'live-unavailable': 'liveUnavailable',
+  persisted: 'persisted',
 }
 
 const DOT_COLOR: Record<DataSourceStatus, string> = {
@@ -15,6 +16,7 @@ const DOT_COLOR: Record<DataSourceStatus, string> = {
   live: 'var(--positive)',
   'hybrid-fallback': 'var(--accent)',
   'live-unavailable': 'var(--warning)',
+  persisted: 'var(--accent)',
 }
 
 /**

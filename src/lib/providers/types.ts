@@ -12,7 +12,7 @@ import type { MacroIndicator, MacroHistoryPoint } from '@/types'
 export type DataMode = 'static' | 'live' | 'hybrid'
 
 /** Resolved status surfaced to the UI badge. */
-export type DataSourceStatus = 'static' | 'live' | 'hybrid-fallback' | 'live-unavailable'
+export type DataSourceStatus = 'static' | 'live' | 'hybrid-fallback' | 'live-unavailable' | 'persisted'
 
 /** Discriminated result returned by every provider call. */
 export type ProviderResult<T> =
@@ -32,6 +32,12 @@ export interface MacroDataMeta {
   provider?: string
   /** Official series code — only set for a single live history series (safe to surface). */
   seriesId?: string
+  // 5C.1 — Supabase read path fields
+  dbModeRequested?: string
+  dbModeUsed?: string
+  persistedAvailable?: boolean
+  observationCount?: number
+  latestObservationDate?: string
 }
 
 export interface MacroIndicatorsResponse {

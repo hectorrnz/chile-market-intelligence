@@ -1,4 +1,4 @@
-// Phase 5B — Documents repository.
+﻿// Phase 5B â€” Documents repository.
 // Static source: src/data/documents.json
 // Supabase source: documents table
 // Falls back to static when DB_MODE=static or Supabase not configured.
@@ -111,7 +111,7 @@ function loadStatic(
 ): DocumentRecord[] {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const raw = require('../../data/documents.json') as Array<Record<string, unknown>>
+    const raw = require('../../../data/documents.json') as Array<Record<string, unknown>>
     let result = raw
     if (ticker) result = result.filter((d) => d.ticker === ticker)
     if (relatedType) result = result.filter((d) => d.relatedType === relatedType)

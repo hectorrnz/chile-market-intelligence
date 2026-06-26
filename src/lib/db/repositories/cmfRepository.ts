@@ -1,4 +1,4 @@
-// Phase 5B — CMF filings repository.
+﻿// Phase 5B â€” CMF filings repository.
 // Static source: src/data/hechos.json (via existing static CMF provider)
 // Supabase source: cmf_filings table
 // Falls back to static when DB_MODE=static or Supabase not configured.
@@ -113,7 +113,7 @@ export async function getCmfFiling(documentNumber: string): Promise<DbResult<Cmf
 function loadStatic(ticker: string | undefined, limit: number): CmfFilingRecord[] {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const raw = require('../../data/hechos.json') as Array<Record<string, unknown>>
+    const raw = require('../../../data/hechos.json') as Array<Record<string, unknown>>
     const filtered = ticker ? raw.filter((h) => h.ticker === ticker) : raw
     return filtered.slice(0, limit).map((h) => ({
       documentNumber: h.id as string | undefined,
@@ -133,7 +133,7 @@ function loadStatic(ticker: string | undefined, limit: number): CmfFilingRecord[
 function findStatic(documentNumber: string): CmfFilingRecord | null {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const raw = require('../../data/hechos.json') as Array<Record<string, unknown>>
+    const raw = require('../../../data/hechos.json') as Array<Record<string, unknown>>
     const h = raw.find((r) => r.id === documentNumber)
     if (!h) return null
     return {

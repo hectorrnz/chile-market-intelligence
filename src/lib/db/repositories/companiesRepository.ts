@@ -1,4 +1,4 @@
-// Phase 5B — Companies repository.
+﻿// Phase 5B â€” Companies repository.
 // Static source: src/data/companies.json
 // Supabase source: companies table
 // Falls back to static when DB_MODE=static or Supabase is not configured.
@@ -33,7 +33,7 @@ export interface CompanyRecord {
 function loadStatic(): CompanyRecord[] {
   // Import is resolved at build time; no dynamic requires.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require('../../data/companies.json') as CompanyRecord[]
+  return require('../../../data/companies.json') as CompanyRecord[]
 }
 
 export async function getCompanies(): Promise<DbListResult<CompanyRecord>> {

@@ -140,18 +140,21 @@ export const dict = {
       live:            'Live BCCh',
       hybridFallback:  'Hybrid fallback',
       liveUnavailable: 'Live unavailable',
+      persisted:       'Persisted BCCh',
     },
     marketData: {
       static:          'Static market data',
       live:            'Live Bolsa de Santiago',
       hybridFallback:  'Hybrid fallback',
       liveUnavailable: 'Market data unavailable',
+      persisted:       'Persisted market data',
     },
     cmfData: {
       static:          'Static CMF sample',
       live:            'Live CMF',
       hybridFallback:  'Hybrid fallback',
       liveUnavailable: 'CMF unavailable',
+      persisted:       'Persisted CMF',
     },
     home: {
       tag:              'Dashboard',
@@ -602,18 +605,21 @@ export const dict = {
       live:            'BCCh en vivo',
       hybridFallback:  'Respaldo híbrido',
       liveUnavailable: 'En vivo no disponible',
+      persisted:       'BCCh persistido',
     },
     marketData: {
       static:          'Datos de mercado estáticos',
       live:            'Bolsa de Santiago en vivo',
       hybridFallback:  'Respaldo híbrido',
       liveUnavailable: 'Datos de mercado no disponibles',
+      persisted:       'Datos de mercado persistidos',
     },
     cmfData: {
       static:          'Muestra CMF estática',
       live:            'CMF en vivo',
       hybridFallback:  'Respaldo híbrido',
       liveUnavailable: 'CMF no disponible',
+      persisted:       'CMF persistido',
     },
     home: {
       tag:              'Dashboard',
