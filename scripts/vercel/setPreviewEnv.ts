@@ -23,14 +23,15 @@ const TEAM_ID    = 'team_HVqm1TUBvxAw8kamPXEGZbW1'
 // Vars to push to Preview only.
 // sensitive=true → encrypted storage; isPublic=true → client-bundle safe (NEXT_PUBLIC_*)
 const PREVIEW_VARS: { key: string; sensitive: boolean }[] = [
-  { key: 'DATA_MODE',                          sensitive: false },
-  { key: 'BCCH_API_USER',                      sensitive: true  },
-  { key: 'BCCH_API_PASSWORD',                  sensitive: true  },
-  { key: 'BCCH_API_BASE_URL',                  sensitive: false },
-  { key: 'DB_MODE',                            sensitive: false },
-  { key: 'NEXT_PUBLIC_SUPABASE_URL',           sensitive: false },
+  { key: 'DATA_MODE',                            sensitive: false },
+  { key: 'BCCH_API_USER',                        sensitive: true  },
+  { key: 'BCCH_API_PASSWORD',                    sensitive: true  },
+  { key: 'BCCH_API_BASE_URL',                    sensitive: false },
+  { key: 'DB_MODE',                              sensitive: false },
+  { key: 'NEXT_PUBLIC_SUPABASE_URL',             sensitive: false },
   { key: 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', sensitive: false },
-  { key: 'SUPABASE_SERVICE_ROLE_KEY',          sensitive: true  },
+  { key: 'SUPABASE_SERVICE_ROLE_KEY',            sensitive: true  },
+  { key: 'CRON_SECRET',                          sensitive: true  },
 ]
 
 const token = process.env.VERCEL_TOKEN?.trim()

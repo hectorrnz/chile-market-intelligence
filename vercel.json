@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/ingest-bcch-macro",
+      "schedule": "30 12 * * 1-5"
+    }
+  ]
+}
