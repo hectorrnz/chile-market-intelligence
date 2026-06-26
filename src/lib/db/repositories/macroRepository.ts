@@ -259,7 +259,9 @@ export interface MacroObservationSummaryRow {
   maxDate: string | null
 }
 
-/** Count observations per indicator_id stored in Supabase. */
+/** Count observations per indicator_id stored in Supabase.
+ *  Uses 2 targeted per-indicator queries instead of a full-table scan so the
+ *  PostgREST 1,000-row default cap does not truncate results. */
 export async function getMacroObservationSummary(): Promise<{ data: MacroObservationSummaryRow[]; source: 'supabase' | 'static' }> {
   const source = decideDbSource()
 
@@ -268,27 +270,39 @@ export async function getMacroObservationSummary(): Promise<{ data: MacroObserva
       const { getSupabaseServerClient } = await import('../../supabase/server')
       const db = getSupabaseServerClient()
       if (db) {
-        // PostgREST doesn't support GROUP BY natively — fetch all and aggregate client-side.
-        // For large tables, switch to a DB function or RPC. For Phase 5C scale this is fine.
-        const res = await db.from('macro_observations').select('indicator_id, observation_date')
-        if (!res.error && res.data) {
-          const map = new Map<string, { count: number; min: string; max: string }>()
-          for (const r of res.data as Array<{ indicator_id: string; observation_date: string }>) {
-            const id = r.indicator_id
-            const date = r.observation_date
-            const cur = map.get(id)
-            if (!cur) map.set(id, { count: 1, min: date, max: date })
-            else {
-              cur.count++
-              if (date < cur.min) cur.min = date
-              if (date > cur.max) cur.max = date
-            }
-          }
-          const rows: MacroObservationSummaryRow[] = [...map.entries()].map(([id, v]) => ({
-            indicatorId: id, count: v.count, minDate: v.min, maxDate: v.max,
-          })).sort((a, b) => a.indicatorId.localeCompare(b.indicatorId))
-          return { data: rows, source: 'supabase' }
-        }
+        // Step 1: get all indicator IDs from the reference table (small, ~28 rows)
+        const { data: indRows, error: indErr } = await db
+          .from('macro_indicators')
+          .select('id')
+          .order('id')
+        if (indErr || !indRows) return { data: [], source: 'supabase' }
+
+        // Step 2: per indicator, run count+min and max in parallel
+        const rows: MacroObservationSummaryRow[] = []
+        await Promise.all(
+          (indRows as Array<{ id: string }>).map(async ({ id }) => {
+            const [countMinRes, maxRes] = await Promise.all([
+              // count: 'exact' returns total in .count; limit(1) returns earliest date
+              db.from('macro_observations')
+                .select('observation_date', { count: 'exact' })
+                .eq('indicator_id', id)
+                .order('observation_date', { ascending: true })
+                .limit(1),
+              db.from('macro_observations')
+                .select('observation_date')
+                .eq('indicator_id', id)
+                .order('observation_date', { ascending: false })
+                .limit(1),
+            ])
+            const count = countMinRes.count ?? 0
+            if (count === 0) return
+            const minDate = (countMinRes.data as Array<{ observation_date: string }> | null)?.[0]?.observation_date ?? null
+            const maxDate = (maxRes.data as Array<{ observation_date: string }> | null)?.[0]?.observation_date ?? null
+            rows.push({ indicatorId: id, count, minDate, maxDate })
+          })
+        )
+        rows.sort((a, b) => a.indicatorId.localeCompare(b.indicatorId))
+        return { data: rows, source: 'supabase' }
       }
     } catch { /* fall through */ }
   }

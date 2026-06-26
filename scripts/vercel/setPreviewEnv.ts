@@ -61,13 +61,13 @@ async function upsertVar(
   const body = { key, value, target: ['preview'], type }
 
   if (prev) {
-    // Already has a preview entry — update it
+    // Already has a preview entry — update value only (never change type; Vercel rejects it for sensitive vars)
     if (prev.target.includes('preview')) {
       const patchUrl = `https://api.vercel.com/v10/projects/${PROJECT_ID}/env/${prev.id}?teamId=${TEAM_ID}`
       const r = await fetch(patchUrl, {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value, type, target: ['preview'] }),
+        body: JSON.stringify({ value, target: ['preview'] }), // omit type — cannot change sensitive→plain/encrypted
       })
       if (!r.ok) throw new Error(`PATCH ${key} failed: ${r.status} ${await r.text()}`)
       return 'updated'
