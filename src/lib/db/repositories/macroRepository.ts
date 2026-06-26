@@ -124,11 +124,11 @@ function loadStaticHistory(indicatorId: string, limit: number): MacroObservation
 
 /** Row shape accepted by the macro_observations upsert. */
 export interface MacroObservationInsert {
-  indicator_id: string | null
+  indicator_id: string
   observation_date: string        // YYYY-MM-DD
   value: number | null
   source_provider: string | null
-  source_series_code: string | null
+  source_series_code: string
   fetched_at: string              // ISO timestamp
   metadata: Json
 }
@@ -152,11 +152,10 @@ export async function upsertMacroObservations(
   for (let i = 0; i < rows.length; i += batchSize) {
     const batch = rows.slice(i, i + batchSize)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (db as any)
-      .from('macro_observations')
-      .upsert(batch, { onConflict: 'indicator_id,observation_date,source_series_code' })
-    if (error) errors.push((error as Error).message)
-    else written += batch.length
+    const { data, error } = await (db as any)
+      .rpc('upsert_macro_obs_batch', { p_rows: batch })
+    if (error) errors.push((error as { message: string }).message)
+    else written += (data as number) ?? batch.length
   }
   return { written, errors }
 }

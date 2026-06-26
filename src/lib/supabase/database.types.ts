@@ -70,11 +70,11 @@ export interface Database {
       macro_observations: {
         Row: {
           id: string
-          indicator_id: string | null
+          indicator_id: string
           observation_date: string
           value: number | null
           source_provider: string | null
-          source_series_code: string | null
+          source_series_code: string
           fetched_at: string
           metadata: Json
         }
