@@ -152,10 +152,11 @@ export async function upsertMacroObservations(
   for (let i = 0; i < rows.length; i += batchSize) {
     const batch = rows.slice(i, i + batchSize)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (db as any)
-      .rpc('upsert_macro_obs_batch', { p_rows: batch })
+    const { error } = await (db as any)
+      .from('macro_observations')
+      .upsert(batch, { onConflict: 'indicator_id,observation_date,source_series_code' })
     if (error) errors.push((error as { message: string }).message)
-    else written += (data as number) ?? batch.length
+    else written += batch.length
   }
   return { written, errors }
 }

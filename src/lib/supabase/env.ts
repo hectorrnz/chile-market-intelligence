@@ -24,7 +24,7 @@ export function getSupabaseAdminConfig(): SupabaseAdminConfig | null {
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim()
   const svc = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
   if (!url || !key || !svc) return null
-  return { url, publishableKey: key, serviceRoleKey: svc }
+  return { url: normalizeProjectUrl(url), publishableKey: key, serviceRoleKey: svc }
 }
 
 /** True when public Supabase vars are present — does not verify reachability. */
