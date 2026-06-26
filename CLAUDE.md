@@ -381,6 +381,31 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 5C.1 — Read Persisted Macro Observations from Supabase** ✓ COMPLETE
+
+Three-layer read priority wired into `resolveMacroHistory()`: Supabase persisted
+observations → BCCh live → static fallback. DataSourceStatus gains `'persisted'` (blue dot).
+
+Read priority by DB_MODE:
+- `DB_MODE=static` → static macroHistory.json only (unchanged)
+- `DB_MODE=supabase` → Supabase only; returns clean unavailable if missing/stale (no BCCh fallback)
+- `DB_MODE=hybrid` → Supabase first; falls through to BCCh live then static if observations missing/stale
+
+Files added/changed in 5C.1:
+- `src/lib/providers/types.ts` — added `'persisted'` to `DataSourceStatus`; new `MacroDataMeta` fields (`dbModeRequested`, `dbModeUsed`, `persistedAvailable`, `observationCount`, `latestObservationDate`)
+- `src/lib/providers/macroProvider.ts` — `resolveMacroHistory()` rewritten with 3-layer logic; imports `getDbMode`, `decideDbSource`, `getMacroObservationsForTimeframe`, `isSufficientHistory`
+- `src/lib/db/repositories/macroRepository.ts` — added: `getLatestIngestionRun`, `downsampleMonthly`, `downsampleWeekly`, `downsampleForTimeframe`, `isSufficientHistory`, `getMacroObservationsForTimeframe`, `hasSufficientMacroHistory`; fixed require paths (`../../data` → `../../../data`)
+- `src/lib/i18n.ts` — `persisted` key in `dataSource`, `cmfData`, `marketData` sections (EN + ES)
+- `src/components/ui/DataSourceBadge.tsx` — `persisted` entry (blue accent dot)
+- `src/components/ui/CmfDataSourceBadge.tsx` — `persisted` entry (blue accent dot)
+- `src/components/ui/MarketDataSourceBadge.tsx` — `persisted` entry (blue accent dot)
+- `src/lib/db/repositories/cmfRepository.ts`, `companiesRepository.ts`, `documentsRepository.ts`, `marketRepository.ts` — fixed same wrong `../../data` require paths
+- `src/app/api/macro/ingestion-status/route.ts` — new read-only endpoint: observation counts + recent ingestion runs
+- `tests/macroReadPriority.test.ts` — 22 new unit tests for pure helpers
+- Build 23 routes · lint 0 · tests 184/184
+
+---
+
 **Phase 5C — BCCh Macro Observations Ingestion** ✓ COMPLETE
 
 Local ingestion pipeline that fetches all 11 verified BCCh series and persists normalized
@@ -406,8 +431,9 @@ Files added/changed in 5C:
 - `tests/bcchMacroIngest.test.ts` — 28 new tests for pure functions
 - Build 22 routes · lint 0 · tests 162/162
 
-Next: **Phase 5D** — wire macro_observations into the live macro provider (serve DB values in hybrid mode).
-Or: **Phase 4C.1** — Brain Data credentials + live market price provider.
+Next options:
+- **Phase 5D** — add scheduled refresh so Supabase observations stay current (Vercel cron or manual trigger)
+- **Phase 4C.1** — Brain Data credentials + live market price provider
 
 ---
 
