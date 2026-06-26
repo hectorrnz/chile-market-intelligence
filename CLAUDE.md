@@ -381,6 +381,42 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 5C.3 — Production Supabase Macro Read Path Deployment** ✓ COMPLETE
+
+Production env vars set via `npm run vercel:set-production-env` (4 newly created Supabase
+vars; 4 BCCh vars already present from Phase 4B — `failed: 0`). Fresh Production deployment
+triggered from Vercel Dashboard. All 6 Production API endpoints validated:
+
+| Endpoint | Result |
+|---|---|
+| `/api/macro` | 10 indicators · status live (BCCh) · no secrets |
+| `/api/macro/history/tpm?timeframe=1Y` | 250 pts · status **persisted** · dbModeUsed supabase |
+| `/api/macro/history/usdclp?timeframe=1Y` | 250 pts · status **persisted** · dbModeUsed supabase |
+| `/api/macro/history/ipc-anual?timeframe=3Y` | 35 pts · status **persisted** · latest 2026-05-01 |
+| `/api/macro/history/imacec-anual?timeframe=3Y` | 34 pts · status **persisted** · latest 2026-04-01 |
+| `/api/macro/ingestion-status` | source supabase · 11 indicators · rows_inserted 18,395 |
+
+No credentials, keys, or errors in any response. Production URL: `https://nevada-market-intelligence.vercel.app`
+
+Files added in 5C.3:
+- `scripts/vercel/setProductionEnv.ts` — sets 8 Production env vars from `.env.local` via Vercel API; PATCH omits `type` to avoid Sensitive-var type-change error
+- `src/lib/db/repositories/macroRepository.ts` — `getMacroObservationSummary()` rewritten: per-indicator targeted queries bypass PostgREST 1,000-row cap
+- `package.json` — `vercel:set-production-env` script
+
+---
+
+**Phase 5C.2 — Vercel Preview Supabase Macro Read Path Validation** ✓ COMPLETE
+
+Preview env vars set via `npm run vercel:set-preview-env`. All 5 history endpoints on the
+Preview URL confirmed `status: 'persisted'` with `source: 'Persisted BCCh via Supabase'`.
+`/api/macro/ingestion-status` confirmed 11 indicators post row-cap fix. No secrets exposed.
+
+Files added in 5C.2:
+- `scripts/vercel/setPreviewEnv.ts` — sets 8 Preview env vars from `.env.local` via Vercel API; omits `type` on PATCH for Sensitive vars
+- `package.json` — `vercel:set-preview-env` script
+
+---
+
 **Phase 5C.1 — Read Persisted Macro Observations from Supabase** ✓ COMPLETE
 
 Three-layer read priority wired into `resolveMacroHistory()`: Supabase persisted
