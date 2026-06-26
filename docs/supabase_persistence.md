@@ -152,3 +152,21 @@ psql $SUPABASE_DATABASE_URL -f supabase/seed.sql
 - `SUPABASE_SERVICE_ROLE_KEY` bypasses RLS — never expose to the browser or log it.
 - `NEXT_PUBLIC_*` vars are bundled into the client; they are safe because RLS restricts what the anon key can do.
 - Supabase is not a dependency for local dev, build, or Vercel deploy — all fallback to static when vars are absent.
+
+---
+
+## URL Format Requirement
+
+`NEXT_PUBLIC_SUPABASE_URL` must be the **base project URL**, not the REST endpoint:
+
+```
+# Correct
+NEXT_PUBLIC_SUPABASE_URL=https://abc123.supabase.co
+
+# Wrong — Supabase Dashboard "REST URL" field shows this, do NOT use it
+NEXT_PUBLIC_SUPABASE_URL=https://abc123.supabase.co/rest/v1
+```
+
+The Supabase JS client appends `/rest/v1` itself. If the URL already contains the suffix, the client constructs double-path URLs (`/rest/v1/rest/v1/table`) which PostgREST rejects with PGRST125 "Invalid path specified in request URL".
+
+`src/lib/supabase/env.ts` — `normalizeProjectUrl()` — strips the suffix defensively from both `getSupabasePublicConfig()` and `getSupabaseAdminConfig()`, but the canonical value in `.env.local` and Vercel should be the base URL without the suffix.

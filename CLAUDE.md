@@ -381,7 +381,7 @@ docs/                 — Project documentation
 
 ## Current Phase
 
-**Phase 5D — Scheduled BCCh Macro Ingestion (Vercel Cron)** ✓ COMPLETE
+**Phase 5D — Scheduled BCCh Macro Ingestion (Vercel Cron)** ✓ COMPLETE (validated 2026-06-26)
 
 Daily cron route that upserts the last 14 days of verified BCCh observations into
 Supabase. Runs weekdays at 12:30 UTC. Secured with `CRON_SECRET`. Idempotent.
@@ -389,22 +389,39 @@ Supabase. Runs weekdays at 12:30 UTC. Secured with `CRON_SECRET`. Idempotent.
 Schedule: `30 12 * * 1-5` (weekday-only; fall back to `* * *` if Hobby plan rejects it)
 Production URL: `https://nevada-market-intelligence.vercel.app/api/cron/ingest-bcch-macro`
 
-Manual trigger:
-- `node scripts/cron/testBcchMacroCron.ts` — local dev (server must be running)
-- `node scripts/cron/testBcchMacroCron.ts --url <preview-url>` — Preview env
+Manual production trigger result (2026-06-26T19:40Z):
+- `status: success` · 11/11 indicators succeeded · `rowsSeen: 2602` · `rowsInserted: 74` · `rowsFailed: 0`
+- `ingestionRunId: 3110210a-9db2-4e11-a99f-5674ff13eee2`
 
-CRON_SECRET configured: Preview ✓ Production ✓ (via `npm run vercel:set-production-env`)
+**Post-deploy fix (5D hotfix):** Production cron was returning `partial_success` with PGRST125
+errors on all 7 daily indicators. Root cause: PostgREST schema cache staleness after
+DDL changes (ADD CONSTRAINT, NOT NULL) made during debugging — PostgREST's `NOTIFY pgrst`
+is blocked by PgBouncer on Supabase Free tier and doesn't reload immediately.
+Separately, `getSupabaseAdminConfig()` was not applying `normalizeProjectUrl()`, meaning
+`.env.local` URLs with the Supabase Dashboard's `/rest/v1` suffix would construct
+double-path requests. Fixed by adding `normalizeProjectUrl()` to the admin config function.
+NEXT_PUBLIC_SUPABASE_URL in `.env.local` and Vercel canonicalized to the bare project URL.
+`upsertMacroObservations` reverted to clean `.upsert(onConflict)` — no delete-then-insert.
 
-Files added in 5D:
+Files added/changed in 5D + 5D hotfix:
 - `src/lib/ingestion/bcchMacroIngestion.ts` — shared incremental/backfill logic; sanitizes errors; records ingestion_runs
 - `src/app/api/cron/ingest-bcch-macro/route.ts` — GET route with Bearer CRON_SECRET auth; sanitized JSON response
 - `vercel.json` — cron schedule `30 12 * * 1-5`
 - `scripts/cron/testBcchMacroCron.ts` — local manual trigger helper
 - `scripts/vercel/setPreviewEnv.ts` + `setProductionEnv.ts` — added CRON_SECRET
+- `src/lib/supabase/env.ts` — `normalizeProjectUrl()` now applied to both public and admin configs
+- `src/lib/db/repositories/macroRepository.ts` — `upsertMacroObservations` uses `.upsert(onConflict)`
 - `tests/cronIngestion.test.ts` — 22 tests (sanitizeError, auth guards, not_configured path, result shape)
+- `tests/supabaseEnv.test.ts` — 8 new URL normalization tests (public + admin, base/suffix/trailing-slash)
+- `docs/supabase_persistence.md` — URL format requirement section
 - `docs/deployment.md` — Phase 5D cron section
 - `package.json` — `cron:test` script
-Build 24 routes · lint 0 · tests 206/206
+Build 24 routes · lint 0 · tests 214/214
+
+**Supabase URL rule:** `NEXT_PUBLIC_SUPABASE_URL` must be the bare project URL
+(`https://ref.supabase.co`), never the REST URL (`https://ref.supabase.co/rest/v1`).
+The `normalizeProjectUrl()` function in `env.ts` strips the suffix defensively,
+but both `.env.local` and Vercel should store the canonical bare URL.
 
 Next options:
 - **Phase 4C.1** — Brain Data credentials + live stock price provider
