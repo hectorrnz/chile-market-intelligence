@@ -14,7 +14,7 @@ import {
   isManualSeriesLive,
   type BcchManualEntry,
   type BcchTransform,
-} from './bcchSeriesManualMap'
+} from './bcchSeriesManualMap.ts'
 
 export type SeriesProvider = 'BCCh' | 'INE' | 'LME' | 'FRED' | 'external'
 export type SeriesFrequency = 'daily' | 'monthly' | 'quarterly'
