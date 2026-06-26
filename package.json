@@ -16,7 +16,8 @@
         "supabase:seed": "node scripts/supabase/applySeed.ts",
         "supabase:check-macro": "node scripts/supabase/checkMacroObservations.ts",
         "ingest:bcch-macro": "node scripts/ingest/bcchMacro.ts",
-        "ingest:bcch-macro:dry": "node scripts/ingest/bcchMacro.ts --all"
+        "ingest:bcch-macro:dry": "node scripts/ingest/bcchMacro.ts --all",
+        "vercel:set-preview-env": "node scripts/vercel/setPreviewEnv.ts"
     },
     "dependencies": {
         "@supabase/ssr": "^0.12.0",

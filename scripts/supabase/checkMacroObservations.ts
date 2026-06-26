@@ -24,21 +24,35 @@ const db = createClient(url, svcKey || publishableKey, { auth: { autoRefreshToke
 async function main() {
   console.log('[check-macro] Checking macro_observations...')
 
-  // ─── All rows (for aggregation) ──────────────────────────────────────────────
-  const { data: allRows, error: allErr } = await db
-    .from('macro_observations')
-    .select('indicator_id, observation_date, value')
-    .order('observation_date', { ascending: true })
+  // ─── All rows (paginated — PostgREST default cap is 1,000) ─────────────────
+  type ObsRow = { indicator_id: string; observation_date: string; value: number }
+  const allRows: ObsRow[] = []
+  const PAGE = 1000
+  let from = 0
+  let fetchErr: { message: string } | null = null
 
-  if (allErr) {
-    const hint = allErr.message.includes('does not exist')
+  while (true) {
+    const { data, error } = await db
+      .from('macro_observations')
+      .select('indicator_id, observation_date, value')
+      .order('observation_date', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error) { fetchErr = error; break }
+    if (!data || data.length === 0) break
+    allRows.push(...(data as ObsRow[]))
+    if (data.length < PAGE) break
+    from += PAGE
+  }
+
+  if (fetchErr) {
+    const hint = fetchErr.message.includes('does not exist')
       ? '\n  → Run supabase/migrations/20260626000000_macro_obs_constraints.sql in SQL Editor first.'
       : ''
-    console.error(`[check-macro] macro_observations query failed: ${allErr.message}${hint}`)
+    console.error(`[check-macro] macro_observations query failed: ${fetchErr.message}${hint}`)
     process.exit(1)
   }
 
-  if (!allRows || allRows.length === 0) {
+  if (allRows.length === 0) {
     console.log('[check-macro] macro_observations: 0 rows — run: npm run ingest:bcch-macro:dry')
     return
   }
@@ -46,7 +60,7 @@ async function main() {
   // ─── Aggregate per indicator ──────────────────────────────────────────────────
   interface Agg { count: number; min: string; max: string; latest: number }
   const agg = new Map<string, Agg>()
-  for (const r of allRows as Array<{ indicator_id: string; observation_date: string; value: number }>) {
+  for (const r of allRows) {
     const cur = agg.get(r.indicator_id)
     if (!cur) {
       agg.set(r.indicator_id, { count: 1, min: r.observation_date, max: r.observation_date, latest: r.value })
