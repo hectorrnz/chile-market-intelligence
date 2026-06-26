@@ -195,3 +195,78 @@ failure, or implausible value causes the route to serve static data and report
 surfaces a `live-unavailable` status (still serving static data underneath).
 Unmapped indicators always stay on static. Credentials are server-only and never
 logged; the BCCh discovery/validation scripts never run during the Vercel build.
+
+## Phase 5D — Vercel Cron: Scheduled BCCh Macro Ingestion
+
+A daily cron job refreshes BCCh macro observations in Supabase so the persisted
+read path stays current without manual intervention.
+
+### How it works
+
+`vercel.json` schedules `GET /api/cron/ingest-bcch-macro` at **12:30 UTC weekdays**.
+Vercel calls the route automatically and passes `Authorization: Bearer <CRON_SECRET>`.
+The route upserts the last **14 days** of all verified BCCh series — idempotent on repeat
+runs. A record is written to `ingestion_runs` for observability.
+
+### Required env vars (in addition to Phase 4B + 5B vars)
+
+| Variable | Purpose | Scope |
+|---|---|---|
+| `CRON_SECRET` | Bearer token for cron route auth | **server-only** |
+
+Set via `npm run vercel:set-production-env` (already done in Phase 5D).
+
+### Setting CRON_SECRET locally
+
+```bash
+# .env.local (never commit)
+CRON_SECRET=<random 32+ char string>
+```
+
+Generate a secret:
+```powershell
+$rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+$bytes = New-Object byte[] 32
+$rng.GetBytes($bytes)
+[Convert]::ToBase64String($bytes) -replace '[+/=]','x'
+```
+
+### Manual trigger (local dev)
+
+```bash
+node scripts/cron/testBcchMacroCron.ts
+# or with a custom URL:
+node scripts/cron/testBcchMacroCron.ts --url https://your-preview.vercel.app
+```
+
+PowerShell:
+```powershell
+$h = @{ Authorization = "Bearer $env:CRON_SECRET" }
+Invoke-RestMethod -Uri http://localhost:3000/api/cron/ingest-bcch-macro -Headers $h
+```
+
+curl:
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/ingest-bcch-macro
+```
+
+### Validation after deploy
+
+```
+GET /api/macro/ingestion-status
+```
+
+Shows `recentRuns[0]` with `job_type: macro_observations_incremental` and `status: success`.
+
+### Security
+
+- `CRON_SECRET` is server-only — never prefixed `NEXT_PUBLIC_`, never logged, never returned in responses.
+- Invalid or missing `Authorization` → `401 Unauthorized` / `500 Cron not configured`.
+- All BCCh and Supabase errors are sanitized (credentials stripped) before appearing in responses.
+- Vercel Cron passes the secret automatically; Vercel Dashboard → Cron Jobs shows run history.
+
+### Failure behavior
+
+If BCCh returns an error for some indicators, the run is recorded as `partial_success`.
+The persisted read path continues serving the last successful observations — no page errors.
+Full backfill can be re-run manually: `npm run ingest:bcch-macro -- --all --write`.

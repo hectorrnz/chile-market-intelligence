@@ -381,6 +381,37 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 5D — Scheduled BCCh Macro Ingestion (Vercel Cron)** ✓ COMPLETE
+
+Daily cron route that upserts the last 14 days of verified BCCh observations into
+Supabase. Runs weekdays at 12:30 UTC. Secured with `CRON_SECRET`. Idempotent.
+
+Schedule: `30 12 * * 1-5` (weekday-only; fall back to `* * *` if Hobby plan rejects it)
+Production URL: `https://nevada-market-intelligence.vercel.app/api/cron/ingest-bcch-macro`
+
+Manual trigger:
+- `node scripts/cron/testBcchMacroCron.ts` — local dev (server must be running)
+- `node scripts/cron/testBcchMacroCron.ts --url <preview-url>` — Preview env
+
+CRON_SECRET configured: Preview ✓ Production ✓ (via `npm run vercel:set-production-env`)
+
+Files added in 5D:
+- `src/lib/ingestion/bcchMacroIngestion.ts` — shared incremental/backfill logic; sanitizes errors; records ingestion_runs
+- `src/app/api/cron/ingest-bcch-macro/route.ts` — GET route with Bearer CRON_SECRET auth; sanitized JSON response
+- `vercel.json` — cron schedule `30 12 * * 1-5`
+- `scripts/cron/testBcchMacroCron.ts` — local manual trigger helper
+- `scripts/vercel/setPreviewEnv.ts` + `setProductionEnv.ts` — added CRON_SECRET
+- `tests/cronIngestion.test.ts` — 22 tests (sanitizeError, auth guards, not_configured path, result shape)
+- `docs/deployment.md` — Phase 5D cron section
+- `package.json` — `cron:test` script
+Build 24 routes · lint 0 · tests 206/206
+
+Next options:
+- **Phase 4C.1** — Brain Data credentials + live stock price provider
+- **Phase 5D.1** — cron observability: Vercel Cron dashboard monitoring, alerting on partial_success runs
+
+---
+
 **Phase 5C.3 — Production Supabase Macro Read Path Deployment** ✓ COMPLETE
 
 Production env vars set via `npm run vercel:set-production-env` (4 newly created Supabase
