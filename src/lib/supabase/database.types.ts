@@ -78,7 +78,7 @@ export interface Database {
           fetched_at: string
           metadata: Json
         }
-        Insert: Omit<Database['public']['Tables']['macro_observations']['Row'], 'id' | 'fetched_at'>
+        Insert: Omit<Database['public']['Tables']['macro_observations']['Row'], 'id'>
         Update: Partial<Database['public']['Tables']['macro_observations']['Insert']>
       }
       stock_snapshots: {

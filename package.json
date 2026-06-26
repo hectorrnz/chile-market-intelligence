@@ -13,7 +13,10 @@
         "cmf:discover-hechos": "node scripts/cmf/discoverHechos.ts",
         "supabase:check": "node scripts/supabase/checkConnection.ts",
         "supabase:generate-seed": "node scripts/supabase/generateSeed.ts",
-        "supabase:seed": "node scripts/supabase/applySeed.ts"
+        "supabase:seed": "node scripts/supabase/applySeed.ts",
+        "supabase:check-macro": "node scripts/supabase/checkMacroObservations.ts",
+        "ingest:bcch-macro": "node scripts/ingest/bcchMacro.ts",
+        "ingest:bcch-macro:dry": "node scripts/ingest/bcchMacro.ts --all"
     },
     "dependencies": {
         "@supabase/ssr": "^0.12.0",

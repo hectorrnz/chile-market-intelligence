@@ -388,3 +388,74 @@ CMF portal HTML structure and confirms safe access.
 Next: **Phase 5A.1** — run `npm run cmf:discover-hechos`, review parser confidence, confirm HTML structure,
 update `cmfEntityMap.ts` with verified RUTs and entity URLs from official CMF registros, then enable live ingestion.
 Or: **Phase 4C.1** — Brain Data credentials + live market price provider.
+
+---
+
+## Phase 5B — Supabase Persistence Foundation ✓
+
+Schema-first Supabase integration. Static fallback always active. DB_MODE defaults to `static`.
+See `docs/supabase_persistence.md` for setup guide.
+
+- 11 tables created via migration `supabase/migrations/20260625000000_create_market_intelligence_core.sql`
+- Seed via SQL Editor or `npm run supabase:seed` (reference data: 4 data_sources, 25 companies, 25 macro_indicators)
+- Repository layer: `src/lib/db/repositories/` — companies, macro, market, cmf, documents, ingestion runs
+- Connection check: `npm run supabase:check`
+- Build 22 routes · lint 0 · tests 134/134
+
+## Phase 5B.1 — Supabase Project Link & Seed ✓
+
+Supabase project `nevada-market-intelligence` (cnxfougkpynovlwsmmdz) linked.
+Migration applied via SQL Editor (Supabase CLI blocked by Windows AppLocker).
+Seed applied. DB_MODE=hybrid active locally. Static fallback confirmed.
+
+Key fixes: URL normalization (`normalizeProjectUrl`), PGRST205 detection, JS-based seed runner.
+
+---
+
+## Phase 5C — BCCh Macro Observations Ingestion ✓
+
+Local ingestion pipeline that fetches all 11 verified BCCh series and persists normalized
+observations into the `macro_observations` Supabase table.
+
+### Prerequisites (one-time)
+1. Paste `supabase/migrations/20260626000000_macro_obs_constraints.sql` into SQL Editor and run.
+   (Adds 3 missing rate indicators + replaces partial index with UNIQUE constraint for upsert.)
+
+### NPM scripts
+| Script | Purpose |
+|--------|---------|
+| `npm run ingest:bcch-macro:dry` | Preview what would be written (no DB writes, --all) |
+| `npm run ingest:bcch-macro -- --all --write` | Full 10Y backfill |
+| `npm run ingest:bcch-macro -- --indicator tpm --years 1 --write` | Single indicator |
+| `npm run ingest:bcch-macro -- --all --years 5 --write` | 5-year write |
+| `npm run supabase:check-macro` | Validate DB counts + latest ingestion run |
+
+### Files added/changed
+- `supabase/migrations/20260626000000_macro_obs_constraints.sql` — UNIQUE constraint + 3 rate indicators
+- `scripts/ingest/bcchMacroCore.ts` — pure testable logic (parseArgs, buildObservationRows, chunk, sanitizeError)
+- `scripts/ingest/bcchMacro.ts` — CLI ingestion script (dry-run / write, sequential BCCh requests, 500-row batches, ingestion_runs record)
+- `scripts/supabase/checkMacroObservations.ts` — validation script (`npm run supabase:check-macro`)
+- `src/lib/db/repositories/macroRepository.ts` — added: upsertMacroObservations, getMacroObservations, getLatestMacroObservation, getMacroObservationSummary, getMacroIngestionStatus
+- `src/lib/supabase/database.types.ts` — fixed macro_observations.Insert to include fetched_at
+- `package.json` — added ingest:bcch-macro, ingest:bcch-macro:dry, supabase:check-macro scripts
+- `tests/bcchMacroIngest.test.ts` — 28 new tests for pure ingestion functions
+- Build 22 routes · lint 0 · tests 162/162
+
+### Ingestion flow
+1. Loads .env.local via @next/env
+2. Validates BCCh credentials + Supabase admin credentials
+3. Gets enabled series from getEnabledSeries() (11 series)
+4. For each: fetches raw BCCh points (with +1 extra year for yoy context)
+5. Applies transformSeries() → filters to requested date window → builds ObservationUpsertRow[]
+6. In dry-run: prints preview. In write mode: upserts in 500-row batches
+7. Records ingestion_runs row with status (dry_run / success / partial_success / failed)
+8. Sequential requests with 200ms delay between indicators
+
+### Security
+- BCCh credentials never printed (sanitizeError strips user=, pass=, key=, JWTs)
+- Supabase service-role key never printed
+- --write flag required for any DB modification (default is dry-run)
+
+Next: **Run the migration in SQL Editor**, then `npm run ingest:bcch-macro:dry`, then `npm run ingest:bcch-macro -- --all --write`.
+Or: **Phase 5D** — wire observations into the live macro provider (serve DB values instead of static).
+Or: **Phase 4C.1** — Brain Data credentials + live market price provider.

@@ -381,6 +381,36 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 5C — BCCh Macro Observations Ingestion** ✓ COMPLETE
+
+Local ingestion pipeline that fetches all 11 verified BCCh series and persists normalized
+observations into the `macro_observations` Supabase table.
+
+**Before first run:** paste `supabase/migrations/20260626000000_macro_obs_constraints.sql`
+into Supabase Dashboard → SQL Editor and run it (adds UNIQUE constraint + 3 rate indicators).
+
+Key scripts added:
+- `npm run ingest:bcch-macro:dry` — preview all series (no writes)
+- `npm run ingest:bcch-macro -- --all --write` — full 10Y backfill
+- `npm run ingest:bcch-macro -- --indicator tpm --years 1 --write` — single indicator
+- `npm run supabase:check-macro` — validate DB counts + latest ingestion run
+
+Files added/changed in 5C:
+- `supabase/migrations/20260626000000_macro_obs_constraints.sql` — UNIQUE constraint on macro_observations + 3 missing rate indicators (btu5, swap2y, swap1y)
+- `scripts/ingest/bcchMacroCore.ts` — pure testable logic (parseArgs, buildObservationRows, chunk, sanitizeError; INGESTION_VERSION=5C.0)
+- `scripts/ingest/bcchMacro.ts` — CLI script (dry-run default, --write for DB, sequential BCCh requests, 500-row batches, records ingestion_runs)
+- `scripts/supabase/checkMacroObservations.ts` — validation: counts/date-range/latest-value per indicator
+- `src/lib/db/repositories/macroRepository.ts` — added: upsertMacroObservations, getMacroObservations, getLatestMacroObservation, getMacroObservationSummary, getMacroIngestionStatus
+- `src/lib/supabase/database.types.ts` — fixed macro_observations.Insert to include fetched_at
+- `package.json` — ingest:bcch-macro, ingest:bcch-macro:dry, supabase:check-macro scripts
+- `tests/bcchMacroIngest.test.ts` — 28 new tests for pure functions
+- Build 22 routes · lint 0 · tests 162/162
+
+Next: **Phase 5D** — wire macro_observations into the live macro provider (serve DB values in hybrid mode).
+Or: **Phase 4C.1** — Brain Data credentials + live market price provider.
+
+---
+
 **Phase 5B.1 — Supabase Project Link & Seed** ✓ COMPLETE
 
 Supabase project `nevada-market-intelligence` linked, migration applied via SQL Editor,

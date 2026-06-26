@@ -4,7 +4,7 @@
 // Falls back to static when DB_MODE=static or Supabase not configured.
 
 import type { DbListResult } from '../types'
-import type { MacroIndicatorRow, MacroObservationRow } from '../../supabase/database.types'
+import type { Json, MacroIndicatorRow, MacroObservationRow } from '../../supabase/database.types'
 import { decideDbSource } from '../dbMode'
 
 export interface MacroIndicatorRecord {
@@ -118,4 +118,227 @@ function loadStaticHistory(indicatorId: string, limit: number): MacroObservation
     .filter((r) => r.id === indicatorId)
     .slice(0, limit)
     .map((r) => ({ indicatorId: r.id, date: r.date, value: r.value }))
+}
+
+// ─── Observation write (admin) ────────────────────────────────────────────────
+
+/** Row shape accepted by the macro_observations upsert. */
+export interface MacroObservationInsert {
+  indicator_id: string | null
+  observation_date: string        // YYYY-MM-DD
+  value: number | null
+  source_provider: string | null
+  source_series_code: string | null
+  fetched_at: string              // ISO timestamp
+  metadata: Json
+}
+
+/**
+ * Upsert macro observations using the service-role admin client.
+ * Requires SUPABASE_SERVICE_ROLE_KEY. Batches into chunks of `batchSize`.
+ * Returns total rows written and any per-batch errors.
+ */
+export async function upsertMacroObservations(
+  rows: MacroObservationInsert[],
+  batchSize = 500,
+): Promise<{ written: number; errors: string[] }> {
+  if (rows.length === 0) return { written: 0, errors: [] }
+  const { getSupabaseAdminClient } = await import('../../supabase/admin')
+  const db = getSupabaseAdminClient()
+  if (!db) return { written: 0, errors: ['Admin Supabase client not configured'] }
+
+  let written = 0
+  const errors: string[] = []
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const batch = rows.slice(i, i + batchSize)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (db as any)
+      .from('macro_observations')
+      .upsert(batch, { onConflict: 'indicator_id,observation_date,source_series_code' })
+    if (error) errors.push((error as Error).message)
+    else written += batch.length
+  }
+  return { written, errors }
+}
+
+// ─── Observation reads (server) ───────────────────────────────────────────────
+
+export interface MacroObservationDetailRecord extends MacroObservationRecord {
+  sourceProvider?: string
+  sourceSeriesCode?: string
+  fetchedAt?: string
+}
+
+/**
+ * Fetch observations for one indicator, ordered by date ascending.
+ * Falls back to static history on error or static mode.
+ */
+export async function getMacroObservations(
+  indicatorId: string,
+  opts?: { from?: string; to?: string; limit?: number },
+): Promise<DbListResult<MacroObservationDetailRecord>> {
+  const source = decideDbSource()
+  const limit = opts?.limit ?? 1200
+
+  if (source === 'supabase') {
+    try {
+      const { getSupabaseServerClient } = await import('../../supabase/server')
+      const db = getSupabaseServerClient()
+      if (!db) return { data: loadStaticHistory(indicatorId, limit) as MacroObservationDetailRecord[], source: 'static' }
+
+      let q = db.from('macro_observations').select('*').eq('indicator_id', indicatorId)
+      if (opts?.from) q = q.gte('observation_date', opts.from)
+      if (opts?.to)   q = q.lte('observation_date', opts.to)
+      q = q.order('observation_date', { ascending: true }).limit(limit)
+
+      const res = await q
+      if (res.error || !res.data) {
+        return { data: loadStaticHistory(indicatorId, limit) as MacroObservationDetailRecord[], source: 'static', error: res.error?.message }
+      }
+      const records: MacroObservationDetailRecord[] = (res.data as Array<Record<string, unknown>>).map(r => ({
+        indicatorId: String(r.indicator_id ?? indicatorId),
+        date: String(r.observation_date),
+        value: Number(r.value),
+        sourceProvider: r.source_provider != null ? String(r.source_provider) : undefined,
+        sourceSeriesCode: r.source_series_code != null ? String(r.source_series_code) : undefined,
+        fetchedAt: r.fetched_at != null ? String(r.fetched_at) : undefined,
+      }))
+      return { data: records, source: 'supabase' }
+    } catch {
+      return { data: loadStaticHistory(indicatorId, limit) as MacroObservationDetailRecord[], source: 'static', error: 'Supabase query failed' }
+    }
+  }
+
+  return { data: loadStaticHistory(indicatorId, limit) as MacroObservationDetailRecord[], source: 'static' }
+}
+
+/** Return the most recent observation for an indicator. Falls back to static. */
+export async function getLatestMacroObservation(
+  indicatorId: string,
+): Promise<{ data: MacroObservationDetailRecord | null; source: 'supabase' | 'static' }> {
+  const source = decideDbSource()
+
+  if (source === 'supabase') {
+    try {
+      const { getSupabaseServerClient } = await import('../../supabase/server')
+      const db = getSupabaseServerClient()
+      if (db) {
+        const res = await db
+          .from('macro_observations')
+          .select('*')
+          .eq('indicator_id', indicatorId)
+          .order('observation_date', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (!res.error && res.data) {
+          const r = res.data as Record<string, unknown>
+          return {
+            source: 'supabase',
+            data: {
+              indicatorId: String(r.indicator_id ?? indicatorId),
+              date: String(r.observation_date),
+              value: Number(r.value),
+              sourceProvider: r.source_provider != null ? String(r.source_provider) : undefined,
+              sourceSeriesCode: r.source_series_code != null ? String(r.source_series_code) : undefined,
+              fetchedAt: r.fetched_at != null ? String(r.fetched_at) : undefined,
+            },
+          }
+        }
+      }
+    } catch { /* fall through */ }
+  }
+
+  const staticRows = loadStaticHistory(indicatorId, 1)
+  return { data: staticRows[0] ? { ...staticRows[0] } : null, source: 'static' }
+}
+
+export interface MacroObservationSummaryRow {
+  indicatorId: string
+  count: number
+  minDate: string | null
+  maxDate: string | null
+}
+
+/** Count observations per indicator_id stored in Supabase. */
+export async function getMacroObservationSummary(): Promise<{ data: MacroObservationSummaryRow[]; source: 'supabase' | 'static' }> {
+  const source = decideDbSource()
+
+  if (source === 'supabase') {
+    try {
+      const { getSupabaseServerClient } = await import('../../supabase/server')
+      const db = getSupabaseServerClient()
+      if (db) {
+        // PostgREST doesn't support GROUP BY natively — fetch all and aggregate client-side.
+        // For large tables, switch to a DB function or RPC. For Phase 5C scale this is fine.
+        const res = await db.from('macro_observations').select('indicator_id, observation_date')
+        if (!res.error && res.data) {
+          const map = new Map<string, { count: number; min: string; max: string }>()
+          for (const r of res.data as Array<{ indicator_id: string; observation_date: string }>) {
+            const id = r.indicator_id
+            const date = r.observation_date
+            const cur = map.get(id)
+            if (!cur) map.set(id, { count: 1, min: date, max: date })
+            else {
+              cur.count++
+              if (date < cur.min) cur.min = date
+              if (date > cur.max) cur.max = date
+            }
+          }
+          const rows: MacroObservationSummaryRow[] = [...map.entries()].map(([id, v]) => ({
+            indicatorId: id, count: v.count, minDate: v.min, maxDate: v.max,
+          })).sort((a, b) => a.indicatorId.localeCompare(b.indicatorId))
+          return { data: rows, source: 'supabase' }
+        }
+      }
+    } catch { /* fall through */ }
+  }
+
+  return { data: [], source: 'static' }
+}
+
+export interface IngestionRunRecord {
+  id: number
+  provider: string
+  jobType: string
+  status: string
+  startedAt: string
+  finishedAt: string | null
+  rowsSeen: number
+  rowsInserted: number
+  errorMessage: string | null
+}
+
+/** Fetch recent ingestion runs from the ingestion_runs table. */
+export async function getMacroIngestionStatus(limit = 10): Promise<{ data: IngestionRunRecord[]; source: 'supabase' | 'static' }> {
+  const source = decideDbSource()
+
+  if (source === 'supabase') {
+    try {
+      const { getSupabaseServerClient } = await import('../../supabase/server')
+      const db = getSupabaseServerClient()
+      if (db) {
+        const res = await db
+          .from('ingestion_runs')
+          .select('*')
+          .order('started_at', { ascending: false })
+          .limit(limit)
+        if (!res.error && res.data) {
+          const runs: IngestionRunRecord[] = (res.data as Array<Record<string, unknown>>).map(r => ({
+            id: Number(r.id),
+            provider: String(r.provider ?? ''),
+            jobType: String(r.job_type ?? ''),
+            status: String(r.status ?? ''),
+            startedAt: String(r.started_at ?? ''),
+            finishedAt: r.finished_at != null ? String(r.finished_at) : null,
+            rowsSeen: Number(r.rows_seen ?? 0),
+            rowsInserted: Number(r.rows_inserted ?? 0),
+            errorMessage: r.error_message != null ? String(r.error_message) : null,
+          }))
+          return { data: runs, source: 'supabase' }
+        }
+      }
+    } catch { /* fall through */ }
+  }
+
+  return { data: [], source: 'static' }
 }
