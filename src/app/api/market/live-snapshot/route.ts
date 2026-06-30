@@ -11,7 +11,7 @@
 // baseline — this route returns 503 and the UI does NOT crash.
 
 import { NextResponse } from 'next/server'
-import yahooFinance from 'yahoo-finance2'
+import YahooFinance from 'yahoo-finance2'
 
 import staticSectors from '@/data/sectorPerformance.json'
 import staticIndices from '@/data/indexPerformance.json'
@@ -21,19 +21,24 @@ import {
   type StaticSector, type StaticIndex, type LiveSnapshot,
 } from '@/lib/market/liveOverlay'
 
-const TIMEOUT_MS = 10_000
+// yahoo-finance2 v3 requires explicit instantiation (breaking change from v2).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const yf = new (YahooFinance as any)({ suppressNotices: ['yahooSurvey'] })
+
+const TIMEOUT_MS = 15_000
 
 export async function GET(): Promise<NextResponse> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
-
   try {
     const allSymbols = [...Object.values(TICKER_YF), ...Object.values(INDEX_YF)]
 
-    // Single batch call — yahoo-finance2 maps to v8 /quote?symbols=...
+    // Single batch call — yahoo-finance2 v3 maps to v8 /quote?symbols=...
     // validateResult:false skips strict schema checks; we type-cast to our subset.
+    const quotePromise = yf.quote(allSymbols, {}, { validateResult: false })
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Timeout')), TIMEOUT_MS),
+    )
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rawQuotes = await (yahooFinance.quote as any)(allSymbols, {}, { validateResult: false })
+    const rawQuotes: any = await Promise.race([quotePromise, timeoutPromise])
     const quotes = Array.isArray(rawQuotes) ? rawQuotes : [rawQuotes]
 
     const { stocks, dayByTicker, succeeded, failed } = buildStocks(quotes)
@@ -52,13 +57,11 @@ export async function GET(): Promise<NextResponse> {
 
     return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } })
   } catch (err) {
-    const isTimeout = err instanceof Error && err.name === 'AbortError'
+    const isTimeout = err instanceof Error && err.message === 'Timeout'
     const reason    = isTimeout ? 'request timed out' : 'provider unavailable'
     return NextResponse.json(
       { error: `Live snapshot unavailable: ${reason}`, provider: 'yahoo-finance', fallbackAvailable: true },
       { status: 503 },
     )
-  } finally {
-    clearTimeout(timer)
   }
 }
