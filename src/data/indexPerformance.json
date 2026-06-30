@@ -49,7 +49,7 @@
   },
   {
     "id": "colcap",
-    "name": "S&P Colombia",
+    "name": "S&P Colombia (proxy)",
     "country": "Colombia",
     "region": "LatAm",
     "value": 1544.5,
@@ -61,7 +61,7 @@
   },
   {
     "id": "bvl-peru",
-    "name": "Peru ETF (EPU)",
+    "name": "Peru ETF proxy (EPU)",
     "country": "Peru",
     "region": "LatAm",
     "value": 83.56,
