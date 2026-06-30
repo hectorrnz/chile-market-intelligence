@@ -456,6 +456,15 @@ Files added/changed:
 - `tests/marketLiveOverlay.test.ts` — 20 tests (ticker map, buildStocks, buildSectors, buildIndices)
 Build 24 routes · lint 0 · tests 234/234
 
+Production deploy (2026-06-30): `dpl_2aHBfYyA5fyzuZTVhLGh4WwXMPJd` · 25 routes · 0 errors
+Production validation:
+- `/api/macro` → 11 indicators · status live (BCCh) · no secrets
+- `/api/macro/history/tpm?timeframe=1Y` → 249 pts · status persisted · dbModeUsed supabase
+- `/api/macro/history/usdclp?timeframe=1Y` → 249 pts · status persisted · latest 2026-06-30
+- `/api/macro/ingestion-status` → 11 indicators · last run 2026-06-30T12:42 UTC · success
+- `/api/market/stocks` → 25 equities · source Static MVP · no errors
+- `/api/market/live-snapshot` → 503 sanitized (Yahoo unreachable in non-browser env) → static fallback active
+
 Next options:
 - **Phase 4C.2** — Persist daily market snapshots to Supabase `market_snapshots` table
 - **Phase 5D.1** — Cron observability: alerting on partial_success runs
