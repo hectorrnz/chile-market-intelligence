@@ -8,6 +8,17 @@ on:
     - cron: '30 21 * * 1-5'
   workflow_dispatch:
     # Allow manual trigger from the GitHub Actions UI
+    inputs:
+      snapshot_type:
+        description: 'Snapshot type for Supabase ingestion'
+        required: false
+        default: 'auto'
+        type: choice
+        options:
+          - auto
+          - midday
+          - close
+          - manual
 
 jobs:
   refresh:
@@ -49,3 +60,23 @@ jobs:
             git commit -m "chore(data): market data refresh via yfinance"
             git push
           fi
+
+      - name: Ingest market snapshot to Supabase
+        if: ${{ env.MARKET_INGEST_SECRET != '' }}
+        continue-on-error: true
+        env:
+          MARKET_INGEST_SECRET: ${{ secrets.MARKET_INGEST_SECRET }}
+        run: |
+          SNAP_TYPE="${{ github.event.inputs.snapshot_type || 'auto' }}"
+          if [ "$SNAP_TYPE" = "auto" ]; then
+            HOUR=$(date -u +%H)
+            if [ "$HOUR" -lt 17 ]; then SNAP_TYPE="midday"; else SNAP_TYPE="close"; fi
+          fi
+          echo "Calling ingest endpoint with snapshotType=${SNAP_TYPE}"
+          RESP=$(curl -sf -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${MARKET_INGEST_SECRET}" \
+            "https://nevada-market-intelligence.vercel.app/api/cron/ingest-market-snapshot?snapshotType=${SNAP_TYPE}" || true)
+          HTTP_CODE=$(echo "$RESP" | tail -1)
+          BODY=$(echo "$RESP" | head -c 800)
+          echo "HTTP status: ${HTTP_CODE}"
+          echo "Response: ${BODY}"

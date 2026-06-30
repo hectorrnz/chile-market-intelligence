@@ -3,9 +3,9 @@
 // Supabase source: stock_snapshots, index_snapshots, sector_performance tables
 // Falls back to static when DB_MODE=static or Supabase not configured.
 
-import type { DbListResult, DbResult } from '../types'
-import type { StockSnapshotRow, IndexSnapshotRow, SectorPerformanceRow } from '../../supabase/database.types'
-import { decideDbSource } from '../dbMode'
+import type { DbListResult, DbResult } from '../types.ts'
+import type { StockSnapshotRow, IndexSnapshotRow, SectorPerformanceRow } from '../../supabase/database.types.ts'
+import { decideDbSource } from '../dbMode.ts'
 
 export interface StockSnapshotRecord {
   ticker: string
@@ -42,7 +42,7 @@ export async function getStockSnapshots(): Promise<DbListResult<StockSnapshotRec
 
   if (source === 'supabase') {
     try {
-      const { getSupabaseServerClient } = await import('../../supabase/server')
+      const { getSupabaseServerClient } = await import('../../supabase/server.ts')
       const db = getSupabaseServerClient()
       if (!db) return { data: loadStaticStocks(), source: 'static' }
       const res = await db.from('stock_snapshots').select('*').order('ticker')
@@ -84,7 +84,7 @@ export async function getIndexSnapshots(): Promise<DbListResult<IndexSnapshotRec
 
   if (source === 'supabase') {
     try {
-      const { getSupabaseServerClient } = await import('../../supabase/server')
+      const { getSupabaseServerClient } = await import('../../supabase/server.ts')
       const db = getSupabaseServerClient()
       if (!db) return { data: loadStaticIndices(), source: 'static' }
       const res = await db.from('index_snapshots').select('*')
@@ -114,7 +114,7 @@ export async function getSectorPerformance(): Promise<DbListResult<SectorSnapsho
 
   if (source === 'supabase') {
     try {
-      const { getSupabaseServerClient } = await import('../../supabase/server')
+      const { getSupabaseServerClient } = await import('../../supabase/server.ts')
       const db = getSupabaseServerClient()
       if (!db) return { data: loadStaticSectors(), source: 'static' }
       const res = await db.from('sector_performance').select('*')
@@ -188,4 +188,165 @@ function loadStaticSectors(): SectorSnapshotRecord[] {
   } catch {
     return []
   }
+}
+
+// ─── Phase 4C.2: Upsert helpers (admin client, server-only) ──────────────────
+
+export interface UpsertResult { inserted: number; updated: number; error?: string }
+
+function sanitizeUpsertError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e)
+  return msg
+    .replace(/eyJ[A-Za-z0-9_.\\-]{40,}/g, '***JWT***')
+    .replace(/key=[A-Za-z0-9_.\\-]{20,}/gi, 'key=***')
+    .slice(0, 300)
+}
+
+export async function upsertStockSnapshots(
+  rows: import('../../ingestion/marketSnapshotIngestion.ts').StockSnapshotInsertRow[],
+): Promise<UpsertResult> {
+  try {
+    const { getSupabaseAdminClient } = await import('../../supabase/admin.ts')
+    const db = getSupabaseAdminClient()
+    if (!db) return { inserted: 0, updated: 0, error: 'Admin client unavailable' }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await (db as any).from('stock_snapshots').upsert(rows, { onConflict: 'ticker,snapshot_date,snapshot_type' })
+    if (res.error) return { inserted: 0, updated: 0, error: sanitizeUpsertError(res.error) }
+    return { inserted: rows.length, updated: 0 }
+  } catch (e) {
+    return { inserted: 0, updated: 0, error: sanitizeUpsertError(e) }
+  }
+}
+
+export async function upsertIndexSnapshots(
+  rows: import('../../ingestion/marketSnapshotIngestion.ts').IndexSnapshotInsertRow[],
+): Promise<UpsertResult> {
+  try {
+    const { getSupabaseAdminClient } = await import('../../supabase/admin.ts')
+    const db = getSupabaseAdminClient()
+    if (!db) return { inserted: 0, updated: 0, error: 'Admin client unavailable' }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await (db as any).from('index_snapshots').upsert(rows, { onConflict: 'index_id,snapshot_date,snapshot_type' })
+    if (res.error) return { inserted: 0, updated: 0, error: sanitizeUpsertError(res.error) }
+    return { inserted: rows.length, updated: 0 }
+  } catch (e) {
+    return { inserted: 0, updated: 0, error: sanitizeUpsertError(e) }
+  }
+}
+
+export async function upsertSectorPerformanceSnapshots(
+  rows: import('../../ingestion/marketSnapshotIngestion.ts').SectorSnapshotInsertRow[],
+): Promise<UpsertResult> {
+  try {
+    const { getSupabaseAdminClient } = await import('../../supabase/admin.ts')
+    const db = getSupabaseAdminClient()
+    if (!db) return { inserted: 0, updated: 0, error: 'Admin client unavailable' }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await (db as any).from('sector_performance').upsert(rows, { onConflict: 'sector,snapshot_date,snapshot_type' })
+    if (res.error) return { inserted: 0, updated: 0, error: sanitizeUpsertError(res.error) }
+    return { inserted: rows.length, updated: 0 }
+  } catch (e) {
+    return { inserted: 0, updated: 0, error: sanitizeUpsertError(e) }
+  }
+}
+
+export async function getMarketSnapshotSummary(): Promise<{
+  stockCount: number
+  indexCount: number
+  sectorCount: number
+  latestSnapshotDate: string | null
+  latestSnapshotType: string | null
+  source: string
+}> {
+  try {
+    const { getSupabaseAdminClient } = await import('../../supabase/admin.ts')
+    const db = getSupabaseAdminClient()
+    if (!db) return fallbackMarketSummary()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stockRes = await (db as any)
+      .from('stock_snapshots')
+      .select('ticker, snapshot_date, snapshot_type', { count: 'exact', head: false })
+      .order('snapshot_date', { ascending: false })
+      .limit(1)
+    if (stockRes.error) return fallbackMarketSummary()
+    const latestRow = stockRes.data?.[0] ?? null
+    const [idxRes, secRes] = await Promise.all([
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (db as any).from('index_snapshots').select('id', { count: 'exact', head: true }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (db as any).from('sector_performance').select('id', { count: 'exact', head: true }),
+    ])
+    return {
+      stockCount:         stockRes.count ?? 0,
+      indexCount:         idxRes.count  ?? 0,
+      sectorCount:        secRes.count  ?? 0,
+      latestSnapshotDate: latestRow?.snapshot_date ?? null,
+      latestSnapshotType: latestRow?.snapshot_type ?? null,
+      source:             'supabase',
+    }
+  } catch {
+    return fallbackMarketSummary()
+  }
+}
+
+function fallbackMarketSummary() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const stocks  = require('../../../data/companies.json') as Array<Record<string, unknown>>
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const indices = require('../../../data/indexPerformance.json') as unknown[]
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const sectors = require('../../../data/sectorPerformance.json') as unknown[]
+    return {
+      stockCount:         stocks.filter(c => c.isTracked).length,
+      indexCount:         indices.length,
+      sectorCount:        sectors.length,
+      latestSnapshotDate: null,
+      latestSnapshotType: null,
+      source:             'static',
+    }
+  } catch {
+    return { stockCount: 0, indexCount: 0, sectorCount: 0, latestSnapshotDate: null, latestSnapshotType: null, source: 'static' }
+  }
+}
+
+export async function getLatestMarketIngestionRun(): Promise<{
+  runId: string | null
+  startedAt: string | null
+  finishedAt: string | null
+  status: string | null
+  rowsInserted: number | null
+  rowsFailed: number | null
+  metadata: Record<string, unknown> | null
+}> {
+  try {
+    const { getSupabaseAdminClient } = await import('../../supabase/admin.ts')
+    const db = getSupabaseAdminClient()
+    if (!db) return emptyRunResult()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await (db as any)
+      .from('ingestion_runs')
+      .select('id, started_at, finished_at, status, rows_inserted, rows_failed, metadata')
+      .eq('provider', 'Yahoo Finance')
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .single()
+    if (res.error || !res.data) return emptyRunResult()
+    const r = res.data
+    return {
+      runId:        r.id        ? String(r.id) : null,
+      startedAt:    r.started_at  ?? null,
+      finishedAt:   r.finished_at ?? null,
+      status:       r.status      ?? null,
+      rowsInserted: r.rows_inserted ?? null,
+      rowsFailed:   r.rows_failed   ?? null,
+      metadata:     r.metadata      ?? null,
+    }
+  } catch {
+    return emptyRunResult()
+  }
+}
+
+function emptyRunResult() {
+  return { runId: null, startedAt: null, finishedAt: null, status: null, rowsInserted: null, rowsFailed: null, metadata: null }
 }

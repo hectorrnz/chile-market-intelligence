@@ -5,8 +5,8 @@
 
 import { createServerClient } from '@supabase/ssr'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getSupabasePublicConfig } from './env'
-import type { Database } from './database.types'
+import { getSupabasePublicConfig } from './env.ts'
+import type { Database } from './database.types.ts'
 
 /**
  * Creates a Supabase server client using the public anon key.

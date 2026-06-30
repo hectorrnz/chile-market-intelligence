@@ -2,7 +2,7 @@
 // Pure functions, no side effects, safe to call during build.
 // Never throws. Never logs secrets.
 
-import type { SupabaseConfig, SupabaseAdminConfig } from './types'
+import type { SupabaseConfig, SupabaseAdminConfig } from './types.ts'
 
 /** Strip accidental /rest/v1 suffix that the Supabase Dashboard shows in some URL fields. */
 function normalizeProjectUrl(raw: string): string {

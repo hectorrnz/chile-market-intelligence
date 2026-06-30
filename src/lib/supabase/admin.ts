@@ -5,8 +5,8 @@
 
 import { createClient } from '@supabase/supabase-js'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getSupabaseAdminConfig } from './env'
-import type { Database } from './database.types'
+import { getSupabaseAdminConfig } from './env.ts'
+import type { Database } from './database.types.ts'
 
 /**
  * Creates a Supabase admin client using the service-role key.

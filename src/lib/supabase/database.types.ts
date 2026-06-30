@@ -96,6 +96,10 @@ export interface Database {
           provider: string | null
           status: string | null
           metadata: Json
+          snapshot_date: string | null
+          snapshot_type: string | null
+          ytd_change_pct: number | null
+          source: string | null
         }
         Insert: Omit<Database['public']['Tables']['stock_snapshots']['Row'], 'id'>
         Update: Partial<Database['public']['Tables']['stock_snapshots']['Insert']>
@@ -129,6 +133,10 @@ export interface Database {
           last_updated: string | null
           provider: string | null
           metadata: Json
+          snapshot_date: string | null
+          snapshot_type: string | null
+          currency: string | null
+          proxy_of: string | null
         }
         Insert: Omit<Database['public']['Tables']['index_snapshots']['Row'], 'id'>
         Update: Partial<Database['public']['Tables']['index_snapshots']['Insert']>
@@ -145,6 +153,10 @@ export interface Database {
           last_updated: string | null
           provider: string | null
           metadata: Json
+          snapshot_date: string | null
+          snapshot_type: string | null
+          top_contributor_pct: number | null
+          worst_contributor_pct: number | null
         }
         Insert: Omit<Database['public']['Tables']['sector_performance']['Row'], 'id'>
         Update: Partial<Database['public']['Tables']['sector_performance']['Insert']>

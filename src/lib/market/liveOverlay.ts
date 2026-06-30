@@ -43,6 +43,12 @@ export const SECTOR_MAP: Record<string, string[]> = {
   'Transport / Airlines': ['LTM'],
 }
 
+// Original index each proxy instrument represents.
+export const INDEX_PROXY_OF: Partial<Record<string, string>> = {
+  'colcap':   'COLCAP',  // ^SPCOSLCP proxies the COLCAP index
+  'bvl-peru': 'BVL',     // EPU (iShares MSCI Peru ETF) proxies the BVL General index
+}
+
 export const INDEX_YF: Record<string, string> = {
   'ipsa':        '^IPSA',
   'sp500':       '^GSPC',
@@ -105,7 +111,7 @@ export type StaticSector = {
   topContributor: string; topContributorPct: number; worstContributor: string; worstContributorPct: number
 }
 
-export type StaticIndex = { id: string; value: number; dayChangePct: number; ytdChangePct: number }
+export type StaticIndex = { id: string; name?: string; country?: string; currency?: string; value: number; dayChangePct: number; ytdChangePct: number }
 
 export function buildStocks(
   quotes: YFQuote[],
