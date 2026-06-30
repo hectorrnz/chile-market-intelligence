@@ -41,8 +41,8 @@ TICKERS: dict[str, str] = {
     'BSANTANDER': 'BSANTANDER.SN',
     'CHILE':      'CHILE.SN',
     'BCI':        'BCI.SN',
-    'SECURITY':   'SECURITY.SN',
-    'ITAUCORP':   'ITAUCORP.SN',
+    'LAS-CONDES': 'LAS-CONDES.SN',
+    'ITAUCL':     'ITAUCL.SN',
     'SQM-B':      'SQM-B.SN',
     'CAP':        'CAP.SN',
     'ENELAM':     'ENELAM.SN',
@@ -67,13 +67,13 @@ TICKERS: dict[str, str] = {
 
 # ── Sector membership — only tracked tickers ───────────────────────────────────
 SECTORS: dict[str, list[str]] = {
-    'Banking':             ['BSANTANDER', 'CHILE', 'BCI', 'SECURITY', 'ITAUCORP'],
+    'Banking':             ['BSANTANDER', 'CHILE', 'BCI', 'ITAUCL'],
     'Retail':              ['FALABELLA', 'CENCOSUD', 'RIPLEY'],
     'Utilities':           ['ENELCHILE', 'ENELAM', 'COLBUN', 'AGUAS-A'],
     'Mining / Lithium':    ['SQM-B', 'CAP'],
     'Pulp & Forestry':     ['CMPC'],
     'Industrials':         ['COPEC', 'VAPORES'],
-    'Real Estate / Malls': ['PARAUCO', 'MALLPLAZA'],
+    'Real Estate / Malls': ['PARAUCO', 'MALLPLAZA', 'LAS-CONDES'],
     'Telecom':             ['ENTEL', 'SONDA'],
     'Consumer':            ['CCU', 'ANDINA-B', 'CONCHATORO'],
     'Transport / Airlines': ['LTM'],

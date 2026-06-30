@@ -117,18 +117,18 @@ test('buildStocks handles missing regularMarketPrice (partial quote) gracefully'
 // ── buildSectors ───────────────────────────────────────────────────────────────
 
 const BASE_SECTORS = [
-  { sector: 'Banking', dayChangePct: 0, ytdChangePct: 5, numberOfStocks: 5, topContributor: 'BSANTANDER', topContributorPct: 0, worstContributor: 'ITAUCORP', worstContributorPct: 0 },
+  { sector: 'Banking', dayChangePct: 0, ytdChangePct: 5, numberOfStocks: 4, topContributor: 'BSANTANDER', topContributorPct: 0, worstContributor: 'ITAUCL', worstContributorPct: 0 },
   { sector: 'Retail',  dayChangePct: 0, ytdChangePct: -3, numberOfStocks: 3, topContributor: 'FALABELLA', topContributorPct: 0, worstContributor: 'RIPLEY', worstContributorPct: 0 },
 ]
 
 test('buildSectors averages day% across live members', () => {
-  const dayByTicker = { BSANTANDER: 2.0, CHILE: 1.0, BCI: 0.0, SECURITY: -1.0, ITAUCORP: -2.0 }
+  const dayByTicker = { BSANTANDER: 2.0, CHILE: 1.0, BCI: 0.0, ITAUCL: -3.0 }
   const result = buildSectors(dayByTicker, BASE_SECTORS)
   const banking = result.find(s => s.sector === 'Banking')!
-  assert.equal(banking.dayChangePct, 0)          // avg of 2,1,0,-1,-2 = 0
-  assert.equal(banking.numberOfStocks, 5)
+  assert.equal(banking.dayChangePct, 0)          // avg of 2,1,0,-3 = 0
+  assert.equal(banking.numberOfStocks, 4)
   assert.equal(banking.topContributor, 'BSANTANDER')
-  assert.equal(banking.worstContributor, 'ITAUCORP')
+  assert.equal(banking.worstContributor, 'ITAUCL')
 })
 
 test('buildSectors keeps static values when no live members available', () => {

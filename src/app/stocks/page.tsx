@@ -173,8 +173,8 @@ export default function StocksPage() {
                   <td className={`py-2.5 px-3 ui-number ${dayPct != null ? changeColor(dayPct) : 'text-muted-fg'}`}>
                     {dayPct != null ? formatPct(dayPct) : '—'}
                   </td>
-                  <td className={`py-2.5 px-3 ui-number ${s ? changeColor(s.ytdChangePct) : 'text-muted-fg'}`}>
-                    {s ? formatPct(s.ytdChangePct) : '—'}
+                  <td className={`py-2.5 px-3 ui-number ${s?.ytdChangePct != null ? changeColor(s.ytdChangePct) : 'text-muted-fg'}`}>
+                    {s?.ytdChangePct != null ? formatPct(s.ytdChangePct) : '—'}
                   </td>
                   <td className="py-2.5 px-3 ui-number text-foreground">
                     {mktCap ? formatLargeCLP(mktCap) : '—'}
