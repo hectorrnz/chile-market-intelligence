@@ -1,148 +1,163 @@
-# Market Data Provider Discovery — Phase 4C
+# Market Data Provider Discovery — Phase 4C / 4C.1-alt
 
-**Last updated:** 2026-06-25  
-**Status:** Architecture complete; Brain Data credentials/official endpoint mapping PENDING  
-**No-scraping policy:** Only official APIs with valid credentials are permitted. No website scraping, no reverse-engineered endpoints.
+**Last updated:** 2026-06-30  
+**Status:** Yahoo Finance free overlay active (Phase 4C.1-alt). Brain Data institutional access blocked.
 
 ---
 
 ## 1. What We Need
 
-The app currently shows static stock prices, index performance, and sector heat-map data from local JSON files. Phase 4C creates the provider abstraction so these can be upgraded to live data when an official market data feed is configured. Data needed:
-
 | Data type | Endpoint concept | Current source |
 |---|---|---|
-| Stock snapshot (price, day %, YTD %) | `/stocks` or `/last-trade` | `src/data/stockPrices.json` |
-| Stock OHLCV history | `/historical-prices` | `src/data/stockHistory.json` |
-| Index level & % change | `/indices` | `src/data/indexPerformance.json` |
-| Sector performance | `/sectors` | `src/data/sectorPerformance.json` |
+| Stock snapshot (price, day %, YTD %) | `/api/market/live-snapshot` (live overlay) | `src/data/stockPrices.json` (static base) |
+| Stock OHLCV history | Static only | `src/data/stockHistory.json` |
+| Index level & % change | `/api/market/live-snapshot` (live overlay) | `src/data/indexPerformance.json` (static base) |
+| Sector performance | Aggregated from stock day% | `src/data/sectorPerformance.json` (static base) |
 
-Tracked tickers: ~25 Bolsa de Santiago equities — see `src/config/tickerMap.ts`.  
-Index: IPSA (primary), plus LatAm/global indices currently from static data.
+Tracked tickers: 25 Bolsa de Santiago equities — see `src/lib/market/liveOverlay.ts`.  
+Indices: IPSA + 10 global (S&P 500, Ibovespa, IPC México, COLCAP, BVL Peru, Euro Stoxx 50, FTSE 100, Nikkei, Hang Seng, KOSPI).
 
 ---
 
-## 2. Preferred Provider: Brain Data / Bolsa de Santiago
+## 2. Preferred Provider: Brain Data / Bolsa de Santiago — BLOCKED
 
-**Brain Data** (`braindata.cl`) is the technology arm of Bolsa de Santiago that provides official market data APIs. They are the authoritative source for Chilean equity data.
+**Brain Data** (`braindata.cl`) is the official technology arm of Bolsa de Santiago. They provide the authoritative source for Chilean equity data with an API product on the BCS marketplace (`marketplace.bolsadesantiago.com`).
 
-### Registration and access
+### Why it is blocked
 
-- **Official site:** https://www.braindata.cl (as of 2026-06-25 — confirm current URL)
-- Access requires registration and an approved account.
-- Pricing and SLA unknown without a signed agreement.
-- API credentials obtained only after account setup.
+Access to the Brain Data API product requires an **institutional account**. The personal "Personas" retail account on `marketplace.bolsadesantiago.com` does not display the "Servicios de información" API product in the available offerings. There is no self-service free trial for individuals.
 
-### Authentication method (UNKNOWN — must confirm with Brain Data)
+To unblock this path, you would need to:
+1. Contact Bolsa de Santiago as an institutional entity (not a personal account)
+2. Negotiate data licensing terms
+3. Obtain API credentials under a firm / RUT empresarial
 
-Brain Data's auth mechanism has not been confirmed from official documentation. Possible approaches:
+**Until institutional access is obtained, Brain Data remains blocked.**  
+The Brain Data provider shell in `src/lib/providers/market/brainDataProvider.ts` returns `ok: false` with a clear reason and falls back to static data automatically. No credentials are required and no code changes are needed to try again later — simply set `BRAIN_DATA_API_KEY` and `BRAIN_DATA_API_BASE_URL` in `.env.local` once credentials are obtained.
 
-| Mode | Env vars needed | Notes |
+---
+
+## 3. Current Solution: Yahoo Finance (Phase 4C.1-alt)
+
+**Yahoo Finance** is used as a free, unofficial, no-registration-required source for market data. This was an explicit decision made with the understanding of its limitations (see Section 5 below).
+
+### Coverage
+
+All 25 Chilean BCS tickers are available via the `.SN` suffix (Bolsa de Santiago):
+
+| Internal | Yahoo symbol | Exchange |
 |---|---|---|
-| API key (header) | `BRAIN_DATA_API_KEY` | Most common for REST market data APIs |
-| OAuth2 client credentials | `BRAIN_DATA_CLIENT_ID`, `BRAIN_DATA_CLIENT_SECRET`, `BRAIN_DATA_AUTH_URL` | Standard for financial data platforms |
-| Combination | Both | Some providers require initial OAuth then use the token as a bearer |
+| BSANTANDER | BSANTANDER.SN | Bolsa de Santiago |
+| CHILE | CHILE.SN | Bolsa de Santiago |
+| BCI | BCI.SN | Bolsa de Santiago |
+| SECURITY | SECURITY.SN | Bolsa de Santiago |
+| ITAUCORP | ITAUCORP.SN | Bolsa de Santiago |
+| SQM-B | SQM-B.SN | Bolsa de Santiago |
+| CAP | CAP.SN | Bolsa de Santiago |
+| ENELAM | ENELAM.SN | Bolsa de Santiago |
+| ENELCHILE | ENELCHILE.SN | Bolsa de Santiago |
+| COLBUN | COLBUN.SN | Bolsa de Santiago |
+| AGUAS-A | AGUAS-A.SN | Bolsa de Santiago |
+| CMPC | CMPC.SN | Bolsa de Santiago |
+| COPEC | COPEC.SN | Bolsa de Santiago |
+| FALABELLA | FALABELLA.SN | Bolsa de Santiago |
+| CENCOSUD | CENCOSUD.SN | Bolsa de Santiago |
+| RIPLEY | RIPLEY.SN | Bolsa de Santiago |
+| PARAUCO | PARAUCO.SN | Bolsa de Santiago |
+| MALLPLAZA | MALLPLAZA.SN | Bolsa de Santiago |
+| ENTEL | ENTEL.SN | Bolsa de Santiago |
+| SONDA | SONDA.SN | Bolsa de Santiago |
+| ANDINA-B | ANDINA-B.SN | Bolsa de Santiago |
+| CCU | CCU.SN | Bolsa de Santiago |
+| CONCHATORO | CONCHATORO.SN | Bolsa de Santiago |
+| LTM | LTM.SN | Bolsa de Santiago |
+| VAPORES | VAPORES.SN | Bolsa de Santiago |
 
-**Required action:** Contact Brain Data / Bolsa de Santiago to obtain:
-1. Official OpenAPI specification or API reference URL
-2. Authentication method
-3. Rate limits and data lag (real-time vs 15-min delay)
-4. Historical data depth
-5. Sandbox/test environment if available
+Indices available via Yahoo Finance standard symbols (`^IPSA`, `^GSPC`, etc.) — see `INDEX_YF` in `src/lib/market/liveOverlay.ts`.
 
-### Known data constraints (assumptions — not confirmed)
+### Implementation
 
-- Chilean equities trade on the **Bolsa de Santiago** (BCS) — primary exchange.
-- IPSA is the benchmark index.
-- Market hours: Santiago time (UTC-3 in summer, UTC-4 in winter).
-- Currency: CLP for all domestic equities.
-- Data lag: unknown — real-time, 15-min delay, or end-of-day depending on subscription tier.
+Two complementary mechanisms:
 
----
+**1. GitHub Actions static refresh (twice daily)**  
+`scripts/refresh/refreshMarketData.py` (Python + yfinance library) runs on a GitHub Actions schedule:
+- **13:30 UTC weekdays** — ~30 min after Bolsa de Santiago opens (09:00 SCL winter)
+- **21:30 UTC weekdays** — after market close (17:30 SCL winter)
 
-## 3. Potential API Surface (NOT confirmed — for discovery only)
+The script fetches YTD close prices via `yf.download()`, computes day % and YTD % from the close series, and writes updated values to `src/data/stockPrices.json`, `sectorPerformance.json`, `indexPerformance.json`, and `marketMeta.json`. GitHub Actions commits only if data changed and pushes to `master`; Vercel auto-redeploys.
 
-Do NOT hard-code these paths until confirmed against official documentation. These are informed guesses based on typical financial data API conventions.
+**2. Next.js API route (on-demand refresh button)**  
+`src/app/api/market/live-snapshot/route.ts` uses the `yahoo-finance2` npm package to batch-quote all 25 tickers + 11 indices in a single request. The UI refresh button calls this route; the response overlays live data on top of the static baseline in client state without requiring a page reload or redeploy.
 
-| Concept | Possible path concept | Status |
-|---|---|---|
-| Securities master | `GET /v*/instruments` or `/securities` | ❓ Unknown |
-| Last trade / snapshot | `GET /v*/prices/last` or `/quotes` | ❓ Unknown |
-| OHLCV history | `GET /v*/prices/history` or `/historical` | ❓ Unknown |
-| Index levels | `GET /v*/indices` | ❓ Unknown |
-| Sector classification | `GET /v*/sectors` | ❓ Unknown |
-| Market summary | `GET /v*/market/summary` | ❓ Unknown |
-
-**All paths in `src/config/marketDataProviders.ts` are marked `status: 'pending'` until confirmed.**
-
----
-
-## 4. Alternative / Fallback Providers
-
-If Brain Data access is not obtainable, these alternatives exist:
-
-| Provider | What it covers | Notes |
-|---|---|---|
-| **Bolsa de Santiago direct** | Real-time IPSA, equities | May require institutional membership |
-| **Refinitiv / LSEG** | Global incl. Chilean equities | Expensive; institutional-grade |
-| **Bloomberg** | Full universe | Very expensive; terminal-based |
-| **Yahoo Finance** | IPSA, some Chilean ADRs | Unofficial API — do NOT use |
-| **Alpha Vantage** | Limited Chilean coverage | Does not cover local BCS symbols |
-
-**Policy:** Only officially licensed/registered data sources. Do not implement Yahoo Finance or any other unofficial scraping method.
+- No API key is required
+- All Yahoo calls are server-side (never exposed to clients)
+- Route has a 10-second timeout; returns 503 on failure
+- Pure aggregation logic lives in `src/lib/market/liveOverlay.ts` (testable without Next.js)
+- 20 unit tests cover ticker mapping, buildStocks, buildSectors, buildIndices
 
 ---
 
-## 5. Current Architecture (Phase 4C)
-
-The provider abstraction was built in Phase 4C. All data flows through server-only route handlers:
+## 4. Data Architecture
 
 ```
-UI components
-  ↓ static sync
-src/lib/data/stocks.ts, stockHistory.ts, indexPerformance.ts, sectorPerformance.ts
-  ↓ optional async upgrade
-src/lib/data/marketData.ts  (fetchStockSnapshots, fetchIndexPerformance, etc.)
-  ↓ HTTP
-/api/market/stocks
-/api/market/stocks/[ticker]
-/api/market/stocks/[ticker]/history
-/api/market/indices
-/api/market/sectors
-  ↓ server-only
-src/lib/providers/market/marketProvider.ts  (orchestrator)
-  ↓
-staticMarketProvider.ts  OR  brainDataProvider.ts
+Static base (always available):
+  src/data/stockPrices.json
+  src/data/sectorPerformance.json
+  src/data/indexPerformance.json
+  src/data/marketMeta.json
+        ↓ (refreshed twice daily by GitHub Actions / yfinance)
+
+Live overlay (on user demand):
+  MarketRefreshButton → fetch /api/market/live-snapshot
+        ↓ (server-only, yahoo-finance2)
+  src/lib/market/liveOverlay.ts (buildStocks / buildSectors / buildIndices)
+        ↓
+  client useState<LiveSnapshot> overlaid on static base
 ```
 
-Brain Data provider is a **shell** — it returns `ok: false, reason: 'Brain Data credentials not configured'` until `BRAIN_DATA_API_KEY` (or confirmed auth fields) are set. The app falls back to static data without breaking.
+Pages with refresh capability:
+- **Home** — Tracked Stocks card + Sector Heat Map card
+- **Stocks** — filter toolbar
+- **Company detail** — SectionHeader actions (price + day% KPIs)
 
 ---
 
-## 6. Ticker Symbol Mapping Status
+## 5. Limitations and Risks
 
-See `src/config/tickerMap.ts` for the full mapping. All Brain Data / Bolsa de Santiago symbols are `verified: false` pending official API confirmation. The `bolsaSymbol` values are our best estimate of the official symbol convention for each equity — to be confirmed against the official securities master endpoint.
+| Risk | Severity | Mitigation |
+|---|---|---|
+| Yahoo Finance API changes without notice | High | Static JSON baseline always available; worst case = prices are stale, not missing |
+| Delayed quotes (15-min) during market hours | Medium | Quotes show "as of" timestamp; user informed data is unofficial |
+| Incomplete market cap data | Low | `marketCapCLP` is `null` when not returned; UI shows `—` |
+| No official SLA | High | App works 100% without live data; fallback is transparent |
+| Rate limiting by Yahoo | Medium | Single batch call per user request; GitHub Actions runs twice daily only |
+| Data is not official BCS data | Critical | Disclaimer shown in app footer; never labeled "official" |
 
----
-
-## 7. Required Next Steps (Phase 4C.1)
-
-1. **Obtain Brain Data API credentials** — register at https://www.braindata.cl or contact via Bolsa de Santiago institutional channel.
-2. **Get official OpenAPI spec** — confirm authentication method, base URL, and endpoint paths.
-3. **Run `npm run market:search`** (to be added in Phase 4C.1) — discover which tickers are in the official securities master.
-4. **Confirm ticker mappings** — set `verified: true` in `src/config/tickerMap.ts` for each confirmed symbol.
-5. **Enable endpoint config** — update `src/config/marketDataProviders.ts` `confirmedEndpoints` with real paths.
-6. **Implement Brain Data provider** — replace TODO shell with actual API calls in `brainDataProvider.ts`.
-7. **Deploy to Preview first** — validate live data on Preview before promoting to Production.
+**This data must never be labeled "official BCS data" or used for trading decisions.**  
+The app footer disclaimer (`AppDisclaimer`) states this explicitly.
 
 ---
 
-## 8. No-Scraping Policy
+## 6. Future Path to Official Data
 
-This project will NEVER:
+When institutional Brain Data / Bolsa de Santiago access is obtained:
+
+1. Set `BRAIN_DATA_API_KEY` and `BRAIN_DATA_API_BASE_URL` in `.env.local` and Vercel
+2. Set `MARKET_DATA_MODE=live` (or `hybrid`)
+3. Confirm endpoint paths against official OpenAPI spec
+4. Implement `brainDataProvider.ts` (shell exists in `src/lib/providers/market/`)
+5. Confirm ticker symbol mapping in `src/config/tickerMap.ts` (all `verified: false`)
+6. Remove or retain yfinance as a fallback based on licensing terms
+
+The architecture supports switching providers without changing the UI layer.
+
+---
+
+## 7. No-Scraping Policy (unchanged)
+
+The project will never:
 - Scrape the Bolsa de Santiago website for prices
-- Use unofficial endpoints from any provider
 - Reverse-engineer private APIs
-- Use Chrome automation, Puppeteer, or similar to extract market data
+- Use Chrome automation or Puppeteer for market data
 
-Only official, registered, credentialed API access is acceptable.
+Yahoo Finance is used via the documented `yfinance` / `yahoo-finance2` libraries which use published Yahoo quote endpoints. This is treated as a temporary free-tier workaround, not a permanent solution.

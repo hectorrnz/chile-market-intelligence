@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useLang } from '@/components/providers/LangProvider'
 import { usePersistentState } from '@/lib/usePersistentState'
@@ -19,6 +19,9 @@ import { getAllNews } from '@/lib/data/news'
 import { getDocumentByRelatedId } from '@/lib/data/documents'
 import { getSectorPerformance } from '@/lib/data/sectorPerformance'
 import { getIndexPerformance } from '@/lib/data/indexPerformance'
+import { formatMarketLastUpdated } from '@/lib/data/marketMeta'
+import { fetchLiveSnapshot, formatLiveTimestamp, type LiveSnapshot } from '@/lib/data/marketLiveData'
+import { MarketRefreshButton } from '@/components/ui/MarketRefreshButton'
 import { formatCLP, formatPct, formatMacroValue, formatMacroChange, formatFx, changeColor } from '@/lib/formatters'
 import type { MacroIndicator, FxRate, ChileanRate } from '@/types'
 
@@ -74,8 +77,24 @@ export default function HomePage() {
   const upcoming = getUpcomingEarnings().slice(0, 2)
   const recent = getRecentResults().slice(0, 2)
   const news = getAllNews()
-  const sectors = getSectorPerformance()
-  const indices = getIndexPerformance()
+  const staticSectors = getSectorPerformance()
+  const staticIndices = getIndexPerformance()
+  const marketUpdated = formatMarketLastUpdated()
+
+  // Live market data state — null until user hits Refresh
+  const [live, setLive] = useState<LiveSnapshot | null>(null)
+  const doRefresh = useCallback(async () => {
+    const data = await fetchLiveSnapshot()
+    if (data) setLive(data)
+  }, [])
+
+  // Merge live overlay with static base
+  const sectors = live?.sectors ?? staticSectors
+  const indices = staticIndices.map(idx => {
+    const lv = live?.indices.find(l => l.id === idx.id)
+    return lv ? { ...idx, value: lv.value, dayChangePct: lv.dayChangePct, ytdChangePct: lv.ytdChangePct } : idx
+  })
+  const liveTimestamp = live ? formatLiveTimestamp(live.lastUpdated) : marketUpdated
   const maxSectorAbs = Math.max(...sectors.map(s => Math.abs(s.dayChangePct)))
 
   const snapshotMap = Object.fromEntries(snapshots.map(s => [s.ticker, s]))
@@ -182,7 +201,13 @@ export default function HomePage() {
         <div className="flex flex-col gap-4 min-h-0" style={{ height: macroH || undefined }}>
           <div className="bg-surface border border-border rounded overflow-hidden shrink-0 flex flex-col">
             <div className="px-4 py-2.5 border-b border-border flex items-center justify-between shrink-0">
-              <span className="ui-label text-muted-fg">{t.home.trackedStocks}</span>
+              <div className="flex items-center gap-2">
+                <span className="ui-label text-muted-fg">{t.home.trackedStocks}</span>
+                <MarketRefreshButton onRefresh={doRefresh} />
+                {liveTimestamp && (
+                  <span className="text-xs text-muted-fg ui-number whitespace-nowrap">{liveTimestamp}</span>
+                )}
+              </div>
               <Link href="/stocks" className="text-xs text-primary hover:underline">{t.stocks.title} →</Link>
             </div>
             <div className="overflow-y-auto" style={{ maxHeight: 190 }}>
@@ -197,15 +222,21 @@ export default function HomePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {trackedRows.map(({ company: c, snap: s }) => (
-                    <tr key={c.ticker} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
-                      <td className="py-1.5 pl-4 pr-3"><Link href={`/companies/${c.ticker}`} className="font-mono text-primary hover:underline">{c.ticker}</Link></td>
-                      <td className="py-1.5 px-3 text-foreground truncate max-w-[110px]">{c.shortName}</td>
-                      <td className={`py-1.5 px-3 text-right ui-number ${s ? changeColor(s.dayChangePct) : 'text-muted-fg'}`}>{s ? formatPct(s.dayChangePct) : '—'}</td>
-                      <td className={`py-1.5 px-3 text-right ui-number ${s ? changeColor(s.ytdChangePct) : 'text-muted-fg'}`}>{s ? formatPct(s.ytdChangePct) : '—'}</td>
-                      <td className="py-1.5 px-3 pr-4 text-right ui-number text-foreground">{c.marketCapCLP ? formatCLP(c.marketCapCLP) : '—'}</td>
-                    </tr>
-                  ))}
+                  {trackedRows.map(({ company: c, snap: s }) => {
+                    const ls = live?.stocks[c.ticker]
+                    const dayPct = ls?.dayChangePct ?? s?.dayChangePct
+                    const ytdPct = s?.ytdChangePct
+                    const mktCap = ls?.marketCapCLP ?? c.marketCapCLP
+                    return (
+                      <tr key={c.ticker} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
+                        <td className="py-1.5 pl-4 pr-3"><Link href={`/companies/${c.ticker}`} className="font-mono text-primary hover:underline">{c.ticker}</Link></td>
+                        <td className="py-1.5 px-3 text-foreground truncate max-w-[110px]">{c.shortName}</td>
+                        <td className={`py-1.5 px-3 text-right ui-number ${dayPct != null ? changeColor(dayPct) : 'text-muted-fg'}`}>{dayPct != null ? formatPct(dayPct) : '—'}</td>
+                        <td className={`py-1.5 px-3 text-right ui-number ${ytdPct != null ? changeColor(ytdPct) : 'text-muted-fg'}`}>{ytdPct != null ? formatPct(ytdPct) : '—'}</td>
+                        <td className="py-1.5 px-3 pr-4 text-right ui-number text-foreground">{mktCap ? formatCLP(mktCap) : '—'}</td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -312,8 +343,9 @@ export default function HomePage() {
 
         {/* Sector heat map — natural height (never scrolls), drives the row */}
         <div ref={heatRef} className="bg-surface border border-border rounded overflow-hidden flex flex-col">
-          <div className="px-4 py-2.5 border-b border-border shrink-0">
+          <div className="px-4 py-2.5 border-b border-border shrink-0 flex items-center justify-between">
             <span className="ui-label text-muted-fg">{t.home.sectorHeatMap}</span>
+            <MarketRefreshButton onRefresh={doRefresh} />
           </div>
           <div className="p-3">
             <div className="grid grid-cols-3 gap-2">

@@ -423,13 +423,73 @@ Build 24 routes · lint 0 · tests 214/214
 The `normalizeProjectUrl()` function in `env.ts` strips the suffix defensively,
 but both `.env.local` and Vercel should store the canonical bare URL.
 
+---
+
+**Phase 4C.1-alt — Yahoo Finance Live Market Overlay** ✓ COMPLETE (2026-06-30)
+
+Brain Data blocked (institutional account required — personal "Personas" account does not
+expose the API product on `marketplace.bolsadesantiago.com`). Yahoo Finance chosen as free
+unofficial alternative. No API key required.
+
+Two-layer architecture:
+1. **GitHub Actions static refresh** (twice daily): `scripts/refresh/refreshMarketData.py` (Python/yfinance) runs at **13:30 UTC** and **21:30 UTC** weekdays. Commits updated JSON if changed; Vercel auto-redeploys.
+2. **Next.js live-snapshot route** (`/api/market/live-snapshot`): uses `yahoo-finance2` npm package server-side; 10-second timeout; sanitized error responses; batch-quotes all 25 tickers + 11 indices; returns `provider`, `symbolsSucceeded`, `symbolsFailed`.
+
+UI refresh button (`MarketRefreshButton`) appears on Home, Stocks, and Company pages. 3-state (idle/loading/done). Static fallback always active — if Yahoo fails, last committed JSON is served and the UI shows no error.
+
+Pure aggregation logic in `src/lib/market/liveOverlay.ts` (no Next.js imports — testable).
+
+Files added/changed:
+- `scripts/refresh/refreshMarketData.py` — Python/yfinance fetch; writes 4 JSON files
+- `scripts/refresh/requirements.txt` — yfinance, pandas
+- `.github/workflows/refresh-market-data.yml` — twice-daily weekday cron + workflow_dispatch
+- `src/lib/market/liveOverlay.ts` — pure ticker maps + buildStocks/buildSectors/buildIndices
+- `src/app/api/market/live-snapshot/route.ts` — GET handler with timeout + metadata
+- `src/lib/data/marketLiveData.ts` — client-safe fetch helper + formatLiveTimestamp
+- `src/lib/data/marketMeta.ts` — formatMarketLastUpdated from static JSON
+- `src/data/marketMeta.json` — static timestamp (null initially)
+- `src/components/ui/MarketRefreshButton.tsx` — 3-state refresh icon button
+- `src/app/page.tsx` — refresh button on Tracked Stocks + Sector Heat Map; live overlay
+- `src/app/stocks/page.tsx` — refresh button in toolbar; live price/dayPct/marketCap overlay
+- `src/app/companies/[ticker]/page.tsx` — refresh button in SectionHeader; live KPI overlay
+- `src/lib/i18n.ts` — common.marketUpdated key
+- `tests/marketLiveOverlay.test.ts` — 20 tests (ticker map, buildStocks, buildSectors, buildIndices)
+Build 24 routes · lint 0 · tests 234/234
+
 Next options:
-- **Phase 4C.1** — Brain Data credentials + live stock price provider
-- **Phase 5D.1** — cron observability: Vercel Cron dashboard monitoring, alerting on partial_success runs
+- **Phase 4C.2** — Persist daily market snapshots to Supabase `market_snapshots` table
+- **Phase 5D.1** — Cron observability: alerting on partial_success runs
 
 ---
 
-**Phase 5C.3 — Production Supabase Macro Read Path Deployment** ✓ COMPLETE
+**Phase 5D — Scheduled BCCh Macro Ingestion (Vercel Cron)** ✓ COMPLETE (validated 2026-06-26)
+
+Daily cron route that upserts the last 14 days of verified BCCh observations into
+Supabase. Runs weekdays at 12:30 UTC. Secured with `CRON_SECRET`. Idempotent.
+
+Schedule: `30 12 * * 1-5` (weekday-only; fall back to `* * *` if Hobby plan rejects it)
+Production URL: `https://nevada-market-intelligence.vercel.app/api/cron/ingest-bcch-macro`
+
+Manual production trigger result (2026-06-26T19:40Z):
+- `status: success` · 11/11 indicators succeeded · `rowsSeen: 2602` · `rowsInserted: 74` · `rowsFailed: 0`
+- `ingestionRunId: 3110210a-9db2-4e11-a99f-5674ff13eee2`
+
+**Post-deploy fix (5D hotfix):** Production cron was returning `partial_success` with PGRST125
+errors on all 7 daily indicators. Root cause: PostgREST schema cache staleness after
+DDL changes (ADD CONSTRAINT, NOT NULL) made during debugging — PostgREST's `NOTIFY pgrst`
+is blocked by PgBouncer on Supabase Free tier and doesn't reload immediately.
+Separately, `getSupabaseAdminConfig()` was not applying `normalizeProjectUrl()`, meaning
+`.env.local` URLs with the Supabase Dashboard's `/rest/v1` suffix would construct
+double-path requests. Fixed by adding `normalizeProjectUrl()` to the admin config function.
+NEXT_PUBLIC_SUPABASE_URL in `.env.local` and Vercel canonicalized to the bare project URL.
+`upsertMacroObservations` reverted to clean `.upsert(onConflict)` — no delete-then-insert.
+
+Files added/changed in 5D + 5D hotfix:
+- `src/lib/ingestion/bcchMacroIngestion.ts` — shared incremental/backfill logic; sanitizes errors; records ingestion_runs
+- `src/app/api/cron/ingest-bcch-macro/route.ts` — GET route with Bearer CRON_SECRET auth; sanitized JSON response
+- `vercel.json` — cron schedule `30 12 * * 1-5`
+- `scripts/cron/testBcchMacroCron.ts` — local manual trigger helper
+- `scripts/vercel/setPreviewEnv.ts` + `setProductionEnv.ts` — added CRON_SECRET
 
 Production env vars set via `npm run vercel:set-production-env` (4 newly created Supabase
 vars; 4 BCCh vars already present from Phase 4B — `failed: 0`). Fresh Production deployment

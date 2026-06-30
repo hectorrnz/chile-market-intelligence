@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import Link from 'next/link'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { SearchInput } from '@/components/ui/SearchInput'
@@ -9,12 +9,16 @@ import { getAllCompanies, getSectors } from '@/lib/data/companies'
 import { getAllSnapshots } from '@/lib/data/stocks'
 import { formatCLP, formatPct, formatLargeCLP, changeColor } from '@/lib/formatters'
 import { exportCSV } from '@/lib/export'
+import { formatMarketLastUpdated } from '@/lib/data/marketMeta'
+import { fetchLiveSnapshot, formatLiveTimestamp, type LiveSnapshot } from '@/lib/data/marketLiveData'
+import { MarketRefreshButton } from '@/components/ui/MarketRefreshButton'
 
 type SortKey = 'ticker' | 'dayChangePct' | 'ytdChangePct' | 'marketCapCLP' | 'pe' | 'dividendYield'
 
-const companies = getAllCompanies()
-const snapshots = getAllSnapshots()
-const sectors   = getSectors()
+const companies    = getAllCompanies()
+const snapshots    = getAllSnapshots()
+const sectors      = getSectors()
+const marketUpdated = formatMarketLastUpdated()
 
 export default function StocksPage() {
   const { t } = useLang()
@@ -22,6 +26,14 @@ export default function StocksPage() {
   const [sector,  setSector]  = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('marketCapCLP')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [live, setLive] = useState<LiveSnapshot | null>(null)
+
+  const doRefresh = useCallback(async () => {
+    const data = await fetchLiveSnapshot()
+    if (data) setLive(data)
+  }, [])
+
+  const liveTimestamp = live ? formatLiveTimestamp(live.lastUpdated) : marketUpdated
 
   const snapMap = useMemo(
     () => Object.fromEntries(snapshots.map(s => [s.ticker, s])),
@@ -109,6 +121,14 @@ export default function StocksPage() {
           <option value="">{t.stocks.allSectors}</option>
           {sectors.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
+        <div className="flex items-center gap-1.5">
+          <MarketRefreshButton onRefresh={doRefresh} />
+          {liveTimestamp && (
+            <span className="text-xs text-muted-fg ui-number whitespace-nowrap">
+              {t.common.marketUpdated} {liveTimestamp}
+            </span>
+          )}
+        </div>
         <button
           onClick={handleExport}
           className="ml-auto flex items-center gap-1.5 h-7 px-2.5 rounded border border-border bg-surface text-xs text-muted-fg hover:text-foreground hover:border-accent transition-colors"
@@ -136,31 +156,37 @@ export default function StocksPage() {
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ c, s }) => (
-              <tr key={c.ticker} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
-                <td className="py-2.5 pl-4 pr-3">
-                  <Link href={`/companies/${c.ticker}`} className="font-mono text-primary hover:underline">{c.ticker}</Link>
-                </td>
-                <td className="py-2.5 px-3 text-foreground">{c.shortName}</td>
-                <td className="py-2.5 px-3 text-muted-fg">{c.sector}</td>
-                <td className="py-2.5 px-3 ui-number text-foreground">{s ? formatCLP(s.price) : '—'}</td>
-                <td className={`py-2.5 px-3 ui-number ${s ? changeColor(s.dayChangePct) : 'text-muted-fg'}`}>
-                  {s ? formatPct(s.dayChangePct) : '—'}
-                </td>
-                <td className={`py-2.5 px-3 ui-number ${s ? changeColor(s.ytdChangePct) : 'text-muted-fg'}`}>
-                  {s ? formatPct(s.ytdChangePct) : '—'}
-                </td>
-                <td className="py-2.5 px-3 ui-number text-foreground">
-                  {c.marketCapCLP ? formatLargeCLP(c.marketCapCLP) : '—'}
-                </td>
-                <td className="py-2.5 px-3 ui-number text-foreground">
-                  {s?.pe != null ? `${s.pe}x` : '—'}
-                </td>
-                <td className="py-2.5 px-3 ui-number text-foreground">
-                  {s?.dividendYield != null ? `${s.dividendYield}%` : '—'}
-                </td>
-              </tr>
-            ))}
+            {rows.map(({ c, s }) => {
+              const lv = live?.stocks[c.ticker]
+              const price  = lv?.price        ?? s?.price
+              const dayPct = lv?.dayChangePct ?? s?.dayChangePct
+              const mktCap = lv?.marketCapCLP ?? c.marketCapCLP
+              return (
+                <tr key={c.ticker} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
+                  <td className="py-2.5 pl-4 pr-3">
+                    <Link href={`/companies/${c.ticker}`} className="font-mono text-primary hover:underline">{c.ticker}</Link>
+                  </td>
+                  <td className="py-2.5 px-3 text-foreground">{c.shortName}</td>
+                  <td className="py-2.5 px-3 text-muted-fg">{c.sector}</td>
+                  <td className="py-2.5 px-3 ui-number text-foreground">{price != null ? formatCLP(price) : '—'}</td>
+                  <td className={`py-2.5 px-3 ui-number ${dayPct != null ? changeColor(dayPct) : 'text-muted-fg'}`}>
+                    {dayPct != null ? formatPct(dayPct) : '—'}
+                  </td>
+                  <td className={`py-2.5 px-3 ui-number ${s ? changeColor(s.ytdChangePct) : 'text-muted-fg'}`}>
+                    {s ? formatPct(s.ytdChangePct) : '—'}
+                  </td>
+                  <td className="py-2.5 px-3 ui-number text-foreground">
+                    {mktCap ? formatLargeCLP(mktCap) : '—'}
+                  </td>
+                  <td className="py-2.5 px-3 ui-number text-foreground">
+                    {s?.pe != null ? `${s.pe}x` : '—'}
+                  </td>
+                  <td className="py-2.5 px-3 ui-number text-foreground">
+                    {s?.dividendYield != null ? `${s.dividendYield}%` : '—'}
+                  </td>
+                </tr>
+              )
+            })}
             {rows.length === 0 && (
               <tr>
                 <td colSpan={headers.length} className="py-6 text-center text-xs text-muted-fg">{t.common.noResults}</td>

@@ -362,8 +362,47 @@ all Brain Data methods return `ok:false` until Phase 4C.1 obtains official crede
 - Tests: `tests/marketDataMode.test.ts` (9), `tests/marketProvider.test.ts` (10). Total suite: 72/72.
 - Build: 19 routes · lint 0 · tests 72/72.
 
-Next: **Phase 4C.1** — obtain Brain Data API credentials, confirm endpoints and auth method,
-implement actual provider calls, confirm ticker symbol mappings against securities master, deploy to Preview.
+---
+
+## Phase 4C.1-alt — Yahoo Finance Live Market Overlay ✓ COMPLETE (2026-06-30)
+
+**Brain Data blocked:** The personal "Personas" account on `marketplace.bolsadesantiago.com`
+does not expose the institutional API product. No self-service signup path exists.
+
+**Solution:** Yahoo Finance as free unofficial fallback. Explicit user decision. See
+`docs/market_data_provider_discovery.md` for full context and future Brain Data migration path.
+
+### Delivery
+
+- `scripts/refresh/refreshMarketData.py` — Python script using `yfinance`; fetches YTD close prices for all 25 tickers + 11 indices; writes `stockPrices.json`, `sectorPerformance.json`, `indexPerformance.json`, `marketMeta.json`.
+- `scripts/refresh/requirements.txt` — `yfinance>=0.2.40`, `pandas>=2.0.0`.
+- `.github/workflows/refresh-market-data.yml` — weekday GitHub Actions cron at **13:30 UTC** and **21:30 UTC**; commits only if data changed; `workflow_dispatch` for manual trigger.
+- `src/lib/market/liveOverlay.ts` — pure aggregation logic (`TICKER_YF`, `SECTOR_MAP`, `INDEX_YF`, `buildStocks`, `buildSectors`, `buildIndices`); no Next.js imports; testable.
+- `src/app/api/market/live-snapshot/route.ts` — GET route using `yahoo-finance2`; 10-second timeout; sanitized error responses; response includes `provider`, `symbolsSucceeded`, `symbolsFailed`.
+- `src/lib/data/marketLiveData.ts` — client-safe fetch helper + `formatLiveTimestamp()`.
+- `src/lib/data/marketMeta.ts` — `formatMarketLastUpdated()` from static `marketMeta.json`.
+- `src/data/marketMeta.json` — static timestamp file (`lastUpdated: null` initially).
+- `src/components/ui/MarketRefreshButton.tsx` — 3-state (idle/loading/done) subtle icon button; semantic tokens; no hardcoded colors.
+- `src/app/page.tsx` — refresh button on Tracked Stocks and Sector Heat Map; live overlay on stocks, sectors, and indices.
+- `src/app/stocks/page.tsx` — refresh button in toolbar; live price/dayPct/marketCap overlay per row.
+- `src/app/companies/[ticker]/page.tsx` — refresh button in SectionHeader; live price/dayPct in KPI strip.
+- `src/lib/i18n.ts` — `common.marketUpdated` key (en/es).
+- `tests/marketLiveOverlay.test.ts` — 20 tests: ticker map invariants, buildStocks, buildSectors, buildIndices; mocked quotes, no live Yahoo calls.
+
+**Build:** 24 routes · lint 0 · tests 234/234 · macro system unaffected.
+
+### Fallback policy
+
+If Yahoo Finance is unavailable:
+- GitHub Actions step fails → no commit → last committed JSON remains in production
+- `/api/market/live-snapshot` returns 503 → client retains static baseline → UI shows no error
+
+### Known limitations
+
+- Unofficial source; Yahoo may change its API without notice
+- Quotes may be delayed 15 min during market hours
+- Do not label as "official BCS data"
+- No SLA or support
 
 ---
 

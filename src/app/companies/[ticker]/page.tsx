@@ -1,6 +1,6 @@
 'use client'
 
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useLang } from '@/components/providers/LangProvider'
@@ -19,6 +19,8 @@ import { getNewsByTicker } from '@/lib/data/news'
 import { getStockHistoryForTimeframe } from '@/lib/data/stockHistory'
 import { formatCLP, formatPct, formatFx, formatMillionsCLP, formatEPS, formatNetDebt, formatMarketCapMM, changeColor, formatDateTime } from '@/lib/formatters'
 import type { EarningsRelease, StockPriceSnapshot } from '@/types'
+import { fetchLiveSnapshot, formatLiveTimestamp, type LiveSnapshot } from '@/lib/data/marketLiveData'
+import { MarketRefreshButton } from '@/components/ui/MarketRefreshButton'
 
 const median = (xs: number[]): number | null => {
   const v = xs.filter(n => n != null).sort((a, b) => a - b)
@@ -42,6 +44,12 @@ export default function CompanyDetailPage() {
   const sym = (ticker ?? '').toUpperCase()
   const [chartTimeframe, setChartTimeframe] = usePersistentState<StockTimeframe>('cmi.chartTimeframe', '1Y')
   const [relative, setRelative] = usePersistentState<boolean>('cmi.chartRelative', false)
+  const [live, setLive] = useState<LiveSnapshot | null>(null)
+
+  const doRefresh = useCallback(async () => {
+    const data = await fetchLiveSnapshot()
+    if (data) setLive(data)
+  }, [])
 
   // Valuation card (natural height) drives the Results · Valuation · Filings row;
   // the other two cards match it and scroll (replaces the old fixed 300px).
@@ -123,12 +131,17 @@ export default function CompanyDetailPage() {
     )
   }
 
+  const lv = live?.stocks[sym]
+  const livePrice  = lv?.price        ?? snap?.price
+  const liveDayPct = lv?.dayChangePct ?? snap?.dayChangePct
+  const liveTimestamp = live ? formatLiveTimestamp(live.lastUpdated) : null
+
   const kpis = [
-    { label: t.company.kpis.lastPrice, value: snap ? formatCLP(snap.price) : '—',            unit: 'CLP',    color: '' },
-    { label: t.company.kpis.dayChg,   value: snap ? formatPct(snap.dayChangePct) : '—',       unit: '',       color: snap ? changeColor(snap.dayChangePct) : '' },
-    { label: t.company.kpis.ytd,      value: snap ? formatPct(snap.ytdChangePct) : '—',       unit: '',       color: snap ? changeColor(snap.ytdChangePct) : '' },
+    { label: t.company.kpis.lastPrice, value: livePrice != null ? formatCLP(livePrice) : '—',       unit: 'CLP', color: '' },
+    { label: t.company.kpis.dayChg,   value: liveDayPct != null ? formatPct(liveDayPct) : '—',       unit: '',    color: liveDayPct != null ? changeColor(liveDayPct) : '' },
+    { label: t.company.kpis.ytd,      value: snap ? formatPct(snap.ytdChangePct) : '—',              unit: '',    color: snap ? changeColor(snap.ytdChangePct) : '' },
     { label: t.company.kpis.marketCap,value: company.marketCapCLP ? formatMarketCapMM(company.marketCapCLP) : '—', unit: '', color: '' },
-    { label: t.company.kpis.pe,       value: snap?.pe != null ? `${snap.pe}` : '—',           unit: 'x',      color: '' },
+    { label: t.company.kpis.pe,       value: snap?.pe != null ? `${snap.pe}` : '—',                  unit: 'x',   color: '' },
     { label: t.company.kpis.divYield, value: snap?.dividendYield != null ? `${snap.dividendYield}` : '—', unit: '%', color: '' },
   ]
 
@@ -149,6 +162,12 @@ export default function CompanyDetailPage() {
         asOf
         actions={
           <>
+            <div className="flex items-center gap-1.5">
+              <MarketRefreshButton onRefresh={doRefresh} />
+              {liveTimestamp && (
+                <span className="text-xs text-muted-fg ui-number whitespace-nowrap">{liveTimestamp}</span>
+              )}
+            </div>
             <button
               onClick={() => window.print()}
               className="no-print flex items-center gap-1.5 h-7 px-2.5 rounded border border-border bg-surface text-xs text-muted-fg hover:text-foreground hover:border-accent transition-colors"

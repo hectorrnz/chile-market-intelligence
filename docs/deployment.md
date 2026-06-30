@@ -270,3 +270,84 @@ Shows `recentRuns[0]` with `job_type: macro_observations_incremental` and `statu
 If BCCh returns an error for some indicators, the run is recorded as `partial_success`.
 The persisted read path continues serving the last successful observations — no page errors.
 Full backfill can be re-run manually: `npm run ingest:bcch-macro -- --all --write`.
+
+## Phase 4C.1-alt — Yahoo Finance Live Market Overlay
+
+Chilean market data from Brain Data / Bolsa de Santiago requires an institutional account
+and is currently blocked. Yahoo Finance is used as a free, unofficial fallback.
+
+### Architecture
+
+Two complementary mechanisms refresh market data:
+
+**1. GitHub Actions static refresh (twice daily)**
+
+`.github/workflows/refresh-market-data.yml` schedules `scripts/refresh/refreshMarketData.py`:
+- **13:30 UTC weekdays** — ~30 min after Bolsa de Santiago opens (09:00 SCL winter)
+- **21:30 UTC weekdays** — after market close (17:30 SCL winter)
+
+The script uses `yfinance` to download YTD close prices for all 25 tickers and 11 indices,
+writes updated JSON to `src/data/`, and commits only if data changed. Vercel auto-redeploys
+on each commit.
+
+**2. Next.js live-snapshot API route (on-demand)**
+
+`GET /api/market/live-snapshot` uses `yahoo-finance2` (npm) to batch-quote all symbols
+server-side. The UI refresh button (↻) calls this route and overlays live data on top
+of the static baseline in client state. No redeploy needed.
+
+### Running the refresh script locally
+
+```bash
+cd scripts/refresh
+pip install -r requirements.txt
+python refreshMarketData.py
+```
+
+### Validating the live-snapshot route
+
+```bash
+npm run dev
+curl http://localhost:3000/api/market/live-snapshot
+```
+
+Expected response shape:
+```json
+{
+  "stocks": { "BSANTANDER": { "price": 32.5, "dayChangePct": 1.25, "marketCapCLP": 10000 } },
+  "sectors": [...],
+  "indices": [...],
+  "lastUpdated": "2026-06-30T14:00:00.000Z",
+  "provider": "yahoo-finance",
+  "symbolsSucceeded": 25,
+  "symbolsFailed": 0
+}
+```
+
+On failure: `{"error": "Live snapshot unavailable: provider unavailable", "provider": "yahoo-finance", "fallbackAvailable": true}` with HTTP 503.
+
+### No env vars required
+
+The Yahoo Finance path requires no API keys. The GitHub Actions workflow uses only
+`secrets.GITHUB_TOKEN` (automatically provided by GitHub — no setup needed).
+
+### Limitations
+
+- Data is unofficial and may be delayed 15+ minutes during market hours
+- Yahoo Finance can change its API without notice
+- Static fallback is always active; if Yahoo fails, last committed JSON is served
+- Do not label this data as "official BCS data"
+
+### Pure aggregation logic
+
+`src/lib/market/liveOverlay.ts` — contains all pure aggregation functions
+(`buildStocks`, `buildSectors`, `buildIndices`) and the ticker/sector/index maps.
+Import from here for tests; do not import from the Next.js route directly.
+
+### Transitioning to Brain Data when available
+
+1. Set `BRAIN_DATA_API_KEY` and `BRAIN_DATA_API_BASE_URL` in `.env.local` and Vercel
+2. Set `MARKET_DATA_MODE=live` or `hybrid`
+3. Confirm endpoints in `src/config/marketDataProviders.ts`
+4. Implement `src/lib/providers/market/brainDataProvider.ts` (shell exists)
+5. Confirm ticker symbols in `src/config/tickerMap.ts` (all `verified: false`)
