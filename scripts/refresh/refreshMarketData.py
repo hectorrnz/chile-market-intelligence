@@ -183,7 +183,9 @@ def refresh_stocks(today: str) -> tuple[int, dict[str, float], dict[str, float]]
                 'lastUpdated': today,
                 'source': SOURCE,
             }
-            print(f'  ✓ {internal}: {p}  day={dp:+.2f}%  ytd={yp:+.2f}%', flush=True)
+            dp_str = f'{dp:+.2f}%' if dp is not None else 'n/a'
+            yp_str = f'{yp:+.2f}%' if yp is not None else 'n/a'
+            print(f'  ✓ {internal}: {p}  day={dp_str}  ytd={yp_str}', flush=True)
             ok += 1
         else:
             print(f'  – {internal}: no data, keeping static value', flush=True)
@@ -263,7 +265,8 @@ def refresh_indices(today: str) -> int:
                 'date':          today,
                 'source':        SOURCE,
             }
-            print(f'  ✓ {idx_id} ({yf_sym}): {p}  day={dp:+.2f}%', flush=True)
+            dp_str = f'{dp:+.2f}%' if dp is not None else 'n/a'
+            print(f'  ✓ {idx_id} ({yf_sym}): {p}  day={dp_str}', flush=True)
             ok += 1
         else:
             print(f'  – {idx_id} ({yf_sym}): no data, keeping static', flush=True)
