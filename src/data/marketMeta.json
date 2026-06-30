@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-06-30T15:51:18.956426+00:00",
+  "lastUpdated": "2026-06-30T18:20:21.445519+00:00",
   "source": "yfinance / Yahoo Finance",
-  "tickersRefreshed": 23,
-  "indicesRefreshed": 9
+  "tickersRefreshed": 25,
+  "indicesRefreshed": 11
 }
