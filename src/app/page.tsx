@@ -85,7 +85,8 @@ export default function HomePage() {
   const [live, setLive] = useState<LiveSnapshot | null>(null)
   const doRefresh = useCallback(async () => {
     const data = await fetchLiveSnapshot()
-    if (data) setLive(data)
+    if (!data) throw new Error('unavailable')
+    setLive(data)
   }, [])
 
   // Merge live overlay with static base

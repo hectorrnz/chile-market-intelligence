@@ -30,7 +30,8 @@ export default function StocksPage() {
 
   const doRefresh = useCallback(async () => {
     const data = await fetchLiveSnapshot()
-    if (data) setLive(data)
+    if (!data) throw new Error('unavailable')
+    setLive(data)
   }, [])
 
   const liveTimestamp = live ? formatLiveTimestamp(live.lastUpdated) : marketUpdated

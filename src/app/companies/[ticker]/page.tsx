@@ -48,7 +48,8 @@ export default function CompanyDetailPage() {
 
   const doRefresh = useCallback(async () => {
     const data = await fetchLiveSnapshot()
-    if (data) setLive(data)
+    if (!data) throw new Error('unavailable')
+    setLive(data)
   }, [])
 
   // Valuation card (natural height) drives the Results · Valuation · Filings row;
