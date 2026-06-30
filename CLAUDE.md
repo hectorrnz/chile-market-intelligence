@@ -457,13 +457,31 @@ Files added/changed:
 Build 24 routes · lint 0 · tests 234/234
 
 Production deploy (2026-06-30): `dpl_2aHBfYyA5fyzuZTVhLGh4WwXMPJd` · 25 routes · 0 errors
-Production validation:
-- `/api/macro` → 11 indicators · status live (BCCh) · no secrets
+
+**Phase 4C.1-alt post-deploy fixes (2026-06-30):**
+- `SECURITY.SN` → `LAS-CONDES.SN` (Clínica Las Condes), `ITAUCORP.SN` → `ITAUCL.SN` (both delisted/unavailable via yfinance)
+- `^COLCAP` → `^SPCOSLCP` (S&P Colombia Select proxy — COLCAP unavailable on Yahoo Finance servers)
+- `^BVL` → `EPU` (iShares MSCI Peru ETF proxy — BVL unavailable on Yahoo Finance servers)
+- LAS-CONDES sector corrected: `Real Estate / Malls` → `Healthcare` (Clínica Las Condes is a private hospital, not real estate)
+- Healthcare sector entry added to `sectorPerformance.json` and `SECTOR_MAP` in `liveOverlay.ts`
+- Index proxy labels clarified: `"S&P Colombia (proxy)"` and `"Peru ETF proxy (EPU)"` so UI never claims official index data
+- yahoo-finance2 v3 instantiation fixed (`new YahooFinance()` required) — previously every live call returned 503
+- `None` guard added to Python refresh script for tickers that return no timezone data
+
+**Phase 4C.1-alt production validation (2026-06-30):** commit `210eacd`
+- `/api/market/live-snapshot` → 25/25 succeeded · 0 failed · provider: yahoo-finance · Healthcare sector present · Real Estate/Malls 2 stocks · S&P Colombia proxy live (1544.5, -0.58%) · Peru ETF proxy live (83.56, +1.33%)
+- `/api/macro` → 11 indicators · status live (BCCh) · no regression
 - `/api/macro/history/tpm?timeframe=1Y` → 249 pts · status persisted · dbModeUsed supabase
-- `/api/macro/history/usdclp?timeframe=1Y` → 249 pts · status persisted · latest 2026-06-30
-- `/api/macro/ingestion-status` → 11 indicators · last run 2026-06-30T12:42 UTC · success
-- `/api/market/stocks` → 25 equities · source Static MVP · no errors
-- `/api/market/live-snapshot` → 503 sanitized (Yahoo unreachable in non-browser env) → static fallback active
+- `/api/macro/ingestion-status` → 11 indicators · last run 2026-06-30T12:42 UTC · success · 68 rows upserted
+- GitHub Actions `workflow_dispatch` triggered manually → succeeded (18s) · committed fresh sector + index data
+- lint 0 · tests 234/234 · build 24 routes 0 errors · supabase:check-macro: 11 indicators healthy
+
+**Yahoo Finance ticker coverage rules:**
+- `.SN` suffix required for Bolsa de Santiago stocks (e.g. `LAS-CONDES.SN`, `ITAUCL.SN`)
+- Index proxies: `^SPCOSLCP` (Colombia) and `EPU` (Peru) — EPU has no `^` prefix (it is an ETF)
+- `SECTOR_MAP` and Python `SECTORS` must stay in sync — both live in `liveOverlay.ts` and `refreshMarketData.py`
+- Index proxy labels in `indexPerformance.json` must include "(proxy)" to avoid misrepresenting unofficial data
+- `buildIndices` in `liveOverlay.ts` handles ETF symbols without `^` prefix — the INDEX_YF test was updated accordingly
 
 Next options:
 - **Phase 4C.2** — Persist daily market snapshots to Supabase `market_snapshots` table
