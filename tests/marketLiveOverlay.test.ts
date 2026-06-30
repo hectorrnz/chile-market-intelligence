@@ -44,10 +44,13 @@ test('INDEX_YF covers exactly 11 indices', () => {
   assert.equal(Object.keys(INDEX_YF).length, 11)
 })
 
-test('INDEX_YF values start with ^ (Yahoo index prefix)', () => {
+test('INDEX_YF values are non-empty strings (indices use ^ prefix, ETFs use plain ticker)', () => {
   for (const [id, yf] of Object.entries(INDEX_YF)) {
-    assert.ok(yf.startsWith('^'), `INDEX_YF["${id}"] = "${yf}" does not start with ^`)
+    assert.ok(yf.length > 0, `INDEX_YF["${id}"] is empty`)
   }
+  // Most entries should be ^-prefixed indices
+  const caretCount = Object.values(INDEX_YF).filter(s => s.startsWith('^')).length
+  assert.ok(caretCount >= 9, `Expected at least 9 ^-prefixed indices, got ${caretCount}`)
 })
 
 // ── buildStocks ────────────────────────────────────────────────────────────────
@@ -140,7 +143,7 @@ test('buildSectors keeps static values when no live members available', () => {
 })
 
 test('buildSectors handles partial live coverage (some members missing)', () => {
-  const dayByTicker = { BSANTANDER: 3.0 }    // only 1 of 5 banking stocks
+  const dayByTicker = { BSANTANDER: 3.0 }    // only 1 of 4 banking stocks
   const result = buildSectors(dayByTicker, BASE_SECTORS)
   const banking = result.find(s => s.sector === 'Banking')!
   assert.equal(banking.dayChangePct, 3.0)

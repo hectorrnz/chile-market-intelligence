@@ -49,27 +49,27 @@
   },
   {
     "id": "colcap",
-    "name": "COLCAP",
+    "name": "S&P Colombia",
     "country": "Colombia",
     "region": "LatAm",
-    "value": 1541.2,
+    "value": 1551.4,
     "currency": "COP",
-    "dayChangePct": -0.52,
+    "dayChangePct": -0.58,
     "ytdChangePct": -4.1,
-    "date": "2025-06-17",
-    "source": "Bolsa de Valores de Colombia"
+    "date": "2026-06-30",
+    "source": "yfinance / Yahoo Finance"
   },
   {
     "id": "bvl-peru",
-    "name": "S&P/BVL Peru",
+    "name": "Peru ETF (EPU)",
     "country": "Peru",
     "region": "LatAm",
-    "value": 724.8,
-    "currency": "PEN",
-    "dayChangePct": 0.21,
+    "value": 83.38,
+    "currency": "USD",
+    "dayChangePct": 1.12,
     "ytdChangePct": 6.8,
-    "date": "2025-06-17",
-    "source": "Bolsa de Valores de Lima"
+    "date": "2026-06-30",
+    "source": "yfinance / Yahoo Finance"
   },
   {
     "id": "eurostoxx50",

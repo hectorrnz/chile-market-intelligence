@@ -99,6 +99,17 @@
     "lastUpdated": "2026-06-30"
   },
   {
+    "sector": "Healthcare",
+    "dayChangePct": 0.0,
+    "ytdChangePct": 0.0,
+    "numberOfStocks": 1,
+    "topContributor": "LAS-CONDES",
+    "topContributorPct": 0.0,
+    "worstContributor": "LAS-CONDES",
+    "worstContributorPct": 0.0,
+    "lastUpdated": "2026-06-30"
+  },
+  {
     "sector": "Transport / Airlines",
     "dayChangePct": -0.11,
     "ytdChangePct": 9.6,

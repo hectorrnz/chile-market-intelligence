@@ -236,7 +236,7 @@ export const tickerMap: TickerMapEntry[] = [
     providerSymbol: null,
     exchange: 'XSGO',
     currency: 'CLP',
-    notes: 'Inmobiliaria Las Condes — real estate.',
+    notes: 'Clínica Las Condes — private hospital/clinic. Confirm hyphen handling with Brain Data.',
     verified: false,
   },
   {
