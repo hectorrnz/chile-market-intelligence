@@ -16,7 +16,7 @@ create table if not exists user_profiles (
 -- ── watchlists ──────────────────────────────────────────────────────────────────
 create table if not exists watchlists (
   id          uuid primary key default gen_random_uuid(),
-  user_id     uuid not null references auth.users(id) on delete cascade,
+  user_id     uuid not null default auth.uid() references auth.users(id) on delete cascade,
   name        text not null,
   is_default  boolean not null default false,
   metadata    jsonb not null default '{}',
@@ -28,7 +28,7 @@ create table if not exists watchlists (
 create table if not exists watchlist_items (
   id            uuid primary key default gen_random_uuid(),
   watchlist_id  uuid not null references watchlists(id) on delete cascade,
-  user_id       uuid not null references auth.users(id) on delete cascade,
+  user_id       uuid not null default auth.uid() references auth.users(id) on delete cascade,
   ticker        text not null,
   notes         text,
   tags          text[] not null default '{}',
