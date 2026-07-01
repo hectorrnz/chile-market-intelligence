@@ -1,6 +1,6 @@
 'use client'
 
-import { useLayoutEffect, useRef, useState, useCallback } from 'react'
+import { useLayoutEffect, useRef, useState, useCallback, useEffect } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useLang } from '@/components/providers/LangProvider'
@@ -20,6 +20,8 @@ import { getStockHistoryForTimeframe } from '@/lib/data/stockHistory'
 import { formatCLP, formatPct, formatFx, formatMillionsCLP, formatEPS, formatNetDebt, formatMarketCapMM, changeColor, formatDateTime } from '@/lib/formatters'
 import type { EarningsRelease, StockPriceSnapshot } from '@/types'
 import { fetchLiveSnapshot, formatLiveTimestamp, type LiveSnapshot } from '@/lib/data/marketLiveData'
+import { fetchStockSnapshot } from '@/lib/data/marketData'
+import type { StockSnapshot } from '@/lib/providers/market/types'
 import { MarketRefreshButton } from '@/components/ui/MarketRefreshButton'
 
 const median = (xs: number[]): number | null => {
@@ -45,6 +47,17 @@ export default function CompanyDetailPage() {
   const [chartTimeframe, setChartTimeframe] = usePersistentState<StockTimeframe>('cmi.chartTimeframe', '1Y')
   const [relative, setRelative] = usePersistentState<boolean>('cmi.chartRelative', false)
   const [live, setLive] = useState<LiveSnapshot | null>(null)
+  // Supabase-persisted baseline (auto-loaded on mount, below live overlay in priority)
+  const [supaSnap, setSupaSnap] = useState<StockSnapshot | null>(null)
+
+  useEffect(() => {
+    if (!sym) return
+    let mounted = true
+    fetchStockSnapshot(sym).then(res => {
+      if (mounted && res.data) setSupaSnap(res.data)
+    }).catch(() => {})
+    return () => { mounted = false }
+  }, [sym])
 
   const doRefresh = useCallback(async () => {
     const data = await fetchLiveSnapshot()
@@ -133,8 +146,8 @@ export default function CompanyDetailPage() {
   }
 
   const lv = live?.stocks[sym]
-  const livePrice  = lv?.price        ?? snap?.price
-  const liveDayPct = lv?.dayChangePct ?? snap?.dayChangePct
+  const livePrice  = lv?.price        ?? supaSnap?.price        ?? snap?.price
+  const liveDayPct = lv?.dayChangePct ?? supaSnap?.dayChangePct ?? snap?.dayChangePct
   const liveTimestamp = live ? formatLiveTimestamp(live.lastUpdated) : null
 
   const kpis = [

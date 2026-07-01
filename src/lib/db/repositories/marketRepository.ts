@@ -7,6 +7,18 @@ import type { DbListResult, DbResult } from '../types.ts'
 import type { StockSnapshotRow, IndexSnapshotRow, SectorPerformanceRow } from '../../supabase/database.types.ts'
 import { decideDbSource } from '../dbMode.ts'
 
+// ─── Phase 4C.3: snapshot_type dedup priority (highest wins on date ties) ────
+export const SNAPSHOT_TYPE_PRIORITY: Record<string, number> = {
+  live_refresh: 3,
+  manual: 2,
+  close: 1,
+  midday: 0,
+}
+
+function snapshotTypeRank(t: string | null | undefined): number {
+  return t ? (SNAPSHOT_TYPE_PRIORITY[t] ?? -1) : -1
+}
+
 export interface StockSnapshotRecord {
   ticker: string
   price?: number
@@ -187,6 +199,261 @@ function loadStaticSectors(): SectorSnapshotRecord[] {
     }))
   } catch {
     return []
+  }
+}
+
+// ─── Phase 4C.3: Latest-snapshot read helpers (anon client, dedup) ───────────
+//
+// These functions read the persisted Yahoo Finance snapshots written by the
+// Phase 4C.2 ingestion pipeline. They are independent of the global DB_MODE /
+// decideDbSource() system — callers (supabaseMarketProvider) gate on
+// MARKET_DATA_MODE instead, and call these only when that mode requests
+// Supabase data. The functions themselves simply report what they found,
+// distinguishing "Supabase not configured" from "configured but empty/error".
+//
+// Client choice: getSupabaseServerClient() (anon/publishable key), matching
+// the existing getStockSnapshots()/getIndexSnapshots()/getSectorPerformance()
+// above — RLS policies grant anon SELECT on these tables (see
+// supabase/migrations/20260625000000_create_market_intelligence_core.sql),
+// so there is no need for the service-role admin client on the read path.
+
+export interface LatestSnapshotResult<T> {
+  available: boolean
+  configured: boolean
+  data: T[]
+  error?: string
+  latestSnapshotDate: string | null
+  latestSnapshotType: string | null
+}
+
+function emptyLatestResult<T>(configured: boolean, error?: string): LatestSnapshotResult<T> {
+  return { available: false, configured, data: [], error, latestSnapshotDate: null, latestSnapshotType: null }
+}
+
+/** Keep, per `key`, the row with the latest snapshot_date; ties broken by snapshot_type priority. */
+function dedupLatest<T extends { ticker?: string; index_id?: string; sector?: string; snapshot_date: string | null; snapshot_type: string | null }>(
+  rows: T[],
+  keyOf: (r: T) => string,
+): T[] {
+  const best = new Map<string, T>()
+  for (const row of rows) {
+    const key = keyOf(row)
+    const existing = best.get(key)
+    if (!existing) { best.set(key, row); continue }
+    const rowDate = row.snapshot_date ?? ''
+    const exDate = existing.snapshot_date ?? ''
+    if (rowDate > exDate) { best.set(key, row); continue }
+    if (rowDate === exDate && snapshotTypeRank(row.snapshot_type) > snapshotTypeRank(existing.snapshot_type)) {
+      best.set(key, row)
+    }
+  }
+  return Array.from(best.values())
+}
+
+function latestOf(rows: { snapshot_date: string | null }[]): string | null {
+  let latest: string | null = null
+  for (const r of rows) {
+    if (r.snapshot_date && (!latest || r.snapshot_date > latest)) latest = r.snapshot_date
+  }
+  return latest
+}
+
+export interface LatestStockSnapshotRecord {
+  ticker: string
+  price: number | null
+  currency: string | null
+  dayChange: number | null
+  dayChangePct: number | null
+  ytdChangePct: number | null
+  volume: number | null
+  avgVolume30d: number | null
+  marketCap: number | null
+  lastUpdated: string | null
+  source: string | null
+  provider: string | null
+  status: string | null
+  snapshotDate: string | null
+  snapshotType: string | null
+}
+
+function toLatestStockRecord(r: StockSnapshotRow): LatestStockSnapshotRecord {
+  return {
+    ticker: r.ticker,
+    price: r.price ?? null,
+    currency: r.currency ?? null,
+    dayChange: r.day_change ?? null,
+    dayChangePct: r.day_change_pct ?? null,
+    ytdChangePct: r.ytd_change_pct ?? null,
+    volume: r.volume ?? null,
+    avgVolume30d: r.avg_volume_30d ?? null,
+    marketCap: r.market_cap ?? null,
+    lastUpdated: r.last_updated ?? null,
+    source: r.source ?? null,
+    provider: r.provider ?? null,
+    status: r.status ?? null,
+    snapshotDate: r.snapshot_date ?? null,
+    snapshotType: r.snapshot_type ?? null,
+  }
+}
+
+/** Latest deduplicated stock snapshot per ticker (one row per ticker, newest snapshot_date wins). */
+export async function getLatestStockSnapshots(
+  options?: { snapshotDate?: string },
+): Promise<LatestSnapshotResult<LatestStockSnapshotRecord>> {
+  try {
+    const { getSupabaseServerClient } = await import('../../supabase/server.ts')
+    const db = getSupabaseServerClient()
+    if (!db) return emptyLatestResult(false)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let query = (db as any).from('stock_snapshots').select('*')
+    if (options?.snapshotDate) query = query.eq('snapshot_date', options.snapshotDate)
+    const res = await query
+    if (res.error) return emptyLatestResult(true, sanitizeUpsertError(res.error))
+    const rows = (res.data ?? []) as StockSnapshotRow[]
+    if (rows.length === 0) return { available: false, configured: true, data: [], latestSnapshotDate: null, latestSnapshotType: null }
+    const deduped = dedupLatest(rows, r => r.ticker)
+    const latestDate = latestOf(deduped)
+    const latestRow = deduped.find(r => r.snapshot_date === latestDate) ?? null
+    return {
+      available: true,
+      configured: true,
+      data: deduped.map(toLatestStockRecord),
+      latestSnapshotDate: latestDate,
+      latestSnapshotType: latestRow?.snapshot_type ?? null,
+    }
+  } catch (e) {
+    return emptyLatestResult(true, sanitizeUpsertError(e))
+  }
+}
+
+/** Latest deduplicated stock snapshot for a single ticker. */
+export async function getLatestStockSnapshot(
+  ticker: string,
+  options?: { snapshotDate?: string },
+): Promise<LatestSnapshotResult<LatestStockSnapshotRecord>> {
+  const all = await getLatestStockSnapshots(options)
+  if (!all.available) return all
+  const match = all.data.find(r => r.ticker === ticker)
+  return { ...all, data: match ? [match] : [] }
+}
+
+export interface LatestIndexSnapshotRecord {
+  indexId: string
+  name: string
+  country: string | null
+  value: number | null
+  dayChangePct: number | null
+  ytdChangePct: number | null
+  currency: string | null
+  proxyOf: string | null
+  lastUpdated: string | null
+  snapshotDate: string | null
+  snapshotType: string | null
+}
+
+function toLatestIndexRecord(r: IndexSnapshotRow): LatestIndexSnapshotRecord {
+  return {
+    indexId: r.index_id,
+    name: r.name,
+    country: r.country ?? null,
+    value: r.value ?? null,
+    dayChangePct: r.day_change_pct ?? null,
+    ytdChangePct: r.ytd_change_pct ?? null,
+    currency: r.currency ?? null,
+    proxyOf: r.proxy_of ?? null,
+    lastUpdated: r.last_updated ?? null,
+    snapshotDate: r.snapshot_date ?? null,
+    snapshotType: r.snapshot_type ?? null,
+  }
+}
+
+/** Latest deduplicated index snapshot per index_id. */
+export async function getLatestIndexSnapshots(
+  options?: { snapshotDate?: string },
+): Promise<LatestSnapshotResult<LatestIndexSnapshotRecord>> {
+  try {
+    const { getSupabaseServerClient } = await import('../../supabase/server.ts')
+    const db = getSupabaseServerClient()
+    if (!db) return emptyLatestResult(false)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let query = (db as any).from('index_snapshots').select('*')
+    if (options?.snapshotDate) query = query.eq('snapshot_date', options.snapshotDate)
+    const res = await query
+    if (res.error) return emptyLatestResult(true, sanitizeUpsertError(res.error))
+    const rows = (res.data ?? []) as IndexSnapshotRow[]
+    if (rows.length === 0) return { available: false, configured: true, data: [], latestSnapshotDate: null, latestSnapshotType: null }
+    const deduped = dedupLatest(rows, r => r.index_id)
+    const latestDate = latestOf(deduped)
+    const latestRow = deduped.find(r => r.snapshot_date === latestDate) ?? null
+    return {
+      available: true,
+      configured: true,
+      data: deduped.map(toLatestIndexRecord),
+      latestSnapshotDate: latestDate,
+      latestSnapshotType: latestRow?.snapshot_type ?? null,
+    }
+  } catch (e) {
+    return emptyLatestResult(true, sanitizeUpsertError(e))
+  }
+}
+
+export interface LatestSectorSnapshotRecord {
+  sector: string
+  dayChangePct: number | null
+  ytdChangePct: number | null
+  numberOfStocks: number | null
+  topContributor: string | null
+  topContributorPct: number | null
+  worstContributor: string | null
+  worstContributorPct: number | null
+  lastUpdated: string | null
+  snapshotDate: string | null
+  snapshotType: string | null
+}
+
+function toLatestSectorRecord(r: SectorPerformanceRow): LatestSectorSnapshotRecord {
+  return {
+    sector: r.sector,
+    dayChangePct: r.day_change_pct ?? null,
+    ytdChangePct: r.ytd_change_pct ?? null,
+    numberOfStocks: r.number_of_stocks ?? null,
+    topContributor: r.top_contributor ?? null,
+    topContributorPct: r.top_contributor_pct ?? null,
+    worstContributor: r.worst_contributor ?? null,
+    worstContributorPct: r.worst_contributor_pct ?? null,
+    lastUpdated: r.last_updated ?? null,
+    snapshotDate: r.snapshot_date ?? null,
+    snapshotType: r.snapshot_type ?? null,
+  }
+}
+
+/** Latest deduplicated sector performance snapshot per sector. */
+export async function getLatestSectorPerformance(
+  options?: { snapshotDate?: string },
+): Promise<LatestSnapshotResult<LatestSectorSnapshotRecord>> {
+  try {
+    const { getSupabaseServerClient } = await import('../../supabase/server.ts')
+    const db = getSupabaseServerClient()
+    if (!db) return emptyLatestResult(false)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let query = (db as any).from('sector_performance').select('*')
+    if (options?.snapshotDate) query = query.eq('snapshot_date', options.snapshotDate)
+    const res = await query
+    if (res.error) return emptyLatestResult(true, sanitizeUpsertError(res.error))
+    const rows = (res.data ?? []) as SectorPerformanceRow[]
+    if (rows.length === 0) return { available: false, configured: true, data: [], latestSnapshotDate: null, latestSnapshotType: null }
+    const deduped = dedupLatest(rows, r => r.sector)
+    const latestDate = latestOf(deduped)
+    const latestRow = deduped.find(r => r.snapshot_date === latestDate) ?? null
+    return {
+      available: true,
+      configured: true,
+      data: deduped.map(toLatestSectorRecord),
+      latestSnapshotDate: latestDate,
+      latestSnapshotType: latestRow?.snapshot_type ?? null,
+    }
+  } catch (e) {
+    return emptyLatestResult(true, sanitizeUpsertError(e))
   }
 }
 

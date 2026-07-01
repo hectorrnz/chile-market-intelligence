@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import Link from 'next/link'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { SearchInput } from '@/components/ui/SearchInput'
@@ -11,6 +11,8 @@ import { formatCLP, formatPct, formatLargeCLP, changeColor } from '@/lib/formatt
 import { exportCSV } from '@/lib/export'
 import { formatMarketLastUpdated } from '@/lib/data/marketMeta'
 import { fetchLiveSnapshot, formatLiveTimestamp, type LiveSnapshot } from '@/lib/data/marketLiveData'
+import { fetchStockSnapshots } from '@/lib/data/marketData'
+import type { StockSnapshot } from '@/lib/providers/market/types'
 import { MarketRefreshButton } from '@/components/ui/MarketRefreshButton'
 
 type SortKey = 'ticker' | 'dayChangePct' | 'ytdChangePct' | 'marketCapCLP' | 'pe' | 'dividendYield'
@@ -27,6 +29,18 @@ export default function StocksPage() {
   const [sortKey, setSortKey] = useState<SortKey>('marketCapCLP')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [live, setLive] = useState<LiveSnapshot | null>(null)
+  // Supabase-persisted baseline (auto-loaded on mount, below live overlay in priority)
+  const [supaSnapMap, setSupaSnapMap] = useState<Record<string, StockSnapshot>>({})
+
+  useEffect(() => {
+    let mounted = true
+    fetchStockSnapshots().then(res => {
+      if (mounted && res.data.length) {
+        setSupaSnapMap(Object.fromEntries(res.data.map(s => [s.ticker, s])))
+      }
+    }).catch(() => {})
+    return () => { mounted = false }
+  }, [])
 
   const doRefresh = useCallback(async () => {
     const data = await fetchLiveSnapshot()
@@ -159,9 +173,10 @@ export default function StocksPage() {
           <tbody>
             {rows.map(({ c, s }) => {
               const lv = live?.stocks[c.ticker]
-              const price  = lv?.price        ?? s?.price
-              const dayPct = lv?.dayChangePct ?? s?.dayChangePct
-              const mktCap = lv?.marketCapCLP ?? c.marketCapCLP
+              const ss = supaSnapMap[c.ticker]
+              const price  = lv?.price        ?? ss?.price        ?? s?.price
+              const dayPct = lv?.dayChangePct ?? ss?.dayChangePct ?? s?.dayChangePct
+              const mktCap = lv?.marketCapCLP ?? ss?.marketCapCLP ?? c.marketCapCLP
               return (
                 <tr key={c.ticker} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
                   <td className="py-2.5 pl-4 pr-3">

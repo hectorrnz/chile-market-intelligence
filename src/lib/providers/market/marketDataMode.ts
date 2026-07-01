@@ -1,18 +1,29 @@
 // Phase 4C — MARKET_DATA_MODE resolution.
+// Phase 4C.3 — repurposed: static|supabase|hybrid. 'supabase' reads persisted
+// Yahoo Finance snapshots (via supabaseMarketProvider) as the default live
+// baseline. Brain Data (live paid provider) is unhooked from this orchestrator
+// but the shell files remain in place for a future real-provider integration.
 //
-// Separate from DATA_MODE (BCCh macro) so BCCh live + market static can
+// Separate from DATA_MODE (BCCh macro) so BCCh live + market persisted data can
 // coexist independently. parseMarketDataMode / decideMarketSource are pure
 // functions (no env, no I/O) and are unit-tested directly.
 
-import type { DataMode, DataSourceStatus } from '../types'
-import type { SourceDecision } from '../dataMode'
+import type { DataSourceStatus } from '../types'
+import type { MarketMode } from './types'
 
-export type { DataMode, DataSourceStatus, SourceDecision }
+export type { DataSourceStatus, MarketMode }
+
+export interface SourceDecision {
+  dataModeUsed: MarketMode
+  status: DataSourceStatus
+  liveAvailable: boolean
+  fallbackReason?: string
+}
 
 /** Parse a raw MARKET_DATA_MODE string. Unknown/empty → 'static'. */
-export function parseMarketDataMode(raw: string | undefined | null): DataMode {
+export function parseMarketDataMode(raw: string | undefined | null): MarketMode {
   const v = (raw ?? '').trim().toLowerCase()
-  if (v === 'live') return 'live'
+  if (v === 'supabase') return 'supabase'
   if (v === 'hybrid') return 'hybrid'
   return 'static'
 }
@@ -20,22 +31,21 @@ export function parseMarketDataMode(raw: string | undefined | null): DataMode {
 /**
  * Resolve the effective market data mode for this server process.
  * - Explicit MARKET_DATA_MODE wins.
- * - Falls back to 'static' if Brain Data is not configured.
- * Guarantees the app works with no market data env vars at all.
+ * - Defaults to 'static' — guarantees the app works with no market data env vars at all.
  */
-export function getMarketDataMode(): DataMode {
+export function getMarketDataMode(): MarketMode {
   const explicit = process.env.MARKET_DATA_MODE
   if (explicit && explicit.trim()) return parseMarketDataMode(explicit)
-  // Default to static — Brain Data credentials are not assumed present.
   return 'static'
 }
 
 /**
- * Decide which source to serve given the requested mode and provider result.
- * Mirrors the BCCh macro decideSource pattern for consistency.
+ * Decide which source to serve given the requested mode and whether the
+ * Supabase-persisted provider succeeded. Mirrors the BCCh macro decideSource
+ * pattern for consistency, with 'supabase' standing in for 'live'.
  */
 export function decideMarketSource(
-  requested: DataMode,
+  requested: MarketMode,
   liveOk: boolean,
   liveReason?: string,
 ): SourceDecision {
@@ -44,23 +54,23 @@ export function decideMarketSource(
   }
   if (liveOk) {
     return {
-      dataModeUsed: requested === 'hybrid' ? 'hybrid' : 'live',
-      status: 'live',
+      dataModeUsed: requested === 'hybrid' ? 'hybrid' : 'supabase',
+      status: 'persisted',
       liveAvailable: true,
     }
   }
-  if (requested === 'live') {
+  if (requested === 'supabase') {
     return {
       dataModeUsed: 'static',
       status: 'live-unavailable',
       liveAvailable: false,
-      fallbackReason: liveReason ?? 'Live market provider unavailable',
+      fallbackReason: liveReason ?? 'Persisted market data unavailable',
     }
   }
   return {
     dataModeUsed: 'static',
     status: 'hybrid-fallback',
     liveAvailable: false,
-    fallbackReason: liveReason ?? 'Live market provider unavailable',
+    fallbackReason: liveReason ?? 'Persisted market data unavailable',
   }
 }

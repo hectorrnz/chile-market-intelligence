@@ -21,6 +21,8 @@ import { getSectorPerformance } from '@/lib/data/sectorPerformance'
 import { getIndexPerformance } from '@/lib/data/indexPerformance'
 import { formatMarketLastUpdated } from '@/lib/data/marketMeta'
 import { fetchLiveSnapshot, formatLiveTimestamp, type LiveSnapshot } from '@/lib/data/marketLiveData'
+import { fetchStockSnapshots, fetchSectorPerformance, fetchIndexPerformance } from '@/lib/data/marketData'
+import type { StockSnapshot, SectorSnapshot, IndexSnapshot } from '@/lib/providers/market/types'
 import { MarketRefreshButton } from '@/components/ui/MarketRefreshButton'
 import { formatCLP, formatPct, formatMacroValue, formatMacroChange, formatFx, changeColor } from '@/lib/formatters'
 import type { MacroIndicator, FxRate, ChileanRate } from '@/types'
@@ -83,17 +85,39 @@ export default function HomePage() {
 
   // Live market data state — null until user hits Refresh
   const [live, setLive] = useState<LiveSnapshot | null>(null)
+  // Supabase-persisted baseline (auto-loaded on mount, below live overlay in priority)
+  const [supaStockMap, setSupaStockMap] = useState<Record<string, StockSnapshot>>({})
+  const [supaSectors, setSupaSectors] = useState<SectorSnapshot[] | null>(null)
+  const [supaIdxMap, setSupaIdxMap] = useState<Record<string, IndexSnapshot>>({})
+
+  useEffect(() => {
+    let mounted = true
+    Promise.all([
+      fetchStockSnapshots().catch(() => null),
+      fetchSectorPerformance().catch(() => null),
+      fetchIndexPerformance().catch(() => null),
+    ]).then(([stRes, secRes, idxRes]) => {
+      if (!mounted) return
+      if (stRes?.data.length) setSupaStockMap(Object.fromEntries(stRes.data.map(s => [s.ticker, s])))
+      if (secRes?.data.length) setSupaSectors(secRes.data)
+      if (idxRes?.data.length) setSupaIdxMap(Object.fromEntries(idxRes.data.map(i => [i.id, i])))
+    })
+    return () => { mounted = false }
+  }, [])
+
   const doRefresh = useCallback(async () => {
     const data = await fetchLiveSnapshot()
     if (!data) throw new Error('unavailable')
     setLive(data)
   }, [])
 
-  // Merge live overlay with static base
-  const sectors = live?.sectors ?? staticSectors
+  // Merge: static base → Supabase layer → live overlay (live always wins when present)
+  const sectors = live?.sectors ?? supaSectors ?? staticSectors
   const indices = staticIndices.map(idx => {
     const lv = live?.indices.find(l => l.id === idx.id)
-    return lv ? { ...idx, value: lv.value, dayChangePct: lv.dayChangePct, ytdChangePct: lv.ytdChangePct } : idx
+    if (lv) return { ...idx, value: lv.value, dayChangePct: lv.dayChangePct, ytdChangePct: lv.ytdChangePct }
+    const si = supaIdxMap[idx.id]
+    return si ? { ...idx, value: si.value, dayChangePct: si.dayChangePct, ytdChangePct: si.ytdChangePct } : idx
   })
   const liveTimestamp = live ? formatLiveTimestamp(live.lastUpdated) : marketUpdated
   const maxSectorAbs = Math.max(...sectors.map(s => Math.abs(s.dayChangePct)))
@@ -225,9 +249,10 @@ export default function HomePage() {
                 <tbody>
                   {trackedRows.map(({ company: c, snap: s }) => {
                     const ls = live?.stocks[c.ticker]
-                    const dayPct = ls?.dayChangePct ?? s?.dayChangePct
+                    const ss = supaStockMap[c.ticker]
+                    const dayPct = ls?.dayChangePct ?? ss?.dayChangePct ?? s?.dayChangePct
                     const ytdPct = s?.ytdChangePct
-                    const mktCap = ls?.marketCapCLP ?? c.marketCapCLP
+                    const mktCap = ls?.marketCapCLP ?? ss?.marketCapCLP ?? c.marketCapCLP
                     return (
                       <tr key={c.ticker} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
                         <td className="py-1.5 pl-4 pr-3"><Link href={`/companies/${c.ticker}`} className="font-mono text-primary hover:underline">{c.ticker}</Link></td>

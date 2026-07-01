@@ -8,16 +8,44 @@ import type { DataMode, DataSourceStatus, ProviderResult } from '../types'
 
 export type { DataMode, DataSourceStatus, ProviderResult }
 
+/**
+ * Market-local mode type. MARKET_DATA_MODE is repurposed (Phase 4C.3) so its
+ * three values are static|supabase|hybrid — 'supabase' reads persisted Yahoo
+ * Finance snapshots instead of attempting a live paid provider. This is
+ * intentionally a separate type from the shared DataMode ('static'|'live'|
+ * 'hybrid') used by macro/CMF, so those domains are unaffected.
+ */
+export type MarketMode = 'static' | 'supabase' | 'hybrid'
+
 /** Metadata on every market data API response. Never contains secrets. */
 export interface MarketDataMeta {
-  dataModeRequested: DataMode
-  dataModeUsed: DataMode
+  dataModeRequested: MarketMode
+  dataModeUsed: MarketMode
   liveAvailable: boolean
   status: DataSourceStatus
   source: string
   lastUpdated: string
   fallbackReason?: string
   provider?: string
+  // Phase 4C.3 — Supabase-as-default-baseline metadata (all optional, additive).
+  /** MARKET_DATA_MODE as requested by env (mirrors dataModeRequested; explicit for clarity in API responses). */
+  marketDataModeRequested?: string
+  /** MARKET_DATA_MODE actually used to serve this response. */
+  marketDataModeUsed?: string
+  /** True when persisted Supabase snapshot rows were found (regardless of staleness). */
+  persistedAvailable?: boolean
+  /** snapshot_date of the most recent persisted row used, if any. */
+  latestSnapshotDate?: string | null
+  /** snapshot_type of the most recent persisted row used, if any. */
+  latestSnapshotType?: string | null
+  /** ingestion_runs.id of the most recent Yahoo Finance ingestion run, if known. */
+  latestIngestionRunId?: string | null
+  /** Number of deduplicated rows returned from Supabase for this entity. */
+  snapshotCount?: number
+  /** True when hybrid mode fell through to static because Supabase data was empty/stale/errored. */
+  staleFallbackUsed?: boolean
+  /** True when at least one returned row carries proxy metadata (e.g. COLCAP/BVL proxies). */
+  proxyMetadataPresent?: boolean
 }
 
 /** Normalized stock price snapshot from any provider. */
