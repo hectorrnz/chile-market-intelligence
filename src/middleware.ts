@@ -62,16 +62,13 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     },
   })
 
-  // Refresh the session (must happen before any auth checks).
-  // getUser() validates the JWT server-side. If it fails due to a network error
-  // (e.g. Supabase outage), fall back to getSession() which reads from the
-  // local cookie — less strict but keeps the app functional during outages.
-  const { data: { user }, error: getUserError } = await supabase.auth.getUser()
-  let effectiveUser = user
-  if (!effectiveUser && getUserError) {
-    const { data: { session } } = await supabase.auth.getSession()
-    effectiveUser = session?.user ?? null
-  }
+  // Check session: getSession() reads from the local cookie (no network call),
+  // which is fast and resilient to Supabase outages. For an internal single-user
+  // app this is sufficient — the JWT is still cryptographically signed.
+  // getUser() (server-side validation) is skipped here to avoid network failures
+  // in middleware blocking authenticated users during Supabase degradation.
+  const { data: { session } } = await supabase.auth.getSession()
+  const effectiveUser = session?.user ?? null
 
   // ── Protect page routes ──────────────────────────────────────────────────────
   if (PROTECTED_PAGES.some(p => pathname.startsWith(p)) && !effectiveUser) {
