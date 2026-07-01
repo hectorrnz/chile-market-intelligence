@@ -39,6 +39,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       const safeNext = next.startsWith('/') ? next : '/watchlist'
       return NextResponse.redirect(new URL(safeNext, request.url))
     }
+    // Log the actual Supabase error so Vercel function logs show the root cause.
+    console.error('[auth/callback] exchangeCodeForSession failed:', error.message, error.status)
   }
 
   return NextResponse.redirect(new URL('/login?error=callback_failed', request.url))
