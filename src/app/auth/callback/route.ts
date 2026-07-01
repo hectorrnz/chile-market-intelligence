@@ -60,6 +60,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     const { error } = await supabase.auth.exchangeCodeForSession(code)
 
+    // Always log diagnostics so we can read them from Vercel runtime logs.
+    console.log('[auth/callback DIAG]', JSON.stringify({
+      hadCode: true,
+      hadVerifier,
+      incomingCookies: incomingCookieNames,
+      exchangeError: error ? `${error.status}:${error.message}` : null,
+      cookiesSetCount: cookiesSetNames.length,
+      cookiesSet: cookiesSetNames,
+    }))
+
     // Attach diagnostics to whichever response we return.
     const applyDiag = (r: NextResponse) => {
       r.headers.set('x-cb-had-code', '1')
