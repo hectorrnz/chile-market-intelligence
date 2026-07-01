@@ -8,11 +8,17 @@ import { getSupabasePublicConfig } from '@/lib/supabase/env'
 
 export const dynamic = 'force-dynamic'
 
+// Bump this string whenever we redeploy so we can confirm the live build.
+const BUILD_MARKER = 'debug-v2-cookie-fix'
+
 export async function GET(request: NextRequest) {
   const config = getSupabasePublicConfig()
-  if (!config) return NextResponse.json({ configured: false })
+  if (!config) return NextResponse.json({ configured: false, buildMarker: BUILD_MARKER })
 
-  const cookieNames = request.cookies.getAll().map(c => c.name)
+  const allCookies  = request.cookies.getAll()
+  const cookieNames = allCookies.map(c => c.name)
+  const sbCookies   = cookieNames.filter(n => n.startsWith('sb-'))
+  const rawCookie   = request.headers.get('cookie') ?? ''
 
   const supabase = createServerClient(config.url, config.publishableKey, {
     cookies: {
@@ -25,8 +31,14 @@ export async function GET(request: NextRequest) {
   const { data: { user }, error: userError } = await supabase.auth.getUser()
 
   return NextResponse.json({
+    buildMarker: BUILD_MARKER,
+    host: request.headers.get('host'),
+    normalizedSupabaseUrl: config.url,
     cookieCount: cookieNames.length,
     cookieNames,
+    sbCookieCount: sbCookies.length,
+    sbCookieNames: sbCookies,
+    rawCookieHeaderLength: rawCookie.length,
     hasSession: !!session,
     sessionExpiry: session?.expires_at ?? null,
     hasUser: !!user,
