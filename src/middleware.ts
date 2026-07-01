@@ -63,11 +63,18 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   })
 
   // Refresh the session (must happen before any auth checks).
-  // getUser() is the secure path — it validates the JWT server-side.
-  const { data: { user } } = await supabase.auth.getUser()
+  // getUser() validates the JWT server-side. If it fails due to a network error
+  // (e.g. Supabase outage), fall back to getSession() which reads from the
+  // local cookie — less strict but keeps the app functional during outages.
+  const { data: { user }, error: getUserError } = await supabase.auth.getUser()
+  let effectiveUser = user
+  if (!effectiveUser && getUserError) {
+    const { data: { session } } = await supabase.auth.getSession()
+    effectiveUser = session?.user ?? null
+  }
 
   // ── Protect page routes ──────────────────────────────────────────────────────
-  if (PROTECTED_PAGES.some(p => pathname.startsWith(p)) && !user) {
+  if (PROTECTED_PAGES.some(p => pathname.startsWith(p)) && !effectiveUser) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     url.searchParams.set('next', pathname)
@@ -75,7 +82,7 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   }
 
   // ── Protect API routes ───────────────────────────────────────────────────────
-  if (PROTECTED_API.some(p => pathname.startsWith(p)) && !user) {
+  if (PROTECTED_API.some(p => pathname.startsWith(p)) && !effectiveUser) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
