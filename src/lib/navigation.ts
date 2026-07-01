@@ -15,7 +15,7 @@ export const navItems: NavItem[] = [
   { key: 'macro',     href: '/macro',              icon: 'trending' },
   { key: 'earnings',  href: '/earnings',           icon: 'document' },
   { key: 'hechos',    href: '/hechos-esenciales',  icon: 'alert' },
-  { key: 'watchlist', href: '/watchlist',          icon: 'star', soon: true },
+  { key: 'watchlist', href: '/watchlist',          icon: 'star' },
 ]
 
 export function getPageTitle(pathname: string, _lang: Lang, t: Translation): string {

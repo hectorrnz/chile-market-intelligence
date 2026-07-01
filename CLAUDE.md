@@ -381,6 +381,65 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 6A — Authentication and Watchlist Foundation** ✓ COMPLETE (2026-07-01)
+
+Supabase Auth with magic-link (email OTP) + personal watchlist. Authenticated users can add/remove tickers from their default watchlist. All other pages remain public.
+
+Auth flow: `POST /auth/v1/otp` (signInWithOtp) → magic-link email → `GET /auth/callback?code=` (PKCE exchange) → session cookie set → user redirected to `/watchlist`.
+
+Protected routes (middleware):
+- `/watchlist` → redirect to `/login?next=/watchlist` if not authed
+- `/api/watchlists/*` → 401 JSON if not authed
+- All other routes → public (no auth required)
+
+Supabase dashboard setup required before use:
+1. Enable Email provider: Dashboard → Auth → Providers → Email → enable **"Confirm email"** (OTP mode)
+2. Add site URL: Dashboard → Auth → URL Configuration → `NEXT_PUBLIC_SITE_URL` (e.g. `https://nevada-market-intelligence.vercel.app`)
+3. Add `http://localhost:3000/auth/callback` and production callback URL to **Redirect URLs**
+4. Apply migration: paste `supabase/migrations/20260701000000_auth_watchlist_foundation.sql` in SQL Editor → Run
+
+DB tables added (migration `20260701000000_auth_watchlist_foundation.sql`):
+- `user_profiles` — mirrors `auth.users`; RLS: own row only
+- `watchlists` — one per user (default created on first visit); RLS: own rows only
+- `watchlist_items` — ticker + watchlist_id + user_id; unique(watchlist_id, ticker); RLS: own rows only
+
+All RLS policies use `auth.uid() = user_id`. No service-role key in any client or page code.
+
+TypeScript note: Supabase JS `.from('watchlist*')` type inference fails for user-scoped tables at TypeScript 5.9 recursion depth. All watchlist repository functions use `(client as any).from(...)` with explicit row-type casts — same pattern as `macroRepository.ts:155`.
+
+Files added/changed in 6A:
+- `supabase/migrations/20260701000000_auth_watchlist_foundation.sql` — 3 tables, 6 indexes, updated_at triggers, 11 RLS policies; idempotent
+- `src/lib/supabase/database.types.ts` — rewrote ALL Insert/Update types as explicit field lists (removed Omit<Database[...]> self-references that hit TS 5.9 depth limit); added user_profiles, watchlists, watchlist_items tables + convenience type aliases
+- `src/lib/supabase/server.ts` — added `getSupabaseUserClient()` (async, cookie-aware, for user-scoped queries)
+- `src/lib/auth/getUser.ts` — `getCurrentUser()`, `getUserIdOrNull()`, `requireCurrentUser()`
+- `src/middleware.ts` — session refresh + route protection; cron routes untouched
+- `src/app/login/page.tsx` — magic-link form; 3 states (form/loading/sent); `'use client'` + `<Suspense>`
+- `src/app/auth/callback/route.ts` — PKCE code exchange; safe redirect (same-origin only)
+- `src/app/logout/route.ts` — POST + GET; calls signOut + redirects to /
+- `src/lib/db/repositories/watchlistRepository.ts` — getUserWatchlists, getDefaultWatchlist, createWatchlist, ensureDefaultWatchlist, getWatchlistItems, addTickerToWatchlist, removeTickerFromWatchlist, updateWatchlistItemNotes, deleteWatchlist
+- `src/app/api/watchlists/route.ts` — GET (list + auto-create default), POST (create named watchlist)
+- `src/app/api/watchlists/[id]/items/route.ts` — GET (list items), POST (add ticker; validates against covered universe; deduplicates)
+- `src/app/api/watchlists/[id]/items/[ticker]/route.ts` — DELETE (remove ticker)
+- `src/app/watchlist/page.tsx` — replaced MVP placeholder with real authenticated page; add/remove ticker UI; static JSON for market data display
+- `src/components/ui/AuthStatus.tsx` — TopBar auth widget; shows email + sign-out when authed, "Sign in" link when not; uses onAuthStateChange for SSR-safe hydration
+- `src/components/layout/TopBar.tsx` — added AuthStatus widget
+- `src/lib/navigation.ts` — removed `soon: true` from watchlist nav item
+- `src/lib/i18n.ts` — added `auth:` section (EN + ES) + replaced watchlist placeholder keys with real content keys
+- `.env.example` — added `NEXT_PUBLIC_SITE_URL` note
+- `tests/authWatchlist.test.ts` — 31 tests: migration tables/RLS/idempotency, middleware protection, login page safety, API routes, no service-role leakage, regression on core migration
+
+Build 35 routes · lint 0 · tests 381/381
+
+Scope limits (unchanged):
+- No user portfolios or position tracking
+- No performance attribution
+- No price alerts
+- No AI summaries
+- No admin panel
+- Ingestion logic untouched
+
+---
+
 **Phase 4C.4 — Historical Stock Charts from Supabase Snapshots** ✓ COMPLETE (2026-07-01)
 
 `/api/market/stocks/[ticker]/history` now reads accumulated `stock_snapshots` rows from Supabase in hybrid/supabase mode and normalizes them to `StockHistoryPoint[]` for the company-page LineChart. Static JSON fallback active for all modes and for 3Y/5Y timeframes (which require years of daily data not yet accumulated).
