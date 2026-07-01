@@ -381,6 +381,57 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 5D.1 — Ingestion Observability and Alerting** ✓ COMPLETE (validated 2026-07-01)
+
+Health evaluation, status endpoint, and alert cron for BCCh macro and Yahoo Finance market ingestion.
+
+Health states: `healthy | warning | stale | failed | unknown`
+
+Staleness thresholds:
+- **Macro BCCh:** healthy ≤ 2 business days since last successful run · warning 2–4 · stale/failed > 4
+- **Market Yahoo:** healthy ≤ 2 calendar days since latest snapshot · warning 2–4 · stale/failed > 4
+- **Monthly indicators** (ipc-mensual, ipc-anual, imacec-anual, desempleo): 100-day threshold to account for 1–2 month publication lag — do not flag stale for normal release delay
+
+Alert delivery: `ALERTS_ENABLED=true` + `ALERT_WEBHOOK_URL` → POST JSON payload to webhook. Default: disabled. Slack-compatible payload shape.
+
+Cron schedule: `45 13 * * 1-5` (weekdays, 15 min after market refresh window)
+
+Files added/changed in 5D.1:
+- `src/lib/observability/ingestionHealth.ts` — pure health functions: `evaluateMacroIngestionHealth`, `evaluateMarketIngestionHealth`, `evaluateOverallIngestionHealth`, `formatHealthSummary`, `businessDaysBetween`, `calendarDaysBetween`
+- `src/lib/observability/alertDelivery.ts` — generic webhook delivery; `ALERTS_ENABLED` guard; no secrets in output
+- `src/app/api/health/ingestion/route.ts` — `GET /api/health/ingestion`, public read-only status endpoint
+- `src/app/api/cron/check-ingestion-health/route.ts` — `GET /api/cron/check-ingestion-health`, Bearer `CRON_SECRET` auth; `?dryRun` and `?force` params; `alertSuppressed` flag
+- `vercel.json` — added cron `45 13 * * 1-5` for `check-ingestion-health`
+- `.env.example` — `ALERTS_ENABLED`, `ALERT_WEBHOOK_URL`, `ALERT_WEBHOOK_SECRET`, `ALERT_EMAIL_TO`
+- `tests/ingestionHealth.test.ts` — 32 tests for all health evaluation paths
+
+Production validated (2026-07-01):
+- `dpl_GHxaMdQx2C1VEyA3EiVVFnfaXdtg` · commit `8e44597` · 28 routes · 0 errors
+- `/api/health/ingestion` → `overallStatus: healthy` · macro 11/11 · market healthy
+- `/api/cron/check-ingestion-health` (valid auth) → `alertSuppressed: true` (ALERTS_ENABLED=false)
+- Invalid auth → 401. No secrets in any response. Logs clean.
+- Macro and market read paths: no regression
+- Build 28 routes · lint 0 · tests 317/317
+
+Alert env vars (server-only, never NEXT_PUBLIC_):
+- `ALERTS_ENABLED=true` — master switch (default: false/disabled)
+- `ALERT_WEBHOOK_URL` — POST target (Slack, Teams, Discord, or any HTTP)
+- `ALERT_WEBHOOK_SECRET` — optional Bearer token for webhook auth
+- `ALERT_EMAIL_TO` — reserved for future email delivery
+
+Manual trigger:
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  https://nevada-market-intelligence.vercel.app/api/cron/check-ingestion-health
+```
+
+To enable alerts after configuring a real webhook:
+1. `echo "true" | npx vercel env add ALERTS_ENABLED production`
+2. `echo "<url>" | npx vercel env add ALERT_WEBHOOK_URL production`
+3. Redeploy and test with `?force=true`
+
+---
+
 **Phase 5D — Scheduled BCCh Macro Ingestion (Vercel Cron)** ✓ COMPLETE (validated 2026-06-26)
 
 Daily cron route that upserts the last 14 days of verified BCCh observations into
