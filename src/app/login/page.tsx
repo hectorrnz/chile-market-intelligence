@@ -1,15 +1,29 @@
 'use client'
 
-// Phase 6A — Magic-link (email OTP) login page.
-// Keeps the institutional Goldman-style aesthetic — no gradients, no hero,
-// no hardcoded colors. Uses semantic CSS tokens throughout.
+// Phase 6B — Username + password login (replaces magic-link flow).
+// Two modes: "sign in" (username + password) and "create account"
+// (username, display name, recovery email, password). Institutional styling,
+// semantic tokens, i18n throughout. Session is set by the server via cookies.
 
 import { useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { getSupabaseBrowserClient } from '@/lib/supabase/client'
 import { useLang } from '@/components/providers/LangProvider'
 import { BrandLogo } from '@/components/ui/BrandLogo'
+
+type Mode = 'signin' | 'create'
+
+function errorKeyToMessage(t: ReturnType<typeof useLang>['t'], code: string): string {
+  switch (code) {
+    case 'invalid_credentials':  return t.auth.errInvalidCredentials
+    case 'username_taken':       return t.auth.errUsernameTaken
+    case 'invalid_password':     return t.auth.errWeakPassword
+    case 'invalid_username':     return t.auth.errInvalidUsername
+    case 'invalid_email':        return t.auth.errInvalidEmail
+    case 'invalid_display_name': return t.auth.errInvalidDisplayName
+    default:                     return t.auth.errorGeneric
+  }
+}
 
 function LoginForm() {
   const { t } = useLang()
@@ -17,11 +31,14 @@ function LoginForm() {
   const callbackError = searchParams.get('error')
   const next = searchParams.get('next') ?? '/watchlist'
 
-  const [email, setEmail]     = useState('')
-  const [loading, setLoading] = useState(false)
-  const [sent, setSent]       = useState(false)
-  const [error, setError]     = useState<string | null>(
-    callbackError ? t.auth.errorCallback : null
+  const [mode, setMode] = useState<Mode>('signin')
+  const [username, setUsername]       = useState('')
+  const [password, setPassword]       = useState('')
+  const [displayName, setDisplayName] = useState('')
+  const [email, setEmail]             = useState('')
+  const [loading, setLoading]         = useState(false)
+  const [error, setError]             = useState<string | null>(
+    callbackError ? t.auth.errorCallback : null,
   )
 
   async function handleSubmit(e: React.FormEvent) {
@@ -29,35 +46,43 @@ function LoginForm() {
     setError(null)
     setLoading(true)
 
-    const db = getSupabaseBrowserClient()
-    if (!db) {
-      setError('Authentication service not configured.')
-      setLoading(false)
-      return
-    }
+    try {
+      const endpoint = mode === 'signin' ? '/api/auth/login' : '/api/auth/register'
+      const payload =
+        mode === 'signin'
+          ? { username: username.trim(), password }
+          : { username: username.trim(), password, email: email.trim(), displayName: displayName.trim() }
 
-    const redirectTo =
-      `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const json = await res.json().catch(() => ({}))
 
-    const { error: authErr } = await db.auth.signInWithOtp({
-      email: email.trim().toLowerCase(),
-      options: { emailRedirectTo: redirectTo },
-    })
+      if (!res.ok) {
+        setError(errorKeyToMessage(t, json.error ?? ''))
+        setLoading(false)
+        return
+      }
 
-    if (authErr) {
+      // Session cookies are set by the server. Navigate to the target.
+      const safeNext = next.startsWith('/') ? next : '/watchlist'
+      // Full navigation so the new session cookies are picked up server-side.
+      window.location.assign(safeNext)
+    } catch {
       setError(t.auth.errorGeneric)
-    } else {
-      setSent(true)
+      setLoading(false)
     }
-    setLoading(false)
   }
+
+  const isCreate = mode === 'create'
 
   return (
     <div
       className="min-h-screen flex flex-col items-center justify-center bg-background"
       style={{ minWidth: '320px' }}
     >
-      {/* Card */}
       <div className="w-full max-w-sm bg-surface border border-border rounded px-8 py-8 shadow-sm">
         {/* Brand */}
         <div className="flex items-center gap-2.5 mb-7">
@@ -65,38 +90,59 @@ function LoginForm() {
           <span className="text-sm font-mono text-muted-fg uppercase tracking-wide">NMI</span>
         </div>
 
-        {sent ? (
-          /* Success state */
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <p className="text-sm font-medium text-foreground mb-1">{t.auth.checkEmail}</p>
-            <p className="text-xs text-muted-fg leading-relaxed">
-              {t.auth.checkEmailDesc.replace('{email}', email)}
+            <p className="text-sm font-medium text-foreground mb-0.5">
+              {isCreate ? t.auth.createAccountTitle : t.auth.signInTitle}
             </p>
-            <button
-              onClick={() => { setSent(false); setEmail('') }}
-              className="mt-5 text-xs text-primary hover:underline"
-            >
-              {t.auth.tryDifferentEmail}
-            </button>
+            <p className="text-xs text-muted-fg">
+              {isCreate ? t.auth.createAccountSubtitle : t.auth.signInSubtitle}
+            </p>
           </div>
-        ) : (
-          /* Login form */
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <p className="text-sm font-medium text-foreground mb-0.5">{t.auth.signInTitle}</p>
-              <p className="text-xs text-muted-fg">{t.auth.signInSubtitle}</p>
+
+          {error && (
+            <div className="text-xs text-negative bg-surface-2 border border-border rounded px-3 py-2">
+              {error}
             </div>
+          )}
 
-            {error && (
-              <div className="text-xs text-negative bg-surface-2 border border-border rounded px-3 py-2">
-                {error}
-              </div>
-            )}
+          {/* Username */}
+          <div className="space-y-1.5">
+            <label htmlFor="username" className="ui-label text-muted-fg">{t.auth.usernameLabel}</label>
+            <input
+              id="username"
+              type="text"
+              required
+              autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              placeholder={t.auth.usernamePlaceholder}
+              className="w-full h-9 px-3 rounded border border-border bg-surface-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:border-accent"
+            />
+          </div>
 
+          {/* Create-only: display name */}
+          {isCreate && (
             <div className="space-y-1.5">
-              <label htmlFor="email" className="ui-label text-muted-fg">
-                {t.auth.emailLabel}
-              </label>
+              <label htmlFor="displayName" className="ui-label text-muted-fg">{t.auth.displayNameLabel}</label>
+              <input
+                id="displayName"
+                type="text"
+                required
+                value={displayName}
+                onChange={e => setDisplayName(e.target.value)}
+                placeholder={t.auth.displayNamePlaceholder}
+                className="w-full h-9 px-3 rounded border border-border bg-surface-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:border-accent"
+              />
+            </div>
+          )}
+
+          {/* Create-only: recovery email */}
+          {isCreate && (
+            <div className="space-y-1.5">
+              <label htmlFor="email" className="ui-label text-muted-fg">{t.auth.emailLabel}</label>
               <input
                 id="email"
                 type="email"
@@ -107,21 +153,46 @@ function LoginForm() {
                 placeholder={t.auth.emailPlaceholder}
                 className="w-full h-9 px-3 rounded border border-border bg-surface-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:border-accent"
               />
+              <p className="text-xs text-muted">{t.auth.emailHint}</p>
             </div>
+          )}
 
-            <button
-              type="submit"
-              disabled={loading || !email.trim()}
-              className="w-full h-9 rounded bg-primary text-surface text-sm font-medium transition-opacity disabled:opacity-50"
-              style={{ backgroundColor: 'var(--primary)' }}
-            >
-              {loading ? '…' : t.auth.sendLink}
-            </button>
-          </form>
-        )}
+          {/* Password */}
+          <div className="space-y-1.5">
+            <label htmlFor="password" className="ui-label text-muted-fg">{t.auth.passwordLabel}</label>
+            <input
+              id="password"
+              type="password"
+              required
+              autoComplete={isCreate ? 'new-password' : 'current-password'}
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder={t.auth.passwordPlaceholder}
+              className="w-full h-9 px-3 rounded border border-border bg-surface-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:border-accent"
+            />
+            {isCreate && <p className="text-xs text-muted">{t.auth.passwordHint}</p>}
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading || !username.trim() || !password}
+            className="w-full h-9 rounded text-surface text-sm font-medium transition-opacity disabled:opacity-50"
+            style={{ backgroundColor: 'var(--primary)' }}
+          >
+            {loading ? '…' : isCreate ? t.auth.submitCreate : t.auth.submitSignIn}
+          </button>
+
+          {/* Mode toggle */}
+          <button
+            type="button"
+            onClick={() => { setError(null); setMode(isCreate ? 'signin' : 'create') }}
+            className="w-full text-xs text-primary hover:underline"
+          >
+            {isCreate ? t.auth.haveAccount : t.auth.needAccount}
+          </button>
+        </form>
       </div>
 
-      {/* Back link */}
       <Link
         href="/"
         className="mt-5 text-xs text-muted-fg hover:text-foreground transition-colors"

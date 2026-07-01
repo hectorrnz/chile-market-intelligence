@@ -548,6 +548,8 @@ export interface Database {
       user_profiles: {
         Row: {
           id: string
+          username: string | null
+          email: string | null
           display_name: string | null
           avatar_url: string | null
           created_at: string
@@ -555,10 +557,14 @@ export interface Database {
         }
         Insert: {
           id: string
+          username?: string | null
+          email?: string | null
           display_name?: string | null
           avatar_url?: string | null
         }
         Update: {
+          username?: string | null
+          email?: string | null
           display_name?: string | null
           avatar_url?: string | null
         }

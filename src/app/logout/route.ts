@@ -4,22 +4,25 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { getSupabasePublicConfig } from '@/lib/supabase/env'
 
 export const dynamic = 'force-dynamic'
 
 async function signOutAndRedirect(request: NextRequest): Promise<NextResponse> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim()
+  const config = getSupabasePublicConfig()
 
-  if (supabaseUrl && supabaseKey) {
-    const cookieStore = await cookies()
-    const supabase = createServerClient(supabaseUrl, supabaseKey, {
+  // Redirect to /login and clear session cookies directly on that response.
+  let response = NextResponse.redirect(new URL('/login', request.url))
+
+  if (config) {
+    const supabase = createServerClient(config.url, config.publishableKey, {
       cookies: {
-        getAll: () => cookieStore.getAll(),
-        setAll: (newCookies) => {
-          newCookies.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options),
+        getAll: () => request.cookies.getAll(),
+        setAll: (cookiesToSet) => {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+          response = NextResponse.redirect(new URL('/login', request.url))
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options),
           )
         },
       },
@@ -27,7 +30,7 @@ async function signOutAndRedirect(request: NextRequest): Promise<NextResponse> {
     await supabase.auth.signOut()
   }
 
-  return NextResponse.redirect(new URL('/', request.url))
+  return response
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {

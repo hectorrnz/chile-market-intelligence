@@ -139,11 +139,24 @@ describe('Phase 6A auth pages', () => {
     assert.ok(existsSync(join(ROOT, 'src/app/logout/route.ts')), 'logout route not found')
   })
 
-  it('login page uses Supabase browser client (not service role)', () => {
+  it('login page posts to server auth routes (no service role in client)', () => {
+    // Phase 6B: login moved to username+password. The page POSTs to server
+    // routes and must never reference the service-role key.
     const src = readFileSync(join(ROOT, 'src/app/login/page.tsx'), 'utf8')
-    assert.ok(src.includes('getSupabaseBrowserClient'), 'login must use browser client')
+    assert.ok(src.includes('/api/auth/login'), 'login must POST to /api/auth/login')
+    assert.ok(src.includes('/api/auth/register'), 'login must POST to /api/auth/register')
     assert.ok(!src.includes('service_role'), 'login must never use service_role key')
     assert.ok(!src.includes('SUPABASE_SERVICE_ROLE'), 'login must never reference service role')
+  })
+
+  it('auth routes exist and keep the service role server-side only', () => {
+    const login = readFileSync(join(ROOT, 'src/app/api/auth/login/route.ts'), 'utf8')
+    const register = readFileSync(join(ROOT, 'src/app/api/auth/register/route.ts'), 'utf8')
+    // Admin (service-role) client is used, but only from these server routes.
+    assert.ok(login.includes('getSupabaseAdminClient'), 'login route resolves username via admin')
+    assert.ok(register.includes('getSupabaseAdminClient'), 'register route uses admin client')
+    // Generic credential error — never leak which field was wrong.
+    assert.ok(login.includes('invalid_credentials'), 'login must return a generic error')
   })
 
   it('auth callback exchanges code for session', () => {

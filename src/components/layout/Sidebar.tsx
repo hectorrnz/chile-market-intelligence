@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { navItems } from '@/lib/navigation'
 import { useLang } from '@/components/providers/LangProvider'
 import { usePersistentState } from '@/lib/usePersistentState'
+import { useAuthDisplay } from '@/lib/auth/useAuthDisplay'
 
 // Minimal stroke-based SVG icons — no icon library
 function NavIcon({ name }: { name: string }) {
@@ -72,6 +73,7 @@ const MACRO_REGIONS: { rg: 'CL' | 'US'; label: string }[] = [
 export function Sidebar() {
   const pathname = usePathname()
   const { t } = useLang()
+  const { name: displayName } = useAuthDisplay()
   const onMacro = pathname.startsWith('/macro')
   const [macroOpen, setMacroOpen] = useState(onMacro)
   const [macroRegion, setMacroRegion] = usePersistentState<'CL' | 'US'>('cmi.macroRegion', 'CL')
@@ -105,6 +107,15 @@ export function Sidebar() {
         <div className="text-xs mt-0.5 leading-tight" style={{ color: 'var(--sidebar-muted)' }}>
           Nevada Market Intelligence
         </div>
+        {displayName && (
+          <div
+            className="text-xs mt-1 leading-tight truncate"
+            style={{ color: 'var(--sidebar-accent)' }}
+            title={displayName}
+          >
+            {displayName}
+          </div>
+        )}
       </div>
 
       {/* Navigation */}
