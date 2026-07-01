@@ -20,6 +20,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
+import { getSupabasePublicConfig } from '@/lib/supabase/env'
 
 const PROTECTED_PAGES  = ['/watchlist']
 const PROTECTED_API    = ['/api/watchlists']
@@ -28,8 +29,9 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl
 
   // If Supabase is not configured, skip session logic entirely.
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim()
+  const config = getSupabasePublicConfig()
+  const supabaseUrl = config?.url
+  const supabaseKey = config?.publishableKey
   if (!supabaseUrl || !supabaseKey) {
     // Still protect pages — show a "not configured" redirect or pass through.
     // In development without Supabase, redirect protected pages to login
