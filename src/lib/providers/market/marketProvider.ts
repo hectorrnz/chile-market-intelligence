@@ -125,30 +125,77 @@ export async function resolveStockSnapshot(ticker: string): Promise<StockSnapsho
   }
 }
 
-/**
- * Stock history has no persisted Supabase source yet (Phase 4C.3 scope — see
- * supabaseMarketProvider.ts header; tracked as a future "Phase 4C.4"). Always
- * resolves from static, but reports the requested/used mode honestly.
- */
 export async function resolveStockHistory(ticker: string, timeframe: StockTimeframe): Promise<StockHistoryResponse> {
   const requested = getMarketDataMode()
-  const stat = await staticMarketProvider.getStockHistory(ticker, timeframe)
-  return {
-    data: stat.ok ? stat.data : [],
-    metadata: {
-      dataModeRequested: requested,
-      dataModeUsed: 'static',
-      liveAvailable: false,
-      status: requested === 'static' ? 'static' : 'hybrid-fallback',
-      source: stat.ok ? stat.source : 'Static MVP',
-      lastUpdated: stat.ok ? stat.lastUpdated : '',
-      fallbackReason: requested !== 'static' ? 'Persisted stock history not yet available (Phase 4C.4)' : undefined,
-      provider: 'static',
-      marketDataModeRequested: requested,
-      marketDataModeUsed: 'static',
-      persistedAvailable: false,
-    },
+
+  const staticResult = async (fallbackReason?: string): Promise<StockHistoryResponse> => {
+    const stat = await staticMarketProvider.getStockHistory(ticker, timeframe)
+    return {
+      data: stat.ok ? stat.data : [],
+      metadata: {
+        dataModeRequested: requested,
+        dataModeUsed: 'static',
+        liveAvailable: false,
+        status: requested === 'static' ? 'static' : 'hybrid-fallback',
+        source: stat.ok ? stat.source : 'Static MVP',
+        lastUpdated: stat.ok ? stat.lastUpdated : '',
+        fallbackReason,
+        provider: 'static',
+        marketDataModeRequested: requested,
+        marketDataModeUsed: 'static',
+        persistedAvailable: false,
+      },
+    }
   }
+
+  if (requested === 'static') {
+    return staticResult()
+  }
+
+  // supabase or hybrid — try persisted snapshot history first
+  const prov = await supabaseMarketProvider.getStockHistory(ticker, timeframe)
+
+  if (prov.ok) {
+    return {
+      data: prov.data,
+      metadata: {
+        dataModeRequested: requested,
+        dataModeUsed: 'supabase',
+        liveAvailable: true,
+        status: 'persisted',
+        source: prov.source,
+        lastUpdated: prov.lastUpdated,
+        provider: 'supabase',
+        marketDataModeRequested: requested,
+        marketDataModeUsed: 'supabase',
+        persistedAvailable: true,
+        snapshotCount: prov.data.length,
+      },
+    }
+  }
+
+  // Supabase failed or insufficient
+  if (requested === 'supabase') {
+    return {
+      data: [],
+      metadata: {
+        dataModeRequested: 'supabase',
+        dataModeUsed: 'supabase',
+        liveAvailable: false,
+        status: 'live-unavailable',
+        source: 'Supabase',
+        lastUpdated: '',
+        fallbackReason: prov.reason,
+        provider: 'supabase',
+        marketDataModeRequested: 'supabase',
+        marketDataModeUsed: 'supabase',
+        persistedAvailable: false,
+      },
+    }
+  }
+
+  // hybrid: fall through to static with the Supabase failure reason
+  return staticResult(prov.reason)
 }
 
 export async function resolveIndices(): Promise<IndexSnapshotsResponse> {

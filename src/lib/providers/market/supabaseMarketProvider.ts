@@ -7,10 +7,10 @@
 // hybrid: it replaces brainDataProvider in the orchestrator, which remains
 // unhooked but in place for a future real paid-provider integration.
 //
-// LIMITATION (Phase 4C.3 scope): getStockHistory always returns ok:false.
-// There is no historical OHLCV table populated by the Yahoo ingestion
-// pipeline yet (only point-in-time snapshots) — persisted history is future
-// work (tracked as "Phase 4C.4"). Callers fall back to static history.
+// Phase 4C.4: getStockHistory now reads accumulated stock_snapshots rows
+// (one per trading day) and normalizes them to StockHistoryPoint[]. Long
+// timeframes (3Y/5Y) fall back to static since we don't have years of
+// accumulated daily data yet.
 
 import type { MarketProvider, StockSnapshot, StockHistoryPoint, IndexSnapshot, SectorSnapshot, StockTimeframe } from './types.ts'
 import type { ProviderResult } from '../types.ts'
@@ -19,10 +19,16 @@ import {
   getLatestStockSnapshot,
   getLatestIndexSnapshots,
   getLatestSectorPerformance,
+  getStockSnapshotHistory,
   type LatestStockSnapshotRecord,
   type LatestIndexSnapshotRecord,
   type LatestSectorSnapshotRecord,
 } from '../../db/repositories/marketRepository.ts'
+import {
+  resolveHistoryDateRange,
+  normalizeStockSnapshotsToHistoryPoints,
+  isSufficientMarketHistory,
+} from '../../market/marketHistory.ts'
 
 const SUPABASE_SOURCE = 'Persisted Yahoo Finance via Supabase'
 const SUPABASE_PROVIDER = 'supabase'
@@ -124,9 +130,27 @@ export const supabaseMarketProvider: MarketProvider = {
   },
 
   async getStockHistory(ticker: string, timeframe: StockTimeframe): Promise<ProviderResult<StockHistoryPoint[]>> {
-    void ticker; void timeframe
-    // Phase 4C.3 scope: no persisted history table yet. See file header.
-    return unavailable('Persisted stock history not yet available (Phase 4C.4)')
+    const range = resolveHistoryDateRange(timeframe)
+    if (!range) {
+      // 3Y/5Y require years of accumulated daily snapshots — fall through to static
+      return unavailable('Long timeframes (3Y/5Y) use static history — insufficient accumulated snapshots')
+    }
+    const res = await getStockSnapshotHistory(ticker, { from: range.from, to: range.to })
+    if (!res.configured) return unavailable('Supabase not configured')
+    if (!res.available) return unavailable(res.error ?? 'No persisted stock snapshot history available')
+    const points = normalizeStockSnapshotsToHistoryPoints(res.data)
+    if (!isSufficientMarketHistory(points, timeframe)) {
+      return unavailable(
+        `Insufficient snapshot history for ${timeframe} (${points.length} point(s) available)`,
+      )
+    }
+    const lastDate = res.data[res.data.length - 1]?.snapshotDate ?? ''
+    return {
+      ok: true,
+      data: points,
+      source: SUPABASE_SOURCE,
+      lastUpdated: lastDate,
+    }
   },
 
   async getIndices(): Promise<ProviderResult<IndexSnapshot[]>> {

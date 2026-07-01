@@ -617,3 +617,81 @@ export async function getLatestMarketIngestionRun(): Promise<{
 function emptyRunResult() {
   return { runId: null, startedAt: null, finishedAt: null, status: null, rowsInserted: null, rowsFailed: null, metadata: null }
 }
+
+// ─── Phase 4C.4: Stock snapshot history read ─────────────────────────────────
+// Queries stock_snapshots by ticker across a date range and returns one
+// deduplicated row per calendar day (highest snapshot_type priority wins on
+// ties). Callers (supabaseMarketProvider.getStockHistory) gate on MARKET_DATA_MODE
+// and handle 3Y/5Y early-exit before calling this.
+
+export interface StockHistorySnapshotRow {
+  ticker: string
+  snapshotDate: string    // YYYY-MM-DD
+  price: number | null
+  volume: number | null
+  source: string | null
+  provider: string | null
+}
+
+export interface SnapshotHistoryResult {
+  available: boolean
+  configured: boolean
+  data: StockHistorySnapshotRow[]
+  error?: string
+}
+
+export async function getStockSnapshotHistory(
+  ticker: string,
+  options?: { from?: string; to?: string },
+): Promise<SnapshotHistoryResult> {
+  try {
+    const { getSupabaseServerClient } = await import('../../supabase/server.ts')
+    const db = getSupabaseServerClient()
+    if (!db) return { available: false, configured: false, data: [] }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let query = (db as any)
+      .from('stock_snapshots')
+      .select('ticker, snapshot_date, price, volume, source, provider, snapshot_type')
+      .eq('ticker', ticker)
+      .order('snapshot_date', { ascending: true })
+    if (options?.from) query = query.gte('snapshot_date', options.from)
+    if (options?.to)   query = query.lte('snapshot_date', options.to)
+    const res = await query
+    if (res.error) return { available: false, configured: true, data: [], error: sanitizeUpsertError(res.error) }
+    const rows = (res.data ?? []) as Array<{
+      ticker: string
+      snapshot_date: string | null
+      price: number | null
+      volume: number | null
+      source: string | null
+      provider: string | null
+      snapshot_type: string | null
+    }>
+    if (rows.length === 0) return { available: false, configured: true, data: [] }
+    // Same-day dedup: keep the highest-priority snapshot_type per date.
+    const bestByDate = new Map<string, typeof rows[0]>()
+    for (const row of rows) {
+      const date = row.snapshot_date ?? ''
+      if (!date) continue
+      const existing = bestByDate.get(date)
+      if (!existing) { bestByDate.set(date, row); continue }
+      if (snapshotTypeRank(row.snapshot_type) > snapshotTypeRank(existing.snapshot_type)) {
+        bestByDate.set(date, row)
+      }
+    }
+    const data: StockHistorySnapshotRow[] = Array.from(bestByDate.values())
+      .sort((a, b) => (a.snapshot_date ?? '').localeCompare(b.snapshot_date ?? ''))
+      .filter(r => r.snapshot_date !== null)
+      .map(r => ({
+        ticker:       r.ticker,
+        snapshotDate: r.snapshot_date as string,
+        price:        r.price,
+        volume:       r.volume,
+        source:       r.source,
+        provider:     r.provider,
+      }))
+    return { available: true, configured: true, data }
+  } catch (e) {
+    return { available: false, configured: true, data: [], error: sanitizeUpsertError(e) }
+  }
+}

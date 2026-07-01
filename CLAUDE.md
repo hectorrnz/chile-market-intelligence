@@ -381,6 +381,30 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 4C.4 — Historical Stock Charts from Supabase Snapshots** ✓ COMPLETE (2026-07-01)
+
+`/api/market/stocks/[ticker]/history` now reads accumulated `stock_snapshots` rows from Supabase in hybrid/supabase mode and normalizes them to `StockHistoryPoint[]` for the company-page LineChart. Static JSON fallback active for all modes and for 3Y/5Y timeframes (which require years of daily data not yet accumulated).
+
+Three-tier read hierarchy (mirrors macro pattern):
+- `MARKET_DATA_MODE=static` → always static JSON
+- `MARKET_DATA_MODE=supabase` → Supabase only; empty + `live-unavailable` if insufficient
+- `MARKET_DATA_MODE=hybrid` → Supabase if sufficient data; static fallback otherwise
+
+Sufficiency thresholds: 1D≥1 · 5D≥3 · 1M≥5 · MTD≥1 · YTD≥5 · 1Y≥60. 3Y/5Y → always static.
+
+Same-day dedup: multiple snapshot_type rows for the same date → highest `SNAPSHOT_TYPE_PRIORITY` wins (`live_refresh:3 > manual:2 > close:1 > midday:0`).
+
+Files added/changed in 4C.4:
+- `src/lib/market/marketHistory.ts` — pure helpers: `resolveHistoryDateRange`, `isSufficientMarketHistory`, `normalizeStockSnapshotsToHistoryPoints`, `HISTORY_MIN_POINTS`
+- `src/lib/db/repositories/marketRepository.ts` — added `StockHistorySnapshotRow`, `SnapshotHistoryResult`, `getStockSnapshotHistory(ticker, {from?, to?})`
+- `src/lib/providers/market/supabaseMarketProvider.ts` — `getStockHistory()` implemented (was stub returning ok:false)
+- `src/lib/providers/market/marketProvider.ts` — `resolveStockHistory()` rewritten with full 3-tier logic (was always-static stub)
+- `tests/marketSnapshotHistory.test.ts` — 33 tests for all pure helpers
+
+Build 28 routes · lint 0 · tests 350/350
+
+---
+
 **Phase 5D.1 — Ingestion Observability and Alerting** ✓ COMPLETE (validated 2026-07-01)
 
 Health evaluation, status endpoint, and alert cron for BCCh macro and Yahoo Finance market ingestion.
