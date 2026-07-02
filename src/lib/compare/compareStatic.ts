@@ -43,13 +43,17 @@ export interface StaticStockSnapshot {
   dividendYield?: number
 }
 
-function loadJson<T>(relativePath: string): T {
-  const jsonPath = fileURLToPath(new URL(relativePath, import.meta.url))
-  return JSON.parse(readFileSync(jsonPath, 'utf8')) as T
-}
-
-export const STATIC_COMPANIES = loadJson<StaticCompany[]>('../../data/companies.json')
-export const STATIC_SNAPSHOTS = loadJson<StaticStockSnapshot[]>('../../data/stockPrices.json')
+// The `new URL('literal', import.meta.url)` argument must be a string
+// literal, not a variable — Vercel's build-time file tracer (@vercel/nft)
+// only detects this pattern statically when it can see the literal path
+// directly in the call, matching portfolioRepository.ts's proven pattern.
+// A generic loadJson(path) helper silently breaks tracing (ENOENT at
+// runtime on Vercel, works fine locally) since the path becomes a runtime
+// value instead of an analyzable literal — caught via Preview validation.
+const companiesPath = fileURLToPath(new URL('../../data/companies.json', import.meta.url))
+const stockPricesPath = fileURLToPath(new URL('../../data/stockPrices.json', import.meta.url))
+export const STATIC_COMPANIES = JSON.parse(readFileSync(companiesPath, 'utf8')) as StaticCompany[]
+export const STATIC_SNAPSHOTS = JSON.parse(readFileSync(stockPricesPath, 'utf8')) as StaticStockSnapshot[]
 export const COMPANY_BY_TICKER = new Map(STATIC_COMPANIES.map((c) => [c.ticker.toUpperCase(), c]))
 export const SNAPSHOT_BY_TICKER = new Map(STATIC_SNAPSHOTS.map((s) => [s.ticker.toUpperCase(), s]))
 
