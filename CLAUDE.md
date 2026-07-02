@@ -381,6 +381,59 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 8A — Static MVP Audit and Data Source Truth Layer** ✓ COMPLETE (2026-07-02)
+
+Audit + label-cleanup phase (not a new-provider phase). By this point the app has real live/persisted data (macro via BCCh, market via Yahoo Finance/Supabase, auth/watchlist/portfolio via Supabase) sitting alongside modules that are still genuinely static or CAPTCHA-blocked (CMF) — but many UI labels hadn't been updated since the original MVP mockup, so several pages either understated what was already live or overstated a "future phase" that had already happened (or, for CMF, never can happen without a new access path). This phase read every visible page's actual data-fetch chain, compared it to its on-screen label, and corrected the mismatches — no new ingestion was added.
+
+**Canonical truth-layer reference:** [`docs/data_source_status.md`](../docs/data_source_status.md) — a full page-by-page matrix (source / status / label / accuracy / next action / priority) that should be updated whenever a module's data source changes; other docs summarize from it, don't duplicate it.
+
+**New shared infrastructure:**
+- `src/lib/dataSourceRegistry.ts` — canonical `SourceState` enum (`live | persisted | hybrid | static_fallback | static_mvp | blocked | unavailable`) and a registry of specific EN/ES label pairs (e.g. `bcchLive` → "Live BCCh"/"BCCh en vivo"). Add new labels here, never inline a fresh source string in a component.
+- `src/components/ui/SourceStateBadge.tsx` — a 7-state badge for new call sites, matching the existing `DataSourceBadge`/`MarketDataSourceBadge`/`CmfDataSourceBadge` dot+label visual language (semantic tokens only — `--positive`/`--accent`/`--muted-fg`/`--negative`/`--warning`; `static_mvp` gets a hollow dot to visually distinguish "always-static sample" from `static_fallback`, a live system's fallback state).
+
+**P0 fixes (misleading or false labels, corrected this phase):**
+- **Global disclaimer** (shown on every page): "Static MVP data · ... · Live data integrations planned" → "Not investment advice · Data sourcing varies by module — see source badges". This was the single highest-impact fix — a blanket static claim sitting under pages that already had accurate live/persisted badges.
+- **Home macro card**: footer said "Phase 4 will connect BCCh BDE API" (Phase 4 finished long ago) directly under a `DataSourceBadge` already showing the real live/persisted status. Also, the Chile+US band shared ONE badge — since BCCh has no US series, a "live" Chile result would visually overstate freshness for the always-static US rows. Fixed by giving each band its own badge (Chile: dynamic; US: always `static`) and rewriting the footer to just name sources, not claim a status.
+- **Home sector heat map / markets (index changes)**: footers claimed "Static MVP sample" (sector) and "Source: Bloomberg" (markets) while the code actually merges static → Supabase-persisted → Yahoo-live-on-refresh, and Bloomberg has no relationship to this project anywhere. Fixed by adding dynamic badges and removing the fabricated vendor name. **Caught a real bug while fixing this**: the first pass used the BCCh-flavored `DataSourceBadge` for these two market modules, which rendered "BCCh persisted" on sector/index data — wrong data-source attribution. Fixed by switching to `MarketDataSourceBadge`.
+- **Stocks page**: footer named "Brain Data" as a Phase 4 source — Brain Data was tried and confirmed blocked (institutional-account requirement; see `docs/market_data_provider_discovery.md`), never actually integrated. Fixed to describe the real chain (static baseline → Supabase → Yahoo Finance on refresh) and added a `MarketDataSourceBadge`.
+- **Company page**: (a) the price/chart area had the same static→persisted→live merge as Stocks/Home but no badge at all — added one; (b) the historical chart footer said "Phase 7: Bolsa de Comercio de Santiago" — Phase 7 (live price integration) effectively already happened via 4C.1-alt for current price, so the wording now explicitly splits "historical chart: static" from "current price: see badge above"; (c) the **"+ Watchlist" action was a purely decorative `StatusPill variant="soon"`** claiming a feature that has existed since Phase 6A was still unavailable — replaced with a real link to `/watchlist`.
+- **Hechos Esenciales page + Home's Hechos footer**: said "Phase 4 will connect CMF API" — CMF live ingestion is not "pending a phase", it is **structurally blocked by a CAPTCHA gate** confirmed via a real discovery run (`docs/cmf_provider_discovery.md`, Phase 5A.1). Fixed everywhere to "CMF live ingestion not active (public portal requires CAPTCHA)" wording — never phrase CMF as a confirmed future connection.
+- **Charting page + Macro page's own subtitle**: "future source: CMF · manual CSV" and "Future source: Banco Central BDE API..." (the latter on the Macro page itself, whose indicator rows already show BCCh live/persisted via badges a few lines below — directly contradicting its own subtitle). Fixed to name sources without a status claim.
+- **Compare page**: "live data in Phase 4 / 7" (vague, unfulfilled) → "Static MVP sample — historical returns and fundamentals".
+- **Watchlist page**: footer said "Personal watchlist · Supabase", which conflated two different truths — watchlist *membership* is Supabase-persisted, but the *prices* shown are static sample (no live/Supabase price overlay on this page, unlike Stocks/Home/Company). Fixed to state both explicitly.
+- **Document Viewer**: "Live source sync planned for a future phase" — per `CLAUDE.md`'s own standing rule, live document sync is an intentional non-goal, not a pending phase. Fixed to describe the real, permanent behavior ("external only — documents are not synced").
+- Removed two dead, unused, stale i18n keys (`home.stocksSource`, `home.watchlistPhase` — referenced a "Phase 6 auth" requirement that no longer applied and weren't rendered anywhere).
+
+**Preserved as-is (already honest, no change needed):** Portfolio page footer (built correctly in 6C/6D), FX/Chilean-rates/Earnings-FECU/US-macro footers (genuinely 100% static, already said so plainly), News footer (already names candidate future sources without over-promising a phase), index proxy labels (`(proxy)` suffixes on COLCAP/BVL substitutes — untouched, still accurate).
+
+**Recommended next phases (documented in `docs/data_source_status.md`, not started):**
+- **Phase 8B** — Compare page real-data wiring: current price/day-change and IPSA benchmark can reuse `getLatestStockSnapshots()`/`index_snapshots` (already live elsewhere) at low risk; multi-period returns need more accumulated daily history in `stock_snapshots` before they're meaningful; fundamentals remain static pending 8C.
+- **Phase 8C** — Financial-statement ingestion for Charting + Earnings: new `financial_statements`/`financial_metrics`/`company_reporting_periods` tables, manual CSV import as the pragmatic first step (CMF FECU parser blocked same as Hechos).
+- **Phase 8D** — News / Economic Calendar source strategy: curated manual JSON → RSS → licensed API for News; BCCh/INE release calendars → manual JSON → paid calendar API for the Economic Calendar. No aggressive scraping in any option.
+
+Files added/changed in 8A:
+- `src/lib/dataSourceRegistry.ts` — new canonical source-state/label registry
+- `src/components/ui/SourceStateBadge.tsx` — new shared 7-state badge
+- `src/app/page.tsx` — per-band macro badges (Chile dynamic / US static), sector/index `MarketDataSourceBadge`s, computed `sectorStatus`/`indexStatus` from already-fetched state (no new provider calls)
+- `src/app/stocks/page.tsx` — added `MarketDataSourceBadge` + `priceStatus`
+- `src/app/companies/[ticker]/page.tsx` — added `MarketDataSourceBadge` + `priceStatus`; replaced the dead "soon" watchlist pill with a real link
+- `src/lib/i18n.ts` — corrected ~20 EN+ES label pairs across Home, Stocks, Macro, Compare, Charting, Hechos Esenciales, Watchlist, Document Viewer, plus the global disclaimer/MVP pill; removed 2 dead keys
+- `docs/data_source_status.md` — new canonical page-by-page source/status/accuracy matrix
+- `tests/dataSourceAudit.test.ts` — 27 tests: registry labels, badge semantic-token guard, no stale phase/future-source/vendor-fabrication copy, CMF-blocked wording precision, Home badge-component regression guard (the BCCh-vs-market mix-up), Stocks/Company badge presence, and regression checks confirming portfolio math / middleware / provider orchestrators untouched
+
+Build 42 routes · lint 0 · tests 513/513
+
+Local validation (dev server): confirmed the Home macro card's Chile band showed genuinely dynamic "Live BCCh"/"Static MVP" across repeated reloads (real BCCh API variability) while the US band stayed correctly static every time; confirmed the sector/index badges show "Persisted market data" (not the initially-wrong "BCCh persisted"); confirmed the Company page's new watchlist link resolves to `/watchlist`; confirmed dark mode resolves the new badge's dot color to the correct theme token; zero console errors across Home/Stocks/Company/Macro/Hechos/Compare/Charting/Earnings; all explicit regression endpoints (`/api/macro`, `/api/macro/history/tpm`, `/api/market/stocks`, `/api/market/live-snapshot`, `/api/health/ingestion`) returned 200/healthy; `/portfolio` and `/watchlist` still correctly redirect when unauthenticated.
+
+Scope limits (this phase, explicit):
+- No new provider/ingestion implemented — label and metadata corrections only, plus one trivial low-risk link fix (Company page watchlist button)
+- Auth logic, portfolio math, macro ingestion, and market ingestion untouched (confirmed by regression tests)
+- No mobile-responsive work
+
+Next: **Phase 8B** (Compare page real-data wiring) is the lowest-risk follow-up, reusing infrastructure that already exists.
+
+---
+
 **Phase 6D — Transaction History and Cash Ledger Foundation** ✓ COMPLETE (2026-07-02)
 
 Lets positions be derived from real buy/sell lots instead of a manually entered quantity + average cost, while leaving the Phase 6C manual-position flow fully intact for tickers that don't use it. `portfolio_positions` (Phase 6C) stays the current-state table with an unchanged schema; `portfolio_transactions` becomes the source of truth for lot-managed tickers and every mutation reconciles `portfolio_positions` from the full replayed history.

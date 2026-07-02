@@ -14,6 +14,8 @@ import { fetchLiveSnapshot, formatLiveTimestamp, type LiveSnapshot } from '@/lib
 import { fetchStockSnapshots } from '@/lib/data/marketData'
 import type { StockSnapshot } from '@/lib/providers/market/types'
 import { MarketRefreshButton } from '@/components/ui/MarketRefreshButton'
+import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
+import type { DataSourceStatus } from '@/lib/providers/types'
 
 type SortKey = 'ticker' | 'dayChangePct' | 'ytdChangePct' | 'marketCapCLP' | 'pe' | 'dividendYield'
 
@@ -49,6 +51,7 @@ export default function StocksPage() {
   }, [])
 
   const liveTimestamp = live ? formatLiveTimestamp(live.lastUpdated) : marketUpdated
+  const priceStatus: DataSourceStatus = live ? 'live' : Object.keys(supaSnapMap).length ? 'persisted' : 'static'
 
   const snapMap = useMemo(
     () => Object.fromEntries(snapshots.map(s => [s.ticker, s])),
@@ -138,6 +141,7 @@ export default function StocksPage() {
         </select>
         <div className="flex items-center gap-1.5">
           <MarketRefreshButton onRefresh={doRefresh} />
+          <MarketDataSourceBadge status={priceStatus} />
           {liveTimestamp && (
             <span className="text-xs text-muted-fg ui-number whitespace-nowrap">
               {t.common.marketUpdated} {liveTimestamp}

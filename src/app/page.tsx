@@ -7,6 +7,7 @@ import { usePersistentState } from '@/lib/usePersistentState'
 import { StatusPill } from '@/components/ui/StatusPill'
 import { AsOfBadge } from '@/components/ui/AsOfBadge'
 import { DataSourceBadge } from '@/components/ui/DataSourceBadge'
+import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
 import type { DataSourceStatus } from '@/lib/providers/types'
 import { getAllCompanies } from '@/lib/data/companies'
 import { getAllSnapshots } from '@/lib/data/stocks'
@@ -113,12 +114,14 @@ export default function HomePage() {
 
   // Merge: static base → Supabase layer → live overlay (live always wins when present)
   const sectors = live?.sectors ?? supaSectors ?? staticSectors
+  const sectorStatus: DataSourceStatus = live?.sectors ? 'live' : supaSectors ? 'persisted' : 'static'
   const indices = staticIndices.map(idx => {
     const lv = live?.indices.find(l => l.id === idx.id)
     if (lv) return { ...idx, value: lv.value, dayChangePct: lv.dayChangePct, ytdChangePct: lv.ytdChangePct }
     const si = supaIdxMap[idx.id]
     return si ? { ...idx, value: si.value, dayChangePct: si.dayChangePct, ytdChangePct: si.ytdChangePct } : idx
   })
+  const indexStatus: DataSourceStatus = live?.indices.length ? 'live' : Object.keys(supaIdxMap).length ? 'persisted' : 'static'
   const liveTimestamp = live ? formatLiveTimestamp(live.lastUpdated) : marketUpdated
   const maxSectorAbs = Math.max(...sectors.map(s => Math.abs(s.dayChangePct)))
 
@@ -202,18 +205,22 @@ export default function HomePage() {
       <div className="grid grid-cols-3 gap-4 items-start">
 
         {/* Column 1 — Macro Chile + US (one card, highlighted region bands) */}
+        {/* Chile and US carry separate badges: BCCh only ever covers Chilean
+            series, so US rows are always static even when Chile is live/persisted —
+            one shared badge here would overstate freshness for the US half. */}
         <div ref={macroRef} className="bg-surface border border-border rounded flex flex-col overflow-hidden">
           <div className="px-4 py-2.5 border-b border-border shrink-0 flex items-center justify-between">
             <span className="ui-label text-muted-fg">{t.home.macroTitle.split('·')[0].trim()}</span>
-            <DataSourceBadge status={macroStatus} />
           </div>
           <div>
-            <div className="px-4 py-1.5 bg-surface-2 border-y border-border" style={{ borderLeft: '2px solid var(--accent)' }}>
+            <div className="px-4 py-1.5 bg-surface-2 border-y border-border flex items-center justify-between" style={{ borderLeft: '2px solid var(--accent)' }}>
               <span className="ui-label text-foreground">Chile</span>
+              <DataSourceBadge status={macroStatus} />
             </div>
             <div className="px-4">{macroChile.map(ind => <MacroRow key={ind.id} ind={ind} />)}</div>
-            <div className="px-4 py-1.5 bg-surface-2 border-y border-border" style={{ borderLeft: '2px solid var(--primary)' }}>
+            <div className="px-4 py-1.5 bg-surface-2 border-y border-border flex items-center justify-between" style={{ borderLeft: '2px solid var(--primary)' }}>
               <span className="ui-label text-foreground">{t.home.macroUsTitle.split('·')[1]?.trim() ?? 'US'}</span>
+              <DataSourceBadge status="static" />
             </div>
             <div className="px-4">{macroUs.map(ind => <MacroRow key={ind.id} ind={ind} />)}</div>
           </div>
@@ -371,7 +378,10 @@ export default function HomePage() {
         <div ref={heatRef} className="bg-surface border border-border rounded overflow-hidden flex flex-col">
           <div className="px-4 py-2.5 border-b border-border shrink-0 flex items-center justify-between">
             <span className="ui-label text-muted-fg">{t.home.sectorHeatMap}</span>
-            <MarketRefreshButton onRefresh={doRefresh} />
+            <div className="flex items-center gap-2">
+              <MarketDataSourceBadge status={sectorStatus} />
+              <MarketRefreshButton onRefresh={doRefresh} />
+            </div>
           </div>
           <div className="p-3">
             <div className="grid grid-cols-3 gap-2">
@@ -449,8 +459,9 @@ export default function HomePage() {
 
         {/* Markets — country on top, index below; scrolls to match heat map height */}
         <div className="bg-surface border border-border rounded overflow-hidden flex flex-col" style={{ height: heatH || undefined }}>
-          <div className="px-4 py-2.5 border-b border-border shrink-0">
+          <div className="px-4 py-2.5 border-b border-border shrink-0 flex items-center justify-between">
             <span className="ui-label text-muted-fg">{t.home.marketsTitle}</span>
+            <MarketDataSourceBadge status={indexStatus} />
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto">
             {indices.map(idx => {

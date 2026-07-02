@@ -539,3 +539,20 @@ Lets positions be derived from real buy/sell lots instead of a manually entered 
 - **Scope limits (intentional):** no FIFO/LIFO or specific-lot selection (weighted average only), no dividends, no time/money-weighted performance attribution, no broker/CSV import, no automated cash reconciliation. Multi-step writes are sequential (not a single DB transaction) — pre-validation keeps the ledger consistent in practice; documented as an accepted gap for this foundation phase.
 
 Next: **Phase 7A** — mobile-responsive foundation, or **Phase 6E** — portfolio analytics / performance attribution.
+
+---
+
+## Phase 8A — Static MVP Audit and Data Source Truth Layer ✓ COMPLETE
+
+An audit + label-cleanup phase, not a new-provider phase. By this point real live/persisted data exists in several places (BCCh macro, Yahoo Finance/Supabase market, Supabase auth/watchlist/portfolio) alongside modules that are genuinely still static or structurally CAPTCHA-blocked (CMF) — but many UI labels hadn't been touched since the original MVP mockup, so some pages understated what was already live, and others made confident-sounding "Phase N will connect" promises for things that were either already done or can never happen without a new access path.
+
+**Canonical reference:** [`docs/data_source_status.md`](data_source_status.md) — full page-by-page source/status/label/accuracy/priority matrix. Update it whenever a module's source changes; other docs summarize it, they don't duplicate it.
+
+- **New infrastructure:** `src/lib/dataSourceRegistry.ts` (7-state `SourceState` enum + EN/ES label registry) and `src/components/ui/SourceStateBadge.tsx` (shared badge for new call sites, matching the existing `DataSourceBadge`/`MarketDataSourceBadge`/`CmfDataSourceBadge` visual language).
+- **P0 fixes:** the global "Static MVP data ... Live data integrations planned" disclaimer (shown on every page); Home's macro/sector/index footers (one conflicted with its own live badge, two claimed pure-static/fabricated-vendor while actually merging live+persisted+static); Stocks' "Brain Data" reference (tried and blocked, never integrated); Company page's dead "+ Watchlist (soon)" pill (Watchlist has worked since Phase 6A) replaced with a real link; Hechos Esenciales' and Home's CMF footers ("Phase 4 will connect CMF API" → "CMF live ingestion not active (CAPTCHA)"); the Macro page's own subtitle contradicting its own live badges a few lines below; Compare/Charting's vague phase promises; Watchlist's footer conflating persisted membership with static prices; Document Viewer's "sync planned for a future phase" (permanent non-goal, not pending).
+- **Bug caught mid-fix:** the first pass reused the BCCh-flavored `DataSourceBadge` for the Home sector-heatmap and markets modules, which rendered "BCCh persisted" on market (Yahoo/Supabase) data — wrong attribution. Fixed by switching to `MarketDataSourceBadge`. Caught via direct browser verification, not assumed from the label text alone.
+- **Tests:** `tests/dataSourceAudit.test.ts` — 27 tests covering the registry, badge semantic-token compliance, absence of stale phase/future-source/fabricated-vendor copy, CMF-blocked wording precision, the Home badge-component regression guard, and confirmation that portfolio math / middleware / provider orchestrators were untouched.
+
+Build 42 routes · lint 0 · tests 513/513
+
+Next: **Phase 8B** (Compare page real-data wiring, lowest-risk follow-up) · **Phase 8C** (financial-statement ingestion for Charting/Earnings) · **Phase 8D** (News/Economic Calendar source strategy).

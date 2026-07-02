@@ -23,6 +23,8 @@ import { fetchLiveSnapshot, formatLiveTimestamp, type LiveSnapshot } from '@/lib
 import { fetchStockSnapshot } from '@/lib/data/marketData'
 import type { StockSnapshot } from '@/lib/providers/market/types'
 import { MarketRefreshButton } from '@/components/ui/MarketRefreshButton'
+import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
+import type { DataSourceStatus } from '@/lib/providers/types'
 
 const median = (xs: number[]): number | null => {
   const v = xs.filter(n => n != null).sort((a, b) => a - b)
@@ -149,6 +151,7 @@ export default function CompanyDetailPage() {
   const livePrice  = lv?.price        ?? supaSnap?.price        ?? snap?.price
   const liveDayPct = lv?.dayChangePct ?? supaSnap?.dayChangePct ?? snap?.dayChangePct
   const liveTimestamp = live ? formatLiveTimestamp(live.lastUpdated) : null
+  const priceStatus: DataSourceStatus = live ? 'live' : supaSnap ? 'persisted' : 'static'
 
   const kpis = [
     { label: t.company.kpis.lastPrice, value: livePrice != null ? formatCLP(livePrice) : '—',       unit: 'CLP', color: '' },
@@ -178,6 +181,7 @@ export default function CompanyDetailPage() {
           <>
             <div className="flex items-center gap-1.5">
               <MarketRefreshButton onRefresh={doRefresh} />
+              <MarketDataSourceBadge status={priceStatus} />
               {liveTimestamp && (
                 <span className="text-xs text-muted-fg ui-number whitespace-nowrap">{liveTimestamp}</span>
               )}
@@ -188,7 +192,12 @@ export default function CompanyDetailPage() {
             >
               <span aria-hidden>⎙</span>{t.common.print}
             </button>
-            <StatusPill label={t.company.watchlistPill} variant="soon" />
+            <Link
+              href="/watchlist"
+              className="flex items-center gap-1.5 h-7 px-2.5 rounded border border-border bg-surface text-xs text-muted-fg hover:text-foreground hover:border-accent transition-colors"
+            >
+              {t.company.watchlistPill}
+            </Link>
           </>
         }
       />

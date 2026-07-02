@@ -1,6 +1,6 @@
 # Data Dictionary — Chile Market Intelligence
 
-This file defines the data entities, their fields, and where each field comes from. It is the authoritative reference for what the database and API layer will eventually store. During MVP, these entities are populated with static JSON files.
+This file defines the data entities, their fields, and where each field comes from — the authoritative reference for the database/API schema. Some entities are now live/Supabase-persisted (macro, market snapshots, auth/watchlist/portfolio); others remain static JSON by design or because a live path is blocked (CMF). **For current runtime status per page/module** (live vs. persisted vs. static vs. blocked), see [`docs/data_source_status.md`](data_source_status.md) — this file describes schema, not live status.
 
 ---
 
@@ -33,7 +33,7 @@ Daily closing price record for a company.
 | Field | Type | Description | Source |
 |---|---|---|---|
 | `ticker` | string | FK → Company.ticker | |
-| `date` | date | Trading date | Bolsa de Santiago / Brain Data |
+| `date` | date | Trading date | Bolsa de Santiago, via Yahoo Finance (unofficial) |
 | `open` | decimal | Opening price (CLP) | Market data |
 | `high` | decimal | Daily high (CLP) | Market data |
 | `low` | decimal | Daily low (CLP) | Market data |

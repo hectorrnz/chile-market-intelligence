@@ -2,7 +2,7 @@
 
 An internal buyside web terminal for Nevada Inversiones, a Chilean family office. Tracks Chilean listed equities, macroeconomic indicators, CMF filings (Hechos Esenciales), and earnings releases.
 
-**Current phase:** Phase 6D complete — authentication (username + password), personal watchlist, portfolio positions with live unrealized P&L, and now transaction history + a cash ledger (weighted-average cost, realized P&L) are all live in production, alongside the Phase 4A–5D live macro/market data stack.
+**Current phase:** Phase 8A complete — a full data-source audit corrected stale "Static MVP"/"Phase N will connect" labels across the app so every page's UI now honestly reflects whether its data is live, Supabase-persisted, static-by-design, or CAPTCHA-blocked (CMF). See [`docs/data_source_status.md`](docs/data_source_status.md) for the full page-by-page matrix. Auth, watchlist, portfolio positions, transaction history + cash ledger (Phase 6A–6D), and the live macro/market data stack (Phase 4A–5D) all remain live in production, unchanged by this audit.
 
 ---
 
@@ -62,18 +62,21 @@ npm test           # all tests must pass
 
 ## Data Sources
 
-**Default is static MVP sample data.** Phase 4A adds a live-data architecture for
-macro (Banco Central de Chile) that is opt-in via env vars and always falls back
-to static.
+Sourcing varies by module — every page shows a subtle source badge/footer
+naming its actual status. **Full page-by-page detail:**
+[`docs/data_source_status.md`](docs/data_source_status.md).
 
-| Data | Live source | Status |
+| Data | Source | Status |
 |---|---|---|
-| Macro indicators | Banco Central BDE API | **Architecture ready (Phase 4A)** — live disabled until series codes mapped (4B) |
-| Stock prices | Bolsa de Santiago / Brain Data | Static (Phase 4C) |
-| CMF filings | CMF API | Static (later) |
-| Earnings | CMF FECU | Static (later) |
-| FX rates | Bloomberg / FRED | Static (later) |
-| News | Aggregation service (emol, df.cl, CMF, BCCh) | Static (later) |
+| Macro indicators (Chile) | Banco Central de Chile (BDE API) | **Live/persisted** — falls back to static if BCCh is unreachable |
+| Macro indicators (US) | — | **Static sample** — no live source exists (BCCh has no US series) |
+| Stock prices | Yahoo Finance (unofficial) + Supabase persistence | **Live/persisted** — static baseline, Supabase auto-load, live overlay on refresh |
+| CMF filings (Hechos Esenciales) | CMF public portal | **Blocked** — the portal requires a CAPTCHA; confirmed via a real discovery run, not merely unimplemented. See `docs/cmf_provider_discovery.md` |
+| Earnings / financial statements | CMF FECU | **Static sample** — pending a financials-ingestion layer (Phase 8C) |
+| FX rates / Chilean rates | — | **Static sample** — no live source integrated |
+| News | — | **Static sample** — candidate sources named in-app, none integrated yet (Phase 8D) |
+| Economic calendar | — | **Static sample** (schedule-driven, synthetic values) — no live calendar source yet (Phase 8D) |
+| Watchlist / Portfolio / Transactions / Cash | Supabase, user-scoped | **Persisted** (auth required) |
 
 ### Live macro architecture (Phase 4A)
 
@@ -140,7 +143,11 @@ without them** (they never run during build). Full guide:
 | **Phase 4A–5D** | Live macro (BCCh) + market (Yahoo Finance) data, Supabase persistence, scheduled ingestion, health monitoring | ✓ Complete |
 | **Phase 6A/6B** | Authentication (username + password) + personal Watchlist | ✓ Complete |
 | **Phase 6C** | Portfolio positions foundation | ✓ Complete |
-| **Phase 6D** | Transaction history + cash ledger (this phase) | ✓ Complete |
+| **Phase 6D** | Transaction history + cash ledger | ✓ Complete |
+| **Phase 8A** | Data-source audit — corrected stale/misleading source labels app-wide (this phase) | ✓ Complete |
+| **Phase 8B** | Compare page real-data wiring | Planned |
+| **Phase 8C** | Financial-statement ingestion for Charting + Earnings | Planned |
+| **Phase 8D** | News / Economic Calendar source strategy | Planned |
 | **Phase 6E** | Portfolio analytics / performance attribution | Planned |
 | **Phase 7A** | Mobile-responsive foundation | Planned |
 
