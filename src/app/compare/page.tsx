@@ -1,18 +1,21 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useLang } from '@/components/providers/LangProvider'
 import { usePersistentState } from '@/lib/usePersistentState'
 import { useEscape } from '@/lib/useEscape'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { SourceNote } from '@/components/ui/SourceNote'
+import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
 import { CompareChart } from '@/components/charts/CompareChart'
 import { getAllCompanies } from '@/lib/data/companies'
 import { getAllSnapshots } from '@/lib/data/stocks'
 import { getStockSeriesByPeriod } from '@/lib/data/stockHistory'
 import { totalAndAnnual, tfStart } from '@/lib/returns'
-import { formatCLP, formatFx, changeColor } from '@/lib/formatters'
+import { formatCLP, formatLargeCLP, formatFx, formatPct, changeColor } from '@/lib/formatters'
 import { exportCSV } from '@/lib/export'
+import { fetchCompareData } from '@/lib/data/compareData'
+import type { CompareEntry, ComparePerformanceMetric } from '@/lib/compare/compareTypes'
 import type { StockPriceSnapshot, Company } from '@/types'
 
 type CmpTf = '1M' | 'YTD' | '1Y' | '3Y' | '5Y'
@@ -58,6 +61,37 @@ export default function ComparePage() {
   const seen = new Set<string>()
   const valids: { slot: number; ticker: string }[] = []
   s6.forEach((v, i) => { const tk = norm(v); if (tk && compMap[tk] && !seen.has(tk)) { seen.add(tk); valids.push({ slot: i, ticker: tk }) } })
+
+  // Phase 8B — market fields (price, day change, market cap, short-term
+  // performance) wired to persisted/live Supabase data via /api/compare.
+  // Historical returns + fundamentals below remain static (see compare.source).
+  const [compareData, setCompareData] = useState<Record<string, CompareEntry>>({})
+  const [compareMetaStatus, setCompareMetaStatus] = useState<{ latestSnapshotDate: string | null } | null>(null)
+  const validTickerKey = valids.map(v => v.ticker).join(',')
+  useEffect(() => {
+    let mounted = true
+    const tickers = validTickerKey ? validTickerKey.split(',') : []
+    const run = async () => {
+      if (tickers.length === 0) {
+        if (mounted) { setCompareData({}); setCompareMetaStatus(null) }
+        return
+      }
+      try {
+        const res = await fetchCompareData(tickers)
+        if (!mounted) return
+        setCompareData(Object.fromEntries(res.data.map(e => [e.ticker, e])))
+        setCompareMetaStatus({ latestSnapshotDate: res.metadata.latestSnapshotDate })
+      } catch { /* keep previous data on transient fetch failure */ }
+    }
+    run()
+    return () => { mounted = false }
+  }, [validTickerKey])
+  const marketStatus = Object.values(compareData)[0]?.marketDataStatus ?? 'static'
+  const perfCell = (m: ComparePerformanceMetric | undefined) => ({
+    label: m?.value != null ? fmtPct(m.value) : '—',
+    title: m && m.source !== 'persisted' ? (m.fallbackReason ?? m.source) : undefined,
+    className: m?.value != null ? colored(m.value) : 'text-muted-fg',
+  })
 
   const usingCustom = !!(cStart && cEnd)
   const end = usingCustom ? cEnd : DATA_END
@@ -142,6 +176,61 @@ export default function ComparePage() {
         {companies.map(c => <option key={c.ticker} value={c.ticker}>{c.shortName}</option>)}
       </datalist>
 
+      {/* Market Data — persisted/live Supabase fields (Phase 8B) */}
+      {valids.length > 0 && (
+        <div className="bg-surface border border-border rounded overflow-x-auto">
+          <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-3 flex-wrap">
+            <span className="ui-label text-muted-fg">{t.compare.marketDataTitle}</span>
+            <div className="flex items-center gap-2">
+              <MarketDataSourceBadge status={marketStatus} />
+              {compareMetaStatus?.latestSnapshotDate && (
+                <span className="text-xs text-muted-fg ui-number">{t.common.asOf} {compareMetaStatus.latestSnapshotDate}</span>
+              )}
+            </div>
+          </div>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border bg-surface-2">
+                <th className="text-left py-2 px-3 pl-4 ui-table-header text-muted-fg">{t.compare.security}</th>
+                <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.stocks.cols.price}</th>
+                <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.stocks.cols.dayChg}</th>
+                <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.compare.perf1d}</th>
+                <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.compare.perf5d}</th>
+                <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.compare.perf1m}</th>
+                <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.compare.perfYtd}</th>
+                <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.compare.perf1y}</th>
+                <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.stocks.cols.marketCap}</th>
+                <th className="text-left py-2 px-2 pr-4 ui-table-header text-muted-fg">{t.common.sector}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {valids.map(({ ticker }) => {
+                const entry = compareData[ticker]
+                const p1d = perfCell(entry?.performance.oneDay)
+                const p5d = perfCell(entry?.performance.fiveDay)
+                const p1m = perfCell(entry?.performance.oneMonth)
+                const pytd = perfCell(entry?.performance.ytd)
+                const p1y = perfCell(entry?.performance.oneYear)
+                return (
+                  <tr key={ticker} className="border-b border-border last:border-0">
+                    <td className="py-1.5 px-3 pl-4 font-mono text-primary">{ticker}</td>
+                    <td className="py-1.5 px-2 text-right ui-number text-foreground">{entry?.latestPrice != null ? formatFx(entry.latestPrice, entry.latestPrice < 1000 ? 2 : 0) : '—'}</td>
+                    <td className={`py-1.5 px-2 text-right ui-number ${entry?.dayChangePct != null ? colored(entry.dayChangePct) : 'text-muted-fg'}`}>{entry?.dayChangePct != null ? formatPct(entry.dayChangePct) : '—'}</td>
+                    <td className={`py-1.5 px-2 text-right ui-number ${p1d.className}`} title={p1d.title}>{p1d.label}</td>
+                    <td className={`py-1.5 px-2 text-right ui-number ${p5d.className}`} title={p5d.title}>{p5d.label}</td>
+                    <td className={`py-1.5 px-2 text-right ui-number ${p1m.className}`} title={p1m.title}>{p1m.label}</td>
+                    <td className={`py-1.5 px-2 text-right ui-number ${pytd.className}`} title={pytd.title}>{pytd.label}</td>
+                    <td className={`py-1.5 px-2 text-right ui-number ${p1y.className}`} title={p1y.title}>{p1y.label}</td>
+                    <td className="py-1.5 px-2 text-right ui-number text-foreground">{entry?.marketCapCLP != null ? formatLargeCLP(entry.marketCapCLP) : '—'}</td>
+                    <td className="py-1.5 px-2 pr-4 text-muted-fg whitespace-nowrap">{entry?.sector ?? compMap[ticker]?.sector ?? '—'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {/* Top: returns (left) + fundamentals (right) */}
       <div className="grid grid-cols-12 gap-4 items-start">
 
@@ -215,8 +304,11 @@ export default function ComparePage() {
             <div className="bg-surface border border-border rounded p-10 text-center text-xs text-muted-fg">{t.compare.empty}</div>
           ) : (
             <div className="bg-surface border border-border rounded overflow-x-auto">
-              <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-3">
-                <span className="ui-label text-muted-fg">{t.compare.fundamentals}</span>
+              <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span className="ui-label text-muted-fg">{t.compare.fundamentals}</span>
+                  <span className="text-xs text-muted-fg" title={t.compare.fundamentalsNote}>({t.compare.fundamentalsNote})</span>
+                </div>
                 <button
                   onClick={handleExportFund}
                   className="flex items-center gap-1.5 h-6 px-2 rounded border border-border bg-surface text-xs text-muted-fg hover:text-foreground hover:border-accent transition-colors"

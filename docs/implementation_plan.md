@@ -555,4 +555,37 @@ An audit + label-cleanup phase, not a new-provider phase. By this point real liv
 
 Build 42 routes · lint 0 · tests 513/513
 
-Next: **Phase 8B** (Compare page real-data wiring, lowest-risk follow-up) · **Phase 8C** (financial-statement ingestion for Charting/Earnings) · **Phase 8D** (News/Economic Calendar source strategy).
+Next: **Phase 8B** (Compare page real-data wiring, lowest-risk follow-up) · **Phase 8C** (financial-statement ingestion for Charting/Earnings) · **Phase 8D** (FX/rates + economic calendar live source completion) · **Phase 8E** (Hechos Relevantes + News ingestion workaround) · **Phase 7A** (mobile-responsive foundation).
+
+---
+
+## Phase 8B — Compare Real-Data Wiring + No-Static-Terminal-State Policy ✓ COMPLETE
+
+Establishes a durable product rule (see `CLAUDE.md` and `docs/data_source_status.md`):
+**no visible module may remain static as a terminal state** — static data is
+permitted only as fallback, seed/reference data, a temporary placeholder with
+a defined conversion path, or a blocked source with a documented workaround.
+
+**Compare page (`/compare`) wired to persisted/live market data:**
+- `src/lib/compare/compareTypes.ts` — the `CompareEntry`/`CompareFieldSource` model (`live` · `persisted` · `static_fallback` · `temporary_static` · `unavailable`), NaN/Infinity-guarded via `safeNumber()`.
+- `src/lib/compare/resolveCompareData.ts` (server-only) — reuses the existing `marketProvider.ts` static/supabase/hybrid orchestrator (no new provider). Latest price/day-change/market-cap/currency come from `resolveStockSnapshots()`; short-term performance (1D/5D/1M/YTD/1Y) comes from `resolveStockHistory()` per timeframe, with an explicit `fallbackReason` (`insufficient_supabase_history` / `supabase_unavailable`) whenever Supabase history isn't deep enough yet. Fundamentals (P/E, margins, etc.) always come back `temporary_static` with `conversionPath: 'Phase 8C — financials/FECU/manual CSV ingestion'` — never mislabeled as live.
+- `GET /api/compare?tickers=A,B,C` + `src/lib/data/compareData.ts` (`fetchCompareData`) — same static/route/client-fetch-helper separation as the rest of the app.
+- Compare page UI: new "Market Data" panel (price, day change, 1D/5D/1M/YTD/1Y performance, market cap, sector) with a dynamic `MarketDataSourceBadge` and "as of" snapshot date; the existing Comparative Returns table/chart and Fundamentals table are unchanged functionally but now carry accurate `temporary_static` labeling instead of a blanket page-level "static" claim.
+- **Static-data reference-loading gotcha (same fix as `portfolioRepository.ts`):** `resolveCompareData.ts` cannot import `src/lib/data/companies.ts`/`stocks.ts` (they use the `@/*` path alias, which Node's native test runner — and, it turns out, the initial relative-path attempt — can trip on). Fixed by reading `companies.json`/`stockPrices.json` directly via `fs.readFileSync` + `import.meta.url`, mirroring the established pattern. (First attempt used the wrong relative-path depth — `../../../data/...` instead of `../../data/...`, since this file is 2 directories under `src/lib`, not 3 like `portfolioRepository.ts` — caught immediately by a build error and fixed.)
+
+**No-static-terminal-state policy applied to every remaining static/blocked module:** `docs/data_source_status.md` now has a "Conversion Paths for Remaining Static Modules" section giving FX/Chilean rates, US macro, Economic calendar, Fundamentals/Charting, Earnings, Hechos Relevantes, and News each a target source, conversion path, blocker (if any), next phase, and priority — none left as an open-ended "Static MVP" with no plan.
+
+**Verified locally (`MARKET_DATA_MODE=hybrid`, Supabase snapshots ~2 days accumulated):** `/api/compare?tickers=BSANTANDER,SQM-B,FALABELLA` returned `marketDataStatus: "persisted"`, `marketDataSource: "Persisted Yahoo Finance via Supabase"`, real persisted market-cap/price values differing from the static baseline, 1D/5D performance `source: "persisted"`, and 1M/YTD/1Y correctly `source: "static_fallback"` with `fallbackReason: "insufficient_supabase_history"` (self-resolving as more daily snapshots accumulate — no code change needed later). Confirmed in the running dev server: badge text, dark mode, Spanish translations (`DATOS DE MERCADO`, `1A` for one-year), invalid-ticker handling (`NOTATICKER` correctly excluded and reported in `invalidTickers`), and no-tickers-param edge case all behaved correctly.
+
+Files added/changed in 8B:
+- `src/lib/compare/compareTypes.ts` — new
+- `src/lib/compare/resolveCompareData.ts` — new
+- `src/app/api/compare/route.ts` — new
+- `src/lib/data/compareData.ts` — new
+- `src/app/compare/page.tsx` — new Market Data panel, fundamentals temporary-static label, wired fetch effect
+- `src/lib/i18n.ts` — new `compare.*` keys (`marketDataTitle`, `fundamentalsNote`, `perf1d/5d/1m/Ytd/1y`), corrected `compare.subtitle`/`compare.source` to stop claiming a blanket static state
+- `CLAUDE.md` — new "No-static-terminal-state policy (Phase 8B+)" rule
+- `docs/data_source_status.md` — no-static-terminal-state policy section, rewritten Compare section, new "Conversion Paths for Remaining Static Modules" section
+- `tests/compareResolver.test.ts` — new (mocked, no live Supabase/Yahoo required)
+
+Next: **Phase 8C** (financial-statement ingestion for Charting + Earnings) is the recommended next step. Mobile-responsive work (Phase 7A) intentionally comes after data-credibility phases (8B–8E) unless a UX emergency arises.

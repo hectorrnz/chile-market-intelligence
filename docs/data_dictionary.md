@@ -43,6 +43,8 @@ Daily closing price record for a company.
 
 Note: In MVP, only the latest `close` is stored as a static value per company.
 
+**Phase 8B — CompareEntry (derived, not persisted):** `src/lib/compare/compareTypes.ts` defines a request-time-only shape assembled by `resolveCompareData()` for the Compare page — it is not its own database table, just a normalized merge of `Company`, `StockPrice`/`stock_snapshots`, and `stock_snapshots` history, each field tagged with a `CompareFieldSource` (`live` / `persisted` / `static_fallback` / `temporary_static` / `unavailable`) so the UI never has to guess a field's provenance. See `docs/data_source_status.md`'s Compare section for current field-by-field status.
+
 ---
 
 ## Entity: EarningsRelease

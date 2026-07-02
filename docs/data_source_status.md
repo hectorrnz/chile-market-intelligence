@@ -1,10 +1,38 @@
-# Data Source Status Matrix — Phase 8A
+# Data Source Status Matrix — Phase 8A / 8B
 
-Audit date: 2026-07-02. This is the canonical truth-layer reference for what
-each visible module's data source actually is, versus what its UI label says.
-Update this file whenever a module's data source changes (new ingestion,
-provider swap, or label fix) — it is the single source of truth other docs
-(`CLAUDE.md`, `README.md`) summarize from.
+Audit date: 2026-07-02 (Phase 8A) · updated 2026-07-02 (Phase 8B — Compare
+real-data wiring + no-static-terminal-state policy). This is the canonical
+truth-layer reference for what each visible module's data source actually is,
+versus what its UI label says. Update this file whenever a module's data
+source changes (new ingestion, provider swap, or label fix) — it is the
+single source of truth other docs (`CLAUDE.md`, `README.md`) summarize from.
+
+## No-static-terminal-state policy (Phase 8B)
+
+**No visible module may remain static as a terminal state.** Static data is
+permitted only as one of:
+
+1. **Fallback** — a live/persisted path exists and is preferred; static serves
+   only when the live/persisted path is unavailable (e.g. macro, market data).
+2. **Seed/reference layer** — data that legitimately doesn't change from a
+   live feed (e.g. static company reference metadata such as sector labels).
+3. **Temporary placeholder with a defined conversion path** — the module is
+   static today, but a specific next phase and target source are documented
+   below; the module must never be presented as "live" while in this state.
+4. **Blocked source with a documented workaround** — a live path was attempted
+   and is structurally blocked (e.g. CMF's CAPTCHA gate); the block and any
+   workaround options are documented, not silently treated as "just static."
+
+Every visible data field must be classified as one of: `live` · `persisted` ·
+`derived` (computed from live/persisted data) · `static_fallback` ·
+`temporary_static` (with a conversion path) · `blocked` (with a documented
+workaround) · `unavailable` (intentionally hidden/disabled rather than shown
+with a fabricated value). See `src/lib/compare/compareTypes.ts` for the first
+field-level implementation of this classification (`CompareFieldSource`).
+The "Conversion Paths for Remaining Static Modules" section near the end of
+this file gives every currently-static/blocked module a concrete target
+source, conversion path, blocker (if any), next phase, and priority — no
+module is left as an open-ended "Static MVP" with no path forward.
 
 **Priority key:** P0 = misleading label or false live claim (fix immediately) ·
 P1 = easy wiring from data already in Supabase · P2 = needs a new
@@ -46,18 +74,22 @@ fields on the same card have different sources — see notes).
 
 ---
 
-## Compare (`/compare`)
+## Compare (`/compare`) — wired to persisted/live market data in Phase 8B
 
-| Module | Current source | Status | UI label (after 8A) | Accuracy | API route | Priority |
+`src/lib/compare/resolveCompareData.ts` (server-only) + `GET /api/compare?tickers=`
+reuse the existing static/supabase/hybrid market-data orchestrator
+(`marketProvider.ts`) — no new provider was added. `src/lib/compare/compareTypes.ts`
+defines the per-field `CompareFieldSource` classification (`live` ·
+`persisted` · `static_fallback` · `temporary_static` · `unavailable`) so no
+field is ever silently static without a caller-visible label.
+
+| Module | Current source | Status | UI label (after 8B) | Accuracy | API route | Priority |
 |---|---|---|---|---|---|---|
-| Returns table + chart | `stockHistory.json` only | `static_mvp` | "Static MVP sample — historical returns and fundamentals" (was vague "live data in Phase 4 / 7") | ✅ Fixed 8A | — | **P1** (see Phase 8B plan below) |
-| Fundamentals table | `stockPrices.json` valuation fields (static snapshot) | `static_mvp` | Same footer | ✅ Accurate | — | P1/P2 — see Phase 8B |
-
-**Recommended Phase 8B plan (not implemented this phase):**
-- Day change / price already exist live+persisted via `getLatestStockSnapshots()` (Stocks/Home/Company already use it) — wiring the *current-value* row of the Returns table to that same helper is low-risk, no new provider.
-- Multi-day/period returns need enough **persisted daily history** in `stock_snapshots` to compute a real return over each timeframe; Phase 4C.4 only started accumulating this recently, so short timeframes (1D/5D) may already have enough rows, longer ones (1Y/3Y) will not yet.
-- Benchmark (IPSA) can come from `index_snapshots` the same way.
-- Fundamentals (P/E, margins, etc.) remain static-only until a financials ingestion layer exists (see Phase 8C).
+| Market Data panel — price, day change, market cap, sector, currency | `getLatestStockSnapshots()` via `resolveStockSnapshots()` (static → Supabase-persisted → Yahoo Finance live overlay, same helper Stocks/Home/Company already use) | `hybrid` (persisted in practice today) | New "Market Data" panel with `MarketDataSourceBadge` (dynamic) + "as of" snapshot date | ✅ New in 8B — real per-request status, verified showing "Persisted market data" in hybrid mode locally | `GET /api/compare?tickers=` | Done |
+| Short-term performance (1D / 5D) | `resolveStockHistory(ticker, timeframe)` — Supabase `stock_snapshots` history when sufficient | `persisted` when ≥ threshold, else `static_fallback` with explicit `fallbackReason: insufficient_supabase_history` | Per-cell tooltip shows the fallback reason when not persisted | ✅ New in 8B — verified: 1D/5D show `persisted` once ≥2 days of accumulated snapshots exist | same | Done |
+| Short-term performance (1M / YTD / 1Y) | Same helper; currently **falls back to static** because Supabase has only accumulated ~2 days of snapshot history so far (Phase 4C.4 started recently) | `static_fallback` (`insufficient_supabase_history`) | Same per-cell tooltip | ✅ Honest — will flip to `persisted` automatically as more daily snapshots accumulate, no code change needed | same | **P1** — self-resolving as ingestion continues; revisit thresholds in `src/lib/market/marketHistory.ts` (`HISTORY_MIN_POINTS`) if they prove too strict/loose |
+| Comparative Returns table + chart (custom date range, annualized, benchmark, difference-vs-reference) | `stockHistory.json` only (quarterly/weekly/daily static series through 2025-06-17) | `temporary_static` | Footer: "Historical returns and fundamentals: static MVP sample — see Market Data panel above for persisted/live fields" | ✅ Accurate — this feature (custom ranges, CAGR, benchmark diff) needs years of daily history Supabase hasn't accumulated yet | — | **P2** — revisit once `stock_snapshots` has ≥1Y of daily rows; until then this is a legitimate temporary-static feature, not a mislabel |
+| Fundamentals table (P/E, margins, ROE, FCF yield, etc.) | `stockPrices.json` static valuation snapshot | `temporary_static` | Table header shows "(Temporary static · pending financials/FECU ingestion (Phase 8C))" inline | ✅ New explicit label in 8B — was previously just implied by the page-level footer | — | **P2** — see Phase 8C plan below |
 
 ---
 
@@ -160,36 +192,71 @@ No data-source claims on this page (authentication only) — not applicable.
 
 ---
 
-## News — Source Strategy (Phase 8D candidate, not implemented)
+## Conversion Paths for Remaining Static Modules (Phase 8B)
 
-Currently 100% static (`src/data/news.json`). The existing footer already names
-candidate future sources without over-promising a specific phase — left as-is.
-Recommended options for a future phase, in rough order of effort:
-1. **Curated manual JSON**, updated periodically by hand — zero new
-   infrastructure, matches the "no aggressive scraping" rule outright.
-2. **RSS feeds** from named outlets (emol.com, df.cl, diarioestrategia.cl) —
-   low effort, but requires a scheduled fetch + dedup layer and a content
-   ownership/reproduction review (RSS excerpts only, never full-article
-   reproduction).
-3. **Licensed news API** (e.g. a financial news aggregator) — real cost,
-   most reliable, but a new vendor relationship to set up.
-4. **CMF filings feed** once/if a CAPTCHA-free CMF path exists — would fold
-   into the Hechos Esenciales pipeline rather than being a separate "News"
-   source.
+Per the no-static-terminal-state policy above, every module still serving
+static data has a concrete target source, conversion path, blocker (if any),
+next phase, and priority — none is an open-ended "Static MVP" with no plan.
 
-## Economic Calendar — Source Strategy (Phase 8D candidate, not implemented)
+### FX / Chilean rates
 
-Currently schedule-driven with synthetic values (`src/lib/data/calendar.ts`).
-Recommended options:
-1. **BCCh publication calendar** — if BCCh publishes a machine-readable release
-   schedule (separate from the BDE data API already integrated), this would
-   let real release *dates* replace the synthetic ones even before real
-   *values* are wired.
-2. **INE calendar** — same idea for INE-published series (CPI, unemployment).
-3. **Manually maintained JSON**, updated a few times a year as release
-   calendars are published — lowest effort, no scraping.
-4. **External macro-calendar API** (e.g. a paid economic-calendar vendor) —
-   most complete, but a new vendor relationship.
+- **Current static fields:** all rows in `fxRates.json` and `chileanRates.json` (Key FX, USD-per, per-USD, Yen-per sections; BTU/BTP/BCU/swap/PDBC/TPM-TNA rows).
+- **Target source:** Banco Central de Chile BDE API (same provider already live for macro) — several of these rates (BTU 10Y/5Y, Cámara Swap 1Y/2Y, TPM) are **already verified BCCh series** per `src/config/bcchSeriesManualMap.ts`; the remainder (BTP-10, BCU-5, PDBC-90d, most FX crosses) have no confirmed BCCh series yet.
+- **Conversion path:** extend `bcchSeriesManualMap.ts` with any additional verified series (`npm run bcch:search` / `npm run bcch:validate` — never hand-guess codes), then persist to `macro_observations` (reusing the existing table) or a dedicated `fx_observations`/`rates_observations` table if the shape doesn't fit. FX crosses without a BCCh series (e.g. EURUSD, USDJPY) would need a separate FX provider — not BCCh.
+- **Blocker:** none for the already-verified rate series (BTU/swap/TPM) — this is a P1 wiring task, not new-provider work. FX crosses need a new provider decision.
+- **Next phase:** **Phase 8D**.
+- **Priority:** P1 for the already-verified BCCh rate series; P2 for FX crosses needing a new provider.
 
-Do not scrape either BCCh's or INE's site aggressively or use undocumented
-endpoints — same rule as the CMF portal.
+### US macro
+
+- **Current static fields:** all 6 US indicators in `macroIndicators.json` (`region: "US"`) — Fed Funds, US 10Y, US CPI y/y, US GDP, US Unemployment, DXY.
+- **Target source:** FRED (Federal Reserve Economic Data) API — free, official, well-documented; or BLS/BEA APIs for CPI/GDP specifically if FRED coverage is insufficient.
+- **Conversion path:** mirror the BCCh provider pattern exactly — `usMacroProvider.ts` implementing the same `MacroProvider` contract, a manual series-ID mapping file (same never-guess-codes discipline as `bcchSeriesManualMap.ts`), persistence into `macro_observations` (already supports a `region`/source-agnostic shape).
+- **Blocker:** none structural — FRED has a free, immediate-signup API key. This is genuinely new-provider work, not wiring existing data.
+- **Next phase:** **Phase 8D**.
+- **Priority:** P2.
+
+### Economic calendar
+
+- **Current static fields:** `src/lib/data/calendar.ts` — schedule-driven release dates are deterministic/recurring, but **values are synthetic**.
+- **Target source:** BCCh and INE publication calendars (release *dates*) first; real *values* would come from the same BCCh BDE API already integrated once a release date passes.
+- **Conversion path:** (1) find/confirm a machine-readable BCCh/INE release-schedule endpoint if one exists (discovery step, not yet done); (2) persist confirmed dates to a `calendar_events` table; (3) backfill actual values from `macro_observations` once a scheduled release date is in the past, replacing the synthetic placeholder for that specific event.
+- **Blocker:** unconfirmed whether BCCh/INE publish a machine-readable calendar at all — needs a discovery pass (same rigor as the CMF/Brain Data discovery docs) before implementation starts. No scraping of either site.
+- **Next phase:** **Phase 8D**.
+- **Priority:** P2 (dates) / P3 (values, depends on dates first).
+
+### Fundamentals / Charting
+
+- **Current static fields:** `fundamentals.json` (FECU line items — Income Statement, Cash Flow, Balance Sheet, Returns to Shareholders) and Compare's Fundamentals table (P/E, margins, ROE, FCF yield, etc. from `stockPrices.json`).
+- **Target source:** CMF FECU filings (ideal, but blocked — see Hechos Relevantes below) or manual CSV import as the pragmatic first step.
+- **Conversion path:** new `financial_statements`, `financial_metrics`, `company_reporting_periods` Supabase tables; manual CSV import script populates them quarter-by-quarter; Charting and Compare's Fundamentals table both read from the same tables once populated, replacing `fundamentals.json`/the static valuation fields in `stockPrices.json`.
+- **Blocker:** CMF FECU parsing is blocked the same way Hechos Esenciales is (CAPTCHA) — manual CSV is the only near-term unblock.
+- **Next phase:** **Phase 8C**.
+- **Priority:** P2.
+
+### Earnings
+
+- **Current static fields:** `earnings.json` (upcoming + recent results), synthetic revenue-surprise/consensus fields (`genEarningsConsensus.mjs`).
+- **Target source:** same `financial_statements`/`company_reporting_periods` schema as Fundamentals/Charting (Phase 8C), plus a genuine analyst-estimates source before any real "surprise" language is shown (current synthetic consensus is clearly derived, never claimed as real — do not change that until a real estimates source exists).
+- **Conversion path:** same manual-CSV-first path as Charting; a `result_quality` classification rule and an explicit "estimates source" field are required before beat/miss language can be labeled as real (not synthetic).
+- **Blocker:** same CMF CAPTCHA block for the ideal source; no analyst-estimates vendor currently in scope.
+- **Next phase:** **Phase 8C**.
+- **Priority:** P2 (financials) / P3 (real consensus estimates — separate, larger scope).
+
+### Hechos Relevantes (Hechos Esenciales)
+
+- **Current static fields:** `hechosEsenciales.json` — all filings.
+- **Target source options** (none confirmed): (a) an official CMF API if one is ever published (banking/insurance APIs exist at `api.cmf.cl`; HE coverage unconfirmed); (b) a licensed/vendor data feed that redistributes CMF filings; (c) manual upload of filings as they're published; (d) email/PDF ingestion if CMF or the companies themselves can be a direct source.
+- **Conversion path:** discovery first for options (a)/(b) — confirm whether either actually covers Hechos Esenciales before building anything; (c)/(d) need no discovery, just a manual intake workflow + a `cmf_filings` table already compatible with the existing `hechosEsenciales.json` shape.
+- **Blocker:** the CMF public HTML portal requires an image CAPTCHA — confirmed structurally blocked via a real discovery run (`docs/cmf_provider_discovery.md`, Phase 5A.1). This is a **blocked-with-workaround** state, not a plain static-MVP state — the workaround options above exist and are documented, none implemented yet.
+- **Next phase:** **Phase 8E**.
+- **Priority:** P2 (manual upload workaround) / P3 (official API or vendor feed, unconfirmed to exist).
+
+### News
+
+- **Current static fields:** `news.json` — all articles, including realistic wire-service attributions (e.g. "Bloomberg / LME") that are part of the mock content itself, not a claim about this app's own data infrastructure (see the News Module Rule in `CLAUDE.md`) — keep this convention for any future sample data, but do not confuse it with a live vendor relationship.
+- **Target source options:** (a) curated manual JSON updated periodically; (b) RSS feeds from named outlets (emol.com, df.cl, diarioestrategia.cl); (c) a licensed news API; (d) folding into the Hechos Esenciales pipeline once/if a CAPTCHA-free CMF path exists.
+- **Conversion path:** (a) is the zero-infrastructure starting point; (b) needs a scheduled fetch + dedup layer and a content-reproduction review (RSS excerpts only, per the copyright rule); (c) is a real vendor cost/relationship; (d) depends entirely on the Hechos Relevantes blocker above being resolved first.
+- **Blocker:** none for (a)/(b) — this is available whenever prioritized, just not started. No aggressive scraping in any option.
+- **Next phase:** **Phase 8E**.
+- **Priority:** P2 (manual/RSS) / P3 (licensed API).

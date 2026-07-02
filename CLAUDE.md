@@ -36,6 +36,15 @@ The live-data provider abstraction exists for **macro only** so far. When workin
 - **Live macro must always keep static fallback.** Missing credentials, timeouts, or implausible values must fall back to static — never break local dev, `npm run build`, Vercel, or any page.
 - Do not expand live ingestion beyond the currently-authorized scope (e.g. CMF, earnings, stock prices, US macro live, news) without an explicit phase instruction.
 
+### No-static-terminal-state policy (Phase 8B+)
+No visible module may remain static as a terminal state. Static data is permitted only as:
+1. **Fallback** — a live/persisted path exists and is preferred (e.g. macro, market data).
+2. **Seed/reference layer** — data that legitimately doesn't change from a live feed (e.g. static sector/company reference metadata).
+3. **Temporary placeholder with a defined conversion path** — static today, with a documented target source and next phase (see `docs/data_source_status.md`).
+4. **Blocked source with a documented workaround** — a live path was attempted and is structurally blocked (e.g. CMF's CAPTCHA gate), with workaround options documented, not silently treated as "just static."
+
+Every visible field must be classified as `live` · `persisted` · `derived` · `static_fallback` · `temporary_static` · `blocked` · `unavailable` — never left as an unlabeled, open-ended "Static MVP" with no path forward. `docs/data_source_status.md` is the canonical matrix; update it whenever a module's source or conversion path changes.
+
 ### Do not add authentication until instructed
 No login pages, no session management, no Supabase Auth, no middleware. Authentication is Phase 6.
 

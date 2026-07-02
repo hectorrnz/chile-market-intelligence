@@ -106,8 +106,14 @@ describe('Phase 8A — no stale phase/future-source promises in i18n', () => {
     assert.ok(!/Bloomberg/i.test(src))
   })
 
-  it('does not reference a specific numbered phase as a live-data promise (Phase 4/6/7 · Fase 4/6/7)', () => {
-    assert.ok(!/Phase [4-9]|Fase [4-9]/.test(src), 'no i18n label should reference a specific future phase number')
+  it('does not couple a phase number with promise language ("Phase N will…", "planned for Phase N")', () => {
+    // Phase 8B intentionally introduces honest "(Phase 8C)" conversion-path
+    // citations (e.g. compare.fundamentalsNote: "pending ... (Phase 8C)") —
+    // a documented next step, not a vague promise. Those are fine; what this
+    // guards against is the old "Phase N will connect X" pattern (already
+    // separately caught above) resurfacing with different wording, e.g.
+    // "planned for Phase N" or "coming in Phase N".
+    assert.ok(!/planned for Phase [4-9]|coming in Phase [4-9]|planificad[oa].{0,10}Fase [4-9]|próxima.{0,10}Fase [4-9]/i.test(src))
   })
 })
 
