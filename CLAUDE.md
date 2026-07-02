@@ -381,6 +381,73 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 6D — Transaction History and Cash Ledger Foundation** ✓ COMPLETE (2026-07-02)
+
+Lets positions be derived from real buy/sell lots instead of a manually entered quantity + average cost, while leaving the Phase 6C manual-position flow fully intact for tickers that don't use it. `portfolio_positions` (Phase 6C) stays the current-state table with an unchanged schema; `portfolio_transactions` becomes the source of truth for lot-managed tickers and every mutation reconciles `portfolio_positions` from the full replayed history.
+
+**Average cost:** weighted average only (no FIFO/LIFO/specific-lot). A buy blends into the existing average (`newAvg = (existingQty×existingAvg + buyQty×buyPrice + fees + taxes) / (existingQty+buyQty)`); a sell reduces quantity but leaves the average cost on remaining shares unchanged.
+
+**Realized P&L:** `(sellQty×sellPrice − fees − taxes) − (sellQty×averageCostAtSaleTime)`. `rebuildPositionFromTransactions()` (`src/lib/portfolio/transactions.ts`) replays a ticker's full history (sorted by `trade_date`) and returns both the final state and a per-transaction `steps[]` array, so editing or deleting an earlier transaction correctly recalculates `realized_pnl` on every later sell — not just the row touched. A sell that would exceed the quantity derivable from history is rejected (`insufficient_quantity`) **before** any write; editing/deleting also pre-validates the resulting full history first, so an invalid ledger (e.g. deleting a buy that would leave a later sell oversold) is never persisted.
+
+**Cash ledger:** every buy/sell automatically creates one linked entry — `buy_cash_outflow` (negative, gross+fees+taxes) or `sell_cash_inflow` (positive, gross−fees−taxes). Users can also add manual `deposit` / `withdrawal` / `adjustment` entries; deposit/withdrawal are entered as a positive magnitude and normalized to +/− internally.
+
+**Manual-position compatibility (no silent conversion):** the first transaction for a ticker that already has a manually-entered position (Phase 6C flow, or any pre-6D row with no `metadata.positionSource`) is blocked with `manual_position_conflict` — the user must remove the manual position first. Once a ticker has any transaction history it's `positionSource: 'transactions'`; the Positions-tab manual edit/remove controls are disabled for that row (directs the user to the Transactions tab instead).
+
+DB tables added (migration `20260703000000_portfolio_transactions_cash_ledger.sql`, does **not** alter `portfolio_positions` — reuses its existing `metadata` column instead of an `ALTER TABLE`):
+- `portfolio_transactions` — ticker (FK → `companies.ticker`), `transaction_type` ('buy'/'sell'), trade_date, quantity, price, fees, taxes, gross/net amount, `realized_pnl`; check constraints on type/quantity(>0)/price/fees/taxes(≥0)
+- `portfolio_cash_ledger` — entry_type ('deposit'/'withdrawal'/'buy_cash_outflow'/'sell_cash_inflow'/'fee'/'tax'/'adjustment'), signed amount, optional `transaction_id` link
+
+RLS: `auth.uid() = user_id` on every operation (both tables), `user_id` defaults to `auth.uid()` at the column level, no public read/write — same pattern as 6A/6C. Additionally, a `before insert or update` trigger (`check_portfolio_ownership()`) on both tables verifies the referenced `portfolio_id` actually belongs to `user_id`, since RLS alone only checks the row's own `user_id` and can't validate a cross-table FK.
+
+Files added/changed in 6D:
+- `supabase/migrations/20260703000000_portfolio_transactions_cash_ledger.sql` — 2 tables, 8 indexes, 1 updated_at trigger, 1 ownership-guard trigger (×2 tables), 8 RLS policies; idempotent
+- `src/lib/supabase/database.types.ts` — added `portfolio_transactions` + `portfolio_cash_ledger` Row/Insert/Update types + `PortfolioTransactionRow`/`PortfolioCashLedgerRow` aliases
+- `src/lib/portfolio/transactions.ts` — pure functions: `calculateTransactionAmounts`, `calculateAverageCostAfterBuy`, `calculatePositionAfterSell`, `calculateRealizedPnl`, `rebuildPositionFromTransactions` (+ per-step realized-P&L replay), `buildCashLedgerEntriesForTransaction`, `calculateCashBalance`, `calculatePortfolioCashSummary`
+- `src/lib/db/repositories/portfolioTransactionRepository.ts` — `getPortfolioTransactions`, `addPortfolioTransaction`, `updatePortfolioTransaction`, `deletePortfolioTransaction`, `rebuildPortfolioPositionsFromTransactions`, `getCashLedger`, `addCashLedgerEntry`, `getCashBalance`, `getPortfolioCashSummary`, `getRealizedPnlSummary`; all pre-validate via the replay function before writing, then reconcile after
+- `src/lib/db/repositories/portfolioRepository.ts` — added `positionSource` field (read from `metadata.positionSource`, defaults `'manual'`), `getPositionSource()` helper exported for reuse; manual `addPosition` now explicitly sets `metadata: { positionSource: 'manual' }`
+- `src/app/api/portfolios/[id]/transactions/route.ts` — GET (list, optional `?ticker=`/`?limit=`), POST (add)
+- `src/app/api/portfolios/[id]/transactions/[transactionId]/route.ts` — PATCH (edit), DELETE (remove)
+- `src/app/api/portfolios/[id]/cash/route.ts` — GET (ledger + summary), POST (manual deposit/withdrawal/adjustment)
+- `src/app/api/portfolios/[id]/route.ts` — now also returns `cashSummary` and `realizedPnl` in the same response
+- `src/app/portfolio/page.tsx` — tab bar (Positions/Transactions/Cash); summary strip grows 5→7 cards (added Realized P&L, Cash Balance); transaction-derived rows show a "Transactions" badge with locked edit/remove; manual rows show "Manual" and keep full edit/remove; new `AddTransactionForm`, `TransactionsTable`, `AddCashForm`, `CashSummaryCards`, `CashLedgerTable` components
+- `src/lib/i18n.ts` — `portfolio.tx.*` and `portfolio.cash.*` sections (EN + ES), plus `realizedPnL`/`cashBalance`/tab labels/badges at the top level
+- `tests/portfolioTransactions.test.ts` — 52 tests: migration/RLS/ownership-trigger structural checks, all pure math (weighted average, realized P&L, oversell rejection, per-step replay), and a full add→buy→buy→sell→update→delete integration flow against an in-memory fake Supabase client that mimics real PostgREST snapshot semantics (see the fix below — the first version of this fake masked a real bug)
+
+**Bug caught by Preview validation (fixed same day):** `addPortfolioTransaction`/`updatePortfolioTransaction` returned the pre-reconcile transaction row, so `realized_pnl` was always `null` in the POST/PATCH response even though the persisted DB value (written moments later by the reconcile step) was correct. Invisible to the UI (it re-fetches via GET after every mutation) but a real API-contract bug. Root cause of why unit tests didn't catch it: the original test fake Supabase client returned live object references from `insert()`, so a later `.update()` call retroactively "fixed" the already-captured value in-memory — real PostgREST returns a point-in-time snapshot, not a live reference. Fixed both the repository (merge the reconciled step's `realizedPnl` into the response) and the fake client (shallow-copy on read, matching real semantics) — this is exactly the kind of gap the required Preview-before-Production curl validation exists to catch.
+
+Build 42 routes · lint 0 · tests 486/486
+
+Local validation (dev server, existing throwaway test account, migration applied via Supabase SQL Editor):
+- Cash deposit (1,000,000) → buy SQM-B ×2 at different prices (10@50,000, 10@70,000) → weighted average cost correctly 60,000 → partial sell (5@80,000) → realized P&L correctly 100,000 → position quantity/avg-cost/cash-balance/summary-card math all verified correct at every step
+- Oversell (999 shares) → rejected with the correct message
+- First transaction attempt on BSANTANDER (which had an existing manual position) → correctly blocked with `manual_position_conflict`
+- Refresh → all state persisted; sign-out → `/portfolio` re-protected
+- Watchlist, public pages (`/`, `/stocks`, `/macro`, `/compare`, `/chart-builder`, `/earnings`, `/hechos-esenciales`), `/api/macro`, `/api/market/stocks`, `/api/health/ingestion` → all unaffected
+
+Preview validation (curl against a live Preview deployment, same throwaway test account):
+- Deposit → buy → buy → sell round-trip via `/api/portfolios/[id]/transactions` and `/cash` — all math confirmed correct via GET
+- **Found and fixed the realized-P&L response bug above** during this step, redeployed, re-verified: a subsequent sell's POST response showed the correct `realizedPnl` directly
+- Edit/delete transaction, cash ledger + summary, watchlist regression — all confirmed; test transactions cleaned up (position correctly reconciled back to quantity 0)
+
+Production validation (`nevada-market-intelligence.vercel.app`, commit `57f422d`, deployment `dpl_5zfy4arHieLuFAtm3sAg3EYaWYjz`):
+- Public pages 200, `/portfolio` and `/watchlist` redirect to login when unauthenticated (307), `/api/portfolios` and `/api/watchlists` return 401 unauthenticated, `/api/health/ingestion` → `overallStatus: healthy`, `/api/macro` and `/api/market/stocks` → 200
+- Logged in with the test account on the canonical domain (same session mechanism as 6B) → buy BSANTANDER → edit price (30→35, gross/net recalculated correctly) → delete → all succeeded; test data cleaned up
+- Cron route (`/api/cron/check-ingestion-health`) still returns 401 without its own bearer token — confirms middleware still leaves cron routes untouched
+
+Scope limits (this phase, explicit):
+- No FIFO/LIFO or specific-lot selection — weighted average only
+- No dividends
+- No time-weighted or money-weighted performance attribution
+- No broker/CSV import
+- No automated cash reconciliation against a real brokerage statement
+- Multi-step writes (transaction insert → cash-ledger insert → position reconcile) are sequential, not a single DB transaction (Supabase JS has no multi-statement transaction API) — pre-validation before every write keeps the ledger consistent in practice; a Postgres RPC would close this gap if ever needed
+- No alerts, no AI summaries, no admin panel
+- Macro/market ingestion logic untouched
+
+Next: **Phase 7A** — mobile-responsive foundation, or **Phase 6E** — portfolio analytics / performance attribution.
+
+---
+
 **Phase 6C — Portfolio Positions Foundation** ✓ COMPLETE (2026-07-02)
 
 First portfolio-monitoring layer for authenticated users: create/view a portfolio, add/edit/remove positions, see current market value and unrealized P&L, see exposure by sector. Follows the exact pattern established by Phase 6A's watchlist (same middleware protection style, same `getSupabaseUserClient()` + RLS ownership model). No transaction history, realized P&L, cash balance, FX conversion, alerts, or AI summaries in this phase.
