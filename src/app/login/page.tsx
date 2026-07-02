@@ -29,12 +29,11 @@ function LoginForm() {
   const { t } = useLang()
   const searchParams = useSearchParams()
   const callbackError = searchParams.get('error')
-  const next = searchParams.get('next') ?? '/watchlist'
+  const next = searchParams.get('next') ?? '/'
 
   const [mode, setMode] = useState<Mode>('signin')
   const [username, setUsername]       = useState('')
   const [password, setPassword]       = useState('')
-  const [displayName, setDisplayName] = useState('')
   const [email, setEmail]             = useState('')
   const [loading, setLoading]         = useState(false)
   const [error, setError]             = useState<string | null>(
@@ -48,10 +47,11 @@ function LoginForm() {
 
     try {
       const endpoint = mode === 'signin' ? '/api/auth/login' : '/api/auth/register'
+      // Username doubles as the display name — no separate field.
       const payload =
         mode === 'signin'
           ? { username: username.trim(), password }
-          : { username: username.trim(), password, email: email.trim(), displayName: displayName.trim() }
+          : { username: username.trim(), password, email: email.trim(), displayName: username.trim() }
 
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -67,7 +67,7 @@ function LoginForm() {
       }
 
       // Session cookies are set by the server. Navigate to the target.
-      const safeNext = next.startsWith('/') ? next : '/watchlist'
+      const safeNext = next.startsWith('/') ? next : '/'
       // Full navigation so the new session cookies are picked up server-side.
       window.location.assign(safeNext)
     } catch {
@@ -122,22 +122,6 @@ function LoginForm() {
               className="w-full h-9 px-3 rounded border border-border bg-surface-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:border-accent"
             />
           </div>
-
-          {/* Create-only: display name */}
-          {isCreate && (
-            <div className="space-y-1.5">
-              <label htmlFor="displayName" className="ui-label text-muted-fg">{t.auth.displayNameLabel}</label>
-              <input
-                id="displayName"
-                type="text"
-                required
-                value={displayName}
-                onChange={e => setDisplayName(e.target.value)}
-                placeholder={t.auth.displayNamePlaceholder}
-                className="w-full h-9 px-3 rounded border border-border bg-surface-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:border-accent"
-              />
-            </div>
-          )}
 
           {/* Create-only: recovery email */}
           {isCreate && (

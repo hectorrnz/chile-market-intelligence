@@ -73,7 +73,7 @@ const MACRO_REGIONS: { rg: 'CL' | 'US'; label: string }[] = [
 export function Sidebar() {
   const pathname = usePathname()
   const { t } = useLang()
-  const { name: displayName } = useAuthDisplay()
+  const { name: displayName, ready: authReady } = useAuthDisplay()
   const onMacro = pathname.startsWith('/macro')
   const [macroOpen, setMacroOpen] = useState(onMacro)
   const [macroRegion, setMacroRegion] = usePersistentState<'CL' | 'US'>('cmi.macroRegion', 'CL')
@@ -194,13 +194,32 @@ export function Sidebar() {
 
       {/* Footer */}
       <div
-        className="px-4 py-3 text-xs font-mono"
+        className="px-4 py-3 flex items-center justify-between"
         style={{
           borderTop: '1px solid var(--sidebar-border)',
           color: 'var(--sidebar-muted)',
         }}
       >
-        v0.1.0 · mvp
+        <span className="text-xs font-mono">v0.1.0 · mvp</span>
+        {authReady && (
+          displayName ? (
+            <a
+              href="/logout"
+              className="text-xs hover:text-[var(--sidebar-fg)] transition-colors"
+              style={{ color: 'var(--sidebar-muted)' }}
+            >
+              {t.auth.signOut}
+            </a>
+          ) : (
+            <Link
+              href="/login"
+              className="text-xs hover:text-[var(--sidebar-fg)] transition-colors"
+              style={{ color: 'var(--sidebar-muted)' }}
+            >
+              {t.auth.signIn}
+            </Link>
+          )
+        )}
       </div>
     </aside>
   )

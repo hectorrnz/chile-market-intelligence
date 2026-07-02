@@ -215,14 +215,14 @@ export default function WatchlistPage() {
     let cancelled = false
     void (async () => {
       try {
-        const res = await fetch('/api/watchlists')
+        const res = await fetch('/api/watchlists', { cache: 'no-store' })
         if (!res.ok || cancelled) { setLoading(false); return }
         const json = await res.json()
         const wl: WatchlistRow = json.watchlists?.[0]
         if (!wl || cancelled) { setLoading(false); return }
         setWatchlist(wl)
 
-        const itemsRes = await fetch(`/api/watchlists/${wl.id}/items`)
+        const itemsRes = await fetch(`/api/watchlists/${wl.id}/items`, { cache: 'no-store' })
         if (itemsRes.ok && !cancelled) {
           const itemsJson = await itemsRes.json()
           setItems(itemsJson.items ?? [])

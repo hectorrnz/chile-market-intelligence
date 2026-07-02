@@ -6,7 +6,6 @@ import { useLang } from '@/components/providers/LangProvider'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { LangToggle } from '@/components/ui/LangToggle'
 import { BrandLogo } from '@/components/ui/BrandLogo'
-import { AuthStatus } from '@/components/ui/AuthStatus'
 
 export function TopBar() {
   const pathname = usePathname()
@@ -52,7 +51,6 @@ export function TopBar() {
 
       {/* Right: toggles + date + status */}
       <div className="flex items-center gap-3 shrink-0">
-        <AuthStatus />
         <LangToggle />
         <ThemeToggle />
         <span className="text-sm text-muted-fg font-mono tabular-nums">{today}</span>
