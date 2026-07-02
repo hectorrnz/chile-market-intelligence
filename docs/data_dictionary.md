@@ -174,19 +174,70 @@ An internal registry entry that represents a source document (CMF filing, earnin
 
 ---
 
-## Entity: Watchlist (future)
+## Entity: Watchlist / WatchlistItem (Phase 6A)
 
-Associates a user with a set of tracked companies.
+Associates a signed-in user with a set of tracked tickers — no position size or cost basis (see Portfolio below for that). One or more watchlists per user; the first is auto-created (`is_default: true`, name "Default").
+
+**`watchlists`**
 
 | Field | Type | Description |
 |---|---|---|
 | `id` | uuid | Primary key |
-| `user_id` | uuid | FK → auth.users (Supabase) |
-| `ticker` | string | FK → Company.ticker |
-| `position_size` | decimal | Number of shares held |
-| `cost_basis_clp` | decimal | Average cost per share |
-| `notes` | text | Free-form notes |
-| `created_at` | timestamp | |
+| `user_id` | uuid | FK → `auth.users`, defaults to `auth.uid()` |
+| `name` | text | e.g. "Default" |
+| `is_default` | boolean | |
+| `created_at` / `updated_at` | timestamptz | |
+
+**`watchlist_items`**
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | uuid | Primary key |
+| `watchlist_id` | uuid | FK → `watchlists.id` |
+| `user_id` | uuid | FK → `auth.users`, defaults to `auth.uid()` |
+| `ticker` | text | FK → `companies.ticker`; validated against the covered universe |
+| `notes` | text \| null | |
+| `added_at` | timestamptz | |
+
+Unique on `(watchlist_id, ticker)`. RLS: `auth.uid() = user_id` on every operation — no public read/write.
+
+---
+
+## Entity: Portfolio / PortfolioPosition (Phase 6C)
+
+A signed-in user's holdings, with cost basis and live unrealized P&L. One or more portfolios per user; the first is auto-created (`is_default: true`, name "Default", `base_currency: 'CLP'`) on first visit to `/portfolio`.
+
+**`portfolios`**
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | uuid | Primary key |
+| `user_id` | uuid | FK → `auth.users`, defaults to `auth.uid()` |
+| `name` | text | e.g. "Default" |
+| `base_currency` | text | Default `'CLP'` — no FX conversion yet (see Limitations) |
+| `is_default` | boolean | |
+| `created_at` / `updated_at` | timestamptz | |
+
+**`portfolio_positions`**
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | uuid | Primary key |
+| `portfolio_id` | uuid | FK → `portfolios.id` |
+| `user_id` | uuid | FK → `auth.users`, defaults to `auth.uid()` |
+| `ticker` | text | FK → `companies.ticker` (restrict on delete); validated against the covered universe |
+| `quantity` | numeric | Must be > 0 |
+| `average_cost` | numeric \| null | Per-share cost; must be ≥ 0 when present |
+| `cost_currency` | text | Default `'CLP'` |
+| `opened_at` | date \| null | Reserved; not yet set by the UI |
+| `notes` | text \| null | |
+| `created_at` / `updated_at` | timestamptz | |
+
+Unique on `(portfolio_id, ticker)`. RLS: `auth.uid() = user_id` on every operation — no public read/write.
+
+**Derived (not stored — computed in `src/lib/portfolio/valuation.ts` from the latest `stock_snapshots` price):** `latestPrice`, `marketValue`, `costBasis`, `unrealizedPnL`, `unrealizedPnLPct`, `weight` (% of portfolio market value), `mixedCurrency` (true when `cost_currency` ≠ the live price's currency — no FX conversion is applied).
+
+**Limitations (Phase 6C):** no transaction history (average cost is entered directly, not derived from buy/sell lots), no realized P&L, no cash balance, no FX conversion, no performance attribution. See `docs/supabase_persistence.md` → "Portfolio Valuation" for the full methodology note.
 
 ---
 

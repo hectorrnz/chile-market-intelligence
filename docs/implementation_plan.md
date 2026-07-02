@@ -278,7 +278,7 @@ Tasks:
 
 ## Phase 6 — Authentication and Watchlist (future)
 
-Out of scope until Phase 5 is complete and stable. Not planned in detail yet.
+**Superseded — see "Phase 6A/6B — Authentication and Watchlist ✓ COMPLETE" and "Phase 6C — Portfolio Positions Foundation ✓ COMPLETE" further down this document.**
 
 ---
 
@@ -497,4 +497,29 @@ observations into the `macro_observations` Supabase table.
 
 Next: **Run the migration in SQL Editor**, then `npm run ingest:bcch-macro:dry`, then `npm run ingest:bcch-macro -- --all --write`.
 Or: **Phase 5D** — wire observations into the live macro provider (serve DB values instead of static).
+
+---
+
+## Phase 6A/6B — Authentication and Watchlist ✓ COMPLETE
+
+Supersedes the "Phase 6" placeholder above. Delivered in two parts:
+- **6A**: Supabase Auth (originally magic-link email OTP), user-scoped `watchlists`/`watchlist_items` tables + RLS, protected `/watchlist` route and `/api/watchlists*` handlers.
+- **6B**: replaced magic-link with **username + password** sign-in after the PKCE code-verifier proved unreliable to persist client-side in testing (see `src/lib/auth/sessionCookies.ts` for the fix — session cookies must be set directly on the response, not via `next/headers`, to survive a redirect in Next.js 16). Username doubles as the display name shown in the sidebar; recovery email is collected but never used for sign-in.
+
+Full detail in `CLAUDE.md` → "Phase 6A" / "Phase 6B" entries. Migration files: `20260701000000_auth_watchlist_foundation.sql`, `20260701120000_username_password_auth.sql`.
+
+---
+
+## Phase 6C — Portfolio Positions Foundation ✓ COMPLETE
+
+Adds the first portfolio-monitoring layer for authenticated users, following the exact pattern established by 6A's watchlist (same middleware protection style, same `getSupabaseUserClient()` + RLS ownership model).
+
+- **Migration** `20260702000000_portfolio_foundation.sql` — `portfolios` + `portfolio_positions` tables, RLS (`auth.uid() = user_id` on every operation, `user_id` also defaults to `auth.uid()` at the column level), FK from `portfolio_positions.ticker` to `companies.ticker`.
+- **Repository** `src/lib/db/repositories/portfolioRepository.ts` — CRUD scoped entirely through the session client; never accepts or sets a client-supplied `user_id`.
+- **Valuation** `src/lib/portfolio/valuation.ts` — pure functions (market value, cost basis, unrealized P&L, sector exposure), NaN/Infinity-guarded, reading prices from `getLatestStockSnapshots()` (the same deduplicated-latest-snapshot helper the company-page charts already use — no new market ingestion).
+- **Routes** `GET/POST /api/portfolios`, `GET /api/portfolios/[id]`, `POST /api/portfolios/[id]/positions`, `PATCH/DELETE /api/portfolios/[id]/positions/[ticker]`.
+- **Page** `/portfolio` — summary cards (market value, cost basis, unrealized P&L/%, position count), sector-exposure bars, positions table with inline edit, add/remove.
+- **Scope limits (intentional):** no transaction history, no realized P&L, no cash balance, no FX conversion, no performance attribution, no alerts, no AI summaries.
+
+Next: **Phase 6D** — transaction history + cash ledger (to derive average cost from real buy/sell lots instead of a manually entered value), or **Phase 7A** — mobile-responsive foundation.
 Or: **Phase 4C.1** — Brain Data credentials + live market price provider.

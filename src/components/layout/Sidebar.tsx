@@ -62,6 +62,13 @@ function NavIcon({ name }: { name: string }) {
         <path strokeLinecap="round" strokeLinejoin="round" d="M4 7l5-3 4 2 4-3" />
       </svg>
     ),
+    portfolio: (
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-4 h-4">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 6.5a1.5 1.5 0 011.5-1.5h11a1.5 1.5 0 011.5 1.5V15a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 013 15V6.5z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M7 5V4a1 1 0 011-1h4a1 1 0 011 1v1" />
+        <path strokeLinecap="round" d="M3 9.5h14" />
+      </svg>
+    ),
   }
   return <>{icons[name] ?? null}</>
 }

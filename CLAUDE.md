@@ -381,6 +381,98 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 6C — Portfolio Positions Foundation** ✓ COMPLETE (2026-07-02)
+
+First portfolio-monitoring layer for authenticated users: create/view a portfolio, add/edit/remove positions, see current market value and unrealized P&L, see exposure by sector. Follows the exact pattern established by Phase 6A's watchlist (same middleware protection style, same `getSupabaseUserClient()` + RLS ownership model). No transaction history, realized P&L, cash balance, FX conversion, alerts, or AI summaries in this phase.
+
+Protected routes (middleware, added to the existing 6A lists):
+- `/portfolio` → redirect to `/login?next=/portfolio` if not authed
+- `/api/portfolios/*` → 401 JSON if not authed
+
+DB tables added (migration `20260702000000_portfolio_foundation.sql`):
+- `portfolios` — one or more per user; `is_default` auto-created ("Default", `base_currency: 'CLP'`) on first `/portfolio` visit
+- `portfolio_positions` — ticker (FK → `companies.ticker`, restrict on delete) + quantity + average_cost + cost_currency + notes; unique(portfolio_id, ticker)
+
+RLS: `auth.uid() = user_id` on select/insert/update/delete for both tables — no public read/write, mirrors the 6A watchlist policies exactly. `user_id` also defaults to `auth.uid()` at the column level (defense in depth). Repository code never sets `user_id` in an insert/update payload; ownership is established solely by the database.
+
+Pricing source: `getLatestStockSnapshots()` in `marketRepository.ts` (Phase 4C.4's deduplicated-latest-per-ticker helper — already used by the company-page charts). No new market ingestion; Yahoo live overlay is out of scope for this phase.
+
+Valuation (`src/lib/portfolio/valuation.ts`, pure functions, NaN/Infinity-guarded):
+- `calculatePositionMarketValue` = `quantity × latestPrice`; `calculateCostBasis` = `quantity × averageCost`
+- `calculateUnrealizedPnL` = `marketValue − costBasis`; `calculateUnrealizedPnLPct` guards a zero/null cost basis → `null`, never `Infinity`
+- `calculatePortfolioTotals` sums across positions; `calculateSectorExposure` groups by sector (from `companies.json`) and computes weight
+- `isMixedCurrency` flags (doesn't convert) when a position's `cost_currency` differs from the live price's currency — no FX conversion is implemented yet
+
+Files added/changed in 6C:
+- `supabase/migrations/20260702000000_portfolio_foundation.sql` — 2 tables, 5 indexes, updated_at triggers, 8 RLS policies; idempotent
+- `src/lib/supabase/database.types.ts` — added `portfolios` + `portfolio_positions` Row/Insert/Update types + `PortfolioRow`/`PortfolioPositionRow` aliases
+- `src/lib/db/repositories/portfolioRepository.ts` — `getUserPortfolios`, `getDefaultPortfolio`, `createPortfolio`, `ensureDefaultPortfolio`, `getPortfolioPositions`, `addPosition`, `updatePosition`, `removePosition`, `getPortfolioSummary`; covered-ticker set loaded via `fs.readFileSync` + `import.meta.url` (not the `@/lib/data/companies` alias helper, which Node's native test runner can't resolve directly)
+- `src/lib/portfolio/valuation.ts` — pure valuation/exposure math (no Next.js/Supabase imports; directly unit-testable)
+- `src/app/api/portfolios/route.ts` — GET (list + auto-create default), POST (create named portfolio)
+- `src/app/api/portfolios/[id]/route.ts` — GET portfolio detail: positions + totals + sector exposure, joined with live pricing
+- `src/app/api/portfolios/[id]/positions/route.ts` — POST (add position; validates ticker/quantity/averageCost; 409 on duplicate)
+- `src/app/api/portfolios/[id]/positions/[ticker]/route.ts` — PATCH (edit), DELETE (remove)
+- `src/app/portfolio/page.tsx` — summary cards, sector-exposure bars, positions table with inline edit, add-position form
+- `src/middleware.ts` — added `/portfolio` and `/api/portfolios` to the protected-route lists
+- `src/lib/navigation.ts`, `src/components/layout/Sidebar.tsx` — Portfolio nav item + icon
+- `src/lib/i18n.ts` — `portfolio:` section (EN + ES): summary labels, table columns, form labels, error messages
+- `tests/portfolioFoundation.test.ts` — 46 tests: migration/RLS structural checks, ownership-safety checks (never sets `user_id` explicitly, never uses the admin client), `addPosition`/`updatePosition`/`removePosition` validation (mocked Supabase client, no live DB/Auth needed), full valuation math, middleware protection (exact `PROTECTED_PAGES`/`PROTECTED_API` scope, no creep), route existence + no-secrets checks, regression checks
+
+Build 42 routes · lint 0 · tests 434/434
+
+Local validation (dev server, throwaway test account — did not touch the real user's data):
+- Unauthenticated `/portfolio` → redirects to `/login?next=%2Fportfolio`; unauthenticated `/api/portfolios` → 401
+- Public pages (`/`, `/stocks`, `/macro`, `/compare`, `/chart-builder`, `/earnings`, `/hechos-esenciales`) → all 200, unaffected
+- `/api/macro`, `/api/market/stocks`, `/api/health/ingestion` → all 200/healthy, unaffected
+- Created account → default portfolio auto-created → added SQM-B (qty 10, avg cost 50,000) → market value/cost basis/P&L/sector exposure all computed correctly from the live Supabase snapshot price → added BSANTANDER → duplicate SQM-B correctly rejected (409, "already in your portfolio") → edited SQM-B (qty 20, avg cost 55,000) → recalculated correctly → removed SQM-B → BSANTANDER weight recalculated to 100% → refreshed page → BSANTANDER persisted → signed out → `/portfolio` re-protected
+- `/api/watchlists` still 401 unauthenticated (no regression)
+
+Scope limits (this phase, explicit):
+- No transaction history (average cost entered directly, not derived from buy/sell lots)
+- No realized P&L, no cash balance, no FX conversion
+- No performance attribution
+- No price alerts, no AI summaries, no admin panel
+- Macro/market ingestion logic untouched
+
+Next: **Phase 6D** — transaction history + cash ledger (to derive average cost from real lots). Or **Phase 7A** — mobile-responsive foundation.
+
+---
+
+**Phase 6B — Username + Password Authentication** ✓ COMPLETE (2026-07-02)
+
+Replaced the Phase 6A magic-link (email OTP) flow with username + password sign-in. Root cause for the change: the PKCE flow's one-time code verifier, written client-side before the redirect to the magic-link email, did not reliably persist in the browser during testing (`document.cookie` proved cookies worked fine in general, but Supabase's own error — "PKCE code verifier not found in storage" — confirmed the verifier specifically wasn't surviving the round trip). Rather than keep chasing that fragility, auth was rebuilt on a mechanism proven reliable earlier in the same debugging session: session cookies set directly on the HTTP response.
+
+Auth flow: `POST /api/auth/login` (username → email resolved server-side via the admin client, email never sent to the browser; `signInWithPassword`) or `POST /api/auth/register` (create/attach password to an account, set username/display_name) → session cookies set directly on the `NextResponse` inside `setAll` (not via `next/headers`, which doesn't reliably survive a redirect in Next.js 16) → client navigates to the target page.
+
+Email is now recovery-only — never used to sign in. Username doubles as the display name (no separate field), shown only in the sidebar (not the TopBar). The `/auth/callback` PKCE route is kept only for any future OAuth provider; it is not part of the primary sign-in path.
+
+DB change (migration `20260701120000_username_password_auth.sql`):
+- `user_profiles.username` — `citext`, unique, indexed. Username lookup at login time is server-side only (admin client), email never returned to the browser.
+
+Files added/changed in 6B (plus a UX-refinement pass immediately after):
+- `supabase/migrations/20260701120000_username_password_auth.sql` — `citext` extension, `username` column + unique constraint + index; idempotent
+- `src/lib/auth/credentials.ts` — pure validators: `normalizeUsername`, `isValidUsername`, `isValidPassword`, `isValidEmail`, `isValidDisplayName`
+- `src/lib/auth/sessionCookies.ts` — `createSessionWriterClient()`: captures Supabase's session-cookie writes and applies them directly to a `NextResponse` — the fix for the whole 6A/6B cookie saga
+- `src/lib/auth/useAuthDisplay.ts` — client hook exposing the signed-in user's display name from session `user_metadata` (no extra network call)
+- `src/app/api/auth/register/route.ts` — creates or attaches a password to an existing email-based account; optional `AUTH_REGISTRATION_CODE` gate
+- `src/app/api/auth/login/route.ts` — resolves username → email server-side; generic `invalid_credentials` on any failure (no user enumeration)
+- `src/app/login/page.tsx` — rewritten: username/password sign-in + create-account mode; single "Create an account" toggle (no separate display-name field)
+- `src/app/auth/callback/route.ts`, `src/app/logout/route.ts` — cookies now set directly on the response object (same fix applied everywhere)
+- `src/components/layout/Sidebar.tsx` — shows the display name below "Nevada Market Intelligence"; sign-out/sign-in link in the sidebar footer
+- `src/components/layout/TopBar.tsx` — removed the `AuthStatus` widget (username now sidebar-only); added the collapsible-sidebar hamburger toggle
+- `src/components/providers/SidebarProvider.tsx` — persisted sidebar-collapse state (`cmi.sidebarCollapsed`), a UX request made alongside this phase
+- `src/lib/i18n.ts` — `auth:` section rewritten for username/password (EN + ES); `common.hideSidebar`/`showSidebar`
+- Removed: `src/components/ui/AuthStatus.tsx`, the temporary `/api/debug-auth` diagnostic endpoint, and all `x-cb-*`/`x-mw-*` diagnostic headers added during the magic-link debugging session
+- `tests/credentials.test.ts` — 7 tests for the pure validators; `tests/authWatchlist.test.ts` updated to assert the new POST-to-server-route pattern instead of the old browser-client pattern
+
+Build 35 routes · lint 0 · tests 388/388 (at time of this phase; see 6C above for the current count)
+
+Production validated: sign-in/sign-out round-trip, watchlist add/remove works with the new session mechanism (previously blocked by the PKCE issue), public pages unaffected.
+
+Next (superseded by 6C above, kept for history): portfolio positions foundation.
+
+---
+
 **Phase 6A — Authentication and Watchlist Foundation** ✓ COMPLETE (2026-07-01)
 
 Supabase Auth with magic-link (email OTP) + personal watchlist. Authenticated users can add/remove tickers from their default watchlist. All other pages remain public.

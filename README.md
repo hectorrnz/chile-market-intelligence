@@ -2,7 +2,7 @@
 
 An internal buyside web terminal for Nevada Inversiones, a Chilean family office. Tracks Chilean listed equities, macroeconomic indicators, CMF filings (Hechos Esenciales), and earnings releases.
 
-**Current phase:** Phase 2H complete — pre-deployment polish (Phase 3) in progress.
+**Current phase:** Phase 6C complete — authentication (username + password), personal watchlist, and a portfolio-positions foundation with live unrealized P&L are all live in production, alongside the Phase 4A–5D live macro/market data stack.
 
 ---
 
@@ -20,7 +20,8 @@ An internal buyside web terminal for Nevada Inversiones, a Chilean family office
 | **Compare** | Bloomberg COMP-style comparative return chart for up to 6 tickers; fundamentals comparison table; vs-IPSA benchmark; CSV export |
 | **Graph Fundamentals** | Bloomberg GF-style fundamentals grapher — income statement, cash flow, balance sheet metrics; Indexed mode; two-company overlay |
 | **Documents** | CMF filing/earnings drill-down viewer with structured facts, assessment chip, and source link |
-| **Watchlist** | Phase 6 placeholder with mock preview table |
+| **Watchlist** (auth required) | Personal tracked-tickers list; add/remove; persisted to Supabase, protected by RLS |
+| **Portfolio** (auth required) | Personal holdings with quantity/cost basis; live market value, unrealized P&L, sector exposure; add/edit/remove positions |
 | **News** | Institutional monitoring feed with materiality badge and Bloomberg NH-style high-impact highlight |
 | **Command Palette** | ⌘K / Ctrl-K stock search with recent-search persistence |
 | **Dark mode** | Toggled by user, persisted to localStorage, applied before paint (no flash) |
@@ -52,9 +53,9 @@ npm run dev        # http://localhost:3000
 ## Building
 
 ```bash
-npm run build      # must exit 0 with 12 routes and 0 TypeScript errors
+npm run build      # must exit 0 with 0 TypeScript errors
 npm run lint       # must exit 0
-npm test           # 13/13 must pass
+npm test           # all tests must pass
 ```
 
 ---
@@ -125,23 +126,22 @@ without them** (they never run during build). Full guide:
 
 ## Current Limitations
 
-- **No live data** — all figures are static sample values as of approximately June 2025
-- **No authentication** — the app is publicly accessible once deployed (Phase 6 adds auth)
-- **No database** — Supabase integration is Phase 5
-- **No watchlist persistence** — requires authentication
-- **Desktop-only layout** — minimum comfortable viewport is ~1280px wide; 1440px recommended
+- **Desktop-only layout** — minimum comfortable viewport is ~1280px wide; 1440px recommended (mobile-responsive is a planned future phase)
+- **Portfolio has no transaction history** — average cost is entered directly, not derived from buy/sell lots
+- **Portfolio has no realized P&L, cash balance, FX conversion, or performance attribution** — valuation-only in this phase
+- **Some data is still static** — macro (BCCh) and market (Yahoo Finance) are live with Supabase persistence; CMF filings, earnings, and news remain static sample data
 
 ---
 
 ## Next Phases
 
-| Phase | Goal |
-|---|---|
-| **Phase 3** | Production polish + Vercel deployment |
-| **Phase 4** | Python data ingestion scripts (Banco Central, CMF, FX) |
-| **Phase 5** | Supabase database integration |
-| **Phase 6** | Authentication + Watchlist |
-| **Phase 7** | Live stock price feed (Bolsa de Santiago / Brain Data) |
+| Phase | Goal | Status |
+|---|---|---|
+| **Phase 4A–5D** | Live macro (BCCh) + market (Yahoo Finance) data, Supabase persistence, scheduled ingestion, health monitoring | ✓ Complete |
+| **Phase 6A/6B** | Authentication (username + password) + personal Watchlist | ✓ Complete |
+| **Phase 6C** | Portfolio positions foundation (this phase) | ✓ Complete |
+| **Phase 6D** | Transaction history + cash ledger | Planned |
+| **Phase 7A** | Mobile-responsive foundation | Planned |
 
 See `docs/implementation_plan.md` for full detail.
 
@@ -150,15 +150,19 @@ See `docs/implementation_plan.md` for full detail.
 ## Project Structure
 
 ```
-src/app/              — Next.js App Router pages (12 routes)
+src/app/              — Next.js App Router pages + API routes
 src/components/
   layout/             — AppShell, Sidebar, TopBar
-  providers/          — LangProvider (EN/ES context)
+  providers/          — LangProvider (EN/ES context), SidebarProvider
   ui/                 — SectionHeader, StatusPill, AsOfBadge, CommandPalette, …
   charts/             — LineChart, CompareChart, FundamentalsChart, YieldCurveChart
-src/data/             — Static JSON data files (MVP)
+src/data/             — Static JSON data files (fallback + not-yet-live entities)
 src/lib/
   data/               — Typed accessor helpers (one per entity)
+  db/repositories/    — Supabase-backed repositories (macro, market, watchlist, portfolio, …)
+  auth/               — Server-side auth helpers, credential validators, session-cookie writer
+  portfolio/          — Pure valuation math (market value, P&L, sector exposure)
+  providers/          — Live-data provider abstraction (BCCh, market)
   i18n.ts             — EN/ES translation dictionary
   formatters.ts       — Chilean locale formatting
   navigation.ts       — Nav config
@@ -166,7 +170,9 @@ src/lib/
   export.ts           — CSV export utility
   returns.ts          — Return math (tested)
 src/types/index.ts    — TypeScript interfaces for all entities
-scripts/              — Node.js data generation scripts
+src/middleware.ts     — Session refresh + route protection (/watchlist, /portfolio)
+supabase/migrations/  — SQL migrations (schema, RLS)
+scripts/              — Node.js data generation + ingestion scripts
 tests/                — Node built-in test files
 docs/                 — Project documentation
 ```

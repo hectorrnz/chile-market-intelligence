@@ -73,6 +73,22 @@ Migration file: [`supabase/migrations/20260625000000_create_market_intelligence_
 
 All tables have RLS enabled with an anon-read policy. No public write policies exist until Phase 6 auth.
 
+### User-scoped tables (Phase 6A, 6C)
+
+Migration files: [`20260701000000_auth_watchlist_foundation.sql`](../supabase/migrations/20260701000000_auth_watchlist_foundation.sql), [`20260702000000_portfolio_foundation.sql`](../supabase/migrations/20260702000000_portfolio_foundation.sql)
+
+| Table | Description |
+|-------|-------------|
+| `user_profiles` | Mirrors `auth.users`; username, display name, recovery email |
+| `watchlists` | One or more per user; `is_default` flag |
+| `watchlist_items` | Ticker + notes; unique per `(watchlist_id, ticker)` |
+| `portfolios` | One or more per user; `base_currency` (CLP), `is_default` flag |
+| `portfolio_positions` | Ticker + quantity + average_cost + cost_currency; unique per `(portfolio_id, ticker)`; `ticker` FKs to `companies(ticker)` |
+
+Unlike the public tables above, these have **no anon-read policy**. Every policy is `auth.uid() = user_id` for select/insert/update/delete — a row is invisible and unwritable to anyone but its owner. `user_id` also defaults to `auth.uid()` at the column level (defense in depth: even if a caller omitted it, the DB fills in the correct value; RLS's `with check` then still rejects any explicit mismatched value). Repository code (`watchlistRepository.ts`, `portfolioRepository.ts`) never sets `user_id` in an insert/update payload — ownership is established solely by the database, never trusted from the client.
+
+Route handlers use `getSupabaseUserClient()` (cookie-aware, ties to the signed-in session), never the service-role admin client, so RLS is always enforced on these tables' public-facing read/write paths.
+
 ---
 
 ## Supabase Client Files
@@ -144,6 +160,25 @@ psql $SUPABASE_DATABASE_URL -f supabase/seed.sql
 7. Seed reference data: `psql $SUPABASE_DATABASE_URL -f supabase/seed.sql`
 8. Test: `npm run supabase:check`
 9. Replace provisional DB types: `npx supabase gen types typescript --project-id <ref> > src/lib/supabase/database.types.ts`
+
+---
+
+## Portfolio Valuation (Phase 6C)
+
+`src/lib/portfolio/valuation.ts` — pure functions, no I/O:
+
+- `calculatePositionMarketValue` = `quantity × latestPrice` (from the latest deduplicated `stock_snapshots` row, via `getLatestStockSnapshots()` in `marketRepository.ts` — the same accumulated-snapshot table the company-page charts read from).
+- `calculateCostBasis` = `quantity × averageCost`.
+- `calculateUnrealizedPnL` = `marketValue − costBasis`; `calculateUnrealizedPnLPct` = `pnl / costBasis × 100`, guarded against a zero/null cost basis (returns `null`, never `Infinity`/`NaN`).
+- `calculatePortfolioTotals` sums market value and cost basis across positions.
+- `calculateSectorExposure` groups by each position's sector (from `companies.json`) and computes a weight.
+
+**Current limitations (by design, this phase):**
+- No transaction history — `average_cost` is entered directly on the position, not derived from buy/sell lots. A ledger is a Phase 6D candidate.
+- No realized P&L (only unrealized, computed from the live snapshot vs. the stored average cost).
+- No cash balance tracking.
+- No FX conversion — `base_currency` is CLP and the covered universe is Chilean equities priced in CLP. If a position's `cost_currency` ever differs from the live price currency, it is flagged `mixedCurrency: true` in the UI instead of silently mixing amounts.
+- No performance attribution (time-weighted/money-weighted returns) — this phase is valuation only.
 
 ---
 

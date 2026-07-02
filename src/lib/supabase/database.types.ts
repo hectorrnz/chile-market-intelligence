@@ -606,6 +606,71 @@ export interface Database {
           notes?: string | null
         }
       }
+      portfolios: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          base_currency: string
+          is_default: boolean
+          metadata: Record<string, unknown>
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id?: string
+          name: string
+          base_currency?: string
+          is_default?: boolean
+          metadata?: Record<string, unknown>
+        }
+        Update: {
+          name?: string
+          base_currency?: string
+          is_default?: boolean
+          metadata?: Record<string, unknown>
+        }
+      }
+      portfolio_positions: {
+        Row: {
+          id: string
+          portfolio_id: string
+          user_id: string
+          ticker: string
+          quantity: number
+          average_cost: number | null
+          cost_currency: string
+          opened_at: string | null
+          notes: string | null
+          tags: string[]
+          metadata: Record<string, unknown>
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          portfolio_id: string
+          user_id?: string
+          ticker: string
+          quantity: number
+          average_cost?: number | null
+          cost_currency?: string
+          opened_at?: string | null
+          notes?: string | null
+          tags?: string[]
+          metadata?: Record<string, unknown>
+        }
+        Update: {
+          quantity?: number
+          average_cost?: number | null
+          cost_currency?: string
+          opened_at?: string | null
+          notes?: string | null
+          tags?: string[]
+          metadata?: Record<string, unknown>
+        }
+      }
     }
     Views: Record<string, never>
     Functions: Record<string, never>
@@ -628,3 +693,5 @@ export type IngestionRunRow = Database['public']['Tables']['ingestion_runs']['Ro
 export type UserProfileRow = Database['public']['Tables']['user_profiles']['Row']
 export type WatchlistRow = Database['public']['Tables']['watchlists']['Row']
 export type WatchlistItemRow = Database['public']['Tables']['watchlist_items']['Row']
+export type PortfolioRow = Database['public']['Tables']['portfolios']['Row']
+export type PortfolioPositionRow = Database['public']['Tables']['portfolio_positions']['Row']

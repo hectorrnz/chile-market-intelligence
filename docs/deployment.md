@@ -131,7 +131,7 @@ When live sources are connected (Phase 4–5), data fetching will move to `src/l
 - `.env.local` — contains secrets; already in `.gitignore`
 - `SUPABASE_SERVICE_ROLE_KEY` — has full DB access; server-side only, never prefix with `NEXT_PUBLIC_`
 - `BCCH_API_PASSWORD` — API credential; server-side only (read only in `/api/macro*` route handlers)
-- Any raw portfolio positions or watchlist data before authentication is implemented (Phase 6)
+- User watchlist and portfolio data is protected by Supabase Auth + RLS (Phase 6A/6C) — never queried with the service-role client from a public-facing route
 
 ## Next.js Configuration Notes
 
@@ -351,3 +351,28 @@ Import from here for tests; do not import from the Next.js route directly.
 3. Confirm endpoints in `src/config/marketDataProviders.ts`
 4. Implement `src/lib/providers/market/brainDataProvider.ts` (shell exists)
 5. Confirm ticker symbols in `src/config/tickerMap.ts` (all `verified: false`)
+
+## Phase 6A/6B — Authentication (username + password)
+
+No additional Vercel configuration beyond the existing Supabase env vars
+(`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`,
+`SUPABASE_SERVICE_ROLE_KEY`) — auth uses the same Supabase project as the rest
+of the app. Sign-in is username + password (`/api/auth/login`); account
+creation (`/api/auth/register`) resolves a chosen username to a Supabase Auth
+user via the service-role admin client and sets the session with cookies
+written directly on the response (required — cookies set via `next/headers`
+inside a route handler are not guaranteed to reach the browser on a redirect
+response in Next.js 16; see `src/lib/auth/sessionCookies.ts`).
+
+Optional: `AUTH_REGISTRATION_CODE` — when set, `/api/auth/register` requires a
+matching `code` field to close open signup. Unset by default.
+
+## Phase 6C — Portfolio Foundation
+
+Adds `portfolios` + `portfolio_positions` tables (migration
+`20260702000000_portfolio_foundation.sql`) and the protected `/portfolio`
+route + `/api/portfolios*` handlers. No new env vars — pricing is read from
+the same `stock_snapshots` table the Yahoo/Stocks pages already populate via
+`getLatestStockSnapshots()`. Apply the migration via the Supabase Dashboard
+SQL Editor before the first deploy that includes this phase (idempotent —
+safe to re-run).
