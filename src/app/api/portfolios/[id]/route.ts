@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseUserClient } from '@/lib/supabase/server'
 import { getPortfolioPositions } from '@/lib/db/repositories/portfolioRepository'
+import { getPortfolioCashSummary, getRealizedPnlSummary } from '@/lib/db/repositories/portfolioTransactionRepository'
 import { getLatestStockSnapshots } from '@/lib/db/repositories/marketRepository'
 import { getAllCompanies } from '@/lib/data/companies'
 import {
@@ -61,11 +62,18 @@ export async function GET(
     mixedCurrency: valued[i].mixedCurrency,
   }))
 
+  const [cashSummary, realizedPnl] = await Promise.all([
+    getPortfolioCashSummary(client, portfolioId),
+    getRealizedPnlSummary(client, portfolioId),
+  ])
+
   return NextResponse.json({
     portfolioId,
     positions: positionsOut,
     totals,
     sectorExposure,
     priceSource: snapshots.available ? 'supabase' : 'unavailable',
+    cashSummary,
+    realizedPnl,
   })
 }

@@ -55,6 +55,8 @@ export interface PortfolioPositionRow {
   notes: string | null
   createdAt: string
   updatedAt: string
+  /** 'transactions' once Phase 6D has derived this position from a lot history; 'manual' otherwise (including all pre-6D rows, which have no positionSource key). */
+  positionSource: 'manual' | 'transactions'
 }
 
 export type PositionMutationError =
@@ -81,6 +83,18 @@ function mapPortfolio(r: DbPortfolioRow): PortfolioRow {
   }
 }
 
+/** Reads metadata.positionSource, defaulting to 'manual' for rows written before Phase 6D. */
+export function getPositionSource(metadata: unknown): 'manual' | 'transactions' {
+  if (
+    metadata &&
+    typeof metadata === 'object' &&
+    (metadata as Record<string, unknown>).positionSource === 'transactions'
+  ) {
+    return 'transactions'
+  }
+  return 'manual'
+}
+
 function mapPosition(r: DbPositionRow): PortfolioPositionRow {
   return {
     id: r.id,
@@ -94,8 +108,12 @@ function mapPosition(r: DbPositionRow): PortfolioPositionRow {
     notes: r.notes ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    positionSource: getPositionSource(r.metadata),
   }
 }
+
+const POSITION_SELECT =
+  'id, portfolio_id, user_id, ticker, quantity, average_cost, cost_currency, opened_at, notes, metadata, created_at, updated_at'
 
 // ─── Portfolio helpers ────────────────────────────────────────────────────────
 
@@ -168,7 +186,7 @@ export async function getPortfolioPositions(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const res = await (client as any)
     .from('portfolio_positions')
-    .select('id, portfolio_id, user_id, ticker, quantity, average_cost, cost_currency, opened_at, notes, created_at, updated_at')
+    .select(POSITION_SELECT)
     .eq('portfolio_id', portfolioId)
     .order('created_at', { ascending: true })
 
@@ -219,8 +237,9 @@ export async function addPosition(
       quantity: input.quantity,
       average_cost: input.averageCost ?? null,
       notes: input.notes?.trim() || null,
+      metadata: { positionSource: 'manual' },
     })
-    .select('id, portfolio_id, user_id, ticker, quantity, average_cost, cost_currency, opened_at, notes, created_at, updated_at')
+    .select(POSITION_SELECT)
     .single()
 
   if (res.error) {
@@ -268,7 +287,7 @@ export async function updatePosition(
     .update(patch)
     .eq('portfolio_id', portfolioId)
     .eq('ticker', ticker.toUpperCase())
-    .select('id, portfolio_id, user_id, ticker, quantity, average_cost, cost_currency, opened_at, notes, created_at, updated_at')
+    .select(POSITION_SELECT)
     .single()
 
   if (res.error) return { ok: false, error: 'update_failed' }

@@ -2,7 +2,7 @@
 
 An internal buyside web terminal for Nevada Inversiones, a Chilean family office. Tracks Chilean listed equities, macroeconomic indicators, CMF filings (Hechos Esenciales), and earnings releases.
 
-**Current phase:** Phase 6C complete — authentication (username + password), personal watchlist, and a portfolio-positions foundation with live unrealized P&L are all live in production, alongside the Phase 4A–5D live macro/market data stack.
+**Current phase:** Phase 6D complete — authentication (username + password), personal watchlist, portfolio positions with live unrealized P&L, and now transaction history + a cash ledger (weighted-average cost, realized P&L) are all live in production, alongside the Phase 4A–5D live macro/market data stack.
 
 ---
 
@@ -21,7 +21,7 @@ An internal buyside web terminal for Nevada Inversiones, a Chilean family office
 | **Graph Fundamentals** | Bloomberg GF-style fundamentals grapher — income statement, cash flow, balance sheet metrics; Indexed mode; two-company overlay |
 | **Documents** | CMF filing/earnings drill-down viewer with structured facts, assessment chip, and source link |
 | **Watchlist** (auth required) | Personal tracked-tickers list; add/remove; persisted to Supabase, protected by RLS |
-| **Portfolio** (auth required) | Personal holdings with quantity/cost basis; live market value, unrealized P&L, sector exposure; add/edit/remove positions |
+| **Portfolio** (auth required) | Personal holdings — manual positions or transaction-derived (weighted-average cost); live market value, unrealized + realized P&L, sector exposure, cash ledger (deposits/withdrawals/buy-sell cash flows) |
 | **News** | Institutional monitoring feed with materiality badge and Bloomberg NH-style high-impact highlight |
 | **Command Palette** | ⌘K / Ctrl-K stock search with recent-search persistence |
 | **Dark mode** | Toggled by user, persisted to localStorage, applied before paint (no flash) |
@@ -127,8 +127,8 @@ without them** (they never run during build). Full guide:
 ## Current Limitations
 
 - **Desktop-only layout** — minimum comfortable viewport is ~1280px wide; 1440px recommended (mobile-responsive is a planned future phase)
-- **Portfolio has no transaction history** — average cost is entered directly, not derived from buy/sell lots
-- **Portfolio has no realized P&L, cash balance, FX conversion, or performance attribution** — valuation-only in this phase
+- **Portfolio average cost is weighted-average only** — no FIFO/LIFO or specific-lot selection
+- **Portfolio has no FX conversion, dividends, or performance attribution** (time/money-weighted returns) — those remain planned
 - **Some data is still static** — macro (BCCh) and market (Yahoo Finance) are live with Supabase persistence; CMF filings, earnings, and news remain static sample data
 
 ---
@@ -139,8 +139,9 @@ without them** (they never run during build). Full guide:
 |---|---|---|
 | **Phase 4A–5D** | Live macro (BCCh) + market (Yahoo Finance) data, Supabase persistence, scheduled ingestion, health monitoring | ✓ Complete |
 | **Phase 6A/6B** | Authentication (username + password) + personal Watchlist | ✓ Complete |
-| **Phase 6C** | Portfolio positions foundation (this phase) | ✓ Complete |
-| **Phase 6D** | Transaction history + cash ledger | Planned |
+| **Phase 6C** | Portfolio positions foundation | ✓ Complete |
+| **Phase 6D** | Transaction history + cash ledger (this phase) | ✓ Complete |
+| **Phase 6E** | Portfolio analytics / performance attribution | Planned |
 | **Phase 7A** | Mobile-responsive foundation | Planned |
 
 See `docs/implementation_plan.md` for full detail.

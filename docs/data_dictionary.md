@@ -237,7 +237,61 @@ Unique on `(portfolio_id, ticker)`. RLS: `auth.uid() = user_id` on every operati
 
 **Derived (not stored — computed in `src/lib/portfolio/valuation.ts` from the latest `stock_snapshots` price):** `latestPrice`, `marketValue`, `costBasis`, `unrealizedPnL`, `unrealizedPnLPct`, `weight` (% of portfolio market value), `mixedCurrency` (true when `cost_currency` ≠ the live price's currency — no FX conversion is applied).
 
-**Limitations (Phase 6C):** no transaction history (average cost is entered directly, not derived from buy/sell lots), no realized P&L, no cash balance, no FX conversion, no performance attribution. See `docs/supabase_persistence.md` → "Portfolio Valuation" for the full methodology note.
+`metadata.positionSource` (`'manual'` or `'transactions'`, added Phase 6D — see below) and `metadata.lastReconciledAt` record provenance without a schema change; a row with no `positionSource` key (all pre-6D rows) is treated as `'manual'`.
+
+**Limitations (Phase 6C, remaining after 6D):** no FX conversion, no performance attribution. Transaction history, realized P&L, and cash balance are added in Phase 6D below. See `docs/supabase_persistence.md` → "Portfolio Valuation" / "Transaction History and Cash Ledger" for the full methodology notes.
+
+---
+
+## Entity: PortfolioTransaction / CashLedgerEntry (Phase 6D)
+
+Lets a portfolio's positions be **derived** from actual buy/sell lots instead of a manually entered quantity + average cost. `portfolio_positions` (above) remains the current-state table; these two tables are the transaction-managed source of truth for any ticker that uses them.
+
+**`portfolio_transactions`**
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | uuid | Primary key |
+| `portfolio_id` | uuid | FK → `portfolios.id` |
+| `user_id` | uuid | FK → `auth.users`, defaults to `auth.uid()` |
+| `ticker` | text | FK → `companies.ticker` (restrict on delete) |
+| `transaction_type` | text | `'buy'` \| `'sell'` (check constraint) |
+| `trade_date` | date | |
+| `settlement_date` | date \| null | Reserved; not yet set by the UI |
+| `quantity` | numeric | Must be > 0 |
+| `price` | numeric | Must be ≥ 0 |
+| `gross_amount` | numeric \| null | `quantity × price`, computed on write |
+| `fees` / `taxes` | numeric | Default 0; must be ≥ 0 |
+| `net_amount` | numeric \| null | Gross + fees + taxes (buy) or − fees − taxes (sell) |
+| `currency` | text | Default `'CLP'` |
+| `realized_pnl` | numeric \| null | Sells only; recalculated whenever the ticker's history changes (edit/delete elsewhere in the same history) |
+| `notes` | text \| null | |
+| `created_at` / `updated_at` | timestamptz | |
+
+**`portfolio_cash_ledger`**
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | uuid | Primary key |
+| `portfolio_id` | uuid | FK → `portfolios.id` |
+| `user_id` | uuid | FK → `auth.users`, defaults to `auth.uid()` |
+| `transaction_id` | uuid \| null | FK → `portfolio_transactions.id` (set null on delete); null for manual entries |
+| `ledger_date` | date | |
+| `currency` | text | Default `'CLP'` |
+| `entry_type` | text | `'deposit'` \| `'withdrawal'` \| `'buy_cash_outflow'` \| `'sell_cash_inflow'` \| `'fee'` \| `'tax'` \| `'adjustment'` (check constraint) |
+| `amount` | numeric | Signed: positive = cash in, negative = cash out |
+| `description` | text \| null | |
+| `created_at` | timestamptz | |
+
+Both tables: RLS `auth.uid() = user_id` on every operation, plus a `check_portfolio_ownership()` trigger verifying `portfolio_id` actually belongs to `user_id` (RLS alone can't check a cross-table FK). No public read/write.
+
+**Average cost methodology:** weighted average only (no FIFO/LIFO/specific-lot). A buy blends into the existing average, folding in fees/taxes; a sell reduces quantity but leaves the average cost on the remaining shares unchanged.
+
+**Realized P&L methodology:** `(sellQty × sellPrice − fees − taxes) − (sellQty × averageCostAtSaleTime)`, computed via `rebuildPositionFromTransactions()` replaying the ticker's full history — so editing or deleting an earlier transaction correctly recalculates `realized_pnl` on every later sell, not just the row touched.
+
+**Manual-position compatibility:** the first transaction for a ticker that already has a manual `portfolio_positions` row (or any pre-6D row with no `positionSource`) is blocked (`manual_position_conflict`) rather than silently overwritten — the user must remove the manual position first.
+
+**Limitations (Phase 6D):** no FIFO/LIFO or specific-lot selection, no dividends, no time/money-weighted performance attribution, no broker/CSV import, no automated cash reconciliation against a real statement. See `docs/supabase_persistence.md` → "Transaction History and Cash Ledger" for the full note.
 
 ---
 

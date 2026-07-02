@@ -376,3 +376,14 @@ the same `stock_snapshots` table the Yahoo/Stocks pages already populate via
 `getLatestStockSnapshots()`. Apply the migration via the Supabase Dashboard
 SQL Editor before the first deploy that includes this phase (idempotent —
 safe to re-run).
+
+## Phase 6D — Transaction History and Cash Ledger Foundation
+
+Adds `portfolio_transactions` + `portfolio_cash_ledger` tables (migration
+`20260703000000_portfolio_transactions_cash_ledger.sql`), new Transactions/Cash
+tabs on `/portfolio`, and `/api/portfolios/[id]/transactions*` +
+`/api/portfolios/[id]/cash` route handlers. No new env vars. Apply the
+migration via the Supabase Dashboard SQL Editor before the first deploy that
+includes this phase (idempotent — safe to re-run). It does **not** alter
+`portfolio_positions` — see `docs/supabase_persistence.md` for why (reuses the
+existing `metadata` column instead of an `ALTER TABLE`).

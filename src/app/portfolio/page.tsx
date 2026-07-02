@@ -1,9 +1,14 @@
 'use client'
 
-// Phase 6C — Authenticated personal portfolio page.
+// Phase 6C/6D — Authenticated personal portfolio page.
 // Middleware guarantees this page is only reachable by signed-in users.
 // Pricing comes from the latest Supabase market snapshot (no live Yahoo overlay
-// in this phase). No transaction history / realized P&L / FX conversion yet.
+// in this phase). No FX conversion, dividends, or performance attribution yet.
+//
+// Phase 6D adds Transactions + Cash tabs. Positions derived from a transaction
+// history (positionSource: 'transactions') are read-only in the Positions tab —
+// edit/remove there is reserved for manual positions, to avoid a manual edit
+// silently diverging from the reconciled transaction-derived state.
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
@@ -14,6 +19,8 @@ import { formatCLP, formatPct, changeColor } from '@/lib/formatters'
 
 const ALL_COMPANIES = getAllCompanies()
 const VALID_TICKERS = new Set(ALL_COMPANIES.map(c => c.ticker.toUpperCase()))
+
+type PositionSource = 'manual' | 'transactions'
 
 interface PositionOut {
   id: string
@@ -32,6 +39,7 @@ interface PositionOut {
   unrealizedPnLPct: number | null
   weight: number | null
   mixedCurrency: boolean
+  positionSource: PositionSource
 }
 
 interface Totals {
@@ -50,10 +58,57 @@ interface SectorExposureOut {
   positionCount: number
 }
 
+interface CashSummary {
+  totalDeposits: number
+  totalWithdrawals: number
+  totalBuyOutflows: number
+  totalSellInflows: number
+  totalFees: number
+  totalTaxes: number
+  totalAdjustments: number
+  netCashBalance: number
+}
+
+interface RealizedPnlSummary {
+  totalRealizedPnl: number
+  byTicker: { ticker: string; realizedPnl: number }[]
+}
+
 interface PortfolioDetail {
   positions: PositionOut[]
   totals: Totals
   sectorExposure: SectorExposureOut[]
+  cashSummary: CashSummary
+  realizedPnl: RealizedPnlSummary
+}
+
+type TransactionType = 'buy' | 'sell'
+
+interface TransactionOut {
+  id: string
+  portfolioId: string
+  ticker: string
+  transactionType: TransactionType
+  tradeDate: string
+  quantity: number
+  price: number
+  fees: number
+  taxes: number
+  netAmount: number | null
+  currency: string
+  realizedPnl: number | null
+  notes: string | null
+}
+
+type CashEntryType = 'deposit' | 'withdrawal' | 'buy_cash_outflow' | 'sell_cash_inflow' | 'fee' | 'tax' | 'adjustment'
+
+interface CashEntryOut {
+  id: string
+  ledgerDate: string
+  currency: string
+  entryType: CashEntryType
+  amount: number
+  description: string | null
 }
 
 // ─── Add-position form ────────────────────────────────────────────────────────
@@ -188,7 +243,15 @@ function AddPositionForm({
 
 // ─── Summary cards ─────────────────────────────────────────────────────────────
 
-function SummaryCards({ totals }: { totals: Totals }) {
+function SummaryCards({
+  totals,
+  realizedPnl,
+  cashBalance,
+}: {
+  totals: Totals
+  realizedPnl: number
+  cashBalance: number
+}) {
   const { t } = useLang()
   const pnl = totals.totalUnrealizedPnL
   const pnlPct = totals.totalUnrealizedPnLPct
@@ -198,11 +261,13 @@ function SummaryCards({ totals }: { totals: Totals }) {
     { label: t.portfolio.totalCostBasis, value: formatCLP(totals.totalCostBasis), color: 'text-foreground' },
     { label: t.portfolio.unrealizedPnL, value: pnl !== null ? formatCLP(pnl) : '—', color: pnl !== null ? changeColor(pnl) : 'text-muted-fg' },
     { label: t.portfolio.unrealizedPnLPct, value: pnlPct !== null ? formatPct(pnlPct) : '—', color: pnlPct !== null ? changeColor(pnlPct) : 'text-muted-fg' },
+    { label: t.portfolio.realizedPnL, value: formatCLP(realizedPnl), color: changeColor(realizedPnl) },
+    { label: t.portfolio.cashBalance, value: formatCLP(cashBalance), color: 'text-foreground' },
     { label: t.portfolio.positionCount, value: String(totals.positionCount), color: 'text-foreground' },
   ]
 
   return (
-    <div className="grid grid-cols-5 gap-3">
+    <div className="grid grid-cols-7 gap-3">
       {cards.map((c) => (
         <div key={c.label} className="bg-surface border border-border rounded px-4 py-3">
           <div className="ui-label text-muted-fg mb-1">{c.label}</div>
@@ -334,7 +399,7 @@ function PositionRow({
             className="h-7 w-full px-2 rounded border border-border bg-surface text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-accent"
           />
         </td>
-        <td className="py-2 px-3 text-right ui-number text-negative">{error}</td>
+        <td className="py-2 px-3 text-right ui-number text-negative" colSpan={2}>{error}</td>
         <td className="py-2 px-3 pr-4 text-right whitespace-nowrap">
           <button onClick={handleSave} disabled={busy} className="text-primary hover:underline text-xs mr-2 disabled:opacity-40">{t.portfolio.saveEdit}</button>
           <button onClick={() => setEditing(false)} disabled={busy} className="text-muted-fg hover:text-foreground text-xs disabled:opacity-40">{t.portfolio.cancelEdit}</button>
@@ -366,9 +431,26 @@ function PositionRow({
         {position.unrealizedPnLPct !== null ? formatPct(position.unrealizedPnLPct) : '—'}
       </td>
       <td className="py-2.5 px-3 text-right ui-number text-muted-fg">{position.weight !== null ? formatPct(position.weight, 1).replace('+', '') : '—'}</td>
+      <td className="py-2.5 px-3 text-center">
+        <span
+          className="ui-label px-1.5 py-0.5 rounded"
+          style={{
+            backgroundColor: 'var(--surface-2)',
+            color: position.positionSource === 'transactions' ? 'var(--accent)' : 'var(--muted-fg)',
+          }}
+        >
+          {position.positionSource === 'transactions' ? t.portfolio.transactionsBadge : t.portfolio.manualBadge}
+        </span>
+      </td>
       <td className="py-2.5 px-3 pr-4 text-right whitespace-nowrap">
-        <button onClick={() => setEditing(true)} disabled={busy} className="text-muted-fg hover:text-foreground text-xs mr-2 disabled:opacity-40">{t.portfolio.editPosition}</button>
-        <button onClick={handleRemove} disabled={busy} className="text-muted-fg hover:text-negative text-xs disabled:opacity-40" title={t.portfolio.removePosition}>×</button>
+        {position.positionSource === 'transactions' ? (
+          <span className="text-muted-fg text-xs" title={t.portfolio.manualLocked}>—</span>
+        ) : (
+          <>
+            <button onClick={() => setEditing(true)} disabled={busy} className="text-muted-fg hover:text-foreground text-xs mr-2 disabled:opacity-40">{t.portfolio.editPosition}</button>
+            <button onClick={handleRemove} disabled={busy} className="text-muted-fg hover:text-negative text-xs disabled:opacity-40" title={t.portfolio.removePosition}>×</button>
+          </>
+        )}
       </td>
     </tr>
   )
@@ -408,6 +490,7 @@ function PositionsTable({
             <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.cols.pnl}</th>
             <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.cols.pnlPct}</th>
             <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.cols.weight}</th>
+            <th className="text-center py-2.5 px-3 ui-table-header text-muted-fg"></th>
             <th className="text-right py-2.5 pr-4 px-3 ui-table-header text-muted-fg"></th>
           </tr>
         </thead>
@@ -424,19 +507,445 @@ function PositionsTable({
   )
 }
 
+// ─── Transactions: add form ─────────────────────────────────────────────────────
+
+function AddTransactionForm({
+  portfolioId,
+  onAdded,
+}: {
+  portfolioId: string
+  onAdded: () => void
+}) {
+  const { t } = useLang()
+  const [ticker, setTicker] = useState('')
+  const [transactionType, setTransactionType] = useState<TransactionType>('buy')
+  const [tradeDate, setTradeDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [quantity, setQuantity] = useState('')
+  const [price, setPrice] = useState('')
+  const [fees, setFees] = useState('')
+  const [taxes, setTaxes] = useState('')
+  const [notes, setNotes] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
+
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault()
+    const upper = ticker.trim().toUpperCase()
+    if (!upper) return
+    if (!VALID_TICKERS.has(upper)) {
+      setFeedback({ type: 'err', msg: t.portfolio.invalidTicker })
+      return
+    }
+    const qty = Number(quantity)
+    if (!Number.isFinite(qty) || qty <= 0) {
+      setFeedback({ type: 'err', msg: t.portfolio.tx.invalidQuantity })
+      return
+    }
+    const p = Number(price)
+    if (!Number.isFinite(p) || p < 0) {
+      setFeedback({ type: 'err', msg: t.portfolio.tx.invalidPrice })
+      return
+    }
+
+    setLoading(true)
+    setFeedback(null)
+    try {
+      const res = await fetch(`/api/portfolios/${portfolioId}/transactions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticker: upper,
+          transactionType,
+          tradeDate,
+          quantity: qty,
+          price: p,
+          fees: fees.trim() ? Number(fees) : undefined,
+          taxes: taxes.trim() ? Number(taxes) : undefined,
+          notes: notes.trim() || undefined,
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+
+      if (res.status === 409 && json.error === 'manual_position_conflict') {
+        setFeedback({ type: 'err', msg: t.portfolio.tx.manualConflict })
+      } else if (res.status === 409 && json.error === 'insufficient_quantity') {
+        setFeedback({ type: 'err', msg: t.portfolio.tx.insufficientQuantity })
+      } else if (!res.ok) {
+        setFeedback({ type: 'err', msg: json.error ?? 'Error' })
+      } else {
+        setTicker(''); setQuantity(''); setPrice(''); setFees(''); setTaxes(''); setNotes('')
+        setFeedback({ type: 'ok', msg: t.portfolio.tx.added })
+        onAdded()
+        setTimeout(() => setFeedback(null), 2500)
+      }
+    } catch {
+      setFeedback({ type: 'err', msg: 'Network error' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-2 bg-surface border border-border rounded px-4 py-3">
+      <input
+        type="text"
+        list="portfolio-ticker-suggestions"
+        value={ticker}
+        onChange={e => setTicker(e.target.value.toUpperCase())}
+        placeholder={t.portfolio.tickerPlaceholder}
+        className="h-8 px-3 rounded border border-border bg-surface-2 text-xs font-mono text-foreground placeholder:text-muted focus:outline-none focus:border-accent w-28"
+        autoComplete="off"
+        spellCheck={false}
+      />
+      <select
+        value={transactionType}
+        onChange={e => setTransactionType(e.target.value as TransactionType)}
+        className="h-8 px-2 rounded border border-border bg-surface-2 text-xs text-foreground focus:outline-none focus:border-accent"
+      >
+        <option value="buy">{t.portfolio.tx.buy}</option>
+        <option value="sell">{t.portfolio.tx.sell}</option>
+      </select>
+      <input
+        type="date"
+        value={tradeDate}
+        onChange={e => setTradeDate(e.target.value)}
+        className="h-8 px-2 rounded border border-border bg-surface-2 text-xs ui-number text-foreground focus:outline-none focus:border-accent"
+      />
+      <input
+        type="number" min="0" step="any" value={quantity}
+        onChange={e => setQuantity(e.target.value)}
+        placeholder={t.portfolio.tx.quantityLabel}
+        className="h-8 px-3 rounded border border-border bg-surface-2 text-xs ui-number text-foreground placeholder:text-muted focus:outline-none focus:border-accent w-24"
+      />
+      <input
+        type="number" min="0" step="any" value={price}
+        onChange={e => setPrice(e.target.value)}
+        placeholder={t.portfolio.tx.priceLabel}
+        className="h-8 px-3 rounded border border-border bg-surface-2 text-xs ui-number text-foreground placeholder:text-muted focus:outline-none focus:border-accent w-28"
+      />
+      <input
+        type="number" min="0" step="any" value={fees}
+        onChange={e => setFees(e.target.value)}
+        placeholder={t.portfolio.tx.feesLabel}
+        className="h-8 px-3 rounded border border-border bg-surface-2 text-xs ui-number text-foreground placeholder:text-muted focus:outline-none focus:border-accent w-20"
+      />
+      <input
+        type="number" min="0" step="any" value={taxes}
+        onChange={e => setTaxes(e.target.value)}
+        placeholder={t.portfolio.tx.taxesLabel}
+        className="h-8 px-3 rounded border border-border bg-surface-2 text-xs ui-number text-foreground placeholder:text-muted focus:outline-none focus:border-accent w-20"
+      />
+      <input
+        type="text" value={notes}
+        onChange={e => setNotes(e.target.value)}
+        placeholder={t.portfolio.tx.notesLabel}
+        className="h-8 px-3 rounded border border-border bg-surface-2 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-accent w-32"
+      />
+      <button
+        type="submit"
+        disabled={loading || !ticker.trim() || !quantity.trim() || !price.trim()}
+        className="h-8 px-3 rounded bg-primary text-surface text-xs font-medium disabled:opacity-50 transition-opacity"
+        style={{ backgroundColor: 'var(--primary)' }}
+      >
+        {loading ? '…' : t.portfolio.tx.addTransaction}
+      </button>
+      {feedback && (
+        <span className={`text-xs ${feedback.type === 'ok' ? 'text-positive' : 'text-negative'}`}>
+          {feedback.msg}
+        </span>
+      )}
+    </form>
+  )
+}
+
+// ─── Transactions: list ─────────────────────────────────────────────────────────
+
+function TransactionsTable({
+  transactions,
+  portfolioId,
+  onChanged,
+}: {
+  transactions: TransactionOut[]
+  portfolioId: string
+  onChanged: () => void
+}) {
+  const { t } = useLang()
+  const [busyId, setBusyId] = useState<string | null>(null)
+
+  async function handleRemove(id: string) {
+    setBusyId(id)
+    try {
+      await fetch(`/api/portfolios/${portfolioId}/transactions/${id}`, { method: 'DELETE' })
+      onChanged()
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  if (transactions.length === 0) {
+    return (
+      <div className="bg-surface border border-border rounded px-5 py-8 text-center">
+        <p className="text-xs text-muted-fg">{t.portfolio.tx.empty}</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-surface border border-border rounded overflow-hidden">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b border-border bg-surface-2">
+            <th className="text-left py-2.5 pl-4 pr-3 ui-table-header text-muted-fg">{t.portfolio.tx.cols.date}</th>
+            <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.tx.cols.ticker}</th>
+            <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.tx.cols.type}</th>
+            <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.tx.cols.quantity}</th>
+            <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.tx.cols.price}</th>
+            <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.tx.cols.fees}</th>
+            <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.tx.cols.taxes}</th>
+            <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.tx.cols.net}</th>
+            <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.tx.cols.realizedPnl}</th>
+            <th className="text-right py-2.5 pr-4 px-3 ui-table-header text-muted-fg"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {transactions.map((tx) => (
+            <tr key={tx.id} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
+              <td className="py-2.5 pl-4 pr-3 ui-number text-foreground">{tx.tradeDate}</td>
+              <td className="py-2.5 px-3">
+                <Link href={`/companies/${tx.ticker}`} className="font-mono text-primary hover:underline">{tx.ticker}</Link>
+              </td>
+              <td className={`py-2.5 px-3 ${tx.transactionType === 'buy' ? 'text-positive' : 'text-negative'}`}>
+                {tx.transactionType === 'buy' ? t.portfolio.tx.buy : t.portfolio.tx.sell}
+              </td>
+              <td className="py-2.5 px-3 text-right ui-number text-foreground">{tx.quantity}</td>
+              <td className="py-2.5 px-3 text-right ui-number text-foreground">{formatCLP(tx.price)}</td>
+              <td className="py-2.5 px-3 text-right ui-number text-muted-fg">{formatCLP(tx.fees)}</td>
+              <td className="py-2.5 px-3 text-right ui-number text-muted-fg">{formatCLP(tx.taxes)}</td>
+              <td className="py-2.5 px-3 text-right ui-number text-foreground">{tx.netAmount !== null ? formatCLP(tx.netAmount) : '—'}</td>
+              <td className={`py-2.5 px-3 text-right ui-number ${tx.realizedPnl !== null ? changeColor(tx.realizedPnl) : 'text-muted-fg'}`}>
+                {tx.realizedPnl !== null ? formatCLP(tx.realizedPnl) : '—'}
+              </td>
+              <td className="py-2.5 px-3 pr-4 text-right whitespace-nowrap">
+                <button
+                  onClick={() => handleRemove(tx.id)}
+                  disabled={busyId === tx.id}
+                  className="text-muted-fg hover:text-negative text-xs disabled:opacity-40"
+                >
+                  ×
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ─── Cash: add form ─────────────────────────────────────────────────────────────
+
+function AddCashForm({
+  portfolioId,
+  onAdded,
+}: {
+  portfolioId: string
+  onAdded: () => void
+}) {
+  const { t } = useLang()
+  const [entryType, setEntryType] = useState<'deposit' | 'withdrawal' | 'adjustment'>('deposit')
+  const [ledgerDate, setLedgerDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [amount, setAmount] = useState('')
+  const [description, setDescription] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
+
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault()
+    const amt = Number(amount)
+    if (!Number.isFinite(amt) || amt === 0) {
+      setFeedback({ type: 'err', msg: t.portfolio.cash.invalidAmount })
+      return
+    }
+
+    setLoading(true)
+    setFeedback(null)
+    try {
+      const res = await fetch(`/api/portfolios/${portfolioId}/cash`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entryType, amount: amt, ledgerDate, description: description.trim() || undefined }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setFeedback({ type: 'err', msg: json.error ?? 'Error' })
+      } else {
+        setAmount(''); setDescription('')
+        setFeedback({ type: 'ok', msg: t.portfolio.cash.added })
+        onAdded()
+        setTimeout(() => setFeedback(null), 2500)
+      }
+    } catch {
+      setFeedback({ type: 'err', msg: 'Network error' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-2 bg-surface border border-border rounded px-4 py-3">
+      <select
+        value={entryType}
+        onChange={e => setEntryType(e.target.value as 'deposit' | 'withdrawal' | 'adjustment')}
+        className="h-8 px-2 rounded border border-border bg-surface-2 text-xs text-foreground focus:outline-none focus:border-accent"
+      >
+        <option value="deposit">{t.portfolio.cash.deposit}</option>
+        <option value="withdrawal">{t.portfolio.cash.withdrawal}</option>
+        <option value="adjustment">{t.portfolio.cash.adjustment}</option>
+      </select>
+      <input
+        type="date"
+        value={ledgerDate}
+        onChange={e => setLedgerDate(e.target.value)}
+        className="h-8 px-2 rounded border border-border bg-surface-2 text-xs ui-number text-foreground focus:outline-none focus:border-accent"
+      />
+      <input
+        type="number" step="any" value={amount}
+        onChange={e => setAmount(e.target.value)}
+        placeholder={t.portfolio.cash.amountLabel}
+        className="h-8 px-3 rounded border border-border bg-surface-2 text-xs ui-number text-foreground placeholder:text-muted focus:outline-none focus:border-accent w-32"
+      />
+      <input
+        type="text" value={description}
+        onChange={e => setDescription(e.target.value)}
+        placeholder={t.portfolio.cash.descriptionLabel}
+        className="h-8 px-3 rounded border border-border bg-surface-2 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-accent w-48"
+      />
+      <button
+        type="submit"
+        disabled={loading || !amount.trim()}
+        className="h-8 px-3 rounded bg-primary text-surface text-xs font-medium disabled:opacity-50 transition-opacity"
+        style={{ backgroundColor: 'var(--primary)' }}
+      >
+        {loading ? '…' : t.portfolio.cash.addEntry}
+      </button>
+      {feedback && (
+        <span className={`text-xs ${feedback.type === 'ok' ? 'text-positive' : 'text-negative'}`}>
+          {feedback.msg}
+        </span>
+      )}
+    </form>
+  )
+}
+
+// ─── Cash: summary + ledger ─────────────────────────────────────────────────────
+
+function CashSummaryCards({ summary }: { summary: CashSummary }) {
+  const { t } = useLang()
+  const cards = [
+    { label: t.portfolio.cash.totalDeposits, value: formatCLP(summary.totalDeposits), color: 'text-positive' },
+    { label: t.portfolio.cash.totalWithdrawals, value: formatCLP(Math.abs(summary.totalWithdrawals)), color: 'text-negative' },
+    { label: t.portfolio.cash.totalBuyOutflows, value: formatCLP(Math.abs(summary.totalBuyOutflows)), color: 'text-negative' },
+    { label: t.portfolio.cash.totalSellInflows, value: formatCLP(summary.totalSellInflows), color: 'text-positive' },
+    { label: t.portfolio.cash.netBalance, value: formatCLP(summary.netCashBalance), color: 'text-foreground' },
+  ]
+  return (
+    <div className="grid grid-cols-5 gap-3">
+      {cards.map((c) => (
+        <div key={c.label} className="bg-surface border border-border rounded px-4 py-3">
+          <div className="ui-label text-muted-fg mb-1">{c.label}</div>
+          <div className={`ui-number text-lg font-semibold ${c.color}`}>{c.value}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function cashEntryLabel(t: ReturnType<typeof useLang>['t'], entryType: CashEntryType): string {
+  switch (entryType) {
+    case 'deposit': return t.portfolio.cash.deposit
+    case 'withdrawal': return t.portfolio.cash.withdrawal
+    case 'adjustment': return t.portfolio.cash.adjustment
+    case 'buy_cash_outflow': return t.portfolio.cash.totalBuyOutflows
+    case 'sell_cash_inflow': return t.portfolio.cash.totalSellInflows
+    case 'fee': return t.portfolio.cash.totalFees
+    case 'tax': return t.portfolio.cash.totalTaxes
+  }
+}
+
+function CashLedgerTable({ entries }: { entries: CashEntryOut[] }) {
+  const { t } = useLang()
+
+  if (entries.length === 0) {
+    return (
+      <div className="bg-surface border border-border rounded px-5 py-8 text-center">
+        <p className="text-xs text-muted-fg">{t.portfolio.cash.empty}</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-surface border border-border rounded overflow-hidden">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b border-border bg-surface-2">
+            <th className="text-left py-2.5 pl-4 pr-3 ui-table-header text-muted-fg">{t.portfolio.cash.cols.date}</th>
+            <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.cash.cols.type}</th>
+            <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.cash.cols.amount}</th>
+            <th className="text-left py-2.5 pr-4 px-3 ui-table-header text-muted-fg">{t.portfolio.cash.cols.description}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((e) => (
+            <tr key={e.id} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
+              <td className="py-2.5 pl-4 pr-3 ui-number text-foreground">{e.ledgerDate}</td>
+              <td className="py-2.5 px-3 text-muted-fg">{cashEntryLabel(t, e.entryType)}</td>
+              <td className={`py-2.5 px-3 text-right ui-number ${changeColor(e.amount)}`}>{formatCLP(e.amount)}</td>
+              <td className="py-2.5 pr-4 px-3 text-muted-fg">{e.description ?? '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
+
+type Tab = 'positions' | 'transactions' | 'cash'
 
 export default function PortfolioPage() {
   const { t } = useLang()
   const [portfolioId, setPortfolioId] = useState<string | null>(null)
   const [detail, setDetail] = useState<PortfolioDetail | null>(null)
+  const [transactions, setTransactions] = useState<TransactionOut[]>([])
+  const [cashEntries, setCashEntries] = useState<CashEntryOut[]>([])
   const [loading, setLoading] = useState(true)
+  const [tab, setTab] = useState<Tab>('positions')
 
   async function loadDetail(id: string, cancelled: { value: boolean }) {
-    const res = await fetch(`/api/portfolios/${id}`, { cache: 'no-store' })
-    if (res.ok && !cancelled.value) {
-      const json = await res.json()
-      setDetail({ positions: json.positions ?? [], totals: json.totals, sectorExposure: json.sectorExposure ?? [] })
+    const [detailRes, txRes, cashRes] = await Promise.all([
+      fetch(`/api/portfolios/${id}`, { cache: 'no-store' }),
+      fetch(`/api/portfolios/${id}/transactions`, { cache: 'no-store' }),
+      fetch(`/api/portfolios/${id}/cash`, { cache: 'no-store' }),
+    ])
+    if (cancelled.value) return
+    if (detailRes.ok) {
+      const json = await detailRes.json()
+      setDetail({
+        positions: json.positions ?? [],
+        totals: json.totals,
+        sectorExposure: json.sectorExposure ?? [],
+        cashSummary: json.cashSummary,
+        realizedPnl: json.realizedPnl,
+      })
+    }
+    if (txRes.ok) {
+      const json = await txRes.json()
+      setTransactions(json.transactions ?? [])
+    }
+    if (cashRes.ok) {
+      const json = await cashRes.json()
+      setCashEntries(json.entries ?? [])
     }
   }
 
@@ -465,17 +974,18 @@ export default function PortfolioPage() {
     void loadDetail(portfolioId, { value: false })
   }
 
+  const tabs: { key: Tab; label: string }[] = [
+    { key: 'positions', label: t.portfolio.tabPositions },
+    { key: 'transactions', label: t.portfolio.tabTransactions },
+    { key: 'cash', label: t.portfolio.tabCash },
+  ]
+
   return (
     <div className="w-full space-y-5">
       <SectionHeader
         tag={t.portfolio.tag}
         title={t.portfolio.title}
         subtitle={t.portfolio.subtitle}
-        actions={
-          portfolioId ? (
-            <AddPositionForm portfolioId={portfolioId} onAdded={refresh} />
-          ) : null
-        }
       />
 
       {loading ? (
@@ -484,15 +994,63 @@ export default function PortfolioPage() {
         </div>
       ) : (
         <>
-          {detail && <SummaryCards totals={detail.totals} />}
+          {detail && (
+            <SummaryCards
+              totals={detail.totals}
+              realizedPnl={detail.realizedPnl?.totalRealizedPnl ?? 0}
+              cashBalance={detail.cashSummary?.netCashBalance ?? 0}
+            />
+          )}
           {detail && detail.sectorExposure.length > 0 && (
             <SectorExposureList sectors={detail.sectorExposure} />
           )}
-          <PositionsTable
-            positions={detail?.positions ?? []}
-            portfolioId={portfolioId ?? ''}
-            onChanged={refresh}
-          />
+
+          <div className="flex items-center gap-1 border-b border-border">
+            {tabs.map((tb) => (
+              <button
+                key={tb.key}
+                onClick={() => setTab(tb.key)}
+                className="px-3 py-2 text-xs border-b-2 transition-colors -mb-px"
+                style={
+                  tab === tb.key
+                    ? { borderColor: 'var(--accent)', color: 'var(--foreground)' }
+                    : { borderColor: 'transparent', color: 'var(--muted-fg)' }
+                }
+              >
+                {tb.label}
+              </button>
+            ))}
+          </div>
+
+          {tab === 'positions' && (
+            <div className="space-y-3">
+              {portfolioId && <AddPositionForm portfolioId={portfolioId} onAdded={refresh} />}
+              <PositionsTable
+                positions={detail?.positions ?? []}
+                portfolioId={portfolioId ?? ''}
+                onChanged={refresh}
+              />
+            </div>
+          )}
+
+          {tab === 'transactions' && (
+            <div className="space-y-3">
+              {portfolioId && <AddTransactionForm portfolioId={portfolioId} onAdded={refresh} />}
+              <TransactionsTable
+                transactions={transactions}
+                portfolioId={portfolioId ?? ''}
+                onChanged={refresh}
+              />
+            </div>
+          )}
+
+          {tab === 'cash' && (
+            <div className="space-y-3">
+              {detail && <CashSummaryCards summary={detail.cashSummary} />}
+              {portfolioId && <AddCashForm portfolioId={portfolioId} onAdded={refresh} />}
+              <CashLedgerTable entries={cashEntries} />
+            </div>
+          )}
         </>
       )}
     </div>

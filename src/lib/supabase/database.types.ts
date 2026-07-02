@@ -671,6 +671,100 @@ export interface Database {
           metadata?: Record<string, unknown>
         }
       }
+      portfolio_transactions: {
+        Row: {
+          id: string
+          portfolio_id: string
+          user_id: string
+          ticker: string
+          transaction_type: string
+          trade_date: string
+          settlement_date: string | null
+          quantity: number
+          price: number
+          gross_amount: number | null
+          fees: number
+          taxes: number
+          net_amount: number | null
+          currency: string
+          realized_pnl: number | null
+          notes: string | null
+          tags: string[]
+          metadata: Record<string, unknown>
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          portfolio_id: string
+          user_id?: string
+          ticker: string
+          transaction_type: string
+          trade_date: string
+          settlement_date?: string | null
+          quantity: number
+          price: number
+          gross_amount?: number | null
+          fees?: number
+          taxes?: number
+          net_amount?: number | null
+          currency?: string
+          realized_pnl?: number | null
+          notes?: string | null
+          tags?: string[]
+          metadata?: Record<string, unknown>
+        }
+        Update: {
+          transaction_type?: string
+          trade_date?: string
+          settlement_date?: string | null
+          quantity?: number
+          price?: number
+          gross_amount?: number | null
+          fees?: number
+          taxes?: number
+          net_amount?: number | null
+          realized_pnl?: number | null
+          notes?: string | null
+          tags?: string[]
+          metadata?: Record<string, unknown>
+        }
+      }
+      portfolio_cash_ledger: {
+        Row: {
+          id: string
+          portfolio_id: string
+          user_id: string
+          transaction_id: string | null
+          ledger_date: string
+          currency: string
+          entry_type: string
+          amount: number
+          description: string | null
+          metadata: Record<string, unknown>
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          portfolio_id: string
+          user_id?: string
+          transaction_id?: string | null
+          ledger_date: string
+          currency?: string
+          entry_type: string
+          amount: number
+          description?: string | null
+          metadata?: Record<string, unknown>
+        }
+        Update: {
+          ledger_date?: string
+          currency?: string
+          entry_type?: string
+          amount?: number
+          description?: string | null
+          metadata?: Record<string, unknown>
+        }
+      }
     }
     Views: Record<string, never>
     Functions: Record<string, never>
@@ -695,3 +789,5 @@ export type WatchlistRow = Database['public']['Tables']['watchlists']['Row']
 export type WatchlistItemRow = Database['public']['Tables']['watchlist_items']['Row']
 export type PortfolioRow = Database['public']['Tables']['portfolios']['Row']
 export type PortfolioPositionRow = Database['public']['Tables']['portfolio_positions']['Row']
+export type PortfolioTransactionRow = Database['public']['Tables']['portfolio_transactions']['Row']
+export type PortfolioCashLedgerRow = Database['public']['Tables']['portfolio_cash_ledger']['Row']

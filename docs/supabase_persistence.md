@@ -73,9 +73,9 @@ Migration file: [`supabase/migrations/20260625000000_create_market_intelligence_
 
 All tables have RLS enabled with an anon-read policy. No public write policies exist until Phase 6 auth.
 
-### User-scoped tables (Phase 6A, 6C)
+### User-scoped tables (Phase 6A, 6C, 6D)
 
-Migration files: [`20260701000000_auth_watchlist_foundation.sql`](../supabase/migrations/20260701000000_auth_watchlist_foundation.sql), [`20260702000000_portfolio_foundation.sql`](../supabase/migrations/20260702000000_portfolio_foundation.sql)
+Migration files: [`20260701000000_auth_watchlist_foundation.sql`](../supabase/migrations/20260701000000_auth_watchlist_foundation.sql), [`20260702000000_portfolio_foundation.sql`](../supabase/migrations/20260702000000_portfolio_foundation.sql), [`20260703000000_portfolio_transactions_cash_ledger.sql`](../supabase/migrations/20260703000000_portfolio_transactions_cash_ledger.sql)
 
 | Table | Description |
 |-------|-------------|
@@ -83,9 +83,13 @@ Migration files: [`20260701000000_auth_watchlist_foundation.sql`](../supabase/mi
 | `watchlists` | One or more per user; `is_default` flag |
 | `watchlist_items` | Ticker + notes; unique per `(watchlist_id, ticker)` |
 | `portfolios` | One or more per user; `base_currency` (CLP), `is_default` flag |
-| `portfolio_positions` | Ticker + quantity + average_cost + cost_currency; unique per `(portfolio_id, ticker)`; `ticker` FKs to `companies(ticker)` |
+| `portfolio_positions` | **Current-state table.** Ticker + quantity + average_cost + cost_currency; unique per `(portfolio_id, ticker)`; `ticker` FKs to `companies(ticker)`. Its existing `metadata jsonb` column additionally records `positionSource: 'manual' \| 'transactions'` and `lastReconciledAt` (Phase 6D — no schema change) |
+| `portfolio_transactions` | **Phase 6D.** One row per buy/sell lot: ticker, `transaction_type` (buy/sell), trade_date, quantity, price, fees, taxes, gross/net amount, `realized_pnl` (sells only) |
+| `portfolio_cash_ledger` | **Phase 6D.** One row per cash movement: deposit, withdrawal, buy_cash_outflow, sell_cash_inflow, fee, tax, adjustment; `transaction_id` links buy/sell-generated entries back to their transaction |
 
-Unlike the public tables above, these have **no anon-read policy**. Every policy is `auth.uid() = user_id` for select/insert/update/delete — a row is invisible and unwritable to anyone but its owner. `user_id` also defaults to `auth.uid()` at the column level (defense in depth: even if a caller omitted it, the DB fills in the correct value; RLS's `with check` then still rejects any explicit mismatched value). Repository code (`watchlistRepository.ts`, `portfolioRepository.ts`) never sets `user_id` in an insert/update payload — ownership is established solely by the database, never trusted from the client.
+Unlike the public tables above, these have **no anon-read policy**. Every policy is `auth.uid() = user_id` for select/insert/update/delete — a row is invisible and unwritable to anyone but its owner. `user_id` also defaults to `auth.uid()` at the column level (defense in depth: even if a caller omitted it, the DB fills in the correct value; RLS's `with check` then still rejects any explicit mismatched value). Repository code (`watchlistRepository.ts`, `portfolioRepository.ts`, `portfolioTransactionRepository.ts`) never sets `user_id` in an insert/update payload — ownership is established solely by the database, never trusted from the client.
+
+**Cross-table ownership guard (Phase 6D):** RLS alone only checks `auth.uid() = user_id` on the row being written — it doesn't stop a caller from pointing `portfolio_id` at a portfolio owned by someone else while setting `user_id` to their own uid. A `before insert or update` trigger (`check_portfolio_ownership()`) on both `portfolio_transactions` and `portfolio_cash_ledger` closes that gap by verifying the referenced `portfolio_id` actually belongs to `user_id`, raising an exception otherwise.
 
 Route handlers use `getSupabaseUserClient()` (cookie-aware, ties to the signed-in session), never the service-role admin client, so RLS is always enforced on these tables' public-facing read/write paths.
 
@@ -173,12 +177,41 @@ psql $SUPABASE_DATABASE_URL -f supabase/seed.sql
 - `calculatePortfolioTotals` sums market value and cost basis across positions.
 - `calculateSectorExposure` groups by each position's sector (from `companies.json`) and computes a weight.
 
-**Current limitations (by design, this phase):**
-- No transaction history — `average_cost` is entered directly on the position, not derived from buy/sell lots. A ledger is a Phase 6D candidate.
-- No realized P&L (only unrealized, computed from the live snapshot vs. the stored average cost).
-- No cash balance tracking.
+**Limitations that still stand (Phase 6D adds transaction history, cash ledger, and realized P&L — see below; everything else is unchanged):**
 - No FX conversion — `base_currency` is CLP and the covered universe is Chilean equities priced in CLP. If a position's `cost_currency` ever differs from the live price currency, it is flagged `mixedCurrency: true` in the UI instead of silently mixing amounts.
-- No performance attribution (time-weighted/money-weighted returns) — this phase is valuation only.
+- No performance attribution (time-weighted/money-weighted returns) — this remains valuation + realized/unrealized P&L only.
+
+---
+
+## Transaction History and Cash Ledger (Phase 6D)
+
+`src/lib/portfolio/transactions.ts` — pure functions, no I/O. `portfolio_positions` stays the **current-state table** (unchanged schema from 6C); `portfolio_transactions` becomes the source of truth for any ticker managed by lots, and each mutation **reconciles** `portfolio_positions` from the full replayed history rather than patching it incrementally.
+
+**Average cost methodology — weighted average, no FIFO/LIFO:**
+- A **buy** blends into the existing position: `newAverageCost = (existingQty × existingAvgCost + buyQty × buyPrice + fees + taxes) / (existingQty + buyQty)`. Fees and taxes are folded into the cost basis.
+- A **sell** reduces quantity only — the average cost on the remaining shares is unaffected (this is what "weighted average" means in practice: there is only one cost basis per ticker, not per lot).
+- There is no tax-lot selection (FIFO/LIFO/specific-lot) in this phase — every sell is priced against the single blended average cost.
+
+**Realized P&L methodology:**
+- `realizedPnl = (sellQty × sellPrice − fees − taxes) − (sellQty × averageCostAtTimeOfSale)`.
+- A sell is rejected if `sellQty` exceeds the quantity derived from the transaction history up to that point (`insufficient_quantity`) — checked **before** any write, so an invalid history is never persisted.
+- `rebuildPositionFromTransactions()` replays a ticker's full transaction list (sorted by `trade_date`) and returns both the final `{quantity, averageCost, realizedPnlTotal}` and a per-transaction `steps[]` array. This lets the repository recalculate and write back `realized_pnl` for every affected transaction after an edit or delete earlier in the history — not just the one row being changed.
+- Editing or deleting a transaction re-validates the **entire resulting history** first (via the same replay) and rejects the change if it would leave a later sell oversold, rather than silently corrupting the ledger.
+
+**Cash ledger:**
+- Every buy/sell transaction automatically creates exactly one linked cash-ledger entry: `buy_cash_outflow` (negative, gross + fees + taxes) or `sell_cash_inflow` (positive, gross − fees − taxes). Fees/taxes are not split into their own ledger rows in this phase — they stay visible on the transaction record itself.
+- Users can also add manual `deposit` / `withdrawal` / `adjustment` entries (`POST /api/portfolios/[id]/cash`). Deposit and withdrawal are entered as a plain positive magnitude and normalized to +/− internally; adjustment keeps whatever signed value is entered.
+- `calculateCashBalance` sums all signed amounts; `calculatePortfolioCashSummary` breaks the total down by entry type for the Cash tab's summary cards.
+
+**Manual-position compatibility (no silent conversion):** a ticker that already has a manually-entered `portfolio_positions` row (created via the 6C "Add position" flow, or any pre-6D row with no `metadata.positionSource`) is left completely alone by the transaction flow. Adding the **first** transaction for that ticker is blocked with `manual_position_conflict` — the user must remove the manual position first. Once a ticker has any transaction history, its position is `positionSource: 'transactions'` and the Positions-tab manual edit/remove controls are disabled for that row (the UI directs the user to the Transactions tab instead), preventing a manual edit from silently diverging from the reconciled state.
+
+**Limitations (Phase 6D, explicit):**
+- No FIFO/LIFO or specific-lot selection — weighted average only.
+- No dividends.
+- No time-weighted or money-weighted performance attribution.
+- No broker/CSV import — transactions are entered manually one at a time.
+- No automated cash reconciliation against a real brokerage statement.
+- Multi-step writes (transaction insert → cash-ledger insert → position reconcile) are sequential, not wrapped in a single DB transaction — the Supabase JS client does not expose multi-statement transactions. Pre-validation before every write (checked via the same replay logic used to reconcile) keeps the ledger internally consistent in practice, but a mid-sequence failure (e.g. a dropped connection) could in principle leave a transaction row without its cash-ledger entry. Acceptable for this foundation phase; a Postgres RPC would remove the gap if needed later.
 
 ---
 
