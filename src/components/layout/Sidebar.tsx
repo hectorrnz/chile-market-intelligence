@@ -7,6 +7,7 @@ import { navItems } from '@/lib/navigation'
 import { useLang } from '@/components/providers/LangProvider'
 import { usePersistentState } from '@/lib/usePersistentState'
 import { useAuthDisplay } from '@/lib/auth/useAuthDisplay'
+import { useSidebar } from '@/components/providers/SidebarProvider'
 
 // Minimal stroke-based SVG icons — no icon library
 function NavIcon({ name }: { name: string }) {
@@ -74,6 +75,7 @@ export function Sidebar() {
   const pathname = usePathname()
   const { t } = useLang()
   const { name: displayName, ready: authReady } = useAuthDisplay()
+  const { collapsed } = useSidebar()
   const onMacro = pathname.startsWith('/macro')
   const [macroOpen, setMacroOpen] = useState(onMacro)
   const [macroRegion, setMacroRegion] = usePersistentState<'CL' | 'US'>('cmi.macroRegion', 'CL')
@@ -87,6 +89,9 @@ export function Sidebar() {
     window.dispatchEvent(new CustomEvent('macro:region', { detail: rg }))
     setMacroOpen(true)
   }
+
+  // Collapsed: hide the sidebar entirely; the TopBar hamburger brings it back.
+  if (collapsed) return null
 
   return (
     <aside

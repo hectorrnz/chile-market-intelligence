@@ -117,6 +117,8 @@ export const dict = {
     },
     common: {
       search:       'Search company or ticker...',
+      hideSidebar:  'Hide sidebar',
+      showSidebar:  'Show sidebar',
       sector:       'Sector',
       sortBy:       'Sort by',
       filter:       'Filter',
@@ -620,6 +622,8 @@ export const dict = {
     },
     common: {
       search:       'Buscar empresa o ticker...',
+      hideSidebar:  'Ocultar menú',
+      showSidebar:  'Mostrar menú',
       sector:       'Sector',
       sortBy:       'Ordenar',
       filter:       'Filtrar',

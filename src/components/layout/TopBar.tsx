@@ -6,10 +6,12 @@ import { useLang } from '@/components/providers/LangProvider'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { LangToggle } from '@/components/ui/LangToggle'
 import { BrandLogo } from '@/components/ui/BrandLogo'
+import { useSidebar } from '@/components/providers/SidebarProvider'
 
 export function TopBar() {
   const pathname = usePathname()
   const { lang, t } = useLang()
+  const { collapsed, toggle } = useSidebar()
   const title = getPageTitle(pathname, lang, t)
 
   const today = new Date().toLocaleDateString(lang === 'es' ? 'es-CL' : 'en-US', {
@@ -28,8 +30,18 @@ export function TopBar() {
         color: 'var(--topbar-fg)',
       }}
     >
-      {/* Left: breadcrumb */}
+      {/* Left: sidebar toggle + breadcrumb */}
       <div className="flex items-center gap-2.5 shrink-0">
+        <button
+          onClick={toggle}
+          className="shrink-0 flex items-center justify-center w-8 h-8 -ml-1 rounded-md text-muted-fg hover:text-foreground hover:bg-surface-2 transition-colors"
+          aria-label={collapsed ? t.common.showSidebar : t.common.hideSidebar}
+          title={collapsed ? t.common.showSidebar : t.common.hideSidebar}
+        >
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-5 h-5">
+            <path strokeLinecap="round" d="M3 5.5h14M3 10h14M3 14.5h14" />
+          </svg>
+        </button>
         <BrandLogo className="h-9 w-auto shrink-0" />
         <span className="text-sm font-mono text-muted-fg uppercase tracking-wide">NMI</span>
         <span className="text-muted-fg text-sm">/</span>

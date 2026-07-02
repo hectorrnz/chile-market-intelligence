@@ -70,33 +70,20 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   const { data: { session } } = await supabase.auth.getSession()
   const effectiveUser = session?.user ?? null
 
-  // TEMP DIAGNOSTIC: expose what the middleware saw for this request so we can
-  // read it from the Network tab on a failing request. Remove after debugging.
-  const allCookieNames = request.cookies.getAll().map(c => c.name)
-  const sbCookieNames  = allCookieNames.filter(n => n.startsWith('sb-'))
-  const setDiag = (r: NextResponse): NextResponse => {
-    r.headers.set('x-mw-path', pathname)
-    r.headers.set('x-mw-cookie-count', String(allCookieNames.length))
-    r.headers.set('x-mw-sb-count', String(sbCookieNames.length))
-    r.headers.set('x-mw-sb-names', sbCookieNames.join(',') || 'none')
-    r.headers.set('x-mw-session', effectiveUser ? '1' : '0')
-    return r
-  }
-
   // ── Protect page routes ──────────────────────────────────────────────────────
   if (PROTECTED_PAGES.some(p => pathname.startsWith(p)) && !effectiveUser) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     url.searchParams.set('next', pathname)
-    return setDiag(NextResponse.redirect(url))
+    return NextResponse.redirect(url)
   }
 
   // ── Protect API routes ───────────────────────────────────────────────────────
   if (PROTECTED_API.some(p => pathname.startsWith(p)) && !effectiveUser) {
-    return setDiag(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  return setDiag(response)
+  return response
 }
 
 export const config = {
