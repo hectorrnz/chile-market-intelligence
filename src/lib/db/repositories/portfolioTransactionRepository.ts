@@ -362,12 +362,16 @@ export async function addPortfolioTransaction(
   }
 
   const rebuild = await reconcileTickerFromTransactions(client, portfolioId, ticker, currency)
-  if (!rebuild.ok) {
-    // Should not happen (we pre-checked feasibility above); reconcile best-effort.
-    return { ok: true, transaction: mapTransaction(txRow) }
+  const mapped = mapTransaction(txRow)
+  if (rebuild.ok) {
+    // The insert above always writes realized_pnl as null; reconcile just
+    // recalculated and persisted the real value — reflect it in the response
+    // too, so callers never see a stale/incorrect realizedPnl for a sell.
+    const step = rebuild.steps.find((s) => s.id === txRow.id)
+    if (step) mapped.realizedPnl = step.realizedPnl
   }
 
-  return { ok: true, transaction: mapTransaction(txRow) }
+  return { ok: true, transaction: mapped }
 }
 
 export interface UpdateTransactionInput {
@@ -431,9 +435,14 @@ export async function updatePortfolioTransaction(
 
   if (updateRes.error) return { ok: false, error: 'update_failed' }
 
-  await reconcileTickerFromTransactions(client, existing.portfolioId, existing.ticker, existing.currency)
+  const rebuild = await reconcileTickerFromTransactions(client, existing.portfolioId, existing.ticker, existing.currency)
+  const mapped = mapTransaction(updateRes.data as DbTransactionRow)
+  if (rebuild.ok) {
+    const step = rebuild.steps.find((s) => s.id === transactionId)
+    if (step) mapped.realizedPnl = step.realizedPnl
+  }
 
-  return { ok: true, transaction: mapTransaction(updateRes.data as DbTransactionRow) }
+  return { ok: true, transaction: mapped }
 }
 
 export async function deletePortfolioTransaction(

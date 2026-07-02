@@ -310,10 +310,13 @@ function makeFakeClient() {
     return {
       select() { return selectBuilder(rows) },
       insert(obj: FakeRow) {
-        const row: FakeRow = { id: genId(), created_at: new Date().toISOString(), updated_at: new Date().toISOString(), fees: 0, taxes: 0, currency: 'CLP', ...obj }
+        const row: FakeRow = { id: genId(), created_at: new Date().toISOString(), updated_at: new Date().toISOString(), fees: 0, taxes: 0, currency: 'CLP', realized_pnl: null, ...obj }
         rows.push(row)
+        // PostgREST returns a snapshot at insert time, not a live reference —
+        // a later UPDATE must not retroactively change what the caller already
+        // received. Return a shallow copy so the fake client matches that.
         return {
-          select() { return { single: async () => ({ data: row, error: null }) } },
+          select() { return { single: async () => ({ data: { ...row }, error: null }) } },
           then(resolve: (v: { data: null; error: null }) => void) { resolve({ data: null, error: null }) },
         }
       },
@@ -323,7 +326,7 @@ function makeFakeClient() {
             const matched = rows.filter((r) => r[col] === val)
             matched.forEach((r) => Object.assign(r, patch))
             return {
-              select() { return { single: async () => ({ data: matched[0] ?? null, error: matched[0] ? null : { message: 'not found' } }) } },
+              select() { return { single: async () => ({ data: matched[0] ? { ...matched[0] } : null, error: matched[0] ? null : { message: 'not found' } }) } },
               then(resolve: (v: { error: null }) => void) { resolve({ error: null }) },
             }
           },
