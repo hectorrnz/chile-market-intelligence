@@ -727,3 +727,74 @@ Scope limits (this phase, explicit — unchanged from the base Phase 8C):
 
 Next: **Phase 8D** (FX/rates + economic calendar live source completion), or building an actual automated
 `cmf_fecu`/`xbrl` provider that writes into the now-ready schema.
+
+---
+
+## Phase 8C.1 — Automated Financials Provider Discovery + CMF/XBRL Proof of Concept ✓ COMPLETE (2026-07-03)
+
+Determines whether official CMF financial-statement/XBRL filings can be programmatically accessed without
+CAPTCHA or brittle scraping, and builds the first real automated-provider scaffolding against the Phase 8C
+automation-ready schema. **Verdict: `feasible_with_mapping`** — real XBRL instance documents (not just blank
+taxonomy schemas) were downloaded successfully with no CAPTCHA and no login, confirmed for two real companies
+including **Empresas Copec, a ticker this app covers**. Full details, exact URLs, and every verification step
+in `docs/cmf_xbrl_provider_discovery.md`.
+
+**Discovery:** CMF's taxonomy download pages (`/portal/principal/613/w3-article-*.html`) only provide blank
+schema ZIPs for preparers — proves nothing about actual filing access. Separately, `entidad.php?rut=&mm=&aa=&tipo=C&tipo_norma=IFRS...`
+was found to resolve deterministically from `rut+mm+aa` alone (the `row`/`auth`/`send` search-form tokens can
+be left blank), and its HTML embeds a relative link to a real XBRL ZIP download whose per-request tokens must
+be scraped fresh each time (not guessable in advance, but reliably present). Verified end-to-end for RUT
+`99530250` (Ripley Chile, 3 periods) and RUT `90690000` (Empresas Copec — genuine ZIP, real `ifrs-full` IFRS
+facts). Found a genuine real-world nuance: Copec's 2023 filing reports entirely in **USD**, not CLP —
+confirms currency must always be read per-fact from the XBRL unit block, never assumed.
+
+**Issuer mapping** (`src/lib/financials/cmfIssuerMap.ts`): SQM-B (`93007000`) and COPEC (`90690000`) verified
+against direct cmfchile.cl URLs. BSANTANDER stays unmapped — a search-engine snippet suggested a RUT that,
+when queried directly, returned "Sin información" (confirmed wrong); per the never-guess-a-RUT policy, it's
+documented as unmapped with the reason rather than guessed.
+
+**Provider abstraction** (`src/lib/financials/providers/types.ts`): a `FinancialsProvider` interface so
+manual CSV, CMF/XBRL, and any future vendor/broker/document-ingestion source all normalize to the identical
+`FinancialImportPayload` shape and call the identical `financialsRepository.ts` upsert functions.
+
+**CMF/XBRL provider** (`src/lib/financials/providers/cmfXbrlProvider.ts`): implements the verified two-step
+fetch chain for mapped issuers; returns a structured `blocked` result (`issuer_not_mapped`) for unmapped
+tickers instead of guessing; honestly reports `not_implemented` at the unzip step (a real ZIP download was
+proven to work, but no zip-extraction dependency was added this phase).
+
+**XBRL parser** (`src/lib/financials/xbrl/parseXbrl.ts`) + **concept map**
+(`src/lib/financials/xbrl/conceptMap.ts`): a minimal, dependency-free contexts/units/facts extractor plus a
+conservative IFRS-concept-to-line-item map built only from concepts actually observed in the two real
+filings — never computes EBITDA, documents every deliberately-unmapped concept with a reason. `plainFacts()`
+excludes segment/dimensional-breakdown contexts so only the consolidated figure is used — this exact test
+suite caught a real bug here (a naive greedy regex was treating the entire XML document as one giant "fact")
+before it reached a real filing.
+
+**CLI** (`scripts/discover/cmfXbrlFinancials.ts`): `npm run discover:cmf-financials` (discovery, default),
+`npm run ingest:cmf-financials:dry` / `ingest:cmf-financials -- --write` (real fetch attempts, dry-run
+default). Sanitized logs only.
+
+**Supersession:** not re-demonstrated with a fresh live write (no real same-period XBRL data exists yet for a
+ticker already covered by the manual-CSV sample) — verified instead via the repository's own priority table
+(`xbrl: 210 > manual_csv: 100`) plus the already-proven Phase 8C-upgrade live Production supersession test.
+
+**Tests:** `tests/cmfXbrlProvider.test.ts` — 40 new tests (parser against a synthetic fixture modeled on real
+structure, concept-map conservatism, issuer-map verification requirements, provider blocked/not-found/parsed
+states, no-fabricated-EBITDA/dividends/consensus checks, supersession priority ordering, discovery-output
+hygiene, documentation-completeness checks).
+
+**Local validation:** `npm run discover:cmf-financials` run for real — correctly reports SQM-B/COPEC as
+`feasible_with_mapping` and BSANTANDER as blocked; `npm run ingest:cmf-financials:dry -- --ticker COPEC` run
+against the **live** CMF site — correctly reported `not_found` for the most recent candidate period (not yet
+filed) without crashing or fabricating data, proving the honest-failure path works against a real network
+call, not just a mock.
+
+Build 46 routes (unchanged — no new API routes this phase) · lint 0 · tests 612 → 652
+
+Scope limits (explicit): no CAPTCHA bypass, no OCR, no AI extraction; only 2 tickers mapped; no zip-extraction
+dependency added (real download proven, extraction not wired end-to-end); no scheduled/unattended ingestion;
+News/Hechos Relevantes/FX/rates/calendar untouched; macro/market/auth/portfolio logic untouched; no mobile work.
+
+Next: extend the verified issuer map (manually, per issuer, never guessed), add a zip-extraction step, and
+exercise the fetch chain against more tickers/periods before considering any scheduled ingestion — or move to
+**Phase 8D** (FX/rates + economic calendar live source completion) if CMF/XBRL automation is deprioritized.

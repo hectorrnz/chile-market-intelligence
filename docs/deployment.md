@@ -426,3 +426,19 @@ expected column format (synthetic samples, including provenance columns;
 never commit a real/private CSV) and `docs/supabase_persistence.md` →
 "Financial-Statement Ingestion (Phase 8C — automation-first, manual CSV as
 interim bridge)" for the full workflow.
+
+## Phase 8C.1 — CMF/XBRL Automated Financials Discovery
+
+No new tables, migrations, or env vars. Adds a discovery/proof-of-concept layer
+(`src/lib/financials/providers/`, `src/lib/financials/xbrl/`,
+`scripts/discover/cmfXbrlFinancials.ts`) that fetches real public CMF financial-
+statement pages over plain HTTPS — no credentials, no CAPTCHA bypass. Nothing
+in this phase runs automatically on deploy or on a schedule.
+
+```bash
+npm run discover:cmf-financials                    # feasibility report, no network calls
+npm run ingest:cmf-financials:dry -- --ticker COPEC # real fetch attempt against live cmfchile.cl, no writes
+npm run ingest:cmf-financials -- --ticker COPEC --write # writes only if the dry run is valid (currently blocked at the unzip step — see docs/cmf_xbrl_provider_discovery.md)
+```
+
+See `docs/cmf_xbrl_provider_discovery.md` for the full feasibility assessment and exactly what was verified.

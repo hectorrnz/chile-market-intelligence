@@ -316,6 +316,11 @@ a redesign. Manual CSV is an interim bridge, not the terminal architecture — s
 workflow and `docs/data_source_status.md` → "Automation-first source architecture" for the verified supersession
 mechanism.
 
+**Phase 8C.1:** the first real candidate for the `xbrl` slot was built (`src/lib/financials/providers/cmfXbrlProvider.ts`)
+against exactly this schema, after verifying via `docs/cmf_xbrl_provider_discovery.md` that CMF's filed XBRL
+statements are downloadable without CAPTCHA. It normalizes into the identical `FinancialImportPayload` shape
+manual CSV produces, so no columns above changed to accommodate it.
+
 **Provenance/supersession columns — present on all 4 tables below** (added by migration
 `20260705000000_financials_automation_ready.sql`):
 

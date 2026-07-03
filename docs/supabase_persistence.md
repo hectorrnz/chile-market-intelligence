@@ -240,6 +240,15 @@ exact same 4 tables through the exact same `financialsRepository.ts` upsert func
 Manual CSV must never be treated as a terminal state; see `docs/data_source_status.md`'s "Automation-first
 source architecture" section and "Conversion Paths" section for the full design rationale and verification.
 
+**Phase 8C.1 update:** the first real automated-source candidate for the `source_type: 'xbrl'` slot was built
+and verified this phase. `docs/cmf_xbrl_provider_discovery.md` documents a real, CAPTCHA-free public path to
+CMF's filed XBRL financial statements (verdict: `feasible_with_mapping`) and
+`src/lib/financials/providers/cmfXbrlProvider.ts` implements it against the exact same 4 tables and the exact
+same `financialsRepository.ts` upsert functions described below — proving the automation-first design here
+isn't merely theoretical. The provider is not yet wired to complete a full write (no zip-extraction dependency
+was added this phase — see the discovery doc), so manual CSV remains the only source that has actually
+persisted data as of this phase.
+
 **CSV templates** (safe to commit; contain only synthetic sample data): `data/import_templates/`
 - `financial_reporting_periods.template.csv` — one row per (ticker, fiscal_year, fiscal_period, period_type)
 - `financial_statement_items.template.csv` — one row per line item per period (`line_item_code`: `revenue`, `ebitda`, `net_income`, `eps`, `gross_profit`, `operating_income`, `rd_expense`, `sga_expense`, `sbc_expense`, `dep_amort`, `ocf`, `capex`, `cash`, `total_debt`, `total_assets`, `shares_out`, `dividends_paid`, `buybacks`)

@@ -23,7 +23,10 @@
         "ingest:market-snapshots:dry": "node scripts/ingest/marketSnapshots.ts",
         "ingest:market-snapshots": "node scripts/ingest/marketSnapshots.ts --write",
         "ingest:financials:dry": "node scripts/ingest/financialsCsv.ts",
-        "ingest:financials": "node scripts/ingest/financialsCsv.ts --write"
+        "ingest:financials": "node scripts/ingest/financialsCsv.ts --write",
+        "discover:cmf-financials": "node scripts/discover/cmfXbrlFinancials.ts",
+        "ingest:cmf-financials:dry": "node scripts/discover/cmfXbrlFinancials.ts",
+        "ingest:cmf-financials": "node scripts/discover/cmfXbrlFinancials.ts --write"
     },
     "dependencies": {
         "@supabase/ssr": "^0.12.0",

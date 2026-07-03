@@ -99,8 +99,26 @@ export const SOURCE_REGISTRY = {
   financialsPersisted: {
     id: 'financials-persisted',
     state: 'persisted',
-    labelEn: 'Persisted financials via manual CSV',
-    labelEs: 'Financials persistidos vía CSV manual',
+    labelEn: 'Persisted financials via manual CSV (interim bridge)',
+    labelEs: 'Financials persistidos vía CSV manual (puente provisorio)',
+  },
+  financialsPersistedCmfFecu: {
+    id: 'financials-persisted-cmf-fecu',
+    state: 'persisted',
+    labelEn: 'Persisted financials via CMF/FECU',
+    labelEs: 'Financials persistidos vía CMF/FECU',
+  },
+  financialsPersistedXbrl: {
+    id: 'financials-persisted-xbrl',
+    state: 'persisted',
+    labelEn: 'Persisted financials via CMF XBRL',
+    labelEs: 'Financials persistidos vía XBRL de la CMF',
+  },
+  automatedFinancialsBlocked: {
+    id: 'automated-financials-blocked',
+    state: 'blocked',
+    labelEn: 'Automated financials provider blocked — see docs/cmf_xbrl_provider_discovery.md',
+    labelEs: 'Proveedor automatizado de financials bloqueado — ver docs/cmf_xbrl_provider_discovery.md',
   },
   financialsDerived: {
     id: 'financials-derived',

@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic fixture, hand-authored for Phase 8C.1 tests. Reuses real IFRS
+     concept names, context/unit structure, and CMF extension namespace
+     observed in real (not-committed) CMF filings during discovery — see
+     docs/cmf_xbrl_provider_discovery.md. All numeric values below are
+     fictional; this is NOT a real company's filing. -->
+<xbrli:xbrl xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:link="http://www.xbrl.org/2003/linkbase" xmlns:xbrldi="http://xbrl.org/2006/xbrldi" xmlns:xbrli="http://www.xbrl.org/2003/instance" xmlns:iso4217="http://www.xbrl.org/2003/iso4217" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:cl-ci="http://www.cmfchile.cl/cl/fr/ci/2025-01-02" xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2022-03-24/ifrs-full">
+  <link:schemaRef xlink:type="simple" xlink:href="sample_instance_shell.xsd" />
+
+  <xbrli:context id="Anual">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://www.svs.cl/rut">11111111-1</xbrli:identifier>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2024-01-01</xbrli:startDate>
+      <xbrli:endDate>2024-12-31</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+
+  <xbrli:context id="Cierre">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://www.svs.cl/rut">11111111-1</xbrli:identifier>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:instant>2024-12-31</xbrli:instant>
+    </xbrli:period>
+  </xbrli:context>
+
+  <xbrli:context id="Anual_ifrs-full_DisclosureOfOperatingSegmentsTable_SegmentAMember">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://www.svs.cl/rut">11111111-1</xbrli:identifier>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2024-01-01</xbrli:startDate>
+      <xbrli:endDate>2024-12-31</xbrli:endDate>
+    </xbrli:period>
+    <xbrli:scenario>
+      <xbrldi:explicitMember dimension="ifrs-full:SegmentsAxis">ifrs-full:SegmentAMember</xbrldi:explicitMember>
+    </xbrli:scenario>
+  </xbrli:context>
+
+  <xbrli:unit id="CLP">
+    <xbrli:measure>iso4217:CLP</xbrli:measure>
+  </xbrli:unit>
+  <xbrli:unit id="shares">
+    <xbrli:measure>xbrli:shares</xbrli:measure>
+  </xbrli:unit>
+
+  <ifrs-full:Revenue decimals="-3" contextRef="Anual" unitRef="CLP">1000000000</ifrs-full:Revenue>
+  <ifrs-full:GrossProfit decimals="-3" contextRef="Anual" unitRef="CLP">400000000</ifrs-full:GrossProfit>
+  <ifrs-full:ProfitLossFromOperatingActivities decimals="-3" contextRef="Anual" unitRef="CLP">250000000</ifrs-full:ProfitLossFromOperatingActivities>
+  <ifrs-full:ProfitLoss decimals="-3" contextRef="Anual" unitRef="CLP">150000000</ifrs-full:ProfitLoss>
+  <ifrs-full:BasicEarningsLossPerShare decimals="4" contextRef="Anual" unitRef="shares">12.5000</ifrs-full:BasicEarningsLossPerShare>
+  <ifrs-full:Assets decimals="-3" contextRef="Cierre" unitRef="CLP">5000000000</ifrs-full:Assets>
+  <ifrs-full:Liabilities decimals="-3" contextRef="Cierre" unitRef="CLP">2000000000</ifrs-full:Liabilities>
+  <ifrs-full:Equity decimals="-3" contextRef="Cierre" unitRef="CLP">3000000000</ifrs-full:Equity>
+  <ifrs-full:CashAndCashEquivalents decimals="-3" contextRef="Cierre" unitRef="CLP">300000000</ifrs-full:CashAndCashEquivalents>
+  <ifrs-full:CashFlowsFromUsedInOperatingActivities decimals="-3" contextRef="Anual" unitRef="CLP">200000000</ifrs-full:CashFlowsFromUsedInOperatingActivities>
+
+  <!-- Dimensional (segment) breakdown — must be excluded from plainFacts(). -->
+  <ifrs-full:Revenue decimals="-3" contextRef="Anual_ifrs-full_DisclosureOfOperatingSegmentsTable_SegmentAMember" unitRef="CLP">600000000</ifrs-full:Revenue>
+
+  <!-- A concept that is deliberately NOT in the concept map (ambiguous/note-only) — must stay unmapped, not silently guessed. -->
+  <ifrs-full:AccountingProfit decimals="-3" contextRef="Anual" unitRef="CLP">160000000</ifrs-full:AccountingProfit>
+</xbrli:xbrl>

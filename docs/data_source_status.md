@@ -1,14 +1,18 @@
-# Data Source Status Matrix — Phase 8A / 8B / 8C
+# Data Source Status Matrix — Phase 8A / 8B / 8C / 8C.1
 
 Audit date: 2026-07-02 (Phase 8A) · updated 2026-07-02 (Phase 8B — Compare
 real-data wiring + no-static-terminal-state policy) · updated 2026-07-03
 (Phase 8C — manual CSV financial-statement ingestion: Charting, Compare
-fundamentals, and Earnings now read persisted data where imported). This is
-the canonical truth-layer reference for what each visible module's data
-source actually is, versus what its UI label says. Update this file whenever
-a module's data source changes (new ingestion, provider swap, or label fix)
-— it is the single source of truth other docs (`CLAUDE.md`, `README.md`)
-summarize from.
+fundamentals, and Earnings now read persisted data where imported; upgraded
+same day to an automation-first schema) · updated 2026-07-03 (Phase 8C.1 —
+CMF/XBRL automated-provider discovery: found and verified a working,
+CAPTCHA-free public path to real financial-statement XBRL filings — see the
+Fundamentals/Charting and Earnings sections below for the corrected
+feasibility assessment). This is the canonical truth-layer reference for what
+each visible module's data source actually is, versus what its UI label says.
+Update this file whenever a module's data source changes (new ingestion,
+provider swap, or label fix) — it is the single source of truth other docs
+(`CLAUDE.md`, `README.md`) summarize from.
 
 ## No-static-terminal-state policy (Phase 8B)
 
@@ -38,6 +42,12 @@ source, conversion path, blocker (if any), next phase, and priority — no
 module is left as an open-ended "Static MVP" with no path forward.
 
 ## Automation-first source architecture (Phase 8C upgrade, 2026-07-03)
+
+**Phase 8C.1 note (same day):** the automation-ready design below was proven against a real candidate
+automated source, not just a simulation. `docs/cmf_xbrl_provider_discovery.md` documents a verified,
+CAPTCHA-free public path to real CMF XBRL financial-statement filings (`feasible_with_mapping`) and a working
+provider (`src/lib/financials/providers/cmfXbrlProvider.ts`) built against the exact `source_type: 'xbrl'`
+slot this architecture already reserved — no schema change was needed to accommodate it.
 
 **Manual CSV is an interim bridge, not the architecture.** The financials
 schema (`company_reporting_periods`, `financial_statement_items`,
@@ -298,26 +308,27 @@ next phase, and priority — none is an open-ended "Static MVP" with no plan.
 - **Next phase:** **Phase 8D**.
 - **Priority:** P2 (dates) / P3 (values, depends on dates first).
 
-### Fundamentals / Charting — ✓ automation-ready manual-CSV-first step complete (Phase 8C)
+### Fundamentals / Charting — ✓ automation-ready manual-CSV-first step complete (Phase 8C); CMF/XBRL discovery complete, `feasible_with_mapping` (Phase 8C.1)
 
 - **Done in Phase 8C:** `company_reporting_periods`, `financial_statement_items`, `financial_metrics`, `earnings_events` Supabase tables (migration `20260704000000_financials_foundation.sql` + automation-ready upgrade `20260705000000_financials_automation_ready.sql` adding `source_priority`/`is_superseded`/`superseded_by`/`ingestion_run_id`/`source_file`/`source_as_of` to all 4 tables); CSV templates in `data/import_templates/`; parser/validator in `src/lib/financials/csvFinancials.ts`; ingestion script `scripts/ingest/financialsCsv.ts` (`npm run ingest:financials:dry` / `ingest:financials -- --write`); Charting and Compare's Fundamentals table both read from these tables where any data has been imported for a ticker, falling back to `fundamentals.json`/`stockPrices.json` otherwise.
 - **Manual CSV is explicitly interim** — every write function in `financialsRepository.ts` accepts `sourceType` as data, not a hardcoded assumption; `source_priority` derives automatically from `source_type`; the supersession mechanism was verified end-to-end (a simulated `cmf_fecu` row automatically superseded a `manual_csv` row for the same period via the same upsert function, zero code change).
+- **Corrected in Phase 8C.1 — CMF financial-statement access is NOT CAPTCHA-blocked** (unlike Hechos Esenciales): a real discovery pass (`docs/cmf_xbrl_provider_discovery.md`) found and verified a working two-step public HTTP chain (`entidad.php` by RUT+period → parse the "Estados financieros (XBRL)" href → download) with no CAPTCHA and no login, confirmed by actually downloading genuine XBRL ZIP archives for two real companies (Ripley Chile and Empresas Copec, an app-covered ticker). Feasibility verdict: **`feasible_with_mapping`** — real but unofficial/undocumented, not `feasible_now` like the BCCh API. A provider abstraction (`src/lib/financials/providers/types.ts`), a working `cmfXbrlProvider.ts`, a dependency-free XBRL parser (`src/lib/financials/xbrl/parseXbrl.ts`), and a conservative concept map (`src/lib/financials/xbrl/conceptMap.ts`) were built and tested. The provider honestly reports `not_implemented` at the unzip step (a real ZIP download was proven; no zip-extraction dependency was added this phase) rather than pretending an end-to-end import works.
 - **Remaining static fields:** any ticker with no CSV import yet (most of the 25-company universe — only SQM-B/BSANTANDER/COPEC have sample data as of this phase); P/S forward, ROE, P/B on Compare (no forward-revenue estimate or book-value/equity line item is imported); revenue/net-income YoY on Charting for persisted tickers (no cross-period YoY derivation yet).
-- **Target source (final state):** an automated CMF FECU/XBRL parser once/if a CAPTCHA-free CMF path exists (see Hechos Relevantes below), a licensed vendor-data feed, a broker-supplied statement feed, or a document-ingestion (PDF/filing) pipeline — any of these write into the *same* 4 tables via the *same* `financialsRepository.ts` upsert functions, just with a different `sourceType`. No schema change, no new table, no UI rewrite.
-- **Conversion path (next):** (a) real company-by-company CSV imports to grow ticker coverage — this is now just data entry, not engineering; (b) a `total_equity`/`book_value` statement-item code to unlock ROE/P/B derivation; (c) any of the automated source options above, whichever becomes available first.
-- **Blocker:** CMF FECU parsing is blocked the same way Hechos Esenciales is (CAPTCHA) — manual CSV remains the only near-term path for new tickers/periods until an automated source is selected and built.
-- **Next phase:** **Phase 8D+** (growing CSV coverage is ongoing; CMF/XBRL/vendor/broker/document-ingestion automation is a separate, larger future phase — schema and repository already support it without redesign).
-- **Priority:** P1 (more CSV imports, pure data entry) / P3 (automated-source integration).
+- **Target source (final state):** the CMF/XBRL provider built this phase, once (a) a zip-extraction step is added, (b) more tickers are verified in `cmfIssuerMap.ts` (only SQM-B and COPEC verified so far; BSANTANDER's RUT could not be confirmed and stays unmapped), and (c) the fetch chain has been exercised enough times to build confidence it's stable — or, alternatively, a licensed vendor-data feed, a broker-supplied statement feed, or a document-ingestion (PDF/filing) pipeline. Any of these write into the *same* 4 tables via the *same* `financialsRepository.ts` upsert functions, just with a different `sourceType`. No schema change, no new table, no UI rewrite.
+- **Conversion path (next):** (a) add a zip-extraction dependency and wire `cmfXbrlProvider.fetchFiling` end-to-end; (b) verify more issuer RUTs manually (never guessed); (c) exercise the fetch chain against more tickers/periods and monitor stability over time before considering scheduled ingestion; (d) real company-by-company CSV imports continue in parallel as low-risk data entry; (e) a `total_equity`/`book_value` statement-item code to unlock ROE/P/B derivation.
+- **Blocker:** none technical (CAPTCHA claim from before Phase 8C.1 was wrong for this specific surface — corrected here) — the remaining work is engineering (zip extraction) and caution (an undocumented HTML surface should be exercised and monitored before being trusted for unattended ingestion), not a hard block.
+- **Next phase:** continue CMF/XBRL automation (zip extraction, more issuers) or **Phase 8D+** (CSV coverage growth continues regardless, as it's pure data entry).
+- **Priority:** P1 (more CSV imports, pure data entry — ongoing) / P2 (CMF/XBRL automation — real progress made, not yet production-ready).
 
-### Earnings — ✓ automation-ready manual-CSV-first step complete (Phase 8C)
+### Earnings — ✓ automation-ready manual-CSV-first step complete (Phase 8C); shares the same CMF/XBRL discovery as Fundamentals/Charting (Phase 8C.1)
 
 - **Done in Phase 8C:** `earnings_events` table (with the same provenance/supersession columns as the other 3 financials tables) + `GET /api/earnings`; the page merges persisted events (ticker-level) with `earnings.json` for every other ticker; persisted rows show a real `status` (Reported/Expected/Preliminary/Missing) instead of a synthetic quality judgment, and correctly show `—` for Rev. Surprise (no fabricated consensus for imported data).
 - **Remaining static fields:** any ticker with no persisted earnings event yet; the synthetic revenue-surprise/consensus fields (`genEarningsConsensus.mjs`) remain on the static-fallback path only, clearly derived, never claimed as real.
-- **Target source (final state):** same CMF FECU/XBRL/vendor/broker/document-ingestion automation path as Fundamentals/Charting (same tables, same repository), plus a genuine analyst-estimates source before any real "surprise" language could ever be shown for persisted data (out of scope — no consensus/estimates ingestion planned).
-- **Conversion path (next):** more CSV imports (pure data entry, same schema); an automated source integration when selected; a real estimates vendor would be a separate, larger scope decision if ever pursued.
-- **Blocker:** same CMF CAPTCHA block for the ideal automated source; no analyst-estimates vendor in scope.
-- **Next phase:** **Phase 8D+** (CSV coverage growth) / not planned (real consensus estimates — explicitly out of scope per project rules).
-- **Priority:** P1 (more CSV imports) / not planned (real consensus).
+- **Target source (final state):** same CMF/XBRL/vendor/broker/document-ingestion automation path as Fundamentals/Charting (same tables, same repository — see above, feasibility now confirmed `feasible_with_mapping`, not blocked), plus a genuine analyst-estimates source before any real "surprise" language could ever be shown for persisted data (out of scope — no consensus/estimates ingestion planned).
+- **Conversion path (next):** more CSV imports (pure data entry, same schema); the same CMF/XBRL provider integration path as Fundamentals/Charting; a real estimates vendor would be a separate, larger scope decision if ever pursued.
+- **Blocker:** none technical for the earnings-events schema itself; no analyst-estimates vendor in scope (unchanged).
+- **Next phase:** **Phase 8D+** (CSV coverage growth) / continue CMF/XBRL automation / not planned (real consensus estimates — explicitly out of scope per project rules).
+- **Priority:** P1 (more CSV imports) / P2 (CMF/XBRL automation) / not planned (real consensus).
 
 ### Hechos Relevantes (Hechos Esenciales)
 

@@ -390,6 +390,81 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 8C.1 — Automated Financials Provider Discovery + CMF/XBRL Proof of Concept** ✓ COMPLETE (2026-07-03)
+
+Determines whether official CMF financial-statement/XBRL filings can be programmatically accessed without
+CAPTCHA or brittle scraping, and builds the first real automated-provider scaffolding on top of the Phase 8C
+automation-ready schema. Verdict: **`feasible_with_mapping`** — real, official XBRL instance documents (not
+just blank taxonomy schemas) were downloaded successfully during discovery with no CAPTCHA and no login, via
+a two-step public HTTP chain, for two real companies (Ripley Chile and **Empresas Copec — a ticker this app
+covers**). This is genuinely more promising than Hechos Esenciales (confirmed CAPTCHA-blocked), but it is
+still an unofficial, undocumented HTML surface — not a published/versioned API — so this phase treats it
+cautiously: a working provider was built, but no unattended/scheduled ingestion was enabled.
+
+**Discovery** (`docs/cmf_xbrl_provider_discovery.md`): verified that CMF's taxonomy download pages
+(`/portal/principal/613/w3-article-*.html`) only provide blank schema ZIPs — proving nothing about actual
+filing access. Separately, CMF's entity filing page (`entidad.php?rut=&mm=&aa=&tipo=C&tipo_norma=IFRS...`)
+was found to resolve deterministically from `rut+mm+aa` alone (no session/search-form token required — the
+`row`/`auth`/`send` params can be left blank), and its HTML embeds a relative link to a real XBRL ZIP download
+(`.../inc/inf_financiera/ifrs/safec_ifrs_verarchivo.php?auth=...&send=...`, tokens freshly generated per page
+load, not guessable in advance). Verified end-to-end for RUT `99530250` (Ripley, 3 periods) and RUT `90690000`
+(Empresas Copec, confirmed genuine ZIP with real `ifrs-full` IFRS facts). Found a real-world nuance while
+inspecting Copec's filing: it reports entirely in **USD**, not CLP — confirms currency must always be read
+per-fact from the XBRL unit block, never assumed.
+
+**Issuer mapping** (`src/lib/financials/cmfIssuerMap.ts`): only RUTs confirmed against a direct cmfchile.cl
+URL are mapped — SQM-B (`93007000`) and COPEC (`90690000`), both verified. BSANTANDER stays **unmapped**: a
+search-engine snippet suggested RUT `97036000`, but querying it directly returned "Sin información" —
+confirmed wrong. Per the never-guess-a-RUT policy, BSANTANDER is documented as unmapped with the reason, not
+guessed.
+
+**Provider abstraction** (`src/lib/financials/providers/types.ts`): a `FinancialsProvider` interface
+(`discoverFilings`/`fetchFiling`/`parseFiling`/`normalizeToFinancialImportPayload`/`dryRunImport`/
+`writeImport`) so manual CSV (Phase 8C) and CMF/XBRL (this phase) — and any future vendor/broker/document
+pipeline — all normalize to the exact same `FinancialImportPayload` shape and call the exact same
+`financialsRepository.ts` upsert functions. No provider-specific tables, no duplicated repository logic.
+
+**CMF/XBRL provider** (`src/lib/financials/providers/cmfXbrlProvider.ts`): implements the verified two-step
+fetch chain for mapped issuers only; returns a structured `blocked` result (`issuer_not_mapped`) for any
+unmapped ticker rather than guessing. Honestly reports `not_implemented` at the unzip step — a real ZIP
+download was proven to work, but this phase did not add a zip-extraction dependency, so `parseFiling`/
+`normalizeToFinancialImportPayload` operate on an already-extracted `.xbrl` instance string (ready for the
+next phase to wire the unzip step in).
+
+**XBRL parser** (`src/lib/financials/xbrl/parseXbrl.ts`): minimal, dependency-free contexts/units/facts
+extractor built and tested against a small **synthetic** fixture modeled on the real structure observed (the
+real 2–2.7 MB downloaded filings were inspected locally but not committed). `plainFacts()` excludes
+segment/dimensional-breakdown contexts so only the consolidated top-level figure is used — a real bug this
+exact test suite caught (a naive greedy fact-matching regex was silently treating the entire document as one
+fact) before it ever reached a real filing.
+
+**Concept map** (`src/lib/financials/xbrl/conceptMap.ts`): conservative IFRS concept → line-item mapping,
+built only from concepts actually observed in the two real filings — never computes EBITDA, never forces a
+bank concept onto an industrial line item, documents every deliberately-unmapped concept
+(`KNOWN_UNMAPPED_CONCEPTS`) with a reason instead of silently dropping it.
+
+**CLI** (`scripts/discover/cmfXbrlFinancials.ts`, `npm run discover:cmf-financials` /
+`ingest:cmf-financials:dry` / `ingest:cmf-financials -- --write`): discovery mode by default, dry-run by
+default, sanitized logs only (never echoes raw HTML/XBRL or secrets).
+
+**Supersession**: not re-demonstrated with a fresh live write this phase (no real same-period XBRL data
+exists yet for a ticker already covered by the manual-CSV sample) — instead verified via the repository's own
+priority table (`xbrl: 210 > manual_csv: 100` in `financialsRepository.ts`) plus the Phase 8C upgrade's
+already-proven live Production supersession test. The mechanism is unchanged and requires no new proof to
+apply to a `source_type: 'xbrl'` row.
+
+Build 46 routes · lint 0 · tests 612 → 636+ (35 new tests in `tests/cmfXbrlProvider.test.ts`)
+
+Scope limits (explicit): no CAPTCHA bypass, no OCR, no AI extraction; only 2 tickers mapped (SQM-B, COPEC);
+no unzip dependency added (real ZIP download proven, extraction not wired); no scheduled/unattended ingestion;
+News/Hechos Relevantes/FX/rates/calendar untouched; macro/market/auth/portfolio logic untouched.
+
+Next: extend the verified issuer map (manually, per issuer), add a zip-extraction step, and exercise the
+fetch chain against more tickers before considering any scheduled ingestion — or move to **Phase 8D**
+(FX/rates + economic calendar live source completion) if CMF/XBRL automation is deprioritized.
+
+---
+
 **Phase 8C (upgrade) — Automation-First Financials Architecture, Manual CSV as Interim Bridge** ✓ COMPLETE (2026-07-03)
 
 Upgrades the Phase 8C financials foundation (below) to an explicit **automation-first** design. Manual CSV

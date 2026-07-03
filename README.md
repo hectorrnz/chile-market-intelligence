@@ -2,7 +2,7 @@
 
 An internal buyside web terminal for Nevada Inversiones, a Chilean family office. Tracks Chilean listed equities, macroeconomic indicators, CMF filings (Hechos Esenciales), and earnings releases.
 
-**Current phase:** Phase 8C complete — Charting, Compare's Fundamentals table, and Earnings now read persisted (and, for several ratios, derived) financial data from a new manual-CSV ingestion pipeline wherever a ticker has been imported, falling back to the static sample only when nothing's imported yet. Phase 8B (Compare market-data wiring + the **no-static-terminal-state policy**) and Phase 8A (data-source audit) remain in place; every remaining static module (FX/rates, US macro, economic calendar, Hechos Relevantes, News) still has a documented target source, conversion path, and next phase in [`docs/data_source_status.md`](docs/data_source_status.md) — no module is left as an open-ended "Static MVP" with no plan. All prior phases (auth, watchlist, portfolio, transactions/cash ledger, live macro/market stack) remain live in production, unchanged.
+**Current phase:** Phase 8C.1 complete — a real discovery pass found that CMF's financial-statement XBRL filings are downloadable without CAPTCHA (verdict: `feasible_with_mapping`; see [`docs/cmf_xbrl_provider_discovery.md`](docs/cmf_xbrl_provider_discovery.md)), and a working provider abstraction/XBRL parser/concept map was built against the Phase 8C schema — but manual CSV remains the only source that has actually persisted data so far (a zip-extraction step was not yet wired end-to-end). Phase 8C itself: Charting, Compare's Fundamentals table, and Earnings read persisted (and, for several ratios, derived) financial data wherever a ticker has been imported, falling back to the static sample otherwise. Phase 8B (Compare market-data wiring + the **no-static-terminal-state policy**) and Phase 8A (data-source audit) remain in place; every remaining static module (FX/rates, US macro, economic calendar, Hechos Relevantes, News) still has a documented target source, conversion path, and next phase in [`docs/data_source_status.md`](docs/data_source_status.md) — no module is left as an open-ended "Static MVP" with no plan. All prior phases (auth, watchlist, portfolio, transactions/cash ledger, live macro/market stack) remain live in production, unchanged.
 
 ---
 
@@ -151,6 +151,7 @@ without them** (they never run during build). Full guide:
 | **Phase 8A** | Data-source audit — corrected stale/misleading source labels app-wide | ✓ Complete |
 | **Phase 8B** | Compare page real-data wiring + no-static-terminal-state policy | ✓ Complete |
 | **Phase 8C** | Financial-statement ingestion, automation-first architecture with manual CSV as an interim bridge, for Charting, Compare fundamentals, and Earnings | ✓ Complete |
+| **Phase 8C.1** | CMF/XBRL automated-provider discovery + proof of concept — found a real, CAPTCHA-free path to CMF's XBRL filings and built a working provider against the Phase 8C schema | ✓ Complete |
 | **Phase 8D** | FX/rates + US macro + economic calendar live source completion | Planned |
 | **Phase 8E** | Hechos Relevantes + News ingestion workaround | Planned |
 | **Phase 6E** | Portfolio analytics / performance attribution | Planned |
