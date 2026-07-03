@@ -10,12 +10,17 @@
 // edit/remove there is reserved for manual positions, to avoid a manual edit
 // silently diverging from the reconciled transaction-derived state.
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { useLang } from '@/components/providers/LangProvider'
 import { SectionHeader } from '@/components/ui/SectionHeader'
+import { MarketRefreshButton } from '@/components/ui/MarketRefreshButton'
+import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
 import { getAllCompanies } from '@/lib/data/companies'
 import { formatCLP, formatPct, changeColor } from '@/lib/formatters'
+import { fetchLiveSnapshot, formatLiveTimestamp, type LiveSnapshot } from '@/lib/data/marketLiveData'
+import { valuePositions, calculatePortfolioTotals, calculateSectorExposure, type LatestPrice } from '@/lib/portfolio/valuation'
+import type { DataSourceStatus } from '@/lib/providers/types'
 
 const ALL_COMPANIES = getAllCompanies()
 const VALID_TICKERS = new Set(ALL_COMPANIES.map(c => c.ticker.toUpperCase()))
@@ -921,6 +926,54 @@ export default function PortfolioPage() {
   const [cashEntries, setCashEntries] = useState<CashEntryOut[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('positions')
+  // Manual live-price overlay (Yahoo Finance) on top of the Supabase-persisted
+  // baseline the API already returns — same pattern as Stocks/Home/Company.
+  const [live, setLive] = useState<LiveSnapshot | null>(null)
+
+  const doRefresh = useCallback(async () => {
+    const data = await fetchLiveSnapshot()
+    if (!data) throw new Error('unavailable')
+    setLive(data)
+  }, [])
+
+  const priceStatus: DataSourceStatus = live ? 'live' : 'persisted'
+  const liveTimestamp = live ? formatLiveTimestamp(live.lastUpdated) : null
+
+  const displayed = useMemo(() => {
+    if (!detail) return null
+    if (!live) return { positions: detail.positions, totals: detail.totals, sectorExposure: detail.sectorExposure }
+
+    const pricesByTicker = new Map<string, LatestPrice>(
+      detail.positions.map((p) => {
+        const lv = live.stocks[p.ticker]
+        return [p.ticker.toUpperCase(), { price: lv?.price ?? p.latestPrice, currency: 'CLP' }]
+      }),
+    )
+    const valued = valuePositions(
+      detail.positions.map((p) => ({
+        ticker: p.ticker,
+        quantity: p.quantity,
+        averageCost: p.averageCost,
+        costCurrency: p.costCurrency,
+        sector: p.sector,
+      })),
+      pricesByTicker,
+    )
+    const positions: PositionOut[] = detail.positions.map((p, i) => ({
+      ...p,
+      latestPrice: valued[i].latestPrice,
+      marketValue: valued[i].marketValue,
+      unrealizedPnL: valued[i].unrealizedPnL,
+      unrealizedPnLPct: valued[i].unrealizedPnLPct,
+      weight: valued[i].weight,
+      mixedCurrency: valued[i].mixedCurrency,
+    }))
+    return {
+      positions,
+      totals: calculatePortfolioTotals(valued),
+      sectorExposure: calculateSectorExposure(valued),
+    }
+  }, [detail, live])
 
   async function loadDetail(id: string, cancelled: { value: boolean }) {
     const [detailRes, txRes, cashRes] = await Promise.all([
@@ -988,21 +1041,33 @@ export default function PortfolioPage() {
         subtitle={t.portfolio.subtitle}
       />
 
+      {!loading && detail && (
+        <div className="flex items-center gap-1.5">
+          <MarketRefreshButton onRefresh={doRefresh} />
+          <MarketDataSourceBadge status={priceStatus} />
+          {liveTimestamp && (
+            <span className="text-xs text-muted-fg ui-number whitespace-nowrap">
+              {t.common.marketUpdated} {liveTimestamp}
+            </span>
+          )}
+        </div>
+      )}
+
       {loading ? (
         <div className="bg-surface border border-border rounded px-5 py-8 text-center">
           <p className="text-xs text-muted-fg">Loading…</p>
         </div>
       ) : (
         <>
-          {detail && (
+          {displayed && (
             <SummaryCards
-              totals={detail.totals}
-              realizedPnl={detail.realizedPnl?.totalRealizedPnl ?? 0}
-              cashBalance={detail.cashSummary?.netCashBalance ?? 0}
+              totals={displayed.totals}
+              realizedPnl={detail?.realizedPnl?.totalRealizedPnl ?? 0}
+              cashBalance={detail?.cashSummary?.netCashBalance ?? 0}
             />
           )}
-          {detail && detail.sectorExposure.length > 0 && (
-            <SectorExposureList sectors={detail.sectorExposure} />
+          {displayed && displayed.sectorExposure.length > 0 && (
+            <SectorExposureList sectors={displayed.sectorExposure} />
           )}
 
           <div className="flex items-center gap-1 border-b border-border">
@@ -1026,7 +1091,7 @@ export default function PortfolioPage() {
             <div className="space-y-3">
               {portfolioId && <AddPositionForm portfolioId={portfolioId} onAdded={refresh} />}
               <PositionsTable
-                positions={detail?.positions ?? []}
+                positions={displayed?.positions ?? []}
                 portfolioId={portfolioId ?? ''}
                 onChanged={refresh}
               />
