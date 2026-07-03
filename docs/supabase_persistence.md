@@ -93,6 +93,19 @@ Unlike the public tables above, these have **no anon-read policy**. Every policy
 
 Route handlers use `getSupabaseUserClient()` (cookie-aware, ties to the signed-in session), never the service-role admin client, so RLS is always enforced on these tables' public-facing read/write paths.
 
+### Financials tables (Phase 8C)
+
+Migration file: [`20260704000000_financials_foundation.sql`](../supabase/migrations/20260704000000_financials_foundation.sql)
+
+| Table | Description |
+|-------|-------------|
+| `company_reporting_periods` | One row per (ticker, fiscal_year, fiscal_period, period_type, source_type) — the reporting "shell" other tables hang off. `source_type` is `manual_csv` today; `xbrl`/`cmf_fecu` reserved for future automation. Optional `filing_id` FKs to `cmf_filings(id)`. |
+| `financial_statement_items` | Line-item detail (revenue, EBITDA, net income, EPS, cash, total debt, etc.) — `statement_type` ∈ `income/cash/balance/returns`, `line_item_code` is the stable key other code reads (e.g. `'revenue'`, `'ebitda'`). |
+| `financial_metrics` | Calculated ratios (EBITDA margin, FCF, net debt, net debt/EBITDA, gross/op margin). `source_type` is `manual_csv` (imported directly) or `derived` (computed by the ingestion script from statement items) — manual takes precedence when both exist for the same `metric_code` + period. |
+| `earnings_events` | One row per reporting event (upcoming or reported) — same shape as `earnings.json` but real. `status` ∈ `expected/reported/preliminary/missing`. No consensus/estimate fields — beat/miss language is never shown for these rows. |
+
+Like the tables above, all four have an anon-read policy and **no public write policy** — only the admin client (service-role key), invoked exclusively from `scripts/ingest/financialsCsv.ts`, can write. Read helpers live in `src/lib/db/repositories/financialsRepository.ts` and use the public/anon server client, same as `macroRepository.ts`/`marketRepository.ts`.
+
 ---
 
 ## Supabase Client Files
@@ -212,6 +225,44 @@ psql $SUPABASE_DATABASE_URL -f supabase/seed.sql
 - No broker/CSV import — transactions are entered manually one at a time.
 - No automated cash reconciliation against a real brokerage statement.
 - Multi-step writes (transaction insert → cash-ledger insert → position reconcile) are sequential, not wrapped in a single DB transaction — the Supabase JS client does not expose multi-statement transactions. Pre-validation before every write (checked via the same replay logic used to reconcile) keeps the ledger internally consistent in practice, but a mid-sequence failure (e.g. a dropped connection) could in principle leave a transaction row without its cash-ledger entry. Acceptable for this foundation phase; a Postgres RPC would remove the gap if needed later.
+
+---
+
+## Financial-Statement Ingestion (Phase 8C)
+
+Manual CSV import is the first real-data path for Charting, Compare's Fundamentals table, and Earnings —
+replacing the static `fundamentals.json`/`stockPrices.json`/`earnings.json` terminal-static state with
+persisted (and, for a handful of ratios, derived) data, per ticker, as CSVs are imported. No CMF/XBRL
+automation exists yet — see `docs/data_source_status.md`'s "Conversion Paths" section for that path.
+
+**CSV templates** (safe to commit; contain only synthetic sample data): `data/import_templates/`
+- `financial_reporting_periods.template.csv` — one row per (ticker, fiscal_year, fiscal_period, period_type)
+- `financial_statement_items.template.csv` — one row per line item per period (`line_item_code`: `revenue`, `ebitda`, `net_income`, `eps`, `gross_profit`, `operating_income`, `rd_expense`, `sga_expense`, `sbc_expense`, `dep_amort`, `ocf`, `capex`, `cash`, `total_debt`, `total_assets`, `shares_out`, `dividends_paid`, `buybacks`)
+- `financial_metrics.template.csv` — optional manually-supplied ratios (most are auto-derived — see below)
+- `earnings_events.template.csv` — one row per reporting event, `status` ∈ `expected/reported/preliminary/missing`
+
+**Never commit a real/private CSV** — only the `.template.csv` files (synthetic data) belong in the repo. Real imports are run locally from a file outside version control.
+
+**Parser/validation:** `src/lib/financials/csvFinancials.ts` — pure functions (`parseCsvRows`, `validateReportingPeriodRow`, `validateStatementItemRow`, `validateFinancialMetricRow`, `validateEarningsEventRow`, `buildFinancialImportPayload`). Every row is validated before any write: ticker must be in the covered universe, fiscal year/period/dates must be well-formed, numeric cells are NaN/Infinity-guarded (empty cell → `null`, never `NaN`), errors carry the originating CSV line number.
+
+**Auto-derived metrics:** `deriveFinancialMetrics()` computes `ebitda_margin`, `gross_margin`, `op_margin`, `fcf` (`ocf − capex`), `net_debt` (`total_debt − cash`), and `net_debt_ebitda` directly from imported statement items after each import — no need to supply these manually unless overriding. A manually-supplied value for the same `metric_code` + period takes precedence over the derived one (`source_type: 'manual_csv'` beats `'derived'`).
+
+**Ingestion script:** `scripts/ingest/financialsCsv.ts`
+```bash
+npm run ingest:financials:dry -- --reporting-periods path.csv --statement-items path.csv --metrics path.csv --earnings path.csv
+npm run ingest:financials -- --reporting-periods path.csv --statement-items path.csv --write
+```
+Dry-run by default (no `--write` flag needed); aborts before any write if any row fails validation, unless `--allow-partial` is passed (invalid rows are then skipped, not written). Records one `ingestion_runs` row per invocation (`provider: 'Manual CSV'`, `job_type: 'financials_csv_import'`, `rows_seen`/`rows_inserted`/`rows_failed`, `metadata.ingestionVersion: '8C'`).
+
+**Read path:** `src/lib/db/repositories/financialsRepository.ts` exposes `getReportingPeriods`, `getStatementItems`, `getFinancialMetrics`, `getLatestFinancialMetrics`, `getLatestStatementItems`, `getEarningsEvents`, `getFinancialsCoverage`. Server-only resolvers (`src/lib/financials/resolveFinancials.ts`) shape this into the exact `FundamentalRecord[]` type Charting already knows how to aggregate, so the UI's quarterly/TTM/annual logic is unchanged regardless of source.
+
+**Limitations (Phase 8C, explicit):**
+- Manual CSV import only — no automated CMF FECU/XBRL parsing (CMF's public portal is CAPTCHA-blocked, same constraint as Hechos Esenciales).
+- No consensus/analyst-estimates ingestion — persisted (imported) earnings rows never show a beat/miss surprise percentage.
+- No dividends beyond what's imported as a raw `dividends_paid` line item (used only to derive dividend yield on Compare).
+- No FX conversion.
+- No cross-period YoY derivation for persisted records (Charting/Earnings YoY columns show `—` for imported data until a prior-year lookup is built).
+- No AI summaries.
 
 ---
 

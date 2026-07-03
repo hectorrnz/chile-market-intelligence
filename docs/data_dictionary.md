@@ -69,6 +69,13 @@ One row per quarterly or annual earnings report.
 | `cmf_filing_url` | string | Link to CMF FECU filing | CMF |
 | `notes` | text | Analyst notes | Internal |
 
+**Phase 8C note:** this table describes an idealized future schema (including `consensus_eps`/`beat_miss`,
+which are explicitly out of scope — no analyst-estimates source is ingested). The actual persisted table
+is the leaner `earnings_events` (see "Entity: Financial Statements" below) — no consensus/beat-miss field
+exists there by design, since fabricating one without a real estimates source would violate the
+no-fake-values rule. The static `earnings.json`/`EarningsRelease` TypeScript interface (with its synthetic,
+clearly-labeled consensus fields) remains the fallback for any ticker with no persisted earnings event.
+
 ---
 
 ## Entity: HechoEsencial
@@ -294,6 +301,63 @@ Both tables: RLS `auth.uid() = user_id` on every operation, plus a `check_portfo
 **Manual-position compatibility:** the first transaction for a ticker that already has a manual `portfolio_positions` row (or any pre-6D row with no `positionSource`) is blocked (`manual_position_conflict`) rather than silently overwritten — the user must remove the manual position first.
 
 **Limitations (Phase 6D):** no FIFO/LIFO or specific-lot selection, no dividends, no time/money-weighted performance attribution, no broker/CSV import, no automated cash reconciliation against a real statement. See `docs/supabase_persistence.md` → "Transaction History and Cash Ledger" for the full note.
+
+---
+
+## Entity: Financial Statements — Reporting Periods / Statement Items / Metrics / Earnings Events (Phase 8C)
+
+The real, persisted schema behind Charting, Compare's Fundamentals table, and Earnings — replaces the
+static `fundamentals.json`/`stockPrices.json` valuation fields/`earnings.json` wherever a ticker has an
+imported CSV. Populated by manual CSV import only (`scripts/ingest/financialsCsv.ts`); see
+`docs/supabase_persistence.md` → "Financial-Statement Ingestion (Phase 8C)" for the ingestion workflow.
+
+**CompanyReportingPeriod** — the reporting "shell" every other table hangs off:
+
+| Field | Type | Description | Source |
+|---|---|---|---|
+| `id` | uuid | Primary key | System |
+| `ticker` | string | FK → Company.ticker | |
+| `fiscal_year` | integer | e.g. `2025` | Manual CSV |
+| `fiscal_period` | string | `Q1`/`Q2`/`Q3`/`Q4`/`FY` | Manual CSV |
+| `period_type` | string | `quarterly`/`annual`/`ttm` | Manual CSV |
+| `period_end_date` | date | Last day of the reporting period | Manual CSV |
+| `report_date` | date | Date results were published (nullable — blank for upcoming periods) | Manual CSV |
+| `currency` | string | Defaults `CLP` | Manual CSV |
+| `source_type` | string | `manual_csv` today; `cmf_fecu`/`xbrl` reserved for future automation | System |
+| `filing_id` | uuid | Optional FK → `cmf_filings(id)` | Manual CSV |
+
+**FinancialStatementItem** — one row per line item per period:
+
+| Field | Type | Description | Source |
+|---|---|---|---|
+| `reporting_period_id` | uuid | FK → CompanyReportingPeriod | |
+| `ticker` | string | FK → Company.ticker | |
+| `statement_type` | string | `income`/`cash`/`balance`/`returns` | Manual CSV |
+| `line_item_code` | string | Stable key: `revenue`, `ebitda`, `net_income`, `eps`, `gross_profit`, `operating_income`, `rd_expense`, `sga_expense`, `sbc_expense`, `dep_amort`, `ocf`, `capex`, `cash`, `total_debt`, `total_assets`, `shares_out`, `dividends_paid`, `buybacks` | Manual CSV |
+| `value` | numeric | Nullable — e.g. banks have no meaningful `ebitda` | Manual CSV |
+| `unit` / `scale` | string | Display hints (`CLP`/`millions`) — not used in calculations | Manual CSV |
+
+**FinancialMetric** — calculated ratios tied to a reporting period:
+
+| Field | Type | Description | Source |
+|---|---|---|---|
+| `reporting_period_id` | uuid | FK → CompanyReportingPeriod | |
+| `metric_code` | string | `ebitda_margin`, `gross_margin`, `op_margin`, `fcf`, `net_debt`, `net_debt_ebitda`, or any manually-supplied code | Manual CSV or derived |
+| `value` | numeric | Nullable | |
+| `source_type` | string | `manual_csv` or `derived` — manual takes precedence for the same `metric_code` + period | System |
+| `calculation_method` | string | e.g. `'ebitda / revenue'` — set only for `derived` rows | System |
+
+**EarningsEvent** — one row per reporting event (replaces `earnings.json` for imported tickers):
+
+| Field | Type | Description | Source |
+|---|---|---|---|
+| `ticker` | string | FK → Company.ticker | |
+| `fiscal_year` / `fiscal_period` / `period_type` | — | Nullable — an "expected" event may not yet have a confirmed period | Manual CSV |
+| `report_date` / `event_date` | date | Nullable | Manual CSV |
+| `status` | string | `expected`/`reported`/`preliminary`/`missing` — **never** a fabricated quality judgment | Manual CSV |
+| `revenue` / `ebitda` / `net_income` / `eps` | numeric | Nullable | Manual CSV |
+
+**No consensus/estimate fields exist on `EarningsEvent`** — the Rev. Surprise column on `/earnings` renders `—` for every persisted row, by design.
 
 ---
 

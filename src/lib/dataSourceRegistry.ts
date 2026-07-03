@@ -92,9 +92,27 @@ export const SOURCE_REGISTRY = {
   },
   fundamentalsStatic: {
     id: 'fundamentals-static',
-    state: 'static_mvp',
-    labelEn: 'Static fundamentals sample · live prices where available',
-    labelEs: 'Muestra estática de fundamentales · precios en vivo donde estén disponibles',
+    state: 'static_fallback',
+    labelEn: 'Static fallback · pending financials import',
+    labelEs: 'Respaldo estático · pendiente de importación de financials',
+  },
+  financialsPersisted: {
+    id: 'financials-persisted',
+    state: 'persisted',
+    labelEn: 'Persisted financials via manual CSV',
+    labelEs: 'Financials persistidos vía CSV manual',
+  },
+  financialsDerived: {
+    id: 'financials-derived',
+    state: 'persisted',
+    labelEn: 'Derived from persisted financials',
+    labelEs: 'Derivado de financials persistidos',
+  },
+  earningsPersisted: {
+    id: 'earnings-persisted',
+    state: 'persisted',
+    labelEn: 'Persisted earnings events via manual CSV',
+    labelEs: 'Eventos de resultados persistidos vía CSV manual',
   },
 } as const satisfies Record<string, SourceEntry>
 

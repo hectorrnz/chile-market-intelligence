@@ -589,3 +589,53 @@ Files added/changed in 8B:
 - `tests/compareResolver.test.ts` — new (mocked, no live Supabase/Yahoo required)
 
 Next: **Phase 8C** (financial-statement ingestion for Charting + Earnings) is the recommended next step. Mobile-responsive work (Phase 7A) intentionally comes after data-credibility phases (8B–8E) unless a UX emergency arises.
+
+---
+
+## Phase 8C — Financial-Statement Ingestion Foundation, Manual CSV First ✓ COMPLETE
+
+Converts Charting, Compare's Fundamentals table, and Earnings from terminal static/sample data into
+persisted (or derived) data wherever a ticker's financials have been imported via CSV — the first real
+step on the conversion path Phase 8B documented for these three modules. Manual CSV only; no CMF/XBRL
+automation (still CAPTCHA-blocked, same as Hechos Esenciales), no consensus/estimates ingestion, no
+dividends beyond what's imported, no FX conversion, no AI summaries.
+
+**New schema** (migration `20260704000000_financials_foundation.sql`, 4 tables, public read / admin-only write, same pattern as macro/market tables):
+- `company_reporting_periods` — the reporting "shell"; `source_type` is `manual_csv` today, `cmf_fecu`/`xbrl` reserved for future automation
+- `financial_statement_items` — line items (`revenue`, `ebitda`, `net_income`, `eps`, `gross_profit`, `operating_income`, `rd_expense`, `sga_expense`, `sbc_expense`, `dep_amort`, `ocf`, `capex`, `cash`, `total_debt`, `total_assets`, `shares_out`, `dividends_paid`, `buybacks`)
+- `financial_metrics` — ratios; `source_type` `manual_csv` or `derived` (manual wins ties)
+- `earnings_events` — `status` ∈ `expected/reported/preliminary/missing`; **no consensus/estimate field exists** — beat/miss is never fabricated for these rows
+
+**CSV templates** (synthetic sample data, safe to commit): `data/import_templates/*.template.csv` — real/private imports are never committed.
+
+**Parser + validation:** `src/lib/financials/csvFinancials.ts` — pure functions (`parseCsvRows`, 4 row validators, `buildFinancialImportPayload`, `deriveFinancialMetrics`). Every row validated before write: covered-universe ticker check, fiscal year/period/date well-formedness, NaN/Infinity-guarded numerics, line-numbered errors. `deriveFinancialMetrics()` computes `ebitda_margin`/`gross_margin`/`op_margin`/`fcf`/`net_debt`/`net_debt_ebitda` automatically from imported statement items.
+
+**Repository + ingestion script:** `src/lib/db/repositories/financialsRepository.ts` (upsert + read helpers, admin client for writes / public client for reads) and `scripts/ingest/financialsCsv.ts` (`npm run ingest:financials:dry` / `ingest:financials -- --write`, dry-run by default, aborts on validation errors unless `--allow-partial`, records `ingestion_runs` with `provider: 'Manual CSV'`, `job_type: 'financials_csv_import'`, `ingestionVersion: '8C'`).
+
+**Wiring (all field/section-level labeled, never a blanket claim):**
+- **Charting** (`src/lib/financials/resolveFinancials.ts` + `GET /api/financials/[ticker]/statements`) — builds the exact `FundamentalRecord[]` shape the existing quarterly/TTM/annual aggregation already knows how to render, so no chart logic changed; falls back to `fundamentals.json` per-ticker when nothing's imported. `SourceStateBadge` (`financialsPersisted`/`fundamentalsStatic`) in the toolbar.
+- **Compare fundamentals** (`resolveCompareData.ts` + `compareStatic.ts`'s `buildFundamentals()`) — upgrades P/E (from persisted EPS + market price), EV/EBITDA (net debt + EBITDA + market cap), op/gross margin, FCF yield, dividend yield to `derived` field-by-field via a new `derivedFields: CompareFundamentalKey[]` list on `CompareFundamentals`; P/S fwd, ROE, P/B stay `temporary_static` (no forward estimates or book-value imported — never fabricated). Each derived cell gets a `•` marker in the UI.
+- **Earnings** (`GET /api/earnings` + page-level merge) — persisted `earnings_events` take over per-ticker where imported; status pill shows the real `status` instead of a fabricated Clean/Mixed/Weak judgment; Rev. Surprise renders `—` (title: "No estimates source") for persisted rows; non-imported tickers keep the full original static feature set (YoY, synthetic consensus/surprise, quality) unchanged.
+- **Optional read APIs:** `GET /api/financials/coverage`, `GET /api/financials/[ticker]/metrics`, `GET /api/financials/[ticker]/statements`, `GET /api/earnings[?ticker=]` — all public, sanitized, no secrets.
+
+**Tests:** `tests/financialsIngest.test.ts` — 49 tests (parser/validators/payload builder against real template CSVs, `deriveFinancialMetrics`, `buildFundamentals` derived-vs-static behavior including a bank-like null-EBITDA case, source-label/hygiene/regression checks). One Phase 8B test (`buildFundamentals`'s removed `source: 'temporary_static'` field) updated to match the new `derivedFields` shape.
+
+**Local validation:** applied the migration via Supabase SQL Editor (same manual process as every prior migration — CLI blocked on this machine); ran `npm run ingest:financials -- --write` against the template CSVs (SQM-B/BSANTANDER/COPEC, synthetic data) — 79 rows upserted (3 reporting periods, 54 statement items, 18 metrics [2 manual + 16 derived], 4 earnings events), 0 errors. Verified in the dev server:
+- `/chart-builder` (SQM-B) → "Persisted financials via manual CSV" badge, exact imported Revenue/EBITDA/Net Income values
+- `/api/compare?tickers=SQM-B,BSANTANDER,COPEC` → 7 fields derived per ticker; BSANTANDER (bank, blank EBITDA in the CSV) correctly shows `null` for `evEbitda`/`netDebtEbitda` rather than a fabricated ratio
+- `/earnings` → persisted rows (SQM-B/BSANTANDER/COPEC) show real revenue/EBITDA/net income/EPS, honest `—` for YoY/surprise, "Reported" status pill; COPEC's Q2 2025 "expected" row correctly appears in Upcoming; non-imported tickers (ENELCHILE, etc.) unchanged
+- Dark mode and Spanish ("Reportado" status pill) both correct
+
+Build 46 routes · lint 0 · tests 588/588
+
+Scope limits (this phase, explicit):
+- Manual CSV import only — no CMF FECU/XBRL automation (CAPTCHA-blocked)
+- No consensus/analyst-estimates ingestion
+- No dividends beyond the raw imported `dividends_paid` line item
+- No FX conversion
+- No cross-period YoY derivation for persisted records
+- No AI summaries
+- Macro/market/auth/portfolio logic untouched (confirmed by regression tests)
+- No mobile-responsive work
+
+Next: **Phase 8D** (FX/rates + economic calendar live source completion) is the recommended next step; growing CSV coverage for Charting/Compare/Earnings beyond the 3-ticker sample is ongoing, low-risk data entry that doesn't require further engineering.

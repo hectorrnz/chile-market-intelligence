@@ -15,7 +15,7 @@ import { totalAndAnnual, tfStart } from '@/lib/returns'
 import { formatCLP, formatLargeCLP, formatFx, formatPct, changeColor } from '@/lib/formatters'
 import { exportCSV } from '@/lib/export'
 import { fetchCompareData } from '@/lib/data/compareData'
-import type { CompareEntry, ComparePerformanceMetric } from '@/lib/compare/compareTypes'
+import type { CompareEntry, CompareFundamentalKey, ComparePerformanceMetric } from '@/lib/compare/compareTypes'
 import type { StockPriceSnapshot, Company } from '@/types'
 
 type CmpTf = '1M' | 'YTD' | '1Y' | '3Y' | '5Y'
@@ -135,27 +135,37 @@ export default function ComparePage() {
       fund.map(row => [
         row.label,
         ...valids.map(({ ticker }) => {
-          const v = row.get(snapMap[ticker], compMap[ticker])
+          const v = row.get(compareData[ticker], snapMap[ticker], compMap[ticker])
           return v != null ? row.fmt(v) : ''
         }),
       ]),
     )
   }
 
-  type Row = { label: string; dir: -1 | 0 | 1; get: (s?: StockPriceSnapshot, c?: Company) => number | null; fmt: (v: number) => string }
+  // Phase 8C — reads persisted/derived fundamentals from the resolver
+  // (compareData[ticker].fundamentals) where available; falls back to the
+  // static snapshot only for fields with no persisted equivalent yet.
+  // 'key' matches CompareFundamentalKey so derivedFields can be checked.
+  type Row = {
+    label: string
+    key?: CompareFundamentalKey
+    dir: -1 | 0 | 1
+    get: (e?: CompareEntry, s?: StockPriceSnapshot, c?: Company) => number | null
+    fmt: (v: number) => string
+  }
   const fund: Row[] = [
-    { label: t.company.kpis.lastPrice, dir: 0, get: s => num(s?.price), fmt: v => formatFx(v, v < 1000 ? 2 : 0) },
-    { label: `${t.home.marketCap} (MM)`, dir: 0, get: (_s, c) => num(c?.marketCapCLP), fmt: v => formatCLP(v) },
-    { label: t.company.val.peFwd, dir: -1, get: s => num(s?.peFwd), fmt: v => `${v}x` },
-    { label: t.company.val.psFwd, dir: -1, get: s => num(s?.psFwd), fmt: v => `${v}x` },
-    { label: t.company.val.evEbitda, dir: -1, get: s => num(s?.evEbitda), fmt: v => `${v}x` },
-    { label: t.company.val.opMargin, dir: 1, get: s => num(s?.opMargin), fmt: v => `${v}%` },
-    { label: t.company.val.grossMargin, dir: 1, get: s => num(s?.grossMargin), fmt: v => `${v}%` },
-    { label: t.company.val.roe, dir: 1, get: s => num(s?.roe), fmt: v => `${v}%` },
-    { label: t.company.val.fcfYield, dir: 1, get: s => num(s?.fcfYield), fmt: v => `${v}%` },
-    { label: t.company.val.pb, dir: -1, get: s => num(s?.pb), fmt: v => `${v}x` },
-    { label: t.company.val.netDebtEbitda, dir: -1, get: s => num(s?.netDebtEbitda), fmt: v => `${v}x` },
-    { label: t.company.kpis.divYield, dir: 1, get: s => num(s?.dividendYield), fmt: v => `${v}%` },
+    { label: t.company.kpis.lastPrice, dir: 0, get: e => num(e?.latestPrice), fmt: v => formatFx(v, v < 1000 ? 2 : 0) },
+    { label: `${t.home.marketCap} (MM)`, dir: 0, get: e => num(e?.marketCapCLP), fmt: v => formatCLP(v) },
+    { label: t.company.val.peFwd, key: 'pe', dir: -1, get: (e, s) => num(e?.fundamentals.pe ?? s?.peFwd), fmt: v => `${v}x` },
+    { label: t.company.val.psFwd, key: 'psFwd', dir: -1, get: (e, s) => num(e?.fundamentals.psFwd ?? s?.psFwd), fmt: v => `${v}x` },
+    { label: t.company.val.evEbitda, key: 'evEbitda', dir: -1, get: (e, s) => num(e?.fundamentals.evEbitda ?? s?.evEbitda), fmt: v => `${v}x` },
+    { label: t.company.val.opMargin, key: 'opMargin', dir: 1, get: (e, s) => num(e?.fundamentals.opMargin ?? s?.opMargin), fmt: v => `${v}%` },
+    { label: t.company.val.grossMargin, key: 'grossMargin', dir: 1, get: (e, s) => num(e?.fundamentals.grossMargin ?? s?.grossMargin), fmt: v => `${v}%` },
+    { label: t.company.val.roe, key: 'roe', dir: 1, get: (e, s) => num(e?.fundamentals.roe ?? s?.roe), fmt: v => `${v}%` },
+    { label: t.company.val.fcfYield, key: 'fcfYield', dir: 1, get: (e, s) => num(e?.fundamentals.fcfYield ?? s?.fcfYield), fmt: v => `${v}%` },
+    { label: t.company.val.pb, key: 'pb', dir: -1, get: (e, s) => num(e?.fundamentals.pb ?? s?.pb), fmt: v => `${v}x` },
+    { label: t.company.val.netDebtEbitda, key: 'netDebtEbitda', dir: -1, get: (e, s) => num(e?.fundamentals.netDebtEbitda ?? s?.netDebtEbitda), fmt: v => `${v}x` },
+    { label: t.company.kpis.divYield, key: 'dividendYield', dir: 1, get: (e, s) => num(e?.fundamentals.dividendYield ?? s?.dividendYield), fmt: v => `${v}%` },
   ]
   const cellStyle = (row: Row, value: number | null, values: (number | null)[]) => {
     if (!highlight || row.dir === 0 || value == null) return {}
@@ -332,15 +342,19 @@ export default function ComparePage() {
                 </thead>
                 <tbody>
                   {fund.map(row => {
-                    const values = valids.map(({ ticker }) => row.get(snapMap[ticker], compMap[ticker]))
+                    const values = valids.map(({ ticker }) => row.get(compareData[ticker], snapMap[ticker], compMap[ticker]))
                     return (
                       <tr key={row.label} className="border-b border-border last:border-0">
                         <td className="py-2 px-3 pl-4 text-muted sticky left-0 bg-surface z-10 whitespace-nowrap">{row.label}</td>
-                        {values.map((v, i) => (
-                          <td key={valids[i].ticker} className="py-2 px-3 text-center ui-number text-foreground" style={cellStyle(row, v, values)}>
-                            {v != null ? row.fmt(v) : '—'}
-                          </td>
-                        ))}
+                        {values.map((v, i) => {
+                          const isDerived = !!row.key && !!compareData[valids[i].ticker]?.fundamentals.derivedFields.includes(row.key)
+                          return (
+                            <td key={valids[i].ticker} className="py-2 px-3 text-center ui-number text-foreground" style={cellStyle(row, v, values)}>
+                              {v != null ? row.fmt(v) : '—'}
+                              {isDerived && <span className="ml-1 text-accent" title={t.compare.derivedFieldTitle}>•</span>}
+                            </td>
+                          )
+                        })}
                       </tr>
                     )
                   })}

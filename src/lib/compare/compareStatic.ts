@@ -13,6 +13,7 @@ import type { StockHistoryResponse } from '../providers/market/types.ts'
 import {
   safeNumber,
   type CompareFallbackReason,
+  type CompareFundamentalKey,
   type CompareFundamentals,
   type ComparePerformanceMetric,
 } from './compareTypes.ts'
@@ -103,19 +104,81 @@ export function classifyPerformance(resp: StockHistoryResponse): ComparePerforma
   return { value, source: 'static_fallback', fallbackReason: reason }
 }
 
-export function buildFundamentals(staticSnap: StaticStockSnapshot | undefined): CompareFundamentals {
+/** Persisted financials + market data available to derive Compare fundamentals (Phase 8C). */
+export interface PersistedFundamentalsInput {
+  opMarginPct?: number | null
+  grossMarginPct?: number | null
+  netDebtEbitdaX?: number | null
+  epsClp?: number | null
+  ebitdaMM?: number | null
+  netDebtMM?: number | null
+  fcfMM?: number | null
+  dividendsPaidMM?: number | null
+  sharesOutMM?: number | null
+}
+
+/**
+ * Builds Compare's fundamentals row. Starts from the static snapshot, then
+ * upgrades individual fields to 'derived' wherever persisted financials (+
+ * market price/cap) make a real calculation possible — never a blanket
+ * static claim, per the no-static-terminal-state policy. Fields with no
+ * persisted equivalent (psFwd/roe/pb — no forward estimates or book value
+ * imported) remain temporary_static.
+ */
+export function buildFundamentals(
+  staticSnap: StaticStockSnapshot | undefined,
+  latestPrice?: number | null,
+  marketCapCLP?: number | null,
+  persisted?: PersistedFundamentalsInput,
+): CompareFundamentals {
+  const derivedFields: CompareFundamentalKey[] = []
+
+  let opMargin = safeNumber(staticSnap?.opMargin)
+  if (persisted?.opMarginPct != null) { opMargin = safeNumber(persisted.opMarginPct); derivedFields.push('opMargin') }
+
+  let grossMargin = safeNumber(staticSnap?.grossMargin)
+  if (persisted?.grossMarginPct != null) { grossMargin = safeNumber(persisted.grossMarginPct); derivedFields.push('grossMargin') }
+
+  let netDebtEbitda = safeNumber(staticSnap?.netDebtEbitda)
+  if (persisted?.netDebtEbitdaX != null) { netDebtEbitda = safeNumber(persisted.netDebtEbitdaX); derivedFields.push('netDebtEbitda') }
+
+  let pe = safeNumber(staticSnap?.peFwd ?? staticSnap?.pe)
+  if (persisted?.epsClp != null && persisted.epsClp !== 0 && latestPrice != null) {
+    const v = safeNumber(latestPrice / persisted.epsClp)
+    if (v !== null) { pe = v; derivedFields.push('pe') }
+  }
+
+  let evEbitda = safeNumber(staticSnap?.evEbitda)
+  if (persisted?.netDebtMM != null && persisted?.ebitdaMM != null && persisted.ebitdaMM !== 0 && marketCapCLP != null) {
+    const v = safeNumber((marketCapCLP + persisted.netDebtMM) / persisted.ebitdaMM)
+    if (v !== null) { evEbitda = v; derivedFields.push('evEbitda') }
+  }
+
+  let fcfYield = safeNumber(staticSnap?.fcfYield)
+  if (persisted?.fcfMM != null && marketCapCLP != null && marketCapCLP !== 0) {
+    const v = safeNumber((persisted.fcfMM / marketCapCLP) * 100)
+    if (v !== null) { fcfYield = v; derivedFields.push('fcfYield') }
+  }
+
+  let dividendYield = safeNumber(staticSnap?.dividendYield)
+  if (persisted?.dividendsPaidMM != null && persisted?.sharesOutMM != null && persisted.sharesOutMM !== 0 && latestPrice != null && latestPrice !== 0) {
+    const perShare = persisted.dividendsPaidMM / persisted.sharesOutMM
+    const v = safeNumber((perShare / latestPrice) * 100)
+    if (v !== null) { dividendYield = v; derivedFields.push('dividendYield') }
+  }
+
   return {
-    pe: safeNumber(staticSnap?.peFwd ?? staticSnap?.pe),
+    pe,
     psFwd: safeNumber(staticSnap?.psFwd),
-    evEbitda: safeNumber(staticSnap?.evEbitda),
-    opMargin: safeNumber(staticSnap?.opMargin),
-    grossMargin: safeNumber(staticSnap?.grossMargin),
+    evEbitda,
+    opMargin,
+    grossMargin,
     roe: safeNumber(staticSnap?.roe),
-    fcfYield: safeNumber(staticSnap?.fcfYield),
+    fcfYield,
     pb: safeNumber(staticSnap?.pb),
-    netDebtEbitda: safeNumber(staticSnap?.netDebtEbitda),
-    dividendYield: safeNumber(staticSnap?.dividendYield),
-    source: 'temporary_static',
+    netDebtEbitda,
+    dividendYield,
+    derivedFields,
     conversionPath: FUNDAMENTALS_CONVERSION_PATH,
   }
 }

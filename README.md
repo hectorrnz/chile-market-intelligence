@@ -2,7 +2,7 @@
 
 An internal buyside web terminal for Nevada Inversiones, a Chilean family office. Tracks Chilean listed equities, macroeconomic indicators, CMF filings (Hechos Esenciales), and earnings releases.
 
-**Current phase:** Phase 8B complete — the Compare page's market fields (price, day change, market cap, sector, currency, short-term performance) are now wired to the same persisted/live Supabase market data used elsewhere in the app, and the project now follows an explicit **no-static-terminal-state policy**: every remaining static module (FX/rates, US macro, economic calendar, fundamentals/charting, earnings, Hechos Relevantes, News) has a documented target source, conversion path, and next phase in [`docs/data_source_status.md`](docs/data_source_status.md) — no module is left as an open-ended "Static MVP" with no plan. Phase 8A (data-source audit) and all prior phases (auth, watchlist, portfolio, transactions/cash ledger, live macro/market stack) remain live in production, unchanged.
+**Current phase:** Phase 8C complete — Charting, Compare's Fundamentals table, and Earnings now read persisted (and, for several ratios, derived) financial data from a new manual-CSV ingestion pipeline wherever a ticker has been imported, falling back to the static sample only when nothing's imported yet. Phase 8B (Compare market-data wiring + the **no-static-terminal-state policy**) and Phase 8A (data-source audit) remain in place; every remaining static module (FX/rates, US macro, economic calendar, Hechos Relevantes, News) still has a documented target source, conversion path, and next phase in [`docs/data_source_status.md`](docs/data_source_status.md) — no module is left as an open-ended "Static MVP" with no plan. All prior phases (auth, watchlist, portfolio, transactions/cash ledger, live macro/market stack) remain live in production, unchanged.
 
 ---
 
@@ -72,9 +72,11 @@ naming its actual status. **Full page-by-page detail:**
 | Macro indicators (US) | — | **Static sample** — no live source exists yet; conversion path is a FRED API integration (Phase 8D) |
 | Stock prices | Yahoo Finance (unofficial) + Supabase persistence | **Live/persisted** — static baseline, Supabase auto-load, live overlay on refresh |
 | Compare — market data (price, day change, market cap, sector, currency, short-term performance) | Same Supabase/Yahoo Finance chain as Stocks/Home/Company (Phase 8B) | **Live/persisted** where sufficient history exists — static fallback otherwise, with an explicit reason (`insufficient_supabase_history`) |
-| Compare — historical returns chart/table + fundamentals | `stockHistory.json` / `stockPrices.json` | **Temporary static** — conversion path documented (Phase 8B/8C), never presented as live |
+| Compare — historical returns chart/table | `stockHistory.json` | **Temporary static** — needs years of daily Supabase history (Phase 8B), not yet accumulated |
+| Compare — fundamentals (P/E, EV/EBITDA, margins, FCF/dividend yield) | **Phase 8C:** persisted `financial_metrics`/`financial_statement_items` (manual CSV import) where a ticker has been imported — derived field-by-field | **Persisted/derived** per ticker where imported — static fallback otherwise (P/S fwd, ROE, P/B always static — no forward estimates or book value imported) |
+| Charting (`/chart-builder`) | **Phase 8C:** persisted `financial_statement_items`/`financial_metrics` (manual CSV import) where a ticker has been imported | **Persisted** per ticker where imported — static `fundamentals.json` fallback otherwise |
+| Earnings | **Phase 8C:** persisted `earnings_events` (manual CSV import) where a ticker has been imported | **Persisted** per ticker where imported (no fabricated consensus/surprise) — static `earnings.json` fallback otherwise |
 | CMF filings (Hechos Esenciales) | CMF public portal | **Blocked** — the portal requires a CAPTCHA; confirmed via a real discovery run, not merely unimplemented. See `docs/cmf_provider_discovery.md` |
-| Earnings / financial statements | CMF FECU | **Temporary static** — pending a financials-ingestion layer (Phase 8C) |
 | FX rates / Chilean rates | — | **Temporary static** — conversion path via extended BCCh series mapping (Phase 8D) |
 | News | — | **Temporary static** — candidate sources named in-app (Phase 8E) |
 | Economic calendar | — | **Temporary static** (schedule-driven, synthetic values) — conversion path via BCCh/INE release calendars (Phase 8D) |
@@ -147,8 +149,8 @@ without them** (they never run during build). Full guide:
 | **Phase 6C** | Portfolio positions foundation | ✓ Complete |
 | **Phase 6D** | Transaction history + cash ledger | ✓ Complete |
 | **Phase 8A** | Data-source audit — corrected stale/misleading source labels app-wide | ✓ Complete |
-| **Phase 8B** | Compare page real-data wiring + no-static-terminal-state policy (this phase) | ✓ Complete |
-| **Phase 8C** | Financial-statement ingestion for Charting + Earnings | Planned |
+| **Phase 8B** | Compare page real-data wiring + no-static-terminal-state policy | ✓ Complete |
+| **Phase 8C** | Financial-statement ingestion (manual CSV) for Charting, Compare fundamentals, and Earnings (this phase) | ✓ Complete |
 | **Phase 8D** | FX/rates + US macro + economic calendar live source completion | Planned |
 | **Phase 8E** | Hechos Relevantes + News ingestion workaround | Planned |
 | **Phase 6E** | Portfolio analytics / performance attribution | Planned |

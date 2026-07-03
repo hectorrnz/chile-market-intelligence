@@ -390,6 +390,66 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 8C — Financial-Statement Ingestion Foundation, Manual CSV First** ✓ COMPLETE (2026-07-03)
+
+Converts Charting, Compare's Fundamentals table, and Earnings from terminal static/sample data into
+persisted (or derived) data wherever a ticker's financials have been imported via CSV — the manual-CSV-first
+step the Phase 8B conversion-path plan called for. No CMF/XBRL automation (still CAPTCHA-blocked), no
+consensus/estimates ingestion, no FX conversion, no AI summaries.
+
+**New schema** (migration `20260704000000_financials_foundation.sql`, public read / admin-only write, same pattern as macro/market): `company_reporting_periods`, `financial_statement_items`, `financial_metrics` (manual or `derived`, manual wins ties), `earnings_events` (`status` ∈ expected/reported/preliminary/missing — **no consensus/estimate field exists**, so beat/miss is structurally impossible to fabricate for these rows).
+
+**CSV templates:** `data/import_templates/*.template.csv` (synthetic sample data, safe to commit — real imports are never committed). **Parser/validation:** `src/lib/financials/csvFinancials.ts` (pure, line-numbered errors, NaN/Infinity-guarded, `deriveFinancialMetrics()` auto-computes EBITDA/gross/op margin, FCF, net debt, net debt/EBITDA from imported statement items). **Repository + ingestion script:** `src/lib/db/repositories/financialsRepository.ts` + `scripts/ingest/financialsCsv.ts` (`npm run ingest:financials:dry` / `ingest:financials -- --write`, dry-run default, aborts on validation errors unless `--allow-partial`, records `ingestion_runs`).
+
+**Wiring (field/section-level labeled, never a blanket claim):**
+- **Charting** — `src/lib/financials/resolveFinancials.ts` builds the exact `FundamentalRecord[]` shape the existing aggregation logic already renders, so no chart code changed; per-ticker fallback to `fundamentals.json`. `SourceStateBadge` in the toolbar.
+- **Compare fundamentals** — `buildFundamentals()` upgrades P/E, EV/EBITDA, op/gross margin, FCF yield, dividend yield to `derived` field-by-field (new `derivedFields: CompareFundamentalKey[]` on `CompareFundamentals`, `•` marker in the UI); P/S fwd, ROE, P/B always stay `temporary_static` (no forward estimates or book value imported — never fabricated).
+- **Earnings** — persisted `earnings_events` take over per-ticker where imported; status pill shows the real `status`, never a synthesized quality judgment; Rev. Surprise renders `—` for persisted rows; non-imported tickers keep the original static feature set unchanged.
+- **Optional read APIs:** `GET /api/financials/coverage`, `/api/financials/[ticker]/metrics`, `/api/financials/[ticker]/statements`, `/api/earnings[?ticker=]`.
+
+**Tests:** `tests/financialsIngest.test.ts` — 49 tests (parser/validators against the real template CSVs, `deriveFinancialMetrics`, `buildFundamentals` derived-vs-static incl. a bank-like null-EBITDA case, source-label/regression checks). One outdated Phase 8B test updated for the new `derivedFields` shape.
+
+**Local validation:** migration applied via Supabase SQL Editor (manual — CLI blocked on this machine); `npm run ingest:financials -- --write` against the templates (SQM-B/BSANTANDER/COPEC synthetic data) → 79 rows upserted, 0 errors. Verified in the dev server: Charting shows "Persisted financials via manual CSV" with exact imported values; `/api/compare` shows 7 derived fields per ticker and correctly returns `null` (not a fake ratio) for BSANTANDER's EBITDA-dependent metrics (bank, blank EBITDA); `/earnings` shows honest `—` for YoY/surprise on persisted rows plus a real "Reported"/"Reportado" status pill, non-imported tickers unchanged; dark mode and Spanish both correct.
+
+Build 46 routes · lint 0 · tests 588/588
+
+Scope limits (explicit): manual CSV only, no CMF/XBRL automation, no consensus/estimates, no dividends beyond the raw imported line item, no FX conversion, no cross-period YoY for persisted records, no AI summaries, no mobile work, macro/market/auth/portfolio logic untouched.
+
+Next: **Phase 8D** (FX/rates + economic calendar live source completion). Growing CSV coverage beyond the 3-ticker sample is ongoing, low-risk data entry, not further engineering.
+
+---
+
+**Phase 8B — Compare Real-Data Wiring + No-Static-Terminal-State Policy** ✓ COMPLETE (2026-07-02)
+
+Establishes the durable **no-static-terminal-state policy** (see the standing rule above) and wires Compare's
+market fields (price, day change, market cap, sector, currency, short-term performance) to the same
+persisted/live Supabase market data used elsewhere in the app, reusing the existing `marketProvider.ts`
+static/supabase/hybrid orchestrator — no new provider.
+
+`src/lib/compare/compareTypes.ts` — `CompareEntry`/`CompareFieldSource` model (`live` · `persisted` ·
+`static_fallback` · `temporary_static` · `unavailable`), NaN/Infinity-guarded. `src/lib/compare/resolveCompareData.ts`
+(server-only) + `GET /api/compare?tickers=` + `src/lib/compare/compareStatic.ts` (pure, test-safe — no
+transitive Supabase import, unlike the resolver). New "Market Data" panel on `/compare` with a dynamic
+`MarketDataSourceBadge`; short-term performance (1D/5D) shows `persisted` once enough Supabase snapshot
+history exists, longer windows correctly fall back to static with an explicit `insufficient_supabase_history`
+reason. Comparative Returns chart/table and Fundamentals remained `temporary_static` in this phase (Phase 8C
+above wired Fundamentals to persisted/derived data).
+
+`docs/data_source_status.md` gained a "Conversion Paths for Remaining Static Modules" section giving every
+remaining static/blocked module (FX/rates, US macro, economic calendar, Fundamentals/Charting, Earnings,
+Hechos Relevantes, News) a target source, conversion path, blocker, next phase, and priority.
+
+**Bug caught mid-phase (Preview validation):** the generic `loadJson(path)` helper in `compareStatic.ts`
+passed a runtime variable to `new URL(path, import.meta.url)` — Vercel's build-time file tracer only detects
+this pattern when the path is a string literal directly in the call (matching `portfolioRepository.ts`'s
+proven pattern). Fixed by inlining both JSON loads with literal paths.
+
+Build 44 routes · lint 0 · tests 539/539 (at the time of this phase)
+
+Next (superseded by Phase 8C above): financial-statement ingestion for Charting + Earnings.
+
+---
+
 **Phase 8A — Static MVP Audit and Data Source Truth Layer** ✓ COMPLETE (2026-07-02)
 
 Audit + label-cleanup phase (not a new-provider phase). By this point the app has real live/persisted data (macro via BCCh, market via Yahoo Finance/Supabase, auth/watchlist/portfolio via Supabase) sitting alongside modules that are still genuinely static or CAPTCHA-blocked (CMF) — but many UI labels hadn't been updated since the original MVP mockup, so several pages either understated what was already live or overstated a "future phase" that had already happened (or, for CMF, never can happen without a new access path). This phase read every visible page's actual data-fetch chain, compared it to its on-screen label, and corrected the mismatches — no new ingestion was added.

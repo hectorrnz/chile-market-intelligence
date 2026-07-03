@@ -5,8 +5,9 @@
 //
 // Market fields (price, day change, market cap, currency, short-term
 // performance) are wired to persisted/live data where available. Fundamentals
-// (P/E, margins, etc.) remain temporary_static — no financials ingestion
-// exists yet (Phase 8C) — and are always labeled as such, never as live.
+// (P/E, margins, etc.) are upgraded field-by-field to 'derived' wherever
+// persisted manual-CSV financials make a real calculation possible (Phase
+// 8C) — otherwise they remain temporary_static, never labeled live.
 //
 // Pure/static-only logic (ticker validation, performance classification,
 // fundamentals mapping) lives in compareStatic.ts, which has no transitive
@@ -15,6 +16,8 @@
 
 import { resolveStockSnapshots, resolveStockHistory } from '../providers/market/marketProvider.ts'
 import type { StockTimeframe, MarketMode } from '../providers/market/types.ts'
+import { getLatestFinancialMetrics, getLatestStatementItems } from '../db/repositories/financialsRepository.ts'
+import type { PersistedFundamentalsInput } from './compareStatic.ts'
 import {
   COMPANY_BY_TICKER,
   SNAPSHOT_BY_TICKER,
@@ -66,21 +69,39 @@ export async function resolveCompareData(tickersInput: string[]): Promise<Compar
     const company = COMPANY_BY_TICKER.get(ticker)!
     const snap = snapMap[ticker]
     const staticSnap = SNAPSHOT_BY_TICKER.get(ticker)
+    const latestPrice = safeNumber(snap?.price ?? staticSnap?.price ?? null)
+    const marketCapCLP = safeNumber(snap?.marketCapCLP ?? company.marketCapCLP ?? null)
+
+    const [metricsByCode, itemsByCode] = await Promise.all([
+      getLatestFinancialMetrics(ticker),
+      getLatestStatementItems(ticker),
+    ])
+    const persisted: PersistedFundamentalsInput = {
+      opMarginPct: metricsByCode.get('op_margin')?.value ?? null,
+      grossMarginPct: metricsByCode.get('gross_margin')?.value ?? null,
+      netDebtEbitdaX: metricsByCode.get('net_debt_ebitda')?.value ?? null,
+      epsClp: itemsByCode.get('eps')?.value ?? null,
+      ebitdaMM: itemsByCode.get('ebitda')?.value ?? null,
+      netDebtMM: metricsByCode.get('net_debt')?.value ?? null,
+      fcfMM: metricsByCode.get('fcf')?.value ?? null,
+      dividendsPaidMM: itemsByCode.get('dividends_paid')?.value ?? null,
+      sharesOutMM: itemsByCode.get('shares_out')?.value ?? null,
+    }
 
     data.push({
       ticker,
       companyName: company.shortName ?? company.name,
       sector: company.sector,
       currency: snap?.currency ?? staticSnap?.currency ?? 'CLP',
-      latestPrice: safeNumber(snap?.price ?? staticSnap?.price ?? null),
+      latestPrice,
       dayChangePct: safeNumber(snap?.dayChangePct ?? staticSnap?.dayChangePct ?? null),
-      marketCapCLP: safeNumber(snap?.marketCapCLP ?? company.marketCapCLP ?? null),
+      marketCapCLP,
       latestSnapshotDate: snapshotsResp.metadata.latestSnapshotDate ?? null,
       latestSnapshotType: snapshotsResp.metadata.latestSnapshotType ?? null,
       marketDataSource: snap?.source ?? 'Static MVP sample',
       marketDataStatus: snapshotsResp.metadata.status,
       performance: await resolvePerformance(ticker),
-      fundamentals: buildFundamentals(staticSnap),
+      fundamentals: buildFundamentals(staticSnap, latestPrice, marketCapCLP, persisted),
     })
   }
 

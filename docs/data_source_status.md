@@ -1,11 +1,14 @@
-# Data Source Status Matrix — Phase 8A / 8B
+# Data Source Status Matrix — Phase 8A / 8B / 8C
 
 Audit date: 2026-07-02 (Phase 8A) · updated 2026-07-02 (Phase 8B — Compare
-real-data wiring + no-static-terminal-state policy). This is the canonical
-truth-layer reference for what each visible module's data source actually is,
-versus what its UI label says. Update this file whenever a module's data
-source changes (new ingestion, provider swap, or label fix) — it is the
-single source of truth other docs (`CLAUDE.md`, `README.md`) summarize from.
+real-data wiring + no-static-terminal-state policy) · updated 2026-07-03
+(Phase 8C — manual CSV financial-statement ingestion: Charting, Compare
+fundamentals, and Earnings now read persisted data where imported). This is
+the canonical truth-layer reference for what each visible module's data
+source actually is, versus what its UI label says. Update this file whenever
+a module's data source changes (new ingestion, provider swap, or label fix)
+— it is the single source of truth other docs (`CLAUDE.md`, `README.md`)
+summarize from.
 
 ## No-static-terminal-state policy (Phase 8B)
 
@@ -89,19 +92,39 @@ field is ever silently static without a caller-visible label.
 | Short-term performance (1D / 5D) | `resolveStockHistory(ticker, timeframe)` — Supabase `stock_snapshots` history when sufficient | `persisted` when ≥ threshold, else `static_fallback` with explicit `fallbackReason: insufficient_supabase_history` | Per-cell tooltip shows the fallback reason when not persisted | ✅ New in 8B — verified: 1D/5D show `persisted` once ≥2 days of accumulated snapshots exist | same | Done |
 | Short-term performance (1M / YTD / 1Y) | Same helper; currently **falls back to static** because Supabase has only accumulated ~2 days of snapshot history so far (Phase 4C.4 started recently) | `static_fallback` (`insufficient_supabase_history`) | Same per-cell tooltip | ✅ Honest — will flip to `persisted` automatically as more daily snapshots accumulate, no code change needed | same | **P1** — self-resolving as ingestion continues; revisit thresholds in `src/lib/market/marketHistory.ts` (`HISTORY_MIN_POINTS`) if they prove too strict/loose |
 | Comparative Returns table + chart (custom date range, annualized, benchmark, difference-vs-reference) | `stockHistory.json` only (quarterly/weekly/daily static series through 2025-06-17) | `temporary_static` | Footer: "Historical returns and fundamentals: static MVP sample — see Market Data panel above for persisted/live fields" | ✅ Accurate — this feature (custom ranges, CAGR, benchmark diff) needs years of daily history Supabase hasn't accumulated yet | — | **P2** — revisit once `stock_snapshots` has ≥1Y of daily rows; until then this is a legitimate temporary-static feature, not a mislabel |
-| Fundamentals table (P/E, margins, ROE, FCF yield, etc.) | `stockPrices.json` static valuation snapshot | `temporary_static` | Table header shows "(Temporary static · pending financials/FECU ingestion (Phase 8C))" inline | ✅ New explicit label in 8B — was previously just implied by the page-level footer | — | **P2** — see Phase 8C plan below |
+| Fundamentals table (P/E, EV/EBITDA, op/gross margin, net debt/EBITDA, FCF yield, dividend yield) | **Phase 8C:** `financial_metrics`/`financial_statement_items` (manual CSV) via `getLatestFinancialMetrics()`/`getLatestStatementItems()`, combined with market price/cap already resolved above — derived field-by-field in `buildFundamentals()` | `derived` per field when persisted inputs exist, else `temporary_static` | Each derived cell gets a small `•` marker (title: "Derived from persisted financials (manual CSV import)"); table header note: "Static unless marked • — derived from persisted financials" | ✅ Fixed 8C — verified: SQM-B/BSANTANDER/COPEC (imported) show 7 derived fields each; a bank ticker with no EBITDA correctly shows `null` (not a fabricated ratio) instead of `evEbitda`/`netDebtEbitda` | `GET /api/compare?tickers=` | Done |
+| Fundamentals fields with no persisted equivalent (P/S fwd, ROE, P/B) | `stockPrices.json` static valuation snapshot | `temporary_static` | No `•` marker — plain static cell | ✅ Accurate — no forward-revenue estimate or book-value/equity line item is imported (out of scope: no estimates/consensus per project rule) | — | P3 — would need a `total_equity` statement-item code + a real estimates source, neither in scope |
 
 ---
 
-## Charting (`/chart-builder`)
+## Charting (`/chart-builder`) — wired to persisted financials in Phase 8C
 
-| Module | Current source | Status | UI label (after 8A) | Accuracy | API route | Priority |
+`src/lib/financials/resolveFinancials.ts` (server-only) + `GET /api/financials/[ticker]/statements`
+build a `FundamentalRecord[]`-shaped series from persisted `financial_statement_items`/`financial_metrics`
+(manual CSV import) so the existing quarterly/TTM/annual aggregation logic works unchanged regardless of source.
+
+| Module | Current source | Status | UI label (after 8C) | Accuracy | API route | Priority |
 |---|---|---|---|---|---|---|
-| Fundamentals chart | `fundamentals.json` (FECU line items) only | `static_mvp` | Chart footnote: "Source: CMF FECU — Static MVP sample" (unchanged, already honest) + bottom `SourceNote`: was "future source: CMF · manual CSV", now "static MVP sample" (dropped the presumptive future-source claim per the CMF-wording rule) | ✅ Fixed 8A | — | **P2** — see Phase 8C plan below |
+| Fundamentals chart (per ticker) | Persisted `financial_statement_items`/`financial_metrics` when any reporting period has been imported for that ticker; `fundamentals.json` otherwise | `persisted` or `static_fallback` | `SourceStateBadge` in the toolbar (`financialsPersisted` / `fundamentalsStatic`) + updated subtitle/footer naming both paths | ✅ New in 8C — verified: SQM-B (imported) shows "Persisted financials via manual CSV" with the exact imported Q1 2025 values; any non-imported ticker (e.g. FALABELLA) falls back to `fundamentals.json` unchanged | `GET /api/financials/[ticker]/statements` | Done |
+| Two-ticker overlay ("vs" company) | Same resolver, called independently per ticker | Same per-ticker | Same badge reflects ticker A only (each ticker can be in a different state) | ✅ Accurate — a persisted ticker vs. a static-fallback ticker is a legitimate mixed state, not mislabeled | same | Done |
 
-**Recommended Phase 8C plan (not implemented this phase):**
-- Needs a real financial-statement ingestion layer: `financial_statements`, `financial_metrics`, `company_reporting_periods` tables (Supabase), sourced from either (a) a CMF FECU parser once a CAPTCHA-free CMF path exists, or (b) manual CSV import as a nearer-term unblock.
-- Manual CSV first is the pragmatic starting point — it needs no new external dependency and directly replaces the static JSON with persisted, still-manually-curated data.
+**Remaining limitation (documented, not a defect):** revenue/net-income YoY are always `null` for persisted records — the CSV import model has no cross-period YoY derivation yet (would need a prior-year lookup). Static `fundamentals.json` records still carry precomputed YoY values since those were curated by hand. No fake YoY is ever shown for persisted data.
+
+---
+
+## Earnings (`/earnings`) — wired to earnings_events in Phase 8C
+
+`GET /api/earnings[?ticker=]` returns persisted `earnings_events` (manual CSV import). The page merges
+persisted events (ticker-level: any ticker with ≥1 persisted event uses persisted rows exclusively for
+that ticker) with `earnings.json` for every other ticker.
+
+| Module | Current source | Status | UI label (after 8C) | Accuracy | API route | Priority |
+|---|---|---|---|---|---|---|
+| Recent Results / Upcoming (persisted tickers) | `earnings_events` (manual CSV) | `persisted` | `SourceStateBadge` (`earningsPersisted`) next to "Recent Results"; quality-pill column shows the real `status` (Reported/Expected/Preliminary/Missing) instead of a fabricated Clean/Mixed/Weak judgment; Rev. Surprise column shows `—` (title: "No estimates source") since no consensus is imported | ✅ New in 8C — verified: SQM-B/BSANTANDER/COPEC show real imported revenue/EBITDA/net income/EPS, honest `—` for YoY and surprise, "Reported" status pill; COPEC's Q2 2025 "expected" row correctly appears in the Upcoming table | `GET /api/earnings` | Done |
+| Recent Results / Upcoming (non-persisted tickers) | `earnings.json` (unchanged) | `static_mvp` | Same page, no badge on these specific rows (page-level footer names both sources) | ✅ Accurate — full original feature set (YoY, consensus/surprise, Clean/Mixed/Weak quality, key driver) preserved exactly for tickers with no import yet | — | Done — see Fundamentals/Charting conversion-path entry below for remaining scope (analyst-estimates source) |
+
+**Never do:** show a "beat/miss" surprise percentage for a persisted (manual-CSV) row — there is no
+estimates source for imported data, and the UI explicitly renders `—` rather than inferring one.
 
 ---
 
@@ -225,23 +248,25 @@ next phase, and priority — none is an open-ended "Static MVP" with no plan.
 - **Next phase:** **Phase 8D**.
 - **Priority:** P2 (dates) / P3 (values, depends on dates first).
 
-### Fundamentals / Charting
+### Fundamentals / Charting — ✓ manual-CSV-first step complete (Phase 8C)
 
-- **Current static fields:** `fundamentals.json` (FECU line items — Income Statement, Cash Flow, Balance Sheet, Returns to Shareholders) and Compare's Fundamentals table (P/E, margins, ROE, FCF yield, etc. from `stockPrices.json`).
-- **Target source:** CMF FECU filings (ideal, but blocked — see Hechos Relevantes below) or manual CSV import as the pragmatic first step.
-- **Conversion path:** new `financial_statements`, `financial_metrics`, `company_reporting_periods` Supabase tables; manual CSV import script populates them quarter-by-quarter; Charting and Compare's Fundamentals table both read from the same tables once populated, replacing `fundamentals.json`/the static valuation fields in `stockPrices.json`.
-- **Blocker:** CMF FECU parsing is blocked the same way Hechos Esenciales is (CAPTCHA) — manual CSV is the only near-term unblock.
-- **Next phase:** **Phase 8C**.
-- **Priority:** P2.
+- **Done in Phase 8C:** `company_reporting_periods`, `financial_statement_items`, `financial_metrics`, `earnings_events` Supabase tables (migration `20260704000000_financials_foundation.sql`); CSV templates in `data/import_templates/`; parser/validator in `src/lib/financials/csvFinancials.ts`; ingestion script `scripts/ingest/financialsCsv.ts` (`npm run ingest:financials:dry` / `ingest:financials -- --write`); Charting and Compare's Fundamentals table both read from these tables where any data has been imported for a ticker, falling back to `fundamentals.json`/`stockPrices.json` otherwise.
+- **Remaining static fields:** any ticker with no CSV import yet (most of the 25-company universe — only SQM-B/BSANTANDER/COPEC have sample data as of this phase); P/S forward, ROE, P/B on Compare (no forward-revenue estimate or book-value/equity line item is imported); revenue/net-income YoY on Charting for persisted tickers (no cross-period YoY derivation yet).
+- **Target source (next):** CMF FECU filings via an automated parser, once/if a CAPTCHA-free CMF path exists (see Hechos Relevantes below) — would replace manual CSV entry with automated ingestion using the *same* 4 tables (no schema change needed).
+- **Conversion path (next):** (a) real company-by-company CSV imports to grow ticker coverage — this is now just data entry, not engineering; (b) a `total_equity`/`book_value` statement-item code to unlock ROE/P/B derivation; (c) a CMF FECU parser or licensed data feed to automate what's currently manual.
+- **Blocker:** CMF FECU parsing is blocked the same way Hechos Esenciales is (CAPTCHA) — manual CSV remains the only near-term path for new tickers/periods.
+- **Next phase:** **Phase 8D+** (growing CSV coverage is ongoing; CMF/XBRL automation is a separate, larger future phase).
+- **Priority:** P1 (more CSV imports, pure data entry) / P3 (CMF/XBRL automation).
 
-### Earnings
+### Earnings — ✓ manual-CSV-first step complete (Phase 8C)
 
-- **Current static fields:** `earnings.json` (upcoming + recent results), synthetic revenue-surprise/consensus fields (`genEarningsConsensus.mjs`).
-- **Target source:** same `financial_statements`/`company_reporting_periods` schema as Fundamentals/Charting (Phase 8C), plus a genuine analyst-estimates source before any real "surprise" language is shown (current synthetic consensus is clearly derived, never claimed as real — do not change that until a real estimates source exists).
-- **Conversion path:** same manual-CSV-first path as Charting; a `result_quality` classification rule and an explicit "estimates source" field are required before beat/miss language can be labeled as real (not synthetic).
-- **Blocker:** same CMF CAPTCHA block for the ideal source; no analyst-estimates vendor currently in scope.
-- **Next phase:** **Phase 8C**.
-- **Priority:** P2 (financials) / P3 (real consensus estimates — separate, larger scope).
+- **Done in Phase 8C:** `earnings_events` table + `GET /api/earnings`; the page merges persisted events (ticker-level) with `earnings.json` for every other ticker; persisted rows show a real `status` (Reported/Expected/Preliminary/Missing) instead of a synthetic quality judgment, and correctly show `—` for Rev. Surprise (no fabricated consensus for imported data).
+- **Remaining static fields:** any ticker with no persisted earnings event yet; the synthetic revenue-surprise/consensus fields (`genEarningsConsensus.mjs`) remain on the static-fallback path only, clearly derived, never claimed as real.
+- **Target source (next):** same CMF FECU automation path as Fundamentals/Charting, plus a genuine analyst-estimates source before any real "surprise" language could ever be shown for persisted data (out of scope — no consensus/estimates ingestion planned).
+- **Conversion path (next):** more CSV imports (pure data entry, same schema); a real estimates vendor would be a separate, larger scope decision if ever pursued.
+- **Blocker:** same CMF CAPTCHA block for the ideal automated source; no analyst-estimates vendor in scope.
+- **Next phase:** **Phase 8D+** (CSV coverage growth) / not planned (real consensus estimates — explicitly out of scope per project rules).
+- **Priority:** P1 (more CSV imports) / not planned (real consensus).
 
 ### Hechos Relevantes (Hechos Esenciales)
 

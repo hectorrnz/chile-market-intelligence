@@ -387,3 +387,26 @@ migration via the Supabase Dashboard SQL Editor before the first deploy that
 includes this phase (idempotent — safe to re-run). It does **not** alter
 `portfolio_positions` — see `docs/supabase_persistence.md` for why (reuses the
 existing `metadata` column instead of an `ALTER TABLE`).
+
+## Phase 8C — Financial-Statement Ingestion (Manual CSV)
+
+Adds `company_reporting_periods`, `financial_statement_items`,
+`financial_metrics`, `earnings_events` tables (migration
+`20260704000000_financials_foundation.sql`) and 4 new public read-only API
+routes (`/api/financials/coverage`, `/api/financials/[ticker]/metrics`,
+`/api/financials/[ticker]/statements`, `/api/earnings`). No new env vars —
+writes use the same `SUPABASE_SERVICE_ROLE_KEY` already configured for
+market/macro ingestion. Apply the migration via the Supabase Dashboard SQL
+Editor before the first deploy that includes this phase (idempotent).
+
+**Populating data after deploy** (from a machine with `.env.local` pointed at
+the target Supabase project):
+```bash
+npm run ingest:financials:dry -- --reporting-periods path.csv --statement-items path.csv --metrics path.csv --earnings path.csv
+npm run ingest:financials -- --reporting-periods path.csv --statement-items path.csv --write
+```
+This is a manual, deliberate step — no CSV import runs automatically on
+deploy or on a schedule. See `data/import_templates/*.template.csv` for the
+expected column format (synthetic samples; never commit a real/private CSV)
+and `docs/supabase_persistence.md` → "Financial-Statement Ingestion" for the
+full workflow.

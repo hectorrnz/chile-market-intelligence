@@ -1,0 +1,3 @@
+ticker,fiscal_year,fiscal_period,period_type,metric_code,metric_name,value,unit,calculation_method
+SQM-B,2025,Q1,quarterly,ebitda_margin,EBITDA Margin,25,%,ebitda / revenue
+COPEC,2025,Q1,quarterly,ebitda_margin,EBITDA Margin,8.6,%,ebitda / revenue

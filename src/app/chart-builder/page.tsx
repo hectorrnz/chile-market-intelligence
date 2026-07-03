@@ -6,9 +6,11 @@ import { usePersistentState } from '@/lib/usePersistentState'
 import { useEscape } from '@/lib/useEscape'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { SourceNote } from '@/components/ui/SourceNote'
+import { SourceStateBadge } from '@/components/ui/SourceStateBadge'
 import { FundamentalsChart, type FundSeries } from '@/components/charts/FundamentalsChart'
 import { getAllCompanies } from '@/lib/data/companies'
 import { getFundamentals, type FundamentalRecord } from '@/lib/data/fundamentals'
+import { fetchFinancialStatements, type FinancialsSourceStatus } from '@/lib/data/financialsData'
 import { formatCLP } from '@/lib/formatters'
 import { exportCSV } from '@/lib/export'
 
@@ -100,9 +102,46 @@ export default function ChartBuilderPage() {
   const colorOf = (key: string) => PALETTE[Math.max(0, selected.indexOf(key)) % PALETTE.length]
   const toggle = (key: string) => setSelected(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
 
-  const recordsA = getFundamentals(ticker).slice().sort((a, b) => qIdx(a.period) - qIdx(b.period))
+  // Phase 8C — persisted financials (manual CSV import) take precedence over
+  // the static fundamentals.json fallback, per ticker. Falls back silently
+  // (and is labeled honestly via the source badge) when nothing is imported.
+  const [persistedA, setPersistedA] = useState<{ records: FundamentalRecord[]; status: FinancialsSourceStatus } | null>(null)
+  const [persistedB, setPersistedB] = useState<{ records: FundamentalRecord[]; status: FinancialsSourceStatus } | null>(null)
   const overlay = !!tickerB && !!compMap[tickerB] && tickerB !== ticker
-  const recordsB = overlay ? getFundamentals(tickerB).slice().sort((a, b) => qIdx(a.period) - qIdx(b.period)) : []
+
+  useEffect(() => {
+    let mounted = true
+    fetchFinancialStatements(ticker).then(res => {
+      if (mounted) setPersistedA({ records: res.records, status: res.status })
+    }).catch(() => { if (mounted) setPersistedA(null) })
+    return () => { mounted = false }
+  }, [ticker])
+
+  useEffect(() => {
+    let mounted = true
+    const run = async () => {
+      if (!overlay) {
+        if (mounted) setPersistedB(null)
+        return
+      }
+      try {
+        const res = await fetchFinancialStatements(tickerB)
+        if (mounted) setPersistedB({ records: res.records, status: res.status })
+      } catch {
+        if (mounted) setPersistedB(null)
+      }
+    }
+    run()
+    return () => { mounted = false }
+  }, [tickerB, overlay])
+
+  const sourceStatusA: FinancialsSourceStatus = persistedA?.status === 'persisted' && persistedA.records.length > 0 ? 'persisted' : 'static_fallback'
+  const baseRecordsA = sourceStatusA === 'persisted' ? persistedA!.records : getFundamentals(ticker)
+  const recordsA = baseRecordsA.slice().sort((a, b) => qIdx(a.period) - qIdx(b.period))
+  const baseRecordsB = overlay
+    ? (persistedB?.status === 'persisted' && persistedB.records.length > 0 ? persistedB.records : getFundamentals(tickerB))
+    : []
+  const recordsB = overlay ? baseRecordsB.slice().sort((a, b) => qIdx(a.period) - qIdx(b.period)) : []
 
   type Period = { label: string; rec?: FundamentalRecord; window?: FundamentalRecord[] }
   const buildPeriods = (recs: FundamentalRecord[]): Period[] => {
@@ -180,7 +219,8 @@ export default function ChartBuilderPage() {
         <div className="flex items-center gap-1"><Seg active={mode === 'abs'} onClick={() => setMode('abs')}>{t.charting.absolute}</Seg><Seg active={mode === 'idx'} onClick={() => setMode('idx')}>{t.charting.indexed}</Seg></div>
         <span className="w-px h-4 bg-border" />
         <div className="flex items-center gap-1"><Seg active={freq === 'Q'} onClick={() => setFreq('Q')}>{t.charting.quarterly}</Seg><Seg active={freq === 'TTM'} onClick={() => setFreq('TTM')}>{t.charting.ttm}</Seg><Seg active={freq === 'A'} onClick={() => setFreq('A')}>{t.charting.annual}</Seg></div>
-        <button onClick={() => setSettingsOpen(true)} className="ml-auto flex items-center gap-1.5 h-6 px-2 rounded border border-border bg-surface-2 text-muted-fg hover:text-foreground hover:border-accent transition-colors"><span>⚙</span><span>{t.charting.settings}</span></button>
+        <SourceStateBadge sourceKey={sourceStatusA === 'persisted' ? 'financialsPersisted' : 'fundamentalsStatic'} className="ml-auto" />
+        <button onClick={() => setSettingsOpen(true)} className="flex items-center gap-1.5 h-6 px-2 rounded border border-border bg-surface-2 text-muted-fg hover:text-foreground hover:border-accent transition-colors"><span>⚙</span><span>{t.charting.settings}</span></button>
       </div>
 
       {/* Selected chips */}

@@ -1,12 +1,15 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { StatusPill } from '@/components/ui/StatusPill'
 import { SourceNote } from '@/components/ui/SourceNote'
+import { SourceStateBadge } from '@/components/ui/SourceStateBadge'
 import { useLang } from '@/components/providers/LangProvider'
 import { getUpcomingEarnings, getRecentResults } from '@/lib/data/earnings'
 import { getDocumentByRelatedId } from '@/lib/data/documents'
+import { fetchEarningsEvents, type EarningsEventOut } from '@/lib/data/financialsData'
 import { formatMillionsCLP, formatPct, surprisePct, changeColor } from '@/lib/formatters'
 import { exportCSV } from '@/lib/export'
 import type { EarningsRelease } from '@/types'
@@ -18,11 +21,85 @@ const qualityVariant: Record<EarningsRelease['resultQuality'], 'positive' | 'war
   Pending: 'neutral',
 }
 
-const upcoming = getUpcomingEarnings()
-const results  = getRecentResults()
+const eventStatusVariant: Record<string, 'positive' | 'warning' | 'negative' | 'neutral'> = {
+  reported: 'positive',
+  expected: 'neutral',
+  preliminary: 'warning',
+  missing: 'negative',
+}
+
+// Phase 8C — a row is either static-sourced (EarningsRelease, full feature
+// set incl. quality judgment + synthetic consensus) or persisted-sourced
+// (EarningsEventOut, manual CSV import — never a fabricated quality/consensus).
+interface DisplayRow {
+  id: string
+  ticker: string
+  companyName: string
+  period: string
+  reportDate: string
+  revenue: number | null
+  revenueYoY: number | null
+  ebitda: number | null
+  ebitdaYoY: number | null
+  consensusRevenue: number | null
+  keyDriver: string | null
+  isPersisted: boolean
+  resultQuality: EarningsRelease['resultQuality'] | null
+  eventStatus: string | null
+}
+
+const staticUpcoming = getUpcomingEarnings()
+const staticResults = getRecentResults()
+
+function staticToRow(e: EarningsRelease): DisplayRow {
+  return {
+    id: e.id, ticker: e.ticker, companyName: e.companyName, period: e.period, reportDate: e.reportDate,
+    revenue: e.revenue ?? null, revenueYoY: e.revenueYoY ?? null, ebitda: e.ebitda ?? null, ebitdaYoY: e.ebitdaYoY ?? null,
+    consensusRevenue: e.consensusRevenue ?? null, keyDriver: e.keyDriver ?? null,
+    isPersisted: false, resultQuality: e.resultQuality, eventStatus: null,
+  }
+}
+
+function persistedToRow(e: EarningsEventOut): DisplayRow {
+  const period = e.fiscalPeriod && e.fiscalYear ? `${e.fiscalPeriod} ${e.fiscalYear}` : (e.fiscalPeriod ?? '—')
+  return {
+    id: e.id, ticker: e.ticker, companyName: e.ticker, period, reportDate: e.reportDate ?? e.eventDate ?? '',
+    revenue: e.revenue, revenueYoY: null, ebitda: e.ebitda, ebitdaYoY: null,
+    consensusRevenue: null, keyDriver: null,
+    isPersisted: true, resultQuality: null, eventStatus: e.status,
+  }
+}
 
 export default function EarningsPage() {
   const { t } = useLang()
+  const [persisted, setPersisted] = useState<{ events: EarningsEventOut[]; tickersCovered: string[] } | null>(null)
+
+  useEffect(() => {
+    let mounted = true
+    const run = async () => {
+      try {
+        const res = await fetchEarningsEvents()
+        if (mounted) setPersisted(res)
+      } catch {
+        if (mounted) setPersisted(null)
+      }
+    }
+    run()
+    return () => { mounted = false }
+  }, [])
+
+  const coveredTickers = new Set(persisted?.tickersCovered ?? [])
+  const persistedEvents = persisted?.events ?? []
+
+  const upcoming: DisplayRow[] = [
+    ...persistedEvents.filter(e => e.status === 'expected').map(persistedToRow),
+    ...staticUpcoming.filter(e => !coveredTickers.has(e.ticker)).map(staticToRow),
+  ].sort((a, b) => a.reportDate.localeCompare(b.reportDate))
+
+  const results: DisplayRow[] = [
+    ...persistedEvents.filter(e => e.status !== 'expected').map(persistedToRow),
+    ...staticResults.filter(e => !coveredTickers.has(e.ticker)).map(staticToRow),
+  ].sort((a, b) => b.reportDate.localeCompare(a.reportDate))
 
   const surpriseLabel = (s: number) => (s > 0.5 ? t.earnings.beat : s < -0.5 ? t.earnings.miss : t.earnings.inline)
 
@@ -39,7 +116,7 @@ export default function EarningsPage() {
         return [
           e.ticker, e.companyName, e.period,
           e.revenue ?? '', e.revenueYoY ?? '', e.ebitda ?? '', e.ebitdaYoY ?? '',
-          e.consensusRevenue ?? '', s != null ? `${s.toFixed(1)}%` : '', e.resultQuality, e.keyDriver ?? '',
+          e.consensusRevenue ?? '', s != null ? `${s.toFixed(1)}%` : '', e.resultQuality ?? e.eventStatus ?? '', e.keyDriver ?? '',
         ]
       }),
     )
@@ -77,7 +154,7 @@ export default function EarningsPage() {
                   </td>
                   <td className="py-2.5 px-3 text-foreground">{e.companyName}</td>
                   <td className="py-2.5 px-3 text-muted-fg">{e.period}</td>
-                  <td className="py-2.5 px-3 ui-number text-muted-fg">{e.reportDate}</td>
+                  <td className="py-2.5 px-3 ui-number text-muted-fg">{e.reportDate || '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -87,8 +164,11 @@ export default function EarningsPage() {
 
       {/* Recent results */}
       <div className="bg-surface border border-border rounded overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-border bg-surface-2 flex items-center justify-between gap-3">
-          <span className="ui-label text-muted-fg">{t.earnings.recentResults}</span>
+        <div className="px-4 py-2.5 border-b border-border bg-surface-2 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="ui-label text-muted-fg">{t.earnings.recentResults}</span>
+            <SourceStateBadge sourceKey={coveredTickers.size > 0 ? 'earningsPersisted' : 'fundamentalsStatic'} />
+          </div>
           <button
             onClick={handleExport}
             className="flex items-center gap-1.5 h-6 px-2 rounded border border-border bg-surface text-xs text-muted-fg hover:text-foreground hover:border-accent transition-colors"
@@ -135,7 +215,9 @@ export default function EarningsPage() {
                     {e.ebitdaYoY != null ? formatPct(e.ebitdaYoY) : '—'}
                   </td>
                   <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                    {(() => {
+                    {e.isPersisted ? (
+                      <span className="text-muted-fg" title={t.earnings.noEstimates}>—</span>
+                    ) : (() => {
                       const s = surprisePct(e.revenue, e.consensusRevenue)
                       if (s == null) return <span className="text-muted-fg">—</span>
                       return (
@@ -146,10 +228,12 @@ export default function EarningsPage() {
                     })()}
                   </td>
                   <td className="py-2.5 px-3">
-                    <StatusPill label={e.resultQuality} variant={qualityVariant[e.resultQuality]} />
+                    {e.isPersisted
+                      ? <StatusPill label={t.earnings.status[e.eventStatus as keyof typeof t.earnings.status] ?? e.eventStatus ?? '—'} variant={eventStatusVariant[e.eventStatus ?? ''] ?? 'neutral'} />
+                      : <StatusPill label={e.resultQuality!} variant={qualityVariant[e.resultQuality!]} />}
                   </td>
                   <td className="py-2.5 px-3 text-muted max-w-[180px]">
-                    <span className="block truncate" title={e.keyDriver}>{e.keyDriver ?? '—'}</span>
+                    <span className="block truncate" title={e.keyDriver ?? undefined}>{e.keyDriver ?? '—'}</span>
                   </td>
                   <td className="py-2.5 px-3 pr-4">
                     {doc ? (

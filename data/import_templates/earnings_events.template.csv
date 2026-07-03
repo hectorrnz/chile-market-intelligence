@@ -1,0 +1,5 @@
+ticker,fiscal_year,fiscal_period,period_type,report_date,event_date,status,revenue,ebitda,net_income,eps,currency,source_name,source_url
+SQM-B,2025,Q1,quarterly,2025-05-14,2025-05-14,reported,780000,195000,115000,405,CLP,Company filing (synthetic sample),
+BSANTANDER,2025,Q1,quarterly,2025-04-29,2025-04-29,reported,410000,,142000,1.85,CLP,Company filing (synthetic sample),
+COPEC,2025,Q1,quarterly,2025-05-08,2025-05-08,reported,7250000,620000,185000,215,CLP,Company filing (synthetic sample),
+COPEC,2025,Q2,quarterly,,2025-08-07,expected,,,,,,CLP,Company filing calendar (synthetic sample),

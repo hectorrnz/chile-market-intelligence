@@ -161,16 +161,16 @@ describe('classifyPerformance', () => {
 // ─── buildFundamentals ──────────────────────────────────────────────────────────
 
 describe('buildFundamentals', () => {
-  it('always returns source: temporary_static with a conversion path, never live', () => {
+  it('falls back to static fields with no derivedFields when nothing persisted is passed', () => {
     const f = buildFundamentals({ ticker: 'SQM-B', pe: 12, peFwd: 11, psFwd: 2 })
-    assert.equal(f.source, 'temporary_static')
+    assert.deepEqual(f.derivedFields, [])
     assert.ok(f.conversionPath.includes('Phase 8C'))
     assert.equal(f.pe, 11) // prefers peFwd over pe
   })
 
   it('handles undefined snapshot without throwing, all fields null', () => {
     const f = buildFundamentals(undefined)
-    assert.equal(f.source, 'temporary_static')
+    assert.deepEqual(f.derivedFields, [])
     assert.equal(f.pe, null)
     assert.equal(f.dividendYield, null)
   })

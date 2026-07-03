@@ -21,7 +21,9 @@
         "vercel:set-production-env": "node scripts/vercel/setProductionEnv.ts",
         "cron:test": "node scripts/cron/testBcchMacroCron.ts",
         "ingest:market-snapshots:dry": "node scripts/ingest/marketSnapshots.ts",
-        "ingest:market-snapshots": "node scripts/ingest/marketSnapshots.ts --write"
+        "ingest:market-snapshots": "node scripts/ingest/marketSnapshots.ts --write",
+        "ingest:financials:dry": "node scripts/ingest/financialsCsv.ts",
+        "ingest:financials": "node scripts/ingest/financialsCsv.ts --write"
     },
     "dependencies": {
         "@supabase/ssr": "^0.12.0",

@@ -765,12 +765,192 @@ export interface Database {
           metadata?: Record<string, unknown>
         }
       }
+      company_reporting_periods: {
+        Row: {
+          id: string
+          ticker: string
+          fiscal_year: number
+          fiscal_period: string
+          period_type: string
+          period_end_date: string
+          report_date: string | null
+          currency: string
+          source_type: string
+          source_name: string | null
+          source_url: string | null
+          filing_id: string | null
+          metadata: Record<string, unknown>
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          ticker: string
+          fiscal_year: number
+          fiscal_period: string
+          period_type: string
+          period_end_date: string
+          report_date?: string | null
+          currency?: string
+          source_type: string
+          source_name?: string | null
+          source_url?: string | null
+          filing_id?: string | null
+          metadata?: Record<string, unknown>
+        }
+        Update: {
+          fiscal_year?: number
+          fiscal_period?: string
+          period_type?: string
+          period_end_date?: string
+          report_date?: string | null
+          currency?: string
+          source_name?: string | null
+          source_url?: string | null
+          filing_id?: string | null
+          metadata?: Record<string, unknown>
+        }
+      }
+      financial_statement_items: {
+        Row: {
+          id: string
+          reporting_period_id: string
+          ticker: string
+          statement_type: string
+          line_item_code: string
+          line_item_name: string
+          value: number | null
+          unit: string
+          scale: string | null
+          source_type: string
+          metadata: Record<string, unknown>
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          reporting_period_id: string
+          ticker: string
+          statement_type: string
+          line_item_code: string
+          line_item_name: string
+          value?: number | null
+          unit?: string
+          scale?: string | null
+          source_type: string
+          metadata?: Record<string, unknown>
+        }
+        Update: {
+          value?: number | null
+          unit?: string
+          scale?: string | null
+          metadata?: Record<string, unknown>
+        }
+      }
+      financial_metrics: {
+        Row: {
+          id: string
+          reporting_period_id: string
+          ticker: string
+          metric_code: string
+          metric_name: string
+          value: number | null
+          unit: string | null
+          source_type: string
+          calculation_method: string | null
+          metadata: Record<string, unknown>
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          reporting_period_id: string
+          ticker: string
+          metric_code: string
+          metric_name: string
+          value?: number | null
+          unit?: string | null
+          source_type: string
+          calculation_method?: string | null
+          metadata?: Record<string, unknown>
+        }
+        Update: {
+          value?: number | null
+          unit?: string | null
+          calculation_method?: string | null
+          metadata?: Record<string, unknown>
+        }
+      }
+      earnings_events: {
+        Row: {
+          id: string
+          ticker: string
+          fiscal_year: number | null
+          fiscal_period: string | null
+          period_type: string | null
+          report_date: string | null
+          event_date: string | null
+          status: string
+          revenue: number | null
+          ebitda: number | null
+          net_income: number | null
+          eps: number | null
+          currency: string | null
+          source_type: string
+          source_name: string | null
+          source_url: string | null
+          reporting_period_id: string | null
+          metadata: Record<string, unknown>
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          ticker: string
+          fiscal_year?: number | null
+          fiscal_period?: string | null
+          period_type?: string | null
+          report_date?: string | null
+          event_date?: string | null
+          status?: string
+          revenue?: number | null
+          ebitda?: number | null
+          net_income?: number | null
+          eps?: number | null
+          currency?: string | null
+          source_type: string
+          source_name?: string | null
+          source_url?: string | null
+          reporting_period_id?: string | null
+          metadata?: Record<string, unknown>
+        }
+        Update: {
+          fiscal_year?: number | null
+          fiscal_period?: string | null
+          period_type?: string | null
+          report_date?: string | null
+          event_date?: string | null
+          status?: string
+          revenue?: number | null
+          ebitda?: number | null
+          net_income?: number | null
+          eps?: number | null
+          source_name?: string | null
+          source_url?: string | null
+          reporting_period_id?: string | null
+          metadata?: Record<string, unknown>
+        }
+      }
     }
     Views: Record<string, never>
     Functions: Record<string, never>
     Enums: Record<string, never>
   }
 }
+
+// ─── Phase 8C convenience aliases ─────────────────────────────────────────────
+export type CompanyReportingPeriodRow = Database['public']['Tables']['company_reporting_periods']['Row']
+export type FinancialStatementItemRow = Database['public']['Tables']['financial_statement_items']['Row']
+export type FinancialMetricRow = Database['public']['Tables']['financial_metrics']['Row']
+export type EarningsEventRow = Database['public']['Tables']['earnings_events']['Row']
 
 // Convenience row types
 export type DataSourceRow = Database['public']['Tables']['data_sources']['Row']

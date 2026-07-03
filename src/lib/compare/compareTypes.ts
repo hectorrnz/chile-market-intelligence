@@ -38,9 +38,16 @@ export interface ComparePerformance {
   oneYear: ComparePerformanceMetric
 }
 
+export type CompareFundamentalKey =
+  | 'pe' | 'psFwd' | 'evEbitda' | 'opMargin' | 'grossMargin'
+  | 'roe' | 'fcfYield' | 'pb' | 'netDebtEbitda' | 'dividendYield'
+
 /**
- * Valuation/fundamental ratios. Always temporary_static until Phase 8C
- * (financials/FECU ingestion) exists — never labeled live or persisted.
+ * Valuation/fundamental ratios. Phase 8C: fields derivable from persisted
+ * manual-CSV financials (+ market price/cap) are upgraded to 'derived';
+ * fields with no persisted equivalent (no equity/book-value or forward
+ * estimates imported) remain 'temporary_static' — listed in `derivedFields`
+ * so the UI can label each cell individually, never a blanket claim.
  */
 export interface CompareFundamentals {
   pe: number | null
@@ -53,7 +60,8 @@ export interface CompareFundamentals {
   pb: number | null
   netDebtEbitda: number | null
   dividendYield: number | null
-  source: 'temporary_static'
+  /** Fields upgraded to 'derived' (persisted financials + market data). Any field not listed is 'temporary_static'. */
+  derivedFields: CompareFundamentalKey[]
   conversionPath: string
 }
 
