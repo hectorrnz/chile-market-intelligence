@@ -388,7 +388,7 @@ includes this phase (idempotent — safe to re-run). It does **not** alter
 `portfolio_positions` — see `docs/supabase_persistence.md` for why (reuses the
 existing `metadata` column instead of an `ALTER TABLE`).
 
-## Phase 8C — Financial-Statement Ingestion (Manual CSV)
+## Phase 8C — Financial-Statement Ingestion (automation-first; manual CSV as interim bridge)
 
 Adds `company_reporting_periods`, `financial_statement_items`,
 `financial_metrics`, `earnings_events` tables (migration
@@ -399,6 +399,21 @@ writes use the same `SUPABASE_SERVICE_ROLE_KEY` already configured for
 market/macro ingestion. Apply the migration via the Supabase Dashboard SQL
 Editor before the first deploy that includes this phase (idempotent).
 
+A second, **automation-first** migration (`20260705000000_financials_automation_ready.sql`)
+extends all 4 tables with provenance and supersession columns (`source_file`,
+`source_as_of`, `ingestion_run_id`, `source_priority`, `is_superseded`,
+`superseded_by`) and widens the `source_type` CHECK constraint to accept
+`manual_csv`, `cmf_fecu`, `xbrl`, `vendor_feed`, `broker_feed`,
+`document_ingestion`, `static_seed`, `derived`. This migration must also be
+applied via the Supabase Dashboard SQL Editor (idempotent — purely additive,
+no destructive changes) before deploying commits that include it. The intent
+is that a future automated CMF FECU/XBRL parser or vendor/broker feed can
+write into these same tables via the same repository functions and
+automatically supersede any manual-CSV row for the same period — manual CSV
+is an interim bridge, not the terminal architecture. See
+`docs/data_source_status.md` → "Automation-first source architecture" for the
+verified end-to-end supersession test.
+
 **Populating data after deploy** (from a machine with `.env.local` pointed at
 the target Supabase project):
 ```bash
@@ -407,6 +422,7 @@ npm run ingest:financials -- --reporting-periods path.csv --statement-items path
 ```
 This is a manual, deliberate step — no CSV import runs automatically on
 deploy or on a schedule. See `data/import_templates/*.template.csv` for the
-expected column format (synthetic samples; never commit a real/private CSV)
-and `docs/supabase_persistence.md` → "Financial-Statement Ingestion" for the
-full workflow.
+expected column format (synthetic samples, including provenance columns;
+never commit a real/private CSV) and `docs/supabase_persistence.md` →
+"Financial-Statement Ingestion (Phase 8C — automation-first, manual CSV as
+interim bridge)" for the full workflow.

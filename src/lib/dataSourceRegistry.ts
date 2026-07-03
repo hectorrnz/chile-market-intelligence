@@ -93,8 +93,8 @@ export const SOURCE_REGISTRY = {
   fundamentalsStatic: {
     id: 'fundamentals-static',
     state: 'static_fallback',
-    labelEn: 'Static fallback · pending financials import',
-    labelEs: 'Respaldo estático · pendiente de importación de financials',
+    labelEn: 'Static fallback · pending automated financials ingestion',
+    labelEs: 'Respaldo estático · pendiente de ingesta automatizada de financials',
   },
   financialsPersisted: {
     id: 'financials-persisted',
@@ -113,6 +113,18 @@ export const SOURCE_REGISTRY = {
     state: 'persisted',
     labelEn: 'Persisted earnings events via manual CSV',
     labelEs: 'Eventos de resultados persistidos vía CSV manual',
+  },
+  automatedFinancialsPending: {
+    id: 'automated-financials-pending',
+    state: 'static_fallback',
+    labelEn: 'Automated financials source pending — manual CSV is an interim bridge',
+    labelEs: 'Fuente automatizada de financials pendiente — el CSV manual es un puente provisorio',
+  },
+  sourceAgnosticFinancialsLayer: {
+    id: 'source-agnostic-financials-layer',
+    state: 'persisted',
+    labelEn: 'Source-agnostic financials layer',
+    labelEs: 'Capa de financials agnóstica de fuente',
   },
 } as const satisfies Record<string, SourceEntry>
 

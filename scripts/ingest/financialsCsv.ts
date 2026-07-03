@@ -1,10 +1,19 @@
 // Phase 8C — Manual CSV financial-statement ingestion script.
 //
+// Manual CSV (source_type = 'manual_csv') is an INTERIM BRIDGE — see the
+// migration header comment in
+// supabase/migrations/20260705000000_financials_automation_ready.sql for the
+// automation-first design. A future automated ingestion script (CMF/FECU
+// parser, XBRL parser, vendor/broker feed) would reuse the exact same
+// financialsRepository.ts upsert functions with a different source_type;
+// this script is not the architecture, just today's only writer.
+//
 // Reads up to 4 CSV files (reporting periods, statement items, metrics,
 // earnings events), validates every row, and upserts into Supabase. Dry-run
 // by default; writes only with --write. Aborts before any write if any row
-// fails validation, unless --allow-partial is passed (invalid rows are then
-// skipped, not written).
+// fails validation (including duplicate-row detection within the batch),
+// unless --allow-partial is passed (invalid rows are then skipped, not
+// written).
 //
 // Usage:
 //   npm run ingest:financials:dry -- --reporting-periods path.csv --statement-items path.csv --metrics path.csv --earnings path.csv
@@ -12,6 +21,7 @@
 //
 // Prerequisites:
 //   1. Apply supabase/migrations/20260704000000_financials_foundation.sql
+//      and 20260705000000_financials_automation_ready.sql
 //   2. Ensure .env.local has Supabase admin credentials (SUPABASE_SERVICE_ROLE_KEY)
 
 import pkg from '@next/env'
@@ -36,6 +46,9 @@ loadEnvConfig(process.cwd())
 const INGESTION_VERSION = '8C'
 const PROVIDER = 'Manual CSV'
 const JOB_TYPE = 'financials_csv_import'
+/** Never rename this to imply manual CSV is permanent — see module header. */
+const AUTOMATION_READINESS = 'interim_bridge'
+const SOURCE_TYPE = 'manual_csv'
 
 function sanitizeError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e)
@@ -87,8 +100,11 @@ async function main() {
   console.log(isDryRun
     ? '[financials-ingest] DRY RUN — no writes to Supabase (pass --write to persist)'
     : '[financials-ingest] WRITE MODE — rows will be upserted')
-  console.log(`[financials-ingest] ingestionVersion=${INGESTION_VERSION}`)
+  console.log(`[financials-ingest] ingestionVersion=${INGESTION_VERSION} sourceType=${SOURCE_TYPE} automationReadiness=${AUTOMATION_READINESS}`)
 
+  // Never echo full row contents to logs — only counts and line-numbered
+  // reasons, so a private CSV's actual figures never appear in CI/terminal
+  // history even when errors are reported.
   const payload = buildFinancialImportPayload({
     reportingPeriodRows: readRows(args.reportingPeriods),
     statementItemRows: readRows(args.statementItems),
@@ -123,14 +139,28 @@ async function main() {
   }
 
   const startedAt = new Date().toISOString()
+
+  // Create the ingestion_runs row FIRST so its id can be threaded through
+  // every upsert below (ingestion_run_id column on all 4 financials tables)
+  // — the same audit-trail pattern macro/market ingestion already uses.
+  const runMetadata = { ingestionVersion: INGESTION_VERSION, sourceType: SOURCE_TYPE, automationReadiness: AUTOMATION_READINESS }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const initialRun = await (db as any)
+    .from('ingestion_runs')
+    .insert({ provider: PROVIDER, job_type: JOB_TYPE, status: 'running', started_at: startedAt, rows_seen: rowsSeen, metadata: runMetadata })
+    .select('id')
+    .single()
+  const ingestionRunId: string | null = initialRun.error ? null : (initialRun.data?.id ?? null)
+  if (initialRun.error) console.warn(`[financials-ingest] Could not create ingestion_runs row up front: ${sanitizeError(initialRun.error)}`)
+
   const errors: string[] = [...payload.errors.map((e) => `line ${e.line}: ${e.reason}`)]
   let rowsInserted = 0
 
-  const periodResult = await upsertReportingPeriods(payload.reportingPeriods)
+  const periodResult = await upsertReportingPeriods(payload.reportingPeriods, ingestionRunId)
   errors.push(...periodResult.errors)
   rowsInserted += periodResult.inserted
 
-  const itemResult = await upsertStatementItems(payload.statementItems, periodResult.idsByKey)
+  const itemResult = await upsertStatementItems(payload.statementItems, periodResult.idsByKey, ingestionRunId)
   errors.push(...itemResult.errors)
   rowsInserted += itemResult.inserted
 
@@ -149,11 +179,11 @@ async function main() {
   const derivedMetrics = Array.from(derivedGroups.values()).flatMap((g) => deriveFinancialMetrics(g))
   console.log(`[financials-ingest] Derived ${derivedMetrics.length} metric(s) from imported statement items`)
 
-  const metricResult = await upsertFinancialMetrics([...payload.metrics, ...derivedMetrics], periodResult.idsByKey)
+  const metricResult = await upsertFinancialMetrics([...payload.metrics, ...derivedMetrics], periodResult.idsByKey, ingestionRunId)
   errors.push(...metricResult.errors)
   rowsInserted += metricResult.inserted
 
-  const earningsResult = await upsertEarningsEvents(payload.earningsEvents, periodResult.idsByKey)
+  const earningsResult = await upsertEarningsEvents(payload.earningsEvents, periodResult.idsByKey, ingestionRunId)
   errors.push(...earningsResult.errors)
   rowsInserted += earningsResult.inserted
 
@@ -163,23 +193,40 @@ async function main() {
   console.log(`[financials-ingest] ${status.toUpperCase()} — ${rowsInserted} row(s) upserted, ${rowsFailed} error(s)`)
   if (errors.length > 0) console.warn(`[financials-ingest] Errors: ${errors.slice(0, 10).join('; ')}`)
 
-  const runRow = {
-    provider: PROVIDER,
-    job_type: JOB_TYPE,
-    status,
-    started_at: startedAt,
-    finished_at: new Date().toISOString(),
-    rows_seen: rowsSeen,
-    rows_inserted: rowsInserted,
-    rows_updated: 0,
-    rows_failed: rowsFailed,
-    error_message: errors.length > 0 ? errors.slice(0, 5).join('; ') : null,
-    metadata: { ingestionVersion: INGESTION_VERSION },
+  if (ingestionRunId) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: updateError } = await (db as any)
+      .from('ingestion_runs')
+      .update({
+        status,
+        finished_at: new Date().toISOString(),
+        rows_inserted: rowsInserted,
+        rows_updated: 0,
+        rows_failed: rowsFailed,
+        error_message: errors.length > 0 ? errors.slice(0, 5).join('; ') : null,
+      })
+      .eq('id', ingestionRunId)
+    if (updateError) console.warn(`[financials-ingest] ingestion_runs update failed: ${sanitizeError(updateError)}`)
+    else console.log(`[financials-ingest] Ingestion run recorded (id=${ingestionRunId}).`)
+  } else {
+    // Fallback: the up-front insert failed, so record a standalone completed run.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: runError } = await (db as any).from('ingestion_runs').insert({
+      provider: PROVIDER,
+      job_type: JOB_TYPE,
+      status,
+      started_at: startedAt,
+      finished_at: new Date().toISOString(),
+      rows_seen: rowsSeen,
+      rows_inserted: rowsInserted,
+      rows_updated: 0,
+      rows_failed: rowsFailed,
+      error_message: errors.length > 0 ? errors.slice(0, 5).join('; ') : null,
+      metadata: runMetadata,
+    })
+    if (runError) console.warn(`[financials-ingest] ingestion_runs insert failed: ${sanitizeError(runError)}`)
+    else console.log('[financials-ingest] Ingestion run recorded (fallback insert, no ingestion_run_id on child rows).')
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error: runError } = await (db as any).from('ingestion_runs').insert(runRow)
-  if (runError) console.warn(`[financials-ingest] ingestion_runs insert failed: ${sanitizeError(runError)}`)
-  else console.log('[financials-ingest] Ingestion run recorded.')
 }
 
 main().catch((e) => {

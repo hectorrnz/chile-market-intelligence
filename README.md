@@ -73,9 +73,9 @@ naming its actual status. **Full page-by-page detail:**
 | Stock prices | Yahoo Finance (unofficial) + Supabase persistence | **Live/persisted** — static baseline, Supabase auto-load, live overlay on refresh |
 | Compare — market data (price, day change, market cap, sector, currency, short-term performance) | Same Supabase/Yahoo Finance chain as Stocks/Home/Company (Phase 8B) | **Live/persisted** where sufficient history exists — static fallback otherwise, with an explicit reason (`insufficient_supabase_history`) |
 | Compare — historical returns chart/table | `stockHistory.json` | **Temporary static** — needs years of daily Supabase history (Phase 8B), not yet accumulated |
-| Compare — fundamentals (P/E, EV/EBITDA, margins, FCF/dividend yield) | **Phase 8C:** persisted `financial_metrics`/`financial_statement_items` (manual CSV import) where a ticker has been imported — derived field-by-field | **Persisted/derived** per ticker where imported — static fallback otherwise (P/S fwd, ROE, P/B always static — no forward estimates or book value imported) |
-| Charting (`/chart-builder`) | **Phase 8C:** persisted `financial_statement_items`/`financial_metrics` (manual CSV import) where a ticker has been imported | **Persisted** per ticker where imported — static `fundamentals.json` fallback otherwise |
-| Earnings | **Phase 8C:** persisted `earnings_events` (manual CSV import) where a ticker has been imported | **Persisted** per ticker where imported (no fabricated consensus/surprise) — static `earnings.json` fallback otherwise |
+| Compare — fundamentals (P/E, EV/EBITDA, margins, FCF/dividend yield) | **Phase 8C (automation-first, manual CSV interim bridge):** persisted `financial_metrics`/`financial_statement_items` — source-agnostic schema, manual CSV is the only populated source today, automated CMF FECU/XBRL/vendor ingestion can write into the same tables later — derived field-by-field where imported | **Persisted/derived** per ticker where imported — static fallback otherwise (P/S fwd, ROE, P/B always static — no forward estimates or book value imported) |
+| Charting (`/chart-builder`) | **Phase 8C (automation-first, manual CSV interim bridge):** persisted `financial_statement_items`/`financial_metrics` where imported | **Persisted** per ticker where imported — static `fundamentals.json` fallback otherwise |
+| Earnings | **Phase 8C (automation-first, manual CSV interim bridge):** persisted `earnings_events` where imported | **Persisted** per ticker where imported (no fabricated consensus/surprise) — static `earnings.json` fallback otherwise |
 | CMF filings (Hechos Esenciales) | CMF public portal | **Blocked** — the portal requires a CAPTCHA; confirmed via a real discovery run, not merely unimplemented. See `docs/cmf_provider_discovery.md` |
 | FX rates / Chilean rates | — | **Temporary static** — conversion path via extended BCCh series mapping (Phase 8D) |
 | News | — | **Temporary static** — candidate sources named in-app (Phase 8E) |
@@ -150,7 +150,7 @@ without them** (they never run during build). Full guide:
 | **Phase 6D** | Transaction history + cash ledger | ✓ Complete |
 | **Phase 8A** | Data-source audit — corrected stale/misleading source labels app-wide | ✓ Complete |
 | **Phase 8B** | Compare page real-data wiring + no-static-terminal-state policy | ✓ Complete |
-| **Phase 8C** | Financial-statement ingestion (manual CSV) for Charting, Compare fundamentals, and Earnings (this phase) | ✓ Complete |
+| **Phase 8C** | Financial-statement ingestion, automation-first architecture with manual CSV as an interim bridge, for Charting, Compare fundamentals, and Earnings | ✓ Complete |
 | **Phase 8D** | FX/rates + US macro + economic calendar live source completion | Planned |
 | **Phase 8E** | Hechos Relevantes + News ingestion workaround | Planned |
 | **Phase 6E** | Portfolio analytics / performance attribution | Planned |

@@ -3,6 +3,14 @@
 // plain `node --test` (mirrors src/lib/compare/compareStatic.ts's fs-based
 // static-data loading, avoiding the '@/*' alias Node's native test runner
 // cannot resolve).
+//
+// AUTOMATION-FIRST NOTE: manual_csv is an interim bridge, not the
+// architecture. Every row carries the same provenance fields (source_name,
+// source_url, source_file, source_as_of) a future automated provider
+// (CMF/FECU parser, XBRL parser, vendor/broker feed, document-ingestion
+// pipeline) would also populate — see the migration header comment in
+// supabase/migrations/20260705000000_financials_automation_ready.sql for the
+// full source-priority/supersession design.
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -17,11 +25,14 @@ export const VALID_FISCAL_PERIODS = ['Q1', 'Q2', 'Q3', 'Q4', 'FY'] as const
 export const VALID_PERIOD_TYPES = ['quarterly', 'annual', 'ttm'] as const
 export const VALID_STATEMENT_TYPES = ['income', 'cash', 'balance', 'returns'] as const
 export const VALID_EARNINGS_STATUS = ['expected', 'reported', 'preliminary', 'missing'] as const
+/** Full set of source_type values the schema accepts (see migration header comment). manual_csv is one of these, never the architecture. */
+export const VALID_SOURCE_TYPES = ['manual_csv', 'cmf_fecu', 'xbrl', 'vendor_feed', 'broker_feed', 'document_ingestion', 'static_seed', 'derived'] as const
 
 export type FiscalPeriod = (typeof VALID_FISCAL_PERIODS)[number]
 export type PeriodType = (typeof VALID_PERIOD_TYPES)[number]
 export type StatementType = (typeof VALID_STATEMENT_TYPES)[number]
 export type EarningsStatus = (typeof VALID_EARNINGS_STATUS)[number]
+export type SourceType = (typeof VALID_SOURCE_TYPES)[number]
 
 export interface ValidationError {
   line: number
@@ -121,9 +132,44 @@ function isValidFiscalYear(raw: string): number | null {
   return n
 }
 
+export interface SourceMetadata {
+  sourceName: string | null
+  sourceUrl: string | null
+  sourceFile: string | null
+  sourceAsOf: string | null
+}
+
+/**
+ * Normalizes the provenance columns every financials row carries, regardless
+ * of source_type. `source_file` must be a bare filename (no path separators)
+ * — this column is served in public read APIs, so a local absolute path
+ * must never reach it. `source_as_of` must be a valid ISO-8601 timestamp if
+ * provided.
+ */
+export function normalizeSourceMetadata(cells: Record<string, string>): { ok: true; value: SourceMetadata } | { ok: false; reason: string } {
+  const sourceName = (cells.source_name ?? '').trim() || null
+  const sourceUrl = (cells.source_url ?? '').trim() || null
+
+  const rawFile = (cells.source_file ?? '').trim()
+  if (rawFile && (rawFile.includes('/') || rawFile.includes('\\') || /^[A-Za-z]:/.test(rawFile))) {
+    return { ok: false, reason: `source_file must be a bare filename, not a path: "${rawFile}"` }
+  }
+  const sourceFile = rawFile || null
+
+  const rawAsOf = (cells.source_as_of ?? '').trim()
+  let sourceAsOf: string | null = null
+  if (rawAsOf) {
+    const d = new Date(rawAsOf)
+    if (Number.isNaN(d.getTime())) return { ok: false, reason: `invalid source_as_of "${rawAsOf}"` }
+    sourceAsOf = d.toISOString()
+  }
+
+  return { ok: true, value: { sourceName, sourceUrl, sourceFile, sourceAsOf } }
+}
+
 // ─── Row validators ─────────────────────────────────────────────────────────────
 
-export interface ReportingPeriodImportRow {
+export interface ReportingPeriodImportRow extends SourceMetadata {
   ticker: string
   fiscalYear: number
   fiscalPeriod: FiscalPeriod
@@ -131,8 +177,6 @@ export interface ReportingPeriodImportRow {
   periodEndDate: string
   reportDate: string | null
   currency: string
-  sourceName: string | null
-  sourceUrl: string | null
   sourceType: string
 }
 
@@ -156,6 +200,9 @@ export function validateReportingPeriodRow(row: ParsedCsvRow): ValidationResult<
   const reportDate = normalizeDate(row.cells.report_date)
   if (!reportDate.ok) return err(`invalid report_date "${row.cells.report_date ?? ''}"`)
 
+  const source = normalizeSourceMetadata(row.cells)
+  if (!source.ok) return err(source.reason)
+
   return {
     ok: true,
     value: {
@@ -166,14 +213,13 @@ export function validateReportingPeriodRow(row: ParsedCsvRow): ValidationResult<
       periodEndDate: periodEnd.value,
       reportDate: reportDate.value,
       currency: (row.cells.currency ?? '').trim() || 'CLP',
-      sourceName: (row.cells.source_name ?? '').trim() || null,
-      sourceUrl: (row.cells.source_url ?? '').trim() || null,
       sourceType: MANUAL_CSV_SOURCE_TYPE,
+      ...source.value,
     },
   }
 }
 
-export interface StatementItemImportRow {
+export interface StatementItemImportRow extends SourceMetadata {
   ticker: string
   fiscalYear: number
   fiscalPeriod: FiscalPeriod
@@ -208,6 +254,15 @@ export function validateStatementItemRow(row: ParsedCsvRow): ValidationResult<St
   if (!lineItemCode) return err('missing line_item_code')
 
   const lineItemName = (row.cells.line_item_name ?? '').trim() || lineItemCode
+  const value = normalizeNumericValue(row.cells.value)
+  const scale = (row.cells.scale ?? '').trim() || null
+
+  // Human-error control: a numeric value with no explicit scale is ambiguous
+  // (is 780000 already millions, or raw CLP?) — reject rather than guess.
+  if (value !== null && !scale) return err(`ambiguous scale — value "${row.cells.value}" provided without an explicit scale (e.g. "units"/"thousands"/"millions")`)
+
+  const source = normalizeSourceMetadata(row.cells)
+  if (!source.ok) return err(source.reason)
 
   return {
     ok: true,
@@ -219,15 +274,16 @@ export function validateStatementItemRow(row: ParsedCsvRow): ValidationResult<St
       statementType: statementType as StatementType,
       lineItemCode,
       lineItemName,
-      value: normalizeNumericValue(row.cells.value),
+      value,
       unit: (row.cells.unit ?? '').trim() || 'CLP',
-      scale: (row.cells.scale ?? '').trim() || null,
+      scale,
       sourceType: MANUAL_CSV_SOURCE_TYPE,
+      ...source.value,
     },
   }
 }
 
-export interface FinancialMetricImportRow {
+export interface FinancialMetricImportRow extends SourceMetadata {
   ticker: string
   fiscalYear: number
   fiscalPeriod: FiscalPeriod
@@ -259,6 +315,9 @@ export function validateFinancialMetricRow(row: ParsedCsvRow): ValidationResult<
 
   const metricName = (row.cells.metric_name ?? '').trim() || metricCode
 
+  const source = normalizeSourceMetadata(row.cells)
+  if (!source.ok) return err(source.reason)
+
   return {
     ok: true,
     value: {
@@ -272,11 +331,12 @@ export function validateFinancialMetricRow(row: ParsedCsvRow): ValidationResult<
       unit: (row.cells.unit ?? '').trim() || null,
       calculationMethod: (row.cells.calculation_method ?? '').trim() || null,
       sourceType: MANUAL_CSV_SOURCE_TYPE,
+      ...source.value,
     },
   }
 }
 
-export interface EarningsEventImportRow {
+export interface EarningsEventImportRow extends SourceMetadata {
   ticker: string
   fiscalYear: number | null
   fiscalPeriod: FiscalPeriod | null
@@ -289,8 +349,6 @@ export interface EarningsEventImportRow {
   netIncome: number | null
   eps: number | null
   currency: string
-  sourceName: string | null
-  sourceUrl: string | null
   sourceType: string
 }
 
@@ -319,6 +377,9 @@ export function validateEarningsEventRow(row: ParsedCsvRow): ValidationResult<Ea
   const statusRaw = (row.cells.status ?? '').trim().toLowerCase() || 'reported'
   if (!(VALID_EARNINGS_STATUS as readonly string[]).includes(statusRaw)) return err(`invalid status "${row.cells.status ?? ''}"`)
 
+  const source = normalizeSourceMetadata(row.cells)
+  if (!source.ok) return err(source.reason)
+
   return {
     ok: true,
     value: {
@@ -334,12 +395,41 @@ export function validateEarningsEventRow(row: ParsedCsvRow): ValidationResult<Ea
       netIncome: normalizeNumericValue(row.cells.net_income),
       eps: normalizeNumericValue(row.cells.eps),
       currency: (row.cells.currency ?? '').trim() || 'CLP',
-      sourceName: (row.cells.source_name ?? '').trim() || null,
-      sourceUrl: (row.cells.source_url ?? '').trim() || null,
       sourceType: MANUAL_CSV_SOURCE_TYPE,
+      ...source.value,
     },
   }
 }
+
+// ─── Duplicate detection (within a single import batch) ────────────────────────
+
+/** Detects rows sharing the same logical key within one CSV — a common copy/paste error. */
+function findDuplicates(
+  rows: { line: number; cells: Record<string, string> }[],
+  keyOf: (cells: Record<string, string>) => string,
+): ValidationError[] {
+  const seen = new Map<string, number>()
+  const dupes: ValidationError[] = []
+  for (const row of rows) {
+    const key = keyOf(row.cells)
+    const firstLine = seen.get(key)
+    if (firstLine !== undefined) {
+      dupes.push({ line: row.line, reason: `duplicate row — same key already seen at line ${firstLine}` })
+    } else {
+      seen.set(key, row.line)
+    }
+  }
+  return dupes
+}
+
+const reportingPeriodKey = (c: Record<string, string>) =>
+  [normalizeTicker(c.ticker ?? ''), c.fiscal_year, (c.fiscal_period ?? '').toUpperCase(), (c.period_type ?? '').toLowerCase()].join('|')
+const statementItemKey = (c: Record<string, string>) =>
+  [normalizeTicker(c.ticker ?? ''), c.fiscal_year, (c.fiscal_period ?? '').toUpperCase(), (c.period_type ?? '').toLowerCase(), (c.statement_type ?? '').toLowerCase(), (c.line_item_code ?? '').toLowerCase()].join('|')
+const metricKey = (c: Record<string, string>) =>
+  [normalizeTicker(c.ticker ?? ''), c.fiscal_year, (c.fiscal_period ?? '').toUpperCase(), (c.period_type ?? '').toLowerCase(), (c.metric_code ?? '').toLowerCase()].join('|')
+const earningsEventKey = (c: Record<string, string>) =>
+  [normalizeTicker(c.ticker ?? ''), c.fiscal_year ?? '', (c.fiscal_period ?? '').toUpperCase()].join('|')
 
 // ─── Payload builder ─────────────────────────────────────────────────────────────
 
@@ -354,8 +444,10 @@ export interface FinancialImportPayload {
 /**
  * Validates every row of each CSV's parsed rows and assembles a single import
  * payload. Any file may be omitted (empty rows array). Errors from all four
- * files are collected together with their originating line numbers; callers
- * decide whether to abort (default) or proceed with --allow-partial.
+ * files are collected together with their originating line numbers (both
+ * per-row validation errors and duplicate-row detection within the same
+ * batch); callers decide whether to abort (default) or proceed with
+ * --allow-partial.
  */
 export function buildFinancialImportPayload(input: {
   reportingPeriodRows?: ParsedCsvRow[]
@@ -365,34 +457,43 @@ export function buildFinancialImportPayload(input: {
 }): FinancialImportPayload {
   const errors: ValidationError[] = []
 
+  const reportingPeriodRows = input.reportingPeriodRows ?? []
+  errors.push(...findDuplicates(reportingPeriodRows, reportingPeriodKey))
   const reportingPeriods: ReportingPeriodImportRow[] = []
-  for (const row of input.reportingPeriodRows ?? []) {
+  for (const row of reportingPeriodRows) {
     const r = validateReportingPeriodRow(row)
     if (r.ok) reportingPeriods.push(r.value)
     else errors.push(r.error)
   }
 
+  const statementItemRows = input.statementItemRows ?? []
+  errors.push(...findDuplicates(statementItemRows, statementItemKey))
   const statementItems: StatementItemImportRow[] = []
-  for (const row of input.statementItemRows ?? []) {
+  for (const row of statementItemRows) {
     const r = validateStatementItemRow(row)
     if (r.ok) statementItems.push(r.value)
     else errors.push(r.error)
   }
 
+  const metricRows = input.metricRows ?? []
+  errors.push(...findDuplicates(metricRows, metricKey))
   const metrics: FinancialMetricImportRow[] = []
-  for (const row of input.metricRows ?? []) {
+  for (const row of metricRows) {
     const r = validateFinancialMetricRow(row)
     if (r.ok) metrics.push(r.value)
     else errors.push(r.error)
   }
 
+  const earningsEventRows = input.earningsEventRows ?? []
+  errors.push(...findDuplicates(earningsEventRows, earningsEventKey))
   const earningsEvents: EarningsEventImportRow[] = []
-  for (const row of input.earningsEventRows ?? []) {
+  for (const row of earningsEventRows) {
     const r = validateEarningsEventRow(row)
     if (r.ok) earningsEvents.push(r.value)
     else errors.push(r.error)
   }
 
+  errors.sort((a, b) => a.line - b.line)
   return { reportingPeriods, statementItems, metrics, earningsEvents, errors }
 }
 

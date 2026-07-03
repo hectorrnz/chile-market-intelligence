@@ -1,4 +1,4 @@
-ticker,fiscal_year,fiscal_period,period_type,period_end_date,report_date,currency,source_name,source_url
-SQM-B,2025,Q1,quarterly,2025-03-31,2025-05-14,CLP,Company filing (synthetic sample),
-BSANTANDER,2025,Q1,quarterly,2025-03-31,2025-04-29,CLP,Company filing (synthetic sample),
-COPEC,2025,Q1,quarterly,2025-03-31,2025-05-08,CLP,Company filing (synthetic sample),
+ticker,fiscal_year,fiscal_period,period_type,period_end_date,report_date,currency,source_name,source_url,source_file,source_as_of
+SQM-B,2025,Q1,quarterly,2025-03-31,2025-05-14,CLP,Company filing (synthetic sample),,sqm_q1_2025.csv,2025-05-14T00:00:00Z
+BSANTANDER,2025,Q1,quarterly,2025-03-31,2025-04-29,CLP,Company filing (synthetic sample),,bsantander_q1_2025.csv,2025-04-29T00:00:00Z
+COPEC,2025,Q1,quarterly,2025-03-31,2025-05-08,CLP,Company filing (synthetic sample),,copec_q1_2025.csv,2025-05-08T00:00:00Z

@@ -304,12 +304,32 @@ Both tables: RLS `auth.uid() = user_id` on every operation, plus a `check_portfo
 
 ---
 
-## Entity: Financial Statements — Reporting Periods / Statement Items / Metrics / Earnings Events (Phase 8C)
+## Entity: Financial Statements — Reporting Periods / Statement Items / Metrics / Earnings Events (Phase 8C — automation-first, manual CSV as interim bridge)
 
 The real, persisted schema behind Charting, Compare's Fundamentals table, and Earnings — replaces the
 static `fundamentals.json`/`stockPrices.json` valuation fields/`earnings.json` wherever a ticker has an
-imported CSV. Populated by manual CSV import only (`scripts/ingest/financialsCsv.ts`); see
-`docs/supabase_persistence.md` → "Financial-Statement Ingestion (Phase 8C)" for the ingestion workflow.
+imported record. Populated by manual CSV import today (`scripts/ingest/financialsCsv.ts`), but the schema
+is **source-agnostic by design**: every table carries provenance + supersession columns so a future automated
+`cmf_fecu`/`xbrl`/`vendor_feed`/`broker_feed`/`document_ingestion` source can write into the same rows without
+a redesign. Manual CSV is an interim bridge, not the terminal architecture — see `docs/supabase_persistence.md`
+→ "Financial-Statement Ingestion (Phase 8C — automation-first, manual CSV as interim bridge)" for the ingestion
+workflow and `docs/data_source_status.md` → "Automation-first source architecture" for the verified supersession
+mechanism.
+
+**Provenance/supersession columns — present on all 4 tables below** (added by migration
+`20260705000000_financials_automation_ready.sql`):
+
+| Field | Type | Description | Source |
+|---|---|---|---|
+| `source_type` | string | One of `manual_csv`, `cmf_fecu`, `xbrl`, `vendor_feed`, `broker_feed`, `document_ingestion`, `static_seed`, `derived` (CHECK-constrained) | System |
+| `source_name` | string | Human-readable provenance label, e.g. `'Company filing (synthetic sample)'` | Manual CSV |
+| `source_url` | string | Nullable — link to the originating document, if any | Manual CSV |
+| `source_file` | string | Bare filename only (never a path) — rejected by the parser if it contains `/`, `\`, or a Windows drive letter | Manual CSV |
+| `source_as_of` | timestamptz | When the source data was as-of, distinct from when it was ingested | Manual CSV |
+| `ingestion_run_id` | uuid | FK → `ingestion_runs(id)` — links every row to the exact ingestion run that wrote it | System |
+| `source_priority` | integer | Auto-derived from `source_type` (never hand-set) — higher wins on supersession. Convention: `static_seed`(10) < `derived`(50) < `manual_csv`(100) < `document_ingestion`(120) < `broker_feed`(140) < `vendor_feed`(150) < `cmf_fecu`(200) < `xbrl`(210) | System |
+| `is_superseded` | boolean | `true` once a higher-priority row exists for the same logical period | System |
+| `superseded_by` | uuid | Points at the winning row's `id` when `is_superseded = true` | System |
 
 **CompanyReportingPeriod** — the reporting "shell" every other table hangs off:
 
@@ -323,8 +343,8 @@ imported CSV. Populated by manual CSV import only (`scripts/ingest/financialsCsv
 | `period_end_date` | date | Last day of the reporting period | Manual CSV |
 | `report_date` | date | Date results were published (nullable — blank for upcoming periods) | Manual CSV |
 | `currency` | string | Defaults `CLP` | Manual CSV |
-| `source_type` | string | `manual_csv` today; `cmf_fecu`/`xbrl` reserved for future automation | System |
 | `filing_id` | uuid | Optional FK → `cmf_filings(id)` | Manual CSV |
+| *(+ provenance/supersession columns above)* | | | |
 
 **FinancialStatementItem** — one row per line item per period:
 
@@ -332,10 +352,11 @@ imported CSV. Populated by manual CSV import only (`scripts/ingest/financialsCsv
 |---|---|---|---|
 | `reporting_period_id` | uuid | FK → CompanyReportingPeriod | |
 | `ticker` | string | FK → Company.ticker | |
-| `statement_type` | string | `income`/`cash`/`balance`/`returns` | Manual CSV |
+| `statement_type` | string | `income`/`cash`/`balance`/`returns` (long-form `income_statement`/`balance_sheet`/`cash_flow`/`segment`/`other` also accepted) | Manual CSV |
 | `line_item_code` | string | Stable key: `revenue`, `ebitda`, `net_income`, `eps`, `gross_profit`, `operating_income`, `rd_expense`, `sga_expense`, `sbc_expense`, `dep_amort`, `ocf`, `capex`, `cash`, `total_debt`, `total_assets`, `shares_out`, `dividends_paid`, `buybacks` | Manual CSV |
-| `value` | numeric | Nullable — e.g. banks have no meaningful `ebitda` | Manual CSV |
+| `value` | numeric | Nullable — e.g. banks have no meaningful `ebitda`. A non-null `value` with no explicit `scale` is rejected by the parser as ambiguous | Manual CSV |
 | `unit` / `scale` | string | Display hints (`CLP`/`millions`) — not used in calculations | Manual CSV |
+| *(+ provenance/supersession columns above)* | | | |
 
 **FinancialMetric** — calculated ratios tied to a reporting period:
 
@@ -344,8 +365,8 @@ imported CSV. Populated by manual CSV import only (`scripts/ingest/financialsCsv
 | `reporting_period_id` | uuid | FK → CompanyReportingPeriod | |
 | `metric_code` | string | `ebitda_margin`, `gross_margin`, `op_margin`, `fcf`, `net_debt`, `net_debt_ebitda`, or any manually-supplied code | Manual CSV or derived |
 | `value` | numeric | Nullable | |
-| `source_type` | string | `manual_csv` or `derived` — manual takes precedence for the same `metric_code` + period | System |
 | `calculation_method` | string | e.g. `'ebitda / revenue'` — set only for `derived` rows | System |
+| *(+ provenance/supersession columns above — `source_type: 'derived'` outranks `'static_seed'` but is outranked by every real ingestion source)* | | | |
 
 **EarningsEvent** — one row per reporting event (replaces `earnings.json` for imported tickers):
 
@@ -356,8 +377,11 @@ imported CSV. Populated by manual CSV import only (`scripts/ingest/financialsCsv
 | `report_date` / `event_date` | date | Nullable | Manual CSV |
 | `status` | string | `expected`/`reported`/`preliminary`/`missing` — **never** a fabricated quality judgment | Manual CSV |
 | `revenue` / `ebitda` / `net_income` / `eps` | numeric | Nullable | Manual CSV |
+| *(+ provenance/supersession columns above, including `superseded_by`)* | | | |
 
 **No consensus/estimate fields exist on `EarningsEvent`** — the Rev. Surprise column on `/earnings` renders `—` for every persisted row, by design.
+
+**Supersession in practice:** `reconcileSupersession()` in `financialsRepository.ts` runs after every upsert, grouping rows by logical key (ticker + fiscal_year + fiscal_period [+ period_type]) and marking every row but the highest-`source_priority` one `is_superseded = true`. The read path always filters `is_superseded = false`. This was verified end-to-end against Production Supabase: inserting a synthetic `cmf_fecu` row over an existing `manual_csv` period automatically superseded the manual row with no code changes.
 
 ---
 

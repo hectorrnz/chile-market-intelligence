@@ -1,55 +1,55 @@
-ticker,fiscal_year,fiscal_period,period_type,statement_type,line_item_code,line_item_name,value,unit,scale
-SQM-B,2025,Q1,quarterly,income,revenue,Revenue,780000,CLP,millions
-SQM-B,2025,Q1,quarterly,income,gross_profit,Gross Profit,312000,CLP,millions
-SQM-B,2025,Q1,quarterly,income,operating_income,Operating Income,215000,CLP,millions
-SQM-B,2025,Q1,quarterly,income,ebitda,EBITDA,195000,CLP,millions
-SQM-B,2025,Q1,quarterly,income,net_income,Net Income,115000,CLP,millions
-SQM-B,2025,Q1,quarterly,income,eps,Earnings Per Share,405,CLP,unit
-SQM-B,2025,Q1,quarterly,income,rd_expense,R&D Expense,8000,CLP,millions
-SQM-B,2025,Q1,quarterly,income,sga_expense,SG&A Expense,42000,CLP,millions
-SQM-B,2025,Q1,quarterly,income,sbc_expense,Stock-Based Compensation,3000,CLP,millions
-SQM-B,2025,Q1,quarterly,income,dep_amort,Depreciation & Amortization,32000,CLP,millions
-SQM-B,2025,Q1,quarterly,cash,ocf,Operating Cash Flow,168000,CLP,millions
-SQM-B,2025,Q1,quarterly,cash,capex,Capital Expenditure,95000,CLP,millions
-SQM-B,2025,Q1,quarterly,balance,cash,Cash & Equivalents,610000,CLP,millions
-SQM-B,2025,Q1,quarterly,balance,total_debt,Total Debt,1130000,CLP,millions
-SQM-B,2025,Q1,quarterly,balance,total_assets,Total Assets,5420000,CLP,millions
-SQM-B,2025,Q1,quarterly,balance,shares_out,Shares Outstanding,284,CLP,millions
-SQM-B,2025,Q1,quarterly,returns,dividends_paid,Dividends Paid,40000,CLP,millions
-SQM-B,2025,Q1,quarterly,returns,buybacks,Share Buybacks,0,CLP,millions
-BSANTANDER,2025,Q1,quarterly,income,revenue,Revenue,410000,CLP,millions
-BSANTANDER,2025,Q1,quarterly,income,gross_profit,Gross Profit,410000,CLP,millions
-BSANTANDER,2025,Q1,quarterly,income,operating_income,Operating Income,168000,CLP,millions
-BSANTANDER,2025,Q1,quarterly,income,ebitda,,,,millions
-BSANTANDER,2025,Q1,quarterly,income,net_income,Net Income,142000,CLP,millions
-BSANTANDER,2025,Q1,quarterly,income,eps,Earnings Per Share,1.85,CLP,unit
-BSANTANDER,2025,Q1,quarterly,income,rd_expense,R&D Expense,0,CLP,millions
-BSANTANDER,2025,Q1,quarterly,income,sga_expense,SG&A Expense,155000,CLP,millions
-BSANTANDER,2025,Q1,quarterly,income,sbc_expense,Stock-Based Compensation,1200,CLP,millions
-BSANTANDER,2025,Q1,quarterly,income,dep_amort,Depreciation & Amortization,9000,CLP,millions
-BSANTANDER,2025,Q1,quarterly,cash,ocf,Operating Cash Flow,98000,CLP,millions
-BSANTANDER,2025,Q1,quarterly,cash,capex,Capital Expenditure,12000,CLP,millions
-BSANTANDER,2025,Q1,quarterly,balance,cash,Cash & Equivalents,2100000,CLP,millions
-BSANTANDER,2025,Q1,quarterly,balance,total_debt,Total Debt,0,CLP,millions
-BSANTANDER,2025,Q1,quarterly,balance,total_assets,Total Assets,38500000,CLP,millions
-BSANTANDER,2025,Q1,quarterly,balance,shares_out,Shares Outstanding,188446,CLP,millions
-BSANTANDER,2025,Q1,quarterly,returns,dividends_paid,Dividends Paid,85000,CLP,millions
-BSANTANDER,2025,Q1,quarterly,returns,buybacks,Share Buybacks,0,CLP,millions
-COPEC,2025,Q1,quarterly,income,revenue,Revenue,7250000,CLP,millions
-COPEC,2025,Q1,quarterly,income,gross_profit,Gross Profit,1160000,CLP,millions
-COPEC,2025,Q1,quarterly,income,operating_income,Operating Income,410000,CLP,millions
-COPEC,2025,Q1,quarterly,income,ebitda,EBITDA,620000,CLP,millions
-COPEC,2025,Q1,quarterly,income,net_income,Net Income,185000,CLP,millions
-COPEC,2025,Q1,quarterly,income,eps,Earnings Per Share,215,CLP,unit
-COPEC,2025,Q1,quarterly,income,rd_expense,R&D Expense,2000,CLP,millions
-COPEC,2025,Q1,quarterly,income,sga_expense,SG&A Expense,520000,CLP,millions
-COPEC,2025,Q1,quarterly,income,sbc_expense,Stock-Based Compensation,1800,CLP,millions
-COPEC,2025,Q1,quarterly,income,dep_amort,Depreciation & Amortization,210000,CLP,millions
-COPEC,2025,Q1,quarterly,cash,ocf,Operating Cash Flow,340000,CLP,millions
-COPEC,2025,Q1,quarterly,cash,capex,Capital Expenditure,290000,CLP,millions
-COPEC,2025,Q1,quarterly,balance,cash,Cash & Equivalents,780000,CLP,millions
-COPEC,2025,Q1,quarterly,balance,total_debt,Total Debt,5100000,CLP,millions
-COPEC,2025,Q1,quarterly,balance,total_assets,Total Assets,18900000,CLP,millions
-COPEC,2025,Q1,quarterly,balance,shares_out,Shares Outstanding,1330,CLP,millions
-COPEC,2025,Q1,quarterly,returns,dividends_paid,Dividends Paid,60000,CLP,millions
-COPEC,2025,Q1,quarterly,returns,buybacks,Share Buybacks,0,CLP,millions
+ticker,fiscal_year,fiscal_period,period_type,statement_type,line_item_code,line_item_name,value,unit,scale,source_name,source_url,source_file,source_as_of
+SQM-B,2025,Q1,quarterly,income,revenue,Revenue,780000,CLP,millions,Company filing (synthetic sample),,sqm_q1_2025.csv,2025-05-14T00:00:00Z
+SQM-B,2025,Q1,quarterly,income,gross_profit,Gross Profit,312000,CLP,millions,Company filing (synthetic sample),,sqm_q1_2025.csv,2025-05-14T00:00:00Z
+SQM-B,2025,Q1,quarterly,income,operating_income,Operating Income,215000,CLP,millions,Company filing (synthetic sample),,sqm_q1_2025.csv,2025-05-14T00:00:00Z
+SQM-B,2025,Q1,quarterly,income,ebitda,EBITDA,195000,CLP,millions,Company filing (synthetic sample),,sqm_q1_2025.csv,2025-05-14T00:00:00Z
+SQM-B,2025,Q1,quarterly,income,net_income,Net Income,115000,CLP,millions,Company filing (synthetic sample),,sqm_q1_2025.csv,2025-05-14T00:00:00Z
+SQM-B,2025,Q1,quarterly,income,eps,Earnings Per Share,405,CLP,unit,Company filing (synthetic sample),,sqm_q1_2025.csv,2025-05-14T00:00:00Z
+SQM-B,2025,Q1,quarterly,income,rd_expense,R&D Expense,8000,CLP,millions,Company filing (synthetic sample),,sqm_q1_2025.csv,2025-05-14T00:00:00Z
+SQM-B,2025,Q1,quarterly,income,sga_expense,SG&A Expense,42000,CLP,millions,Company filing (synthetic sample),,sqm_q1_2025.csv,2025-05-14T00:00:00Z
+SQM-B,2025,Q1,quarterly,income,sbc_expense,Stock-Based Compensation,3000,CLP,millions,Company filing (synthetic sample),,sqm_q1_2025.csv,2025-05-14T00:00:00Z
+SQM-B,2025,Q1,quarterly,income,dep_amort,Depreciation & Amortization,32000,CLP,millions,Company filing (synthetic sample),,sqm_q1_2025.csv,2025-05-14T00:00:00Z
+SQM-B,2025,Q1,quarterly,cash,ocf,Operating Cash Flow,168000,CLP,millions,Company filing (synthetic sample),,sqm_q1_2025.csv,2025-05-14T00:00:00Z
+SQM-B,2025,Q1,quarterly,cash,capex,Capital Expenditure,95000,CLP,millions,Company filing (synthetic sample),,sqm_q1_2025.csv,2025-05-14T00:00:00Z
+SQM-B,2025,Q1,quarterly,balance,cash,Cash & Equivalents,610000,CLP,millions,Company filing (synthetic sample),,sqm_q1_2025.csv,2025-05-14T00:00:00Z
+SQM-B,2025,Q1,quarterly,balance,total_debt,Total Debt,1130000,CLP,millions,Company filing (synthetic sample),,sqm_q1_2025.csv,2025-05-14T00:00:00Z
+SQM-B,2025,Q1,quarterly,balance,total_assets,Total Assets,5420000,CLP,millions,Company filing (synthetic sample),,sqm_q1_2025.csv,2025-05-14T00:00:00Z
+SQM-B,2025,Q1,quarterly,balance,shares_out,Shares Outstanding,284,CLP,millions,Company filing (synthetic sample),,sqm_q1_2025.csv,2025-05-14T00:00:00Z
+SQM-B,2025,Q1,quarterly,returns,dividends_paid,Dividends Paid,40000,CLP,millions,Company filing (synthetic sample),,sqm_q1_2025.csv,2025-05-14T00:00:00Z
+SQM-B,2025,Q1,quarterly,returns,buybacks,Share Buybacks,0,CLP,millions,Company filing (synthetic sample),,sqm_q1_2025.csv,2025-05-14T00:00:00Z
+BSANTANDER,2025,Q1,quarterly,income,revenue,Revenue,410000,CLP,millions,Company filing (synthetic sample),,bsantander_q1_2025.csv,2025-04-29T00:00:00Z
+BSANTANDER,2025,Q1,quarterly,income,gross_profit,Gross Profit,410000,CLP,millions,Company filing (synthetic sample),,bsantander_q1_2025.csv,2025-04-29T00:00:00Z
+BSANTANDER,2025,Q1,quarterly,income,operating_income,Operating Income,168000,CLP,millions,Company filing (synthetic sample),,bsantander_q1_2025.csv,2025-04-29T00:00:00Z
+BSANTANDER,2025,Q1,quarterly,income,ebitda,,,,millions,Company filing (synthetic sample),,bsantander_q1_2025.csv,2025-04-29T00:00:00Z
+BSANTANDER,2025,Q1,quarterly,income,net_income,Net Income,142000,CLP,millions,Company filing (synthetic sample),,bsantander_q1_2025.csv,2025-04-29T00:00:00Z
+BSANTANDER,2025,Q1,quarterly,income,eps,Earnings Per Share,1.85,CLP,unit,Company filing (synthetic sample),,bsantander_q1_2025.csv,2025-04-29T00:00:00Z
+BSANTANDER,2025,Q1,quarterly,income,rd_expense,R&D Expense,0,CLP,millions,Company filing (synthetic sample),,bsantander_q1_2025.csv,2025-04-29T00:00:00Z
+BSANTANDER,2025,Q1,quarterly,income,sga_expense,SG&A Expense,155000,CLP,millions,Company filing (synthetic sample),,bsantander_q1_2025.csv,2025-04-29T00:00:00Z
+BSANTANDER,2025,Q1,quarterly,income,sbc_expense,Stock-Based Compensation,1200,CLP,millions,Company filing (synthetic sample),,bsantander_q1_2025.csv,2025-04-29T00:00:00Z
+BSANTANDER,2025,Q1,quarterly,income,dep_amort,Depreciation & Amortization,9000,CLP,millions,Company filing (synthetic sample),,bsantander_q1_2025.csv,2025-04-29T00:00:00Z
+BSANTANDER,2025,Q1,quarterly,cash,ocf,Operating Cash Flow,98000,CLP,millions,Company filing (synthetic sample),,bsantander_q1_2025.csv,2025-04-29T00:00:00Z
+BSANTANDER,2025,Q1,quarterly,cash,capex,Capital Expenditure,12000,CLP,millions,Company filing (synthetic sample),,bsantander_q1_2025.csv,2025-04-29T00:00:00Z
+BSANTANDER,2025,Q1,quarterly,balance,cash,Cash & Equivalents,2100000,CLP,millions,Company filing (synthetic sample),,bsantander_q1_2025.csv,2025-04-29T00:00:00Z
+BSANTANDER,2025,Q1,quarterly,balance,total_debt,Total Debt,0,CLP,millions,Company filing (synthetic sample),,bsantander_q1_2025.csv,2025-04-29T00:00:00Z
+BSANTANDER,2025,Q1,quarterly,balance,total_assets,Total Assets,38500000,CLP,millions,Company filing (synthetic sample),,bsantander_q1_2025.csv,2025-04-29T00:00:00Z
+BSANTANDER,2025,Q1,quarterly,balance,shares_out,Shares Outstanding,188446,CLP,millions,Company filing (synthetic sample),,bsantander_q1_2025.csv,2025-04-29T00:00:00Z
+BSANTANDER,2025,Q1,quarterly,returns,dividends_paid,Dividends Paid,85000,CLP,millions,Company filing (synthetic sample),,bsantander_q1_2025.csv,2025-04-29T00:00:00Z
+BSANTANDER,2025,Q1,quarterly,returns,buybacks,Share Buybacks,0,CLP,millions,Company filing (synthetic sample),,bsantander_q1_2025.csv,2025-04-29T00:00:00Z
+COPEC,2025,Q1,quarterly,income,revenue,Revenue,7250000,CLP,millions,Company filing (synthetic sample),,copec_q1_2025.csv,2025-05-08T00:00:00Z
+COPEC,2025,Q1,quarterly,income,gross_profit,Gross Profit,1160000,CLP,millions,Company filing (synthetic sample),,copec_q1_2025.csv,2025-05-08T00:00:00Z
+COPEC,2025,Q1,quarterly,income,operating_income,Operating Income,410000,CLP,millions,Company filing (synthetic sample),,copec_q1_2025.csv,2025-05-08T00:00:00Z
+COPEC,2025,Q1,quarterly,income,ebitda,EBITDA,620000,CLP,millions,Company filing (synthetic sample),,copec_q1_2025.csv,2025-05-08T00:00:00Z
+COPEC,2025,Q1,quarterly,income,net_income,Net Income,185000,CLP,millions,Company filing (synthetic sample),,copec_q1_2025.csv,2025-05-08T00:00:00Z
+COPEC,2025,Q1,quarterly,income,eps,Earnings Per Share,215,CLP,unit,Company filing (synthetic sample),,copec_q1_2025.csv,2025-05-08T00:00:00Z
+COPEC,2025,Q1,quarterly,income,rd_expense,R&D Expense,2000,CLP,millions,Company filing (synthetic sample),,copec_q1_2025.csv,2025-05-08T00:00:00Z
+COPEC,2025,Q1,quarterly,income,sga_expense,SG&A Expense,520000,CLP,millions,Company filing (synthetic sample),,copec_q1_2025.csv,2025-05-08T00:00:00Z
+COPEC,2025,Q1,quarterly,income,sbc_expense,Stock-Based Compensation,1800,CLP,millions,Company filing (synthetic sample),,copec_q1_2025.csv,2025-05-08T00:00:00Z
+COPEC,2025,Q1,quarterly,income,dep_amort,Depreciation & Amortization,210000,CLP,millions,Company filing (synthetic sample),,copec_q1_2025.csv,2025-05-08T00:00:00Z
+COPEC,2025,Q1,quarterly,cash,ocf,Operating Cash Flow,340000,CLP,millions,Company filing (synthetic sample),,copec_q1_2025.csv,2025-05-08T00:00:00Z
+COPEC,2025,Q1,quarterly,cash,capex,Capital Expenditure,290000,CLP,millions,Company filing (synthetic sample),,copec_q1_2025.csv,2025-05-08T00:00:00Z
+COPEC,2025,Q1,quarterly,balance,cash,Cash & Equivalents,780000,CLP,millions,Company filing (synthetic sample),,copec_q1_2025.csv,2025-05-08T00:00:00Z
+COPEC,2025,Q1,quarterly,balance,total_debt,Total Debt,5100000,CLP,millions,Company filing (synthetic sample),,copec_q1_2025.csv,2025-05-08T00:00:00Z
+COPEC,2025,Q1,quarterly,balance,total_assets,Total Assets,18900000,CLP,millions,Company filing (synthetic sample),,copec_q1_2025.csv,2025-05-08T00:00:00Z
+COPEC,2025,Q1,quarterly,balance,shares_out,Shares Outstanding,1330,CLP,millions,Company filing (synthetic sample),,copec_q1_2025.csv,2025-05-08T00:00:00Z
+COPEC,2025,Q1,quarterly,returns,dividends_paid,Dividends Paid,60000,CLP,millions,Company filing (synthetic sample),,copec_q1_2025.csv,2025-05-08T00:00:00Z
+COPEC,2025,Q1,quarterly,returns,buybacks,Share Buybacks,0,CLP,millions,Company filing (synthetic sample),,copec_q1_2025.csv,2025-05-08T00:00:00Z

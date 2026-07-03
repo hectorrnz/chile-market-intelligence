@@ -264,7 +264,7 @@ describe('Phase 8B no-static-terminal-state policy docs', () => {
     const pageSrc = readFileSync(COMPARE_PAGE, 'utf8')
     assert.ok(pageSrc.includes('fundamentalsNote'))
     const i18nSrc = readFileSync(I18N, 'utf8')
-    assert.ok(i18nSrc.includes('Phase 8C'))
+    assert.ok(i18nSrc.includes('interim bridge') || i18nSrc.includes('automated') && i18nSrc.includes('ingestion planned'))
   })
 
   it('Compare page renders the new Market Data panel with a dynamic source badge', () => {

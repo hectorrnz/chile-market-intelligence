@@ -390,12 +390,89 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 8C (upgrade) — Automation-First Financials Architecture, Manual CSV as Interim Bridge** ✓ COMPLETE (2026-07-03)
+
+Upgrades the Phase 8C financials foundation (below) to an explicit **automation-first** design. Manual CSV
+remains the only populated source today, but this was a non-negotiable product requirement: **manual CSV must
+never become the terminal architecture.** Every schema, repository function, ingestion-run log, and UI label
+now treats manual CSV as an interim bridge to establish the canonical schema/validation/persistence/read
+layers — a future automated CMF FECU/XBRL parser, licensed vendor feed, broker feed, or document-ingestion
+pipeline must be able to write into the same 4 tables through the same repository functions with **zero
+redesign**.
+
+**New migration** (`20260705000000_financials_automation_ready.sql`, purely additive/idempotent — never drops
+or renames an existing column): adds `source_file`, `source_as_of`, `ingestion_run_id` (FK →
+`ingestion_runs`), `source_priority` (default 100), `is_superseded` (default false), `superseded_by` to all 4
+financials tables; widens the `source_type` CHECK constraint on each table to accept `manual_csv`, `cmf_fecu`,
+`xbrl`, `vendor_feed`, `broker_feed`, `document_ingestion`, `static_seed`, `derived`; widens `statement_type`
+to accept long-form codes alongside the original `income`/`cash`/`balance`/`returns`.
+
+**Source priority + supersession** (`financialsRepository.ts`): `DEFAULT_SOURCE_PRIORITY` auto-derives an
+integer priority from `source_type` — never hand-set by a caller — `static_seed`(10) < `derived`(50) <
+`manual_csv`(100) < `document_ingestion`(120) < `broker_feed`(140) < `vendor_feed`(150) < `cmf_fecu`(200) <
+`xbrl`(210). `reconcileSupersession()` runs after every upsert: groups rows by logical key (ticker +
+fiscal_year + fiscal_period [+ period_type]), marks every row but the highest-priority one
+`is_superseded = true` pointing `superseded_by` at the winner. The read path
+(`getReportingPeriods`/`getCanonicalReportingPeriods`/`getStatementItems`/`getFinancialMetrics`/
+`getEarningsEvents`) always filters `is_superseded = false` and dedupes defensively by highest priority per
+group. **Verified end-to-end against Production Supabase**: a throwaway script inserted a synthetic
+`cmf_fecu` row over an existing `manual_csv` period via the exact same `upsertReportingPeriods()` function a
+real automated ingestion script would call — the manual row was automatically superseded, the canonical read
+switched over, and after cleanup the system correctly reverted. Zero code changes were needed.
+
+**Human-error controls added to the parser** (`src/lib/financials/csvFinancials.ts`): `normalizeSourceMetadata()`
+rejects a `source_file` that looks like a path (slash, backslash, or Windows drive letter) and validates
+`source_as_of` parses as a real timestamp; `findDuplicates()` rejects rows sharing a logical key within one
+CSV batch (line-numbered errors); a statement-item value with no explicit `scale` is rejected as ambiguous;
+dry-run stays the default, `--write`/`--allow-partial` are explicit opt-ins, and full CSV row content is never
+echoed to logs (counts and line numbers only). **Caught a real bug via this validation**: the
+`earnings_events.template.csv` COPEC "expected" row had one extra comma, shifting every field after it by one
+column — found by the parser's own strict checks, not manual inspection.
+
+**Ingestion script** (`scripts/ingest/financialsCsv.ts`): creates the `ingestion_runs` row **first**
+(`metadata: { ingestionVersion: '8C', sourceType: 'manual_csv', automationReadiness: 'interim_bridge' }`),
+threads that run's `id` as `ingestion_run_id` through every upserted row.
+
+**UI/registry labels** now say "Static fallback · pending automated financials ingestion" and reference
+"manual CSV interim bridge; automated CMF/FECU/XBRL ingestion planned" instead of a bare "Phase 8C" reference
+— `src/lib/dataSourceRegistry.ts`, `src/lib/i18n.ts` (`charting.source`, `compare.fundamentalsNote`,
+`compare.derivedFieldTitle`, `earnings.footer`, EN+ES).
+
+**Tests:** `tests/financialsIngest.test.ts` extended from 49 to 73 tests — ambiguous-scale rejection,
+provenance preservation, path-rejection, duplicate-row detection, `normalizeSourceMetadata`, `VALID_SOURCE_TYPES`
+completeness, and a dedicated automation-first hygiene suite (migration is additive and CHECK-constrains all 8
+source types; repository never hardcodes `source_priority`; supersession implemented; read path filters
+`is_superseded`; ingestion script records `automationReadiness`; no source file frames manual CSV as
+terminal/permanent; CLAUDE.md and `docs/data_source_status.md` document the interim-bridge/automation-first
+constraint).
+
+Build 46 routes · lint 0 · tests 612/612
+
+**Automation-readiness summary:** manual CSV is the only populated source today (an ingestion-coverage gap,
+not an architecture gap). An automated CMF FECU/XBRL parser, vendor feed, broker feed, or document-ingestion
+pipeline replaces the manual step by calling the same `financialsRepository.ts` upsert functions with a
+different `source_type` — the schema is fully source-agnostic and supersession is automatic. Remaining
+human-error risk is confined to the manual-CSV path itself (typos in a source spreadsheet); mitigated by
+strict validation, duplicate detection, and provenance tracking. Next automation step: build an actual
+`cmf_fecu` or `xbrl` provider that writes into this already-ready schema.
+
+Scope limits (explicit, unchanged from base Phase 8C): manual CSV is still the only source implemented; no
+consensus/estimates ingestion; no dividends beyond the raw imported line item; no FX conversion; no
+cross-period YoY for persisted records; no AI summaries; no mobile work; macro/market/auth/portfolio logic
+untouched.
+
+Next: **Phase 8D** (FX/rates + economic calendar live source completion), or building an actual automated
+`cmf_fecu`/`xbrl` provider against the now-ready schema.
+
+---
+
 **Phase 8C — Financial-Statement Ingestion Foundation, Manual CSV First** ✓ COMPLETE (2026-07-03)
 
 Converts Charting, Compare's Fundamentals table, and Earnings from terminal static/sample data into
 persisted (or derived) data wherever a ticker's financials have been imported via CSV — the manual-CSV-first
 step the Phase 8B conversion-path plan called for. No CMF/XBRL automation (still CAPTCHA-blocked), no
-consensus/estimates ingestion, no FX conversion, no AI summaries.
+consensus/estimates ingestion, no FX conversion, no AI summaries. (Immediately upgraded to an automation-first
+architecture the same day — see the Current Phase entry above.)
 
 **New schema** (migration `20260704000000_financials_foundation.sql`, public read / admin-only write, same pattern as macro/market): `company_reporting_periods`, `financial_statement_items`, `financial_metrics` (manual or `derived`, manual wins ties), `earnings_events` (`status` ∈ expected/reported/preliminary/missing — **no consensus/estimate field exists**, so beat/miss is structurally impossible to fabricate for these rows).
 

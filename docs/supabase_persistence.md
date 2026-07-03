@@ -228,12 +228,17 @@ psql $SUPABASE_DATABASE_URL -f supabase/seed.sql
 
 ---
 
-## Financial-Statement Ingestion (Phase 8C)
+## Financial-Statement Ingestion (Phase 8C — automation-first, manual CSV as interim bridge)
 
-Manual CSV import is the first real-data path for Charting, Compare's Fundamentals table, and Earnings —
-replacing the static `fundamentals.json`/`stockPrices.json`/`earnings.json` terminal-static state with
-persisted (and, for a handful of ratios, derived) data, per ticker, as CSVs are imported. No CMF/XBRL
-automation exists yet — see `docs/data_source_status.md`'s "Conversion Paths" section for that path.
+Manual CSV import is the **first real-data path**, not the final architecture, for Charting, Compare's
+Fundamentals table, and Earnings — replacing the static `fundamentals.json`/`stockPrices.json`/`earnings.json`
+terminal-static state with persisted (and, for a handful of ratios, derived) data, per ticker, as CSVs are
+imported. The schema, repository, and ingestion-run logging were designed **automation-first**: every table,
+column, and code path is source-agnostic so that a future automated CMF FECU/XBRL parser, a licensed vendor
+data feed, a broker-supplied statement feed, or a document-ingestion (PDF/filing) pipeline can write into the
+exact same 4 tables through the exact same `financialsRepository.ts` upsert functions — no redesign required.
+Manual CSV must never be treated as a terminal state; see `docs/data_source_status.md`'s "Automation-first
+source architecture" section and "Conversion Paths" section for the full design rationale and verification.
 
 **CSV templates** (safe to commit; contain only synthetic sample data): `data/import_templates/`
 - `financial_reporting_periods.template.csv` — one row per (ticker, fiscal_year, fiscal_period, period_type)
@@ -241,23 +246,29 @@ automation exists yet — see `docs/data_source_status.md`'s "Conversion Paths" 
 - `financial_metrics.template.csv` — optional manually-supplied ratios (most are auto-derived — see below)
 - `earnings_events.template.csv` — one row per reporting event, `status` ∈ `expected/reported/preliminary/missing`
 
+Every template also carries **provenance columns** — `source_name`, `source_url`, `source_file` (bare filename
+only, never a path), `source_as_of` (ISO timestamp) — so imported rows can be audited or reconciled by a later
+automated ingestion run.
+
 **Never commit a real/private CSV** — only the `.template.csv` files (synthetic data) belong in the repo. Real imports are run locally from a file outside version control.
 
-**Parser/validation:** `src/lib/financials/csvFinancials.ts` — pure functions (`parseCsvRows`, `validateReportingPeriodRow`, `validateStatementItemRow`, `validateFinancialMetricRow`, `validateEarningsEventRow`, `buildFinancialImportPayload`). Every row is validated before any write: ticker must be in the covered universe, fiscal year/period/dates must be well-formed, numeric cells are NaN/Infinity-guarded (empty cell → `null`, never `NaN`), errors carry the originating CSV line number.
+**Parser/validation:** `src/lib/financials/csvFinancials.ts` — pure functions (`parseCsvRows`, `validateReportingPeriodRow`, `validateStatementItemRow`, `validateFinancialMetricRow`, `validateEarningsEventRow`, `buildFinancialImportPayload`, `normalizeSourceMetadata`, `findDuplicates`). Every row is validated before any write: ticker must be in the covered universe, fiscal year/period/dates must be well-formed, numeric cells are NaN/Infinity-guarded (empty cell → `null`, never `NaN`), a value with no explicit `scale` is rejected as ambiguous, `source_file` is rejected if it looks like a path (forward slash, backslash, or a Windows drive letter), duplicate rows sharing the same logical key within one CSV are rejected, and errors carry the originating CSV line number.
 
-**Auto-derived metrics:** `deriveFinancialMetrics()` computes `ebitda_margin`, `gross_margin`, `op_margin`, `fcf` (`ocf − capex`), `net_debt` (`total_debt − cash`), and `net_debt_ebitda` directly from imported statement items after each import — no need to supply these manually unless overriding. A manually-supplied value for the same `metric_code` + period takes precedence over the derived one (`source_type: 'manual_csv'` beats `'derived'`).
+**Auto-derived metrics:** `deriveFinancialMetrics()` computes `ebitda_margin`, `gross_margin`, `op_margin`, `fcf` (`ocf − capex`), `net_debt` (`total_debt − cash`), and `net_debt_ebitda` directly from imported statement items after each import — no need to supply these manually unless overriding.
+
+**Source priority and supersession (automation-first mechanism):** every row in all 4 tables carries `source_type`, `source_priority` (integer, higher = more authoritative, auto-derived from `source_type` via `DEFAULT_SOURCE_PRIORITY` in `financialsRepository.ts` — never hand-set by ingestion callers), `is_superseded`, and `superseded_by`. Priority convention: `static_seed`(10) < `derived`(50) < `manual_csv`(100) < `document_ingestion`(120) < `broker_feed`(140) < `vendor_feed`(150) < `cmf_fecu`(200) < `xbrl`(210). After every upsert, `reconcileSupersession()` groups rows sharing a logical key (ticker + fiscal_year + fiscal_period [+ period_type]) across different `source_type`s, and marks every row but the highest-priority one `is_superseded = true` pointing `superseded_by` at the winner. The read path (`getReportingPeriods`, `getCanonicalReportingPeriods`, `getStatementItems`, `getFinancialMetrics`, `getEarningsEvents`) always filters `is_superseded = false` and additionally dedupes defensively by picking the highest-priority row per logical group. This means a future `cmf_fecu` or `xbrl` ingestion run automatically outranks and supersedes an existing `manual_csv` row for the same period **with zero code changes** — verified end-to-end with a live throwaway test against Production Supabase (insert a synthetic `cmf_fecu` row for a period that already had a `manual_csv` row → the manual row was automatically marked superseded and `getCanonicalReportingPeriods()` switched to the new row → cleanup reverted state correctly).
 
 **Ingestion script:** `scripts/ingest/financialsCsv.ts`
 ```bash
 npm run ingest:financials:dry -- --reporting-periods path.csv --statement-items path.csv --metrics path.csv --earnings path.csv
 npm run ingest:financials -- --reporting-periods path.csv --statement-items path.csv --write
 ```
-Dry-run by default (no `--write` flag needed); aborts before any write if any row fails validation, unless `--allow-partial` is passed (invalid rows are then skipped, not written). Records one `ingestion_runs` row per invocation (`provider: 'Manual CSV'`, `job_type: 'financials_csv_import'`, `rows_seen`/`rows_inserted`/`rows_failed`, `metadata.ingestionVersion: '8C'`).
+Dry-run by default (no `--write` flag needed); aborts before any write if any row fails validation, unless `--allow-partial` is passed (invalid rows are then skipped, not written). Creates the `ingestion_runs` row **first** (`provider: 'Manual CSV'`, `job_type: 'financials_csv_import'`, `status: 'running'`, `metadata: { ingestionVersion: '8C', sourceType: 'manual_csv', automationReadiness: 'interim_bridge' }`), threads that run's `id` as `ingestion_run_id` through every upserted row, then updates the same row with final `rows_seen`/`rows_inserted`/`rows_failed`/status. Never echoes full CSV row contents to logs — only counts and line-numbered reasons.
 
-**Read path:** `src/lib/db/repositories/financialsRepository.ts` exposes `getReportingPeriods`, `getStatementItems`, `getFinancialMetrics`, `getLatestFinancialMetrics`, `getLatestStatementItems`, `getEarningsEvents`, `getFinancialsCoverage`. Server-only resolvers (`src/lib/financials/resolveFinancials.ts`) shape this into the exact `FundamentalRecord[]` type Charting already knows how to aggregate, so the UI's quarterly/TTM/annual logic is unchanged regardless of source.
+**Read path:** `src/lib/db/repositories/financialsRepository.ts` exposes `getReportingPeriods`, `getCanonicalReportingPeriods`, `getStatementItems`, `getFinancialMetrics`, `getLatestFinancialMetrics`, `getLatestStatementItems`, `getEarningsEvents`, `getFinancialsCoverage` — all source-agnostic (never hardcode `manual_csv` in a read/write path). Server-only resolvers (`src/lib/financials/resolveFinancials.ts`) shape this into the exact `FundamentalRecord[]` type Charting already knows how to aggregate, so the UI's quarterly/TTM/annual logic is unchanged regardless of source.
 
 **Limitations (Phase 8C, explicit):**
-- Manual CSV import only — no automated CMF FECU/XBRL parsing (CMF's public portal is CAPTCHA-blocked, same constraint as Hechos Esenciales).
+- Manual CSV is the only source populated **today** — no automated CMF FECU/XBRL parsing yet (CMF's public portal is CAPTCHA-blocked, same constraint as Hechos Esenciales) — but the schema/repository already support it as a drop-in `source_type` with automatic supersession, so this is an ingestion-coverage gap, not an architecture gap.
 - No consensus/analyst-estimates ingestion — persisted (imported) earnings rows never show a beat/miss surprise percentage.
 - No dividends beyond what's imported as a raw `dividends_paid` line item (used only to derive dividend yield on Compare).
 - No FX conversion.

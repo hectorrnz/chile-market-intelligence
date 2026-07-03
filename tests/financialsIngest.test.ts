@@ -21,9 +21,11 @@ import {
   normalizeTicker,
   normalizePeriod,
   normalizeNumericValue,
+  normalizeSourceMetadata,
   isCoveredTicker,
   buildFinancialImportPayload,
   deriveFinancialMetrics,
+  VALID_SOURCE_TYPES,
   type ParsedCsvRow,
 } from '../src/lib/financials/csvFinancials.ts'
 import { buildFundamentals, type PersistedFundamentalsInput } from '../src/lib/compare/compareStatic.ts'
@@ -31,6 +33,7 @@ import { buildFundamentals, type PersistedFundamentalsInput } from '../src/lib/c
 const ROOT = join(import.meta.dirname, '..')
 const TEMPLATES_DIR = join(ROOT, 'data/import_templates')
 const MIGRATION = join(ROOT, 'supabase/migrations/20260704000000_financials_foundation.sql')
+const AUTOMATION_MIGRATION = join(ROOT, 'supabase/migrations/20260705000000_financials_automation_ready.sql')
 const STATUS_DOC = join(ROOT, 'docs/data_source_status.md')
 const CHARTING_PAGE = join(ROOT, 'src/app/chart-builder/page.tsx')
 const EARNINGS_PAGE = join(ROOT, 'src/app/earnings/page.tsx')
@@ -161,7 +164,7 @@ describe('validateReportingPeriodRow', () => {
 })
 
 describe('validateStatementItemRow', () => {
-  const valid = { ticker: 'SQM-B', fiscal_year: '2025', fiscal_period: 'Q1', period_type: 'quarterly', statement_type: 'income', line_item_code: 'revenue', line_item_name: 'Revenue', value: '780000', unit: 'CLP' }
+  const valid = { ticker: 'SQM-B', fiscal_year: '2025', fiscal_period: 'Q1', period_type: 'quarterly', statement_type: 'income', line_item_code: 'revenue', line_item_name: 'Revenue', value: '780000', unit: 'CLP', scale: 'millions' }
 
   it('accepts a valid row', () => {
     const r = validateStatementItemRow(row(valid))
@@ -183,6 +186,27 @@ describe('validateStatementItemRow', () => {
   it('rejects a missing line_item_code', () => {
     const r = validateStatementItemRow(row({ ...valid, line_item_code: '' }))
     assert.equal(r.ok, false)
+  })
+
+  it('rejects a value with no explicit scale (ambiguous unit/scale human-error control)', () => {
+    const r = validateStatementItemRow(row({ ...valid, scale: '' }))
+    assert.equal(r.ok, false)
+    if (!r.ok) assert.match(r.error.reason, /ambiguous scale/)
+  })
+
+  it('preserves provenance fields (source_file, source_as_of)', () => {
+    const r = validateStatementItemRow(row({ ...valid, source_file: 'sqm_q1_2025.csv', source_as_of: '2025-05-14T00:00:00Z' }))
+    assert.equal(r.ok, true)
+    if (r.ok) {
+      assert.equal(r.value.sourceFile, 'sqm_q1_2025.csv')
+      assert.equal(r.value.sourceAsOf, '2025-05-14T00:00:00.000Z')
+    }
+  })
+
+  it('rejects a source_file that looks like a path (never leak a local path)', () => {
+    const r = validateStatementItemRow(row({ ...valid, source_file: 'C:\\Users\\me\\private\\sqm.csv' }))
+    assert.equal(r.ok, false)
+    if (!r.ok) assert.match(r.error.reason, /bare filename/)
   })
 })
 
@@ -249,6 +273,87 @@ describe('buildFinancialImportPayload', () => {
     assert.equal(payload.reportingPeriods.length, 1)
     assert.equal(payload.errors.length, 1)
     assert.equal(payload.errors[0].line, 3)
+  })
+
+  it('detects a duplicate reporting-period row within the same import batch', () => {
+    const rows: ParsedCsvRow[] = [
+      row({ ticker: 'SQM-B', fiscal_year: '2025', fiscal_period: 'Q1', period_type: 'quarterly', period_end_date: '2025-03-31' }, 2),
+      row({ ticker: 'SQM-B', fiscal_year: '2025', fiscal_period: 'Q1', period_type: 'quarterly', period_end_date: '2025-03-31' }, 3),
+    ]
+    const payload = buildFinancialImportPayload({ reportingPeriodRows: rows })
+    assert.ok(payload.errors.some((e) => e.line === 3 && /duplicate/i.test(e.reason)))
+  })
+
+  it('detects a duplicate statement-item row (same ticker/period/statement_type/line_item_code)', () => {
+    const base = { ticker: 'SQM-B', fiscal_year: '2025', fiscal_period: 'Q1', period_type: 'quarterly', statement_type: 'income', line_item_code: 'revenue', value: '780000', scale: 'millions' }
+    const rows: ParsedCsvRow[] = [row(base, 2), row(base, 3)]
+    const payload = buildFinancialImportPayload({ statementItemRows: rows })
+    assert.ok(payload.errors.some((e) => e.line === 3 && /duplicate/i.test(e.reason)))
+  })
+
+  it('does not flag different tickers or different periods as duplicates', () => {
+    const rows: ParsedCsvRow[] = [
+      row({ ticker: 'SQM-B', fiscal_year: '2025', fiscal_period: 'Q1', period_type: 'quarterly', period_end_date: '2025-03-31' }, 2),
+      row({ ticker: 'COPEC', fiscal_year: '2025', fiscal_period: 'Q1', period_type: 'quarterly', period_end_date: '2025-03-31' }, 3),
+      row({ ticker: 'SQM-B', fiscal_year: '2025', fiscal_period: 'Q2', period_type: 'quarterly', period_end_date: '2025-06-30' }, 4),
+    ]
+    const payload = buildFinancialImportPayload({ reportingPeriodRows: rows })
+    assert.deepEqual(payload.errors, [])
+    assert.equal(payload.reportingPeriods.length, 3)
+  })
+})
+
+// ─── Source metadata / provenance ──────────────────────────────────────────────
+
+describe('normalizeSourceMetadata', () => {
+  it('preserves source_name/source_url/source_file/source_as_of', () => {
+    const r = normalizeSourceMetadata({ source_name: 'Company filing', source_url: 'https://example.com/x.pdf', source_file: 'sqm_q1_2025.csv', source_as_of: '2025-05-14T00:00:00Z' })
+    assert.equal(r.ok, true)
+    if (r.ok) {
+      assert.equal(r.value.sourceName, 'Company filing')
+      assert.equal(r.value.sourceUrl, 'https://example.com/x.pdf')
+      assert.equal(r.value.sourceFile, 'sqm_q1_2025.csv')
+      assert.equal(r.value.sourceAsOf, '2025-05-14T00:00:00.000Z')
+    }
+  })
+
+  it('rejects a source_file containing a forward-slash path', () => {
+    const r = normalizeSourceMetadata({ source_file: '/home/user/private/sqm.csv' })
+    assert.equal(r.ok, false)
+  })
+
+  it('rejects a source_file containing a Windows drive path', () => {
+    const r = normalizeSourceMetadata({ source_file: 'C:\\Users\\me\\sqm.csv' })
+    assert.equal(r.ok, false)
+  })
+
+  it('rejects an invalid source_as_of timestamp', () => {
+    const r = normalizeSourceMetadata({ source_as_of: 'not-a-date' })
+    assert.equal(r.ok, false)
+  })
+
+  it('all fields optional — empty cells produce nulls, not errors', () => {
+    const r = normalizeSourceMetadata({})
+    assert.equal(r.ok, true)
+    if (r.ok) {
+      assert.equal(r.value.sourceName, null)
+      assert.equal(r.value.sourceUrl, null)
+      assert.equal(r.value.sourceFile, null)
+      assert.equal(r.value.sourceAsOf, null)
+    }
+  })
+})
+
+describe('VALID_SOURCE_TYPES — automation-first source set', () => {
+  it('includes manual_csv as one option, never the only option', () => {
+    assert.ok(VALID_SOURCE_TYPES.includes('manual_csv'))
+    assert.ok(VALID_SOURCE_TYPES.length > 1)
+  })
+
+  it('includes every automated-source type the spec requires', () => {
+    for (const t of ['cmf_fecu', 'xbrl', 'vendor_feed', 'broker_feed', 'document_ingestion', 'static_seed', 'derived']) {
+      assert.ok(VALID_SOURCE_TYPES.includes(t as typeof VALID_SOURCE_TYPES[number]), `missing source_type: ${t}`)
+    }
   })
 })
 
@@ -405,5 +510,90 @@ describe('Phase 8C source labels and hygiene', () => {
   it('no private/real CSV files are tracked — only .template.csv files exist', () => {
     const files = readdirSync(TEMPLATES_DIR)
     for (const f of files) assert.ok(f.endsWith('.template.csv'), `unexpected non-template file in import_templates: ${f}`)
+  })
+})
+
+// ─── Automation-first architecture ─────────────────────────────────────────────
+
+describe('Phase 8C automation-first architecture', () => {
+  it('automation-ready migration adds provenance/supersession columns to all 4 tables', () => {
+    const src = readFileSync(AUTOMATION_MIGRATION, 'utf8')
+    for (const table of ['company_reporting_periods', 'financial_statement_items', 'financial_metrics', 'earnings_events']) {
+      assert.ok(src.includes(`alter table ${table} add column if not exists source_priority`), `missing source_priority on ${table}`)
+      assert.ok(src.includes(`alter table ${table} add column if not exists is_superseded`), `missing is_superseded on ${table}`)
+      assert.ok(src.includes(`alter table ${table} add column if not exists ingestion_run_id`), `missing ingestion_run_id on ${table}`)
+    }
+  })
+
+  it('automation-ready migration constrains source_type to the full automation-first set on every table', () => {
+    const src = readFileSync(AUTOMATION_MIGRATION, 'utf8')
+    const matches = src.match(/check \(source_type in \([^)]+\)\)/g) ?? []
+    assert.equal(matches.length, 4, 'expected one source_type CHECK constraint per financials table')
+    for (const m of matches) {
+      for (const t of ["'manual_csv'", "'cmf_fecu'", "'xbrl'", "'vendor_feed'", "'broker_feed'", "'document_ingestion'", "'static_seed'", "'derived'"]) {
+        assert.ok(m.includes(t), `source_type CHECK missing ${t}: ${m}`)
+      }
+    }
+  })
+
+  it('migration never renames/drops the original Phase 8C statement_type or status values (backward compatible)', () => {
+    const src = readFileSync(AUTOMATION_MIGRATION, 'utf8')
+    assert.ok(!/drop column/i.test(src), 'automation-ready migration must be purely additive')
+    assert.ok(!/drop constraint.*statement_type/i.test(src))
+  })
+
+  it('repository derives source_priority from source_type automatically (never hardcoded to manual_csv)', () => {
+    const src = readFileSync(FINANCIALS_REPO, 'utf8')
+    assert.ok(src.includes('DEFAULT_SOURCE_PRIORITY'))
+    assert.ok(src.includes('cmf_fecu'))
+    assert.ok(src.includes('xbrl'))
+    assert.ok(src.includes('priorityFor'))
+  })
+
+  it('repository implements source-agnostic supersession reconciliation', () => {
+    const src = readFileSync(FINANCIALS_REPO, 'utf8')
+    assert.ok(src.includes('reconcileSupersession'))
+    assert.ok(src.includes('is_superseded'))
+    assert.ok(src.includes('superseded_by'))
+  })
+
+  it('read path filters is_superseded and picks canonical (highest-priority) rows, not raw manual_csv-only logic', () => {
+    const src = readFileSync(FINANCIALS_REPO, 'utf8')
+    assert.ok(src.includes('getCanonicalReportingPeriods'))
+    assert.ok(src.includes("eq('is_superseded', false)"))
+  })
+
+  it('ingestion script records automationReadiness: interim_bridge and sourceType in ingestion_runs metadata', () => {
+    const src = readFileSync(INGEST_SCRIPT, 'utf8')
+    assert.ok(src.includes("AUTOMATION_READINESS = 'interim_bridge'"))
+    assert.ok(src.includes('automationReadiness'))
+    assert.ok(src.includes('sourceType'))
+  })
+
+  it('ingestion script creates the ingestion_runs row up front and threads its id through every upsert', () => {
+    const src = readFileSync(INGEST_SCRIPT, 'utf8')
+    assert.ok(src.includes('ingestionRunId'))
+    assert.ok(src.includes('upsertReportingPeriods(payload.reportingPeriods, ingestionRunId)'))
+    assert.ok(src.includes('upsertEarningsEvents(payload.earningsEvents, periodResult.idsByKey, ingestionRunId)'))
+  })
+
+  it('never echoes full CSV row contents to logs — only counts and line-numbered reasons', () => {
+    const src = readFileSync(INGEST_SCRIPT, 'utf8')
+    assert.ok(!/console\.(log|warn)\(.*payload\.reportingPeriods\)/.test(src))
+    assert.ok(!/console\.(log|warn)\(.*payload\.statementItems\)/.test(src))
+  })
+
+  it('no source code path frames manual_csv as the final/terminal/permanent architecture', () => {
+    for (const file of [FINANCIALS_REPO, INGEST_SCRIPT, join(ROOT, 'src/lib/financials/csvFinancials.ts')]) {
+      const src = readFileSync(file, 'utf8')
+      assert.ok(!/manual_csv is the (final|terminal|permanent)/i.test(src), `${file} frames manual_csv as terminal`)
+    }
+  })
+
+  it('CLAUDE.md and docs/data_source_status.md document the automation-first / interim-bridge constraint', () => {
+    const claudeMd = readFileSync(join(ROOT, 'CLAUDE.md'), 'utf8')
+    const statusDoc = readFileSync(STATUS_DOC, 'utf8')
+    assert.ok(/interim bridge/i.test(claudeMd) || /automation-first/i.test(claudeMd))
+    assert.ok(/interim bridge/i.test(statusDoc) || /automation-first/i.test(statusDoc))
   })
 })

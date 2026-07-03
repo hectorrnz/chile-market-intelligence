@@ -1,5 +1,5 @@
-ticker,fiscal_year,fiscal_period,period_type,report_date,event_date,status,revenue,ebitda,net_income,eps,currency,source_name,source_url
-SQM-B,2025,Q1,quarterly,2025-05-14,2025-05-14,reported,780000,195000,115000,405,CLP,Company filing (synthetic sample),
-BSANTANDER,2025,Q1,quarterly,2025-04-29,2025-04-29,reported,410000,,142000,1.85,CLP,Company filing (synthetic sample),
-COPEC,2025,Q1,quarterly,2025-05-08,2025-05-08,reported,7250000,620000,185000,215,CLP,Company filing (synthetic sample),
-COPEC,2025,Q2,quarterly,,2025-08-07,expected,,,,,,CLP,Company filing calendar (synthetic sample),
+ticker,fiscal_year,fiscal_period,period_type,report_date,event_date,status,revenue,ebitda,net_income,eps,currency,source_name,source_url,source_file,source_as_of
+SQM-B,2025,Q1,quarterly,2025-05-14,2025-05-14,reported,780000,195000,115000,405,CLP,Company filing (synthetic sample),,sqm_q1_2025.csv,2025-05-14T00:00:00Z
+BSANTANDER,2025,Q1,quarterly,2025-04-29,2025-04-29,reported,410000,,142000,1.85,CLP,Company filing (synthetic sample),,bsantander_q1_2025.csv,2025-04-29T00:00:00Z
+COPEC,2025,Q1,quarterly,2025-05-08,2025-05-08,reported,7250000,620000,185000,215,CLP,Company filing (synthetic sample),,copec_q1_2025.csv,2025-05-08T00:00:00Z
+COPEC,2025,Q2,quarterly,,2025-08-07,expected,,,,,CLP,Company filing calendar (synthetic sample),,copec_calendar_2025.csv,2025-06-01T00:00:00Z

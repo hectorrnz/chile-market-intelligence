@@ -778,6 +778,12 @@ export interface Database {
           source_type: string
           source_name: string | null
           source_url: string | null
+          source_file: string | null
+          source_as_of: string | null
+          ingestion_run_id: string | null
+          source_priority: number
+          is_superseded: boolean
+          superseded_by: string | null
           filing_id: string | null
           metadata: Record<string, unknown>
           created_at: string
@@ -795,6 +801,12 @@ export interface Database {
           source_type: string
           source_name?: string | null
           source_url?: string | null
+          source_file?: string | null
+          source_as_of?: string | null
+          ingestion_run_id?: string | null
+          source_priority?: number
+          is_superseded?: boolean
+          superseded_by?: string | null
           filing_id?: string | null
           metadata?: Record<string, unknown>
         }
@@ -807,6 +819,12 @@ export interface Database {
           currency?: string
           source_name?: string | null
           source_url?: string | null
+          source_file?: string | null
+          source_as_of?: string | null
+          ingestion_run_id?: string | null
+          source_priority?: number
+          is_superseded?: boolean
+          superseded_by?: string | null
           filing_id?: string | null
           metadata?: Record<string, unknown>
         }
@@ -823,6 +841,13 @@ export interface Database {
           unit: string
           scale: string | null
           source_type: string
+          source_name: string | null
+          source_url: string | null
+          source_file: string | null
+          source_as_of: string | null
+          ingestion_run_id: string | null
+          source_priority: number
+          is_superseded: boolean
           metadata: Record<string, unknown>
           created_at: string
         }
@@ -837,12 +862,20 @@ export interface Database {
           unit?: string
           scale?: string | null
           source_type: string
+          source_name?: string | null
+          source_url?: string | null
+          source_file?: string | null
+          source_as_of?: string | null
+          ingestion_run_id?: string | null
+          source_priority?: number
+          is_superseded?: boolean
           metadata?: Record<string, unknown>
         }
         Update: {
           value?: number | null
           unit?: string
           scale?: string | null
+          is_superseded?: boolean
           metadata?: Record<string, unknown>
         }
       }
@@ -856,7 +889,14 @@ export interface Database {
           value: number | null
           unit: string | null
           source_type: string
+          source_name: string | null
+          source_url: string | null
+          source_file: string | null
+          source_as_of: string | null
+          ingestion_run_id: string | null
           calculation_method: string | null
+          source_priority: number
+          is_superseded: boolean
           metadata: Record<string, unknown>
           created_at: string
         }
@@ -869,13 +909,21 @@ export interface Database {
           value?: number | null
           unit?: string | null
           source_type: string
+          source_name?: string | null
+          source_url?: string | null
+          source_file?: string | null
+          source_as_of?: string | null
+          ingestion_run_id?: string | null
           calculation_method?: string | null
+          source_priority?: number
+          is_superseded?: boolean
           metadata?: Record<string, unknown>
         }
         Update: {
           value?: number | null
           unit?: string | null
           calculation_method?: string | null
+          is_superseded?: boolean
           metadata?: Record<string, unknown>
         }
       }
@@ -897,6 +945,12 @@ export interface Database {
           source_type: string
           source_name: string | null
           source_url: string | null
+          source_file: string | null
+          source_as_of: string | null
+          ingestion_run_id: string | null
+          source_priority: number
+          is_superseded: boolean
+          superseded_by: string | null
           reporting_period_id: string | null
           metadata: Record<string, unknown>
           created_at: string
@@ -919,6 +973,12 @@ export interface Database {
           source_type: string
           source_name?: string | null
           source_url?: string | null
+          source_file?: string | null
+          source_as_of?: string | null
+          ingestion_run_id?: string | null
+          source_priority?: number
+          is_superseded?: boolean
+          superseded_by?: string | null
           reporting_period_id?: string | null
           metadata?: Record<string, unknown>
         }
@@ -935,6 +995,12 @@ export interface Database {
           eps?: number | null
           source_name?: string | null
           source_url?: string | null
+          source_file?: string | null
+          source_as_of?: string | null
+          ingestion_run_id?: string | null
+          source_priority?: number
+          is_superseded?: boolean
+          superseded_by?: string | null
           reporting_period_id?: string | null
           metadata?: Record<string, unknown>
         }
