@@ -442,3 +442,22 @@ npm run ingest:cmf-financials -- --ticker COPEC --write # writes only if the dry
 ```
 
 See `docs/cmf_xbrl_provider_discovery.md` for the full feasibility assessment and exactly what was verified.
+
+## Phase 9A — Structured Notes (PDF extraction foundation)
+
+Adds the **Structured Notes** module. New migration
+`20260706000000_structured_notes_foundation.sql` (7 user-scoped tables, RLS
+`auth.uid() = user_id`, ownership-guard trigger) — apply via the Supabase
+Dashboard SQL Editor before deploying commits that include this phase
+(idempotent). New dependency `unpdf` (serverless pdf.js text extraction; no
+native deps, Vercel-compatible). No new env vars. Middleware now protects
+`/structured-notes` + `/api/structured-notes` (authenticated-only, same pattern
+as watchlist/portfolio).
+
+New routes: `/structured-notes`, `/structured-notes/[id]`, and
+`/api/structured-notes` (+ `/extract`, `/import`, `/[id]`, `/[id]/allocations`,
+`/[id]/allocations/[allocationId]`). Uploaded PDFs are parsed server-side and
+never persisted or served publicly. **Never commit the real workbook or private
+term-sheet PDFs** — only the sanitized text fixture under
+`tests/fixtures/structured-notes/` belongs in the repo. See
+`docs/structured_notes_design.md` and `docs/structured_notes_workbook_mapping.md`.

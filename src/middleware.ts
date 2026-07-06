@@ -22,8 +22,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { getSupabasePublicConfig } from '@/lib/supabase/env'
 
-const PROTECTED_PAGES  = ['/watchlist', '/portfolio']
-const PROTECTED_API    = ['/api/watchlists', '/api/portfolios']
+const PROTECTED_PAGES  = ['/watchlist', '/portfolio', '/structured-notes']
+const PROTECTED_API    = ['/api/watchlists', '/api/portfolios', '/api/structured-notes']
 
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl

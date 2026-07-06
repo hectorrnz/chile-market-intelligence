@@ -507,3 +507,27 @@ fallback) and, for a single live history series, the `seriesId`. The data shape
 is identical for live and static, so fallback never changes the UI layout. UI
 display convention is unchanged: value first, change second in one pair of
 parentheses, no bp/pp suffixes.
+
+---
+
+## Entity: Structured Notes (Phase 9A)
+
+Internal, user-scoped structured-note tracking — replaces the legacy `NUEVA BASE - Notas Estructuradas.xlsx`.
+Populated automation-first via term-sheet PDF extraction; manual entry is a fallback. Full audit + workbook
+mapping in `docs/structured_notes_workbook_mapping.md`; design in `docs/structured_notes_design.md`.
+
+Tables (migration `20260706000000_structured_notes_foundation.sql`, all user-scoped, RLS `auth.uid()=user_id`):
+
+- **structured_notes** — note header + terms + barriers + `source_type`/`source_file_name`/`confidence_score`/
+  `extraction_run_id` provenance; `status` ∈ active/autocalled/matured/defaulted/cancelled/draft.
+- **structured_note_underlyings** — per-underlying `initial/strike/knock_in/coupon/autocall` levels + pct +
+  `yahoo_symbol` (Bloomberg ticker mapped to Yahoo; **no Bloomberg call in the app**).
+- **structured_note_observations** — coupon/autocall/final schedule (`observation_type`, `valuation_date`,
+  `payment_date`, `status`).
+- **structured_note_allocations** — **internal** entity/sociedad notional split (never extracted from a PDF).
+- **structured_note_price_snapshots** — persisted Yahoo levels (compute-on-request today).
+- **structured_note_extraction_runs** — one audit row per extraction attempt (confidence, warnings, errors, payload).
+- **structured_note_extracted_fields** — per-field provenance (raw excerpt, confidence, page, section, warning).
+
+**No consensus/estimate fields exist** on any structured-note table. Market levels are always read live from
+Yahoo (or reported `unavailable`), never fabricated.

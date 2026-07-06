@@ -598,8 +598,10 @@ describe('Phase 6D middleware — no scope expansion beyond existing protected r
     assert.ok(pagesMatch && apiMatch)
     const pages = JSON.parse(pagesMatch![1].replace(/'/g, '"'))
     const apis = JSON.parse(apiMatch![1].replace(/'/g, '"'))
-    assert.deepEqual(pages.sort(), ['/portfolio', '/watchlist'])
-    assert.deepEqual(apis.sort(), ['/api/portfolios', '/api/watchlists'])
+    // Pre-9A routes still protected; Phase 9A adds structured-notes (no other creep).
+    assert.ok(pages.includes('/portfolio') && pages.includes('/watchlist'))
+    assert.deepEqual(pages.sort(), ['/portfolio', '/structured-notes', '/watchlist'])
+    assert.deepEqual(apis.sort(), ['/api/portfolios', '/api/structured-notes', '/api/watchlists'])
   })
 
   it('cron routes remain unblocked', () => {

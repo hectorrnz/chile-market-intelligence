@@ -798,3 +798,33 @@ News/Hechos Relevantes/FX/rates/calendar untouched; macro/market/auth/portfolio 
 Next: extend the verified issuer map (manually, per issuer, never guessed), add a zip-extraction step, and
 exercise the fetch chain against more tickers/periods before considering any scheduled ingestion — or move to
 **Phase 8D** (FX/rates + economic calendar live source completion) if CMF/XBRL automation is deprioritized.
+
+---
+
+## Phase 9A — Structured Notes Foundation + Excel Workbook Audit + PDF Extraction MVP ✓ COMPLETE (2026-07-06)
+
+New **Structured Notes** module (`/structured-notes`) — automation-first replacement for the legacy
+`NUEVA BASE - Notas Estructuradas.xlsx`. Upload term-sheet PDF → deterministic auto-extraction → review →
+import → auto-fetch live underlying levels (Yahoo, replacing the workbook's Bloomberg `BDP`) → auto-compute
+barriers / distance to barrier / worst-of risk / current notional / issuer exposure. Manual entry is a
+fallback, never the terminal design. See `docs/structured_notes_design.md` and
+`docs/structured_notes_workbook_mapping.md`.
+
+- **Schema:** migration `20260706000000_structured_notes_foundation.sql` — 7 user-scoped tables (RLS
+  `auth.uid()=user_id`, ownership-guard trigger on child tables).
+- **PDF extraction MVP:** `unpdf` text extraction + a deterministic regex/keyword parser for the **Citi CGMFL
+  "Memory Coupon Barrier Autocall"** family (no OCR, no AI). Verified end-to-end against the real sample
+  `XS3180975347` (confidence 1.0). Per-field confidence + provenance; critical-field validation rejects
+  incomplete extractions.
+- **Calculations:** pure, NaN/Infinity-guarded, workbook-parity (barrier=strike×pct; Caída=barrier/current−1;
+  worst-of coupon/autocall; current notional; issuer/entity exposure). Missing market data → `unavailable`.
+- **API + UI:** auth-only routes (`extract`/`import`/list/detail/allocations); list page (upload→review→import)
+  + detail page (terms · underlyings · schedule · internal allocations · live levels & distance to barrier ·
+  provenance). Full EN/ES i18n; nav item + icon.
+- **Tests:** 69 new tests (calculations, extraction against a sanitized fixture, workbook mapping + security +
+  no-private-file guards). Build 54 routes · lint 0 · tests 721.
+
+Scope limits: Citi CGMFL family only; no OCR/AI; no scheduled monitoring; price snapshots compute-on-request;
+macro/market/auth/watchlist/portfolio/financials untouched; no mobile work.
+
+Next: **Phase 9B** (parser generalization + scheduled monitoring) or **Phase 8C.2** (CMF/XBRL financials ingestion).

@@ -1,22 +1,23 @@
 import type { Lang, Translation } from '@/lib/i18n'
 
 export interface NavItem {
-  key: 'home' | 'stocks' | 'compare' | 'charting' | 'macro' | 'earnings' | 'hechos' | 'watchlist' | 'portfolio'
+  key: 'home' | 'stocks' | 'compare' | 'charting' | 'macro' | 'earnings' | 'hechos' | 'watchlist' | 'portfolio' | 'structuredNotes'
   href: string
   icon: string
   soon?: boolean
 }
 
 export const navItems: NavItem[] = [
-  { key: 'home',      href: '/',                  icon: 'home' },
-  { key: 'stocks',    href: '/stocks',             icon: 'chart' },
-  { key: 'compare',   href: '/compare',            icon: 'compare' },
-  { key: 'charting',  href: '/chart-builder',      icon: 'gf' },
-  { key: 'macro',     href: '/macro',              icon: 'trending' },
-  { key: 'earnings',  href: '/earnings',           icon: 'document' },
-  { key: 'hechos',    href: '/hechos-esenciales',  icon: 'alert' },
-  { key: 'watchlist', href: '/watchlist',          icon: 'star' },
-  { key: 'portfolio', href: '/portfolio',          icon: 'portfolio' },
+  { key: 'home',            href: '/',                  icon: 'home' },
+  { key: 'stocks',          href: '/stocks',             icon: 'chart' },
+  { key: 'compare',         href: '/compare',            icon: 'compare' },
+  { key: 'charting',        href: '/chart-builder',      icon: 'gf' },
+  { key: 'macro',           href: '/macro',              icon: 'trending' },
+  { key: 'earnings',        href: '/earnings',           icon: 'document' },
+  { key: 'hechos',          href: '/hechos-esenciales',  icon: 'alert' },
+  { key: 'watchlist',       href: '/watchlist',          icon: 'star' },
+  { key: 'portfolio',       href: '/portfolio',          icon: 'portfolio' },
+  { key: 'structuredNotes', href: '/structured-notes',   icon: 'notes' },
 ]
 
 export function getPageTitle(pathname: string, _lang: Lang, t: Translation): string {

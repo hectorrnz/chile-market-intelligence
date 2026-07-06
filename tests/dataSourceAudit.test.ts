@@ -211,15 +211,19 @@ describe('Phase 8A regression — no changes to auth, portfolio math, or ingesti
     assert.ok(src.includes('calculateUnrealizedPnL'))
   })
 
-  it('middleware protected-route lists are unchanged', () => {
+  it('middleware still protects watchlist + portfolio (structured-notes added in Phase 9A)', () => {
     const src = readFileSync(join(ROOT, 'src/middleware.ts'), 'utf8')
     const pagesMatch = src.match(/const PROTECTED_PAGES\s*=\s*(\[[^\]]*\])/)
     const apiMatch = src.match(/const PROTECTED_API\s*=\s*(\[[^\]]*\])/)
     assert.ok(pagesMatch && apiMatch)
     const pages = JSON.parse(pagesMatch![1].replace(/'/g, '"'))
     const apis = JSON.parse(apiMatch![1].replace(/'/g, '"'))
-    assert.deepEqual(pages.sort(), ['/portfolio', '/watchlist'])
-    assert.deepEqual(apis.sort(), ['/api/portfolios', '/api/watchlists'])
+    // The pre-9A routes must still be protected (no removal / no regression).
+    assert.ok(pages.includes('/portfolio') && pages.includes('/watchlist'))
+    assert.ok(apis.includes('/api/portfolios') && apis.includes('/api/watchlists'))
+    // Phase 9A adds structured-notes; assert it's present and nothing else crept in.
+    assert.deepEqual(pages.sort(), ['/portfolio', '/structured-notes', '/watchlist'])
+    assert.deepEqual(apis.sort(), ['/api/portfolios', '/api/structured-notes', '/api/watchlists'])
   })
 
   it('macro/market provider orchestrators are untouched by this phase', () => {

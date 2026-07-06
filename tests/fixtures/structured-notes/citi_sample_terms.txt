@@ -1,0 +1,60 @@
+Investment Products | Not FDIC or Government Insured | Not a Bank Deposit | May Lose Value
+PLEASE SEE THE DISCLAIMER AT THE END OF THIS DOCUMENT
+Page 1
+Memory Coupon Barrier Autocall Notes Based Upon
+the Worst Performing of the Russell 2000 Index and the S&P 500 Index
+Terms and Conditions
+June 4, 2026
+General Information
+Issuer Citigroup Global Markets Funding Luxembourg S.C.A. (“CGMFL”)
+Guarantor Citigroup Global Markets Limited (“CGML”)
+Issuance Programme Global Medium Term Note Programme
+Securities Debt Securities linked to the performance of the Underlyings
+Offer Memory Coupon Barrier Autocall Notes Based Upon the Worst Performing of the
+Russell 2000 Index and the S&P 500 Index (“Notes”)
+Issue Size USD 1,050,000
+Currency U.S. dollar (“USD”)
+Specified Denomination USD 1,000 per Note
+Minimum Investment USD 1,000, and increments of USD 1,000 thereafter
+Issue Price 100.00% of the Specified Denomination
+Strike Date / Trade Date June 4, 2026
+Issue Date June 11, 2026
+Final Valuation Date June 5, 2028
+Maturity Date June 12, 2028
+The Underlyings
+1
+The Russell 2000 Index RTY Index Index
+New York Stock Exchange
+Market Inc. 2927.000 2927.000 1902.550 1902.550 2927.000
+2
+The S&P 500 Index SPX Index Index
+New York Stock Exchange
+Market Inc. 7576.00 7576.00 4924.40 4924.40 7576.00
+Strike Level For each Underlying, 100.00% of its respective Initial Level
+Knock-In Barrier Level For each Underlying, 65.00% of its respective Initial Level
+Coupon Barrier Level For each Underlying, 65.00% of its respective Initial Level
+Autocall Barrier Level For each Underlying, 100.00% of its respective Initial Level
+The Payout
+Contingent Coupon Amount If payable, the Contingent Coupon Amount will be USD 25.375 or 2.5375% per quarter
+(corresponding to approximately 10.15% per annum) of the Specified Denomination.
+Contingent Coupon Valuation Date Contingent Coupon Payment Date
+September 4, 2026 September 14, 2026
+December 4, 2026 December 11, 2026
+March 4, 2027 March 11, 2027
+June 4, 2027 June 11, 2027
+September 7, 2027 September 14, 2027
+December 6, 2027 December 13, 2027
+March 6, 2028 March 13, 2028
+Final Valuation Date Maturity Date
+Mandatory Early Redemption
+Autocall Valuation Date Mandatory Early Redemption Date
+September 4, 2026 September 14, 2026
+December 4, 2026 December 11, 2026
+March 4, 2027 March 11, 2027
+June 4, 2027 June 11, 2027
+September 7, 2027 September 14, 2027
+December 6, 2027 December 13, 2027
+March 6, 2028 March 13, 2028
+The “Barrier Event” means that the Final Level of any Underlying is less than its respective Knock-In Barrier Level
+Series Number CGMFL177813
+ISIN XS3180975347

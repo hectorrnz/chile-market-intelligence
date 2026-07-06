@@ -1005,6 +1005,170 @@ export interface Database {
           metadata?: Record<string, unknown>
         }
       }
+      structured_notes: {
+        Row: {
+          id: string
+          user_id: string
+          isin: string | null
+          product_name: string
+          issuer_name: string | null
+          issuer_display_name: string | null
+          guarantor_name: string | null
+          structure_type: string
+          payoff_type: string | null
+          currency: string
+          issue_size: number | null
+          denomination: number | null
+          issue_price_pct: number | null
+          trade_date: string | null
+          issue_date: string | null
+          initial_valuation_date: string | null
+          final_valuation_date: string | null
+          maturity_date: string | null
+          redemption_date: string | null
+          coupon_frequency: string | null
+          coupon_rate_periodic: number | null
+          coupon_rate_annualized: number | null
+          memory_coupon: boolean
+          principal_protection: boolean
+          knock_in_barrier_pct: number | null
+          coupon_barrier_pct: number | null
+          autocall_barrier_pct: number | null
+          status: string
+          source_type: string
+          source_name: string | null
+          source_file_name: string | null
+          source_file_hash: string | null
+          source_url: string | null
+          extraction_run_id: string | null
+          confidence_score: number | null
+          metadata: Record<string, unknown>
+          created_at: string
+          updated_at: string
+        }
+        Insert: Record<string, unknown>
+        Update: Record<string, unknown>
+      }
+      structured_note_underlyings: {
+        Row: {
+          id: string
+          note_id: string
+          user_id: string
+          underlying_order: number
+          underlying_name: string
+          source_ticker: string | null
+          bloomberg_ticker: string | null
+          yahoo_symbol: string | null
+          asset_class: string
+          initial_level: number | null
+          strike_level: number | null
+          knock_in_barrier_level: number | null
+          coupon_barrier_level: number | null
+          autocall_barrier_level: number | null
+          knock_in_barrier_pct: number | null
+          coupon_barrier_pct: number | null
+          autocall_barrier_pct: number | null
+          metadata: Record<string, unknown>
+          created_at: string
+        }
+        Insert: Record<string, unknown>
+        Update: Record<string, unknown>
+      }
+      structured_note_observations: {
+        Row: {
+          id: string
+          note_id: string
+          user_id: string
+          observation_number: number
+          observation_type: string
+          valuation_date: string
+          payment_date: string | null
+          redemption_date: string | null
+          coupon_due_pct: number | null
+          autocall_barrier_pct: number | null
+          coupon_barrier_pct: number | null
+          status: string
+          metadata: Record<string, unknown>
+          created_at: string
+          updated_at: string
+        }
+        Insert: Record<string, unknown>
+        Update: Record<string, unknown>
+      }
+      structured_note_allocations: {
+        Row: {
+          id: string
+          note_id: string
+          user_id: string
+          entity_name: string
+          custodian: string | null
+          notional_amount: number
+          currency: string
+          active: boolean
+          metadata: Record<string, unknown>
+          created_at: string
+          updated_at: string
+        }
+        Insert: Record<string, unknown>
+        Update: Record<string, unknown>
+      }
+      structured_note_price_snapshots: {
+        Row: {
+          id: string
+          note_id: string
+          underlying_id: string
+          user_id: string
+          price_date: string
+          price: number | null
+          source: string
+          source_symbol: string | null
+          metadata: Record<string, unknown>
+          created_at: string
+        }
+        Insert: Record<string, unknown>
+        Update: Record<string, unknown>
+      }
+      structured_note_extraction_runs: {
+        Row: {
+          id: string
+          user_id: string
+          file_name: string | null
+          file_hash: string | null
+          parser_version: string | null
+          status: string
+          extracted_note_id: string | null
+          confidence_score: number | null
+          fields_seen: number | null
+          fields_extracted: number | null
+          fields_low_confidence: number | null
+          warnings: unknown[]
+          errors: unknown[]
+          extracted_payload: Record<string, unknown> | null
+          provenance: Record<string, unknown>
+          created_at: string
+        }
+        Insert: Record<string, unknown>
+        Update: Record<string, unknown>
+      }
+      structured_note_extracted_fields: {
+        Row: {
+          id: string
+          extraction_run_id: string
+          note_id: string | null
+          user_id: string
+          field_path: string
+          extracted_value: string | null
+          normalized_value: string | null
+          confidence: number | null
+          source_page: number | null
+          source_section: string | null
+          raw_excerpt: string | null
+          warning: string | null
+          created_at: string
+        }
+        Insert: Record<string, unknown>
+        Update: Record<string, unknown>
+      }
     }
     Views: Record<string, never>
     Functions: Record<string, never>
@@ -1037,3 +1201,12 @@ export type PortfolioRow = Database['public']['Tables']['portfolios']['Row']
 export type PortfolioPositionRow = Database['public']['Tables']['portfolio_positions']['Row']
 export type PortfolioTransactionRow = Database['public']['Tables']['portfolio_transactions']['Row']
 export type PortfolioCashLedgerRow = Database['public']['Tables']['portfolio_cash_ledger']['Row']
+
+// ─── Phase 9A structured-notes aliases ────────────────────────────────────────
+export type StructuredNoteRow = Database['public']['Tables']['structured_notes']['Row']
+export type StructuredNoteUnderlyingRow = Database['public']['Tables']['structured_note_underlyings']['Row']
+export type StructuredNoteObservationRow = Database['public']['Tables']['structured_note_observations']['Row']
+export type StructuredNoteAllocationRow = Database['public']['Tables']['structured_note_allocations']['Row']
+export type StructuredNotePriceSnapshotRow = Database['public']['Tables']['structured_note_price_snapshots']['Row']
+export type StructuredNoteExtractionRunRow = Database['public']['Tables']['structured_note_extraction_runs']['Row']
+export type StructuredNoteExtractedFieldRow = Database['public']['Tables']['structured_note_extracted_fields']['Row']

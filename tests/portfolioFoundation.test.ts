@@ -356,20 +356,22 @@ describe('Phase 6C middleware protection', () => {
     assert.ok(src.includes("'/api/portfolios'"), 'middleware must protect /api/portfolios')
   })
 
-  it('PROTECTED_PAGES is exactly [\'/watchlist\', \'/portfolio\'] — no scope creep', () => {
+  it('PROTECTED_PAGES contains watchlist + portfolio (structured-notes added in Phase 9A)', () => {
     const src = readFileSync(MIDDLEWARE, 'utf8')
     const match = src.match(/const PROTECTED_PAGES\s*=\s*(\[[^\]]*\])/)
     assert.ok(match, 'PROTECTED_PAGES declaration not found')
     const arr = JSON.parse(match![1].replace(/'/g, '"'))
-    assert.deepEqual(arr.sort(), ['/portfolio', '/watchlist'])
+    assert.ok(arr.includes('/portfolio') && arr.includes('/watchlist'))
+    assert.deepEqual(arr.sort(), ['/portfolio', '/structured-notes', '/watchlist'])
   })
 
-  it('PROTECTED_API is exactly [\'/api/watchlists\', \'/api/portfolios\'] — no scope creep', () => {
+  it('PROTECTED_API contains watchlists + portfolios (structured-notes added in Phase 9A)', () => {
     const src = readFileSync(MIDDLEWARE, 'utf8')
     const match = src.match(/const PROTECTED_API\s*=\s*(\[[^\]]*\])/)
     assert.ok(match, 'PROTECTED_API declaration not found')
     const arr = JSON.parse(match![1].replace(/'/g, '"'))
-    assert.deepEqual(arr.sort(), ['/api/portfolios', '/api/watchlists'])
+    assert.ok(arr.includes('/api/portfolios') && arr.includes('/api/watchlists'))
+    assert.deepEqual(arr.sort(), ['/api/portfolios', '/api/structured-notes', '/api/watchlists'])
   })
 
   it('cron routes remain unblocked', () => {

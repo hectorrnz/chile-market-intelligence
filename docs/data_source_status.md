@@ -275,6 +275,25 @@ No data-source claims on this page (authentication only) — not applicable.
 
 ---
 
+## Structured Notes (`/structured-notes`) — Phase 9A
+
+**Overall module status: `persisted` (terms) + `live`/`unavailable` (levels) — no static-terminal state.**
+
+- **Terms** (ISIN, issuer, dates, barriers, coupon, underlyings, schedules): **persisted** in the 7
+  user-scoped `structured_note*` Supabase tables, written automation-first from term-sheet PDF extraction
+  (deterministic parser, Citi CGMFL family validated). Provenance + confidence recorded per note and per field.
+- **Internal allocations** (entity/sociedad split): **user input** — internal portfolio data, never extracted
+  from a PDF.
+- **Current underlying levels + distance to barrier + risk status**: **live** via the Yahoo provider
+  (`structuredNoteMarketProvider.ts`, reusing the market stack) — **replaces the workbook's Bloomberg `BDP`**.
+  An unmapped/unverified underlying reports `unavailable`, never a fabricated level.
+- **Conversion path (next):** generalize the parser beyond the Citi family; persist scheduled price snapshots
+  + automate observation-event transitions (coupon-paid / autocalled). See `docs/structured_notes_design.md`.
+- **Never static-terminal:** the module is either persisted (imported), live (market levels), or explicitly
+  `unavailable` — there is no fabricated/static-forever field.
+
+---
+
 ## Conversion Paths for Remaining Static Modules (Phase 8B)
 
 Per the no-static-terminal-state policy above, every module still serving

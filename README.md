@@ -152,6 +152,7 @@ without them** (they never run during build). Full guide:
 | **Phase 8B** | Compare page real-data wiring + no-static-terminal-state policy | ✓ Complete |
 | **Phase 8C** | Financial-statement ingestion, automation-first architecture with manual CSV as an interim bridge, for Charting, Compare fundamentals, and Earnings | ✓ Complete |
 | **Phase 8C.1** | CMF/XBRL automated-provider discovery + proof of concept — found a real, CAPTCHA-free path to CMF's XBRL filings and built a working provider against the Phase 8C schema | ✓ Complete |
+| **Phase 9A** | Structured Notes module — automation-first term-sheet PDF extraction (Citi CGMFL family), workbook audit, normalized schema, barrier/worst-of/exposure calculations, Yahoo live levels (replacing Bloomberg BDP) | ✓ Complete |
 | **Phase 8D** | FX/rates + US macro + economic calendar live source completion | Planned |
 | **Phase 8E** | Hechos Relevantes + News ingestion workaround | Planned |
 | **Phase 6E** | Portfolio analytics / performance attribution | Planned |

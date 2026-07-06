@@ -390,6 +390,73 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 9A — Structured Notes Foundation + Excel Workbook Audit + PDF Extraction MVP** ✓ COMPLETE (2026-07-06)
+
+New **Structured Notes** module (`/structured-notes`, ES **Notas Estructuradas**) — an authenticated,
+user-scoped, **automation-first** replacement for the legacy `NUEVA BASE - Notas Estructuradas.xlsx` operating
+model. Primary workflow: upload term-sheet PDF → deterministic auto-extraction → review → import → auto-fetch
+live underlying levels (Yahoo, replacing the workbook's Bloomberg `BDP`) → auto-compute barriers / distance to
+barrier / worst-of risk status / current notional / issuer exposure. Manual entry is a fallback, never the
+terminal design.
+
+**Workbook audit** (`docs/structured_notes_workbook_mapping.md`): single sheet "Notas", notes as columns,
+labels in column B. Classified every field as PDF-extracted / internal / derived / market-data. **The only
+live-data mechanism in the workbook is Bloomberg `=+_xll.BDP(ticker,"LAST PRICE")`** — replaced by Yahoo in
+the app. Internal allocations (WATERMILL, DUBAI, STATEN, …) are **never** extracted from a PDF.
+
+**PDF extraction MVP** (`src/lib/structuredNotes/pdf/`): `unpdf` (serverless pdf.js) extracts text; a
+deterministic regex/keyword parser (`extractStructuredNoteTerms.ts`, **no OCR, no AI**) targets the **Citi
+CGMFL "Memory Coupon Barrier Autocall"** family. Validated end-to-end against the real sample
+(`XS3180975347`): confidence 1.0, all fields correct — ISIN, issuer (Citi), trade/issue/final/maturity dates,
+coupon 2.5375%/q · 10.15% p.a., barriers 65/65/100%, both underlyings (RTY→^RUT, SPX→^GSPC) with all levels,
+and 7 coupon + 7 autocall + 1 final observations. Per-field confidence + provenance; critical-field validation
+rejects/flags incomplete extractions (never persisted).
+
+**Schema** (migration `20260706000000_structured_notes_foundation.sql`, 7 tables, user-scoped RLS
+`auth.uid()=user_id`, ownership-guard trigger on child tables): `structured_notes`, `structured_note_underlyings`,
+`structured_note_observations`, `structured_note_allocations`, `structured_note_price_snapshots`,
+`structured_note_extraction_runs`, `structured_note_extracted_fields`.
+
+**Calculations** (`src/lib/structuredNotes/calculations.ts`, pure, NaN/Infinity-guarded, workbook parity):
+barrier level = strike×pct; Caída = barrier/current−1; worst-of coupon/autocall eligibility; current notional
+(0 if called); issuer/entity exposure (SUMIF parity). Missing market data → `unavailable`, never fabricated.
+
+**API** (auth-only, middleware-protected): `POST /api/structured-notes/extract` (PDF→preview, records an
+extraction-run, never echoes the raw PDF), `POST /api/structured-notes/import` (server-revalidates critical
+fields), `GET /api/structured-notes`, `GET|PATCH|DELETE /api/structured-notes/[id]` (detail returns live
+prices + computed risk metrics), `POST|DELETE .../[id]/allocations[/allocationId]` (internal allocations).
+
+**UI:** `/structured-notes` (upload → confidence-scored review → import → notes table) + `/structured-notes/[id]`
+(general terms · underlyings · schedule · internal allocations · live levels & distance to barrier ·
+source/provenance). Full EN/ES i18n (`sn.*`), semantic tokens, dark-mode safe. Nav item + `notes` sidebar icon.
+
+**Dependency added:** `unpdf` (serverless-friendly pdf.js text extraction; no native deps).
+
+**Tests:** `tests/structuredNotes{Calculations,PdfExtraction,WorkbookMapping}.test.ts` — 69 tests (workbook-parity
+math, NaN guards, worst-of logic, Citi-sample extraction against a **sanitized text fixture**, symbol map,
+migration/RLS structure, no-Bloomberg-call guard, security, and a check that **no private PDF/xlsx is committed**).
+Build 54 routes · lint 0 · tests 652 → 721.
+
+**Structured Notes module rules (apply going forward):**
+- Automation-first: PDF extraction is the primary write path; manual entry/edit is a fallback only — never
+  frame this module as manual data entry.
+- **Never extract internal allocations (sociedades) from a PDF.** They are internal portfolio data.
+- **No Bloomberg in the app** — live levels come from the Yahoo provider; unmapped/unverified underlyings
+  report `unavailable`, never a fabricated price.
+- **No OCR, no AI extraction** in this phase — deterministic parsing only; scanned PDFs are rejected.
+- **Never commit the real workbook or private term-sheet PDFs.** Only the tiny sanitized text fixture
+  (`tests/fixtures/structured-notes/citi_sample_terms.txt`) belongs in the repo.
+- All structured-note tables are user-scoped (RLS `auth.uid()=user_id`); never use the service-role client for them.
+
+Scope limits (explicit): only the Citi CGMFL family is validated for extraction; no scheduled observation-event
+automation; price snapshots are compute-on-request (not yet persisted on a schedule); macro/market/auth/
+watchlist/portfolio/financials logic untouched; no mobile work.
+
+Next: **Phase 9B** (parser generalization to more issuers/families + scheduled monitoring), or return to
+**Phase 8C.2** (CMF/XBRL automated financials ingestion).
+
+---
+
 **Phase 8C.1 — Automated Financials Provider Discovery + CMF/XBRL Proof of Concept** ✓ COMPLETE (2026-07-03)
 
 Determines whether official CMF financial-statement/XBRL filings can be programmatically accessed without
