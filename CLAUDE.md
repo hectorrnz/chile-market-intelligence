@@ -419,10 +419,22 @@ exposure — like the legacy workbook); (2) extraction must work beyond the sing
   multi-format date parsing, dashboard aggregation, shared-migration RLS checks). Build 56 routes · lint 0 ·
   tests 738.
 
-**Apply BOTH migrations** in order: `20260706000000_*` (9A) then `20260706120000_*` (9B shared book).
+**9B.1 UI/data edits** (from real use): (1) a **Called** checkbox per row sets status `autocalled` and moves
+the note to an **Archived** view (Live/Archived toggle + a clickable "Called" KPI); (2) the observation
+schedule now stores **one row per valuation date** (coupon + autocall coincide — no double count;
+`dedupeObservationsByDate` collapses legacy rows for already-imported notes); (3) the **Next obs.** cell turns
+red when ≤7 days away; (4) **Allocation by entity** is a fixed grid of the 9 sociedades (Watermill, Dubai,
+Staten, La Esperanza, Naidelt, Los Sauzales, Retboy, Los Laureles, Vanglor) each with an editable USD notional
+(upsert by `(note_id, entity_name)`, 0 clears) + add/remove custom entity — migration
+`20260707000000_structured_notes_allocation_upsert.sql`; (5) dashboard shows an **issuer bar chart** + an
+**entity donut** (notional + % of total, no chart library — inline SVG); (6) an **Update** button re-pulls live
+prices; (7) an **Issued** date column. Tests 742.
+
+**Apply THREE migrations** in order: `20260706000000_*` (9A) → `20260706120000_*` (9B shared book) →
+`20260707000000_*` (9B.1 allocation upsert).
 
 Next: **Phase 9C** — extend the parser to Barclays/BNP/Santander/CA/BBVA appendix templates; scheduled
-price-snapshot persistence + observation-event automation.
+price-snapshot persistence + observation-event automation; per-role permissioning for add/remove entity.
 
 ---
 

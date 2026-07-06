@@ -280,19 +280,33 @@ export async function deleteStructuredNote(client: Client, id: string): Promise<
 
 // ─── Allocations (internal — never from PDF) ──────────────────────────────────
 
-export async function addAllocation(
+/**
+ * Sets the notional allocated to one entity for a note (upsert by
+ * note_id + entity_name). A notional of 0 (or less) removes the allocation so
+ * the grid can clear an entity by zeroing it.
+ */
+export async function upsertAllocation(
   client: Client,
   noteId: string,
   alloc: { entityName: string; custodian?: string | null; notionalAmount: number; currency?: string; active?: boolean },
 ): Promise<boolean> {
-  const res = await q(client).from('structured_note_allocations').insert({
-    note_id: noteId,
-    entity_name: alloc.entityName,
-    custodian: alloc.custodian ?? null,
-    notional_amount: alloc.notionalAmount,
-    currency: alloc.currency ?? 'USD',
-    active: alloc.active ?? true,
-  })
+  const entity = alloc.entityName.trim()
+  if (!entity) return false
+  if (!(alloc.notionalAmount > 0)) {
+    const res = await q(client).from('structured_note_allocations').delete().eq('note_id', noteId).eq('entity_name', entity)
+    return !res.error
+  }
+  const res = await q(client).from('structured_note_allocations').upsert(
+    {
+      note_id: noteId,
+      entity_name: entity,
+      custodian: alloc.custodian ?? null,
+      notional_amount: alloc.notionalAmount,
+      currency: alloc.currency ?? 'USD',
+      active: alloc.active ?? true,
+    },
+    { onConflict: 'note_id,entity_name' },
+  )
   return !res.error
 }
 

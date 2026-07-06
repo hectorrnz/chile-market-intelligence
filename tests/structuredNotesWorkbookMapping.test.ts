@@ -67,6 +67,24 @@ describe('shared book migration (9B) — all authenticated users share one book'
   })
 })
 
+describe('allocation upsert + entity list (9B.1)', () => {
+  it('migration adds a unique (note_id, entity_name) constraint for upsert', () => {
+    const m = read('../supabase/migrations/20260707000000_structured_notes_allocation_upsert.sql')
+    assert.ok(/unique \(note_id, entity_name\)/.test(m))
+  })
+  it('repository exposes upsertAllocation (set/clear per entity), not a plain insert-only add', () => {
+    const repo = read('../src/lib/db/repositories/structuredNotesRepository.ts')
+    assert.ok(repo.includes('export async function upsertAllocation'))
+    assert.ok(repo.includes("onConflict: 'note_id,entity_name'"))
+  })
+  it('the predefined sociedades list is complete', async () => {
+    const { DEFAULT_ENTITIES } = await import('../src/lib/structuredNotes/types.ts')
+    for (const e of ['Watermill', 'Dubai', 'Staten', 'La Esperanza', 'Naidelt', 'Los Sauzales', 'Retboy', 'Los Laureles', 'Vanglor']) {
+      assert.ok((DEFAULT_ENTITIES as readonly string[]).includes(e), `missing ${e}`)
+    }
+  })
+})
+
 describe('no Bloomberg dependency in the app', () => {
   it('market provider uses Yahoo, and makes no Bloomberg call/import (comments may mention it)', () => {
     assert.ok(/yahoo-finance2|yahoo/i.test(MARKET_PROVIDER))

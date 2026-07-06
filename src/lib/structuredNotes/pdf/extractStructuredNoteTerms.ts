@@ -374,6 +374,10 @@ function extractSchedule(
   lines: Line[],
   ctx: { couponRatePeriodic: number | null; couponBarrierPct: number | null; autocallPct: number | null; finalValuationDate: string | null; maturityDate: string | null },
 ): StructuredNoteObservation[] {
+  // ONE observation per valuation date. For this product family the coupon
+  // valuation date and the autocall valuation date coincide, so each scheduled
+  // date is a single observation that carries BOTH the coupon barrier and the
+  // autocall barrier — never two rows for the same date (no double counting).
   const observations: StructuredNoteObservation[] = []
 
   // Template A (Citi): two "date value date value" pair blocks under known headers.
@@ -395,38 +399,60 @@ function extractSchedule(
   const autocallPairs = collectPairs(/^Autocall Valuation Date\s+Mandatory Early Redemption Date$/i)
 
   if (couponPairs.length > 0 || autocallPairs.length > 0) {
-    couponPairs.forEach((pr, i) => observations.push({ observationNumber: i + 1, observationType: 'coupon', valuationDate: pr.valuation, paymentDate: pr.payment, redemptionDate: null, couponDuePct: ctx.couponRatePeriodic, autocallBarrierPct: null, couponBarrierPct: ctx.couponBarrierPct, status: 'scheduled' }))
-    autocallPairs.forEach((pr, i) => observations.push({ observationNumber: i + 1, observationType: 'autocall', valuationDate: pr.valuation, paymentDate: null, redemptionDate: pr.payment, couponDuePct: null, autocallBarrierPct: ctx.autocallPct, couponBarrierPct: null, status: 'scheduled' }))
+    const base = couponPairs.length > 0 ? couponPairs : autocallPairs
+    base.forEach((pr, i) => observations.push({ observationNumber: i + 1, observationType: 'coupon', valuationDate: pr.valuation, paymentDate: pr.payment, redemptionDate: pr.payment, couponDuePct: ctx.couponRatePeriodic, autocallBarrierPct: ctx.autocallPct, couponBarrierPct: ctx.couponBarrierPct, status: 'scheduled' }))
     if (ctx.finalValuationDate && ctx.maturityDate) {
-      observations.push({ observationNumber: couponPairs.length + 1, observationType: 'final', valuationDate: ctx.finalValuationDate, paymentDate: ctx.maturityDate, redemptionDate: ctx.maturityDate, couponDuePct: ctx.couponRatePeriodic, autocallBarrierPct: ctx.autocallPct, couponBarrierPct: ctx.couponBarrierPct, status: 'scheduled' })
+      observations.push({ observationNumber: base.length + 1, observationType: 'final', valuationDate: ctx.finalValuationDate, paymentDate: ctx.maturityDate, redemptionDate: ctx.maturityDate, couponDuePct: ctx.couponRatePeriodic, autocallBarrierPct: ctx.autocallPct, couponBarrierPct: ctx.couponBarrierPct, status: 'scheduled' })
     }
     return observations
   }
 
-  // Template B (HSBC/EU): one combined table. Each data row starts with an index j
-  // and contains several "DD Mon YYYY" dates and percentages. We pull the coupon
-  // valuation/payment (the last date-pair on the row) and the autocall
-  // valuation/redemption (the first date-pair) when present.
+  // Template B (HSBC/EU): one combined table row per valuation date. The row
+  // holds the autocall val/redeem dates first and the coupon val/pay dates last
+  // (same valuation date). We emit ONE observation per row keyed on the coupon
+  // valuation date, carrying both barriers.
   const dmy = /\d{1,2} [A-Za-z]{3,}\.? \d{4}/g
-  let couponN = 0
-  let autocallN = 0
+  let n = 0
   for (const l of lines) {
-    if (!/^\d{1,2}\s/.test(l.text)) continue // must start with the row index j
+    if (!/^\d{1,2}\s/.test(l.text)) continue
     const dates = l.text.match(dmy)
     if (!dates || dates.length < 2) continue
     const isoDates = dates.map(parseTermSheetDate).filter((x): x is string => !!x)
     if (isoDates.length < 2) continue
-    // Coupon valuation/payment = the last two dates on the row.
     const couponVal = isoDates[isoDates.length - 2]
     const couponPay = isoDates[isoDates.length - 1]
-    couponN += 1
-    const isFinal = isoDates.length === 2 && /(?:^|\s)-(?:\s|$)/.test(l.text) // final row has dashes in the autocall columns
-    observations.push({ observationNumber: couponN, observationType: isFinal ? 'final' : 'coupon', valuationDate: couponVal, paymentDate: couponPay, redemptionDate: isFinal ? couponPay : null, couponDuePct: ctx.couponRatePeriodic, autocallBarrierPct: isFinal ? ctx.autocallPct : null, couponBarrierPct: ctx.couponBarrierPct, status: 'scheduled' })
-    // Autocall valuation/redemption = the first two dates on the row (present on non-final rows).
-    if (isoDates.length >= 4) {
-      autocallN += 1
-      observations.push({ observationNumber: autocallN, observationType: 'autocall', valuationDate: isoDates[0], paymentDate: null, redemptionDate: isoDates[1], couponDuePct: null, autocallBarrierPct: ctx.autocallPct, couponBarrierPct: null, status: 'scheduled' })
-    }
+    // Final row carries dashes in the autocall columns (only the coupon pair present).
+    const isFinal = isoDates.length === 2 && /(?:^|\s)-(?:\s|$)/.test(l.text)
+    n += 1
+    observations.push({ observationNumber: n, observationType: isFinal ? 'final' : 'coupon', valuationDate: couponVal, paymentDate: couponPay, redemptionDate: couponPay, couponDuePct: ctx.couponRatePeriodic, autocallBarrierPct: isFinal ? ctx.autocallPct : ctx.autocallPct, couponBarrierPct: ctx.couponBarrierPct, status: 'scheduled' })
   }
   return observations
+}
+
+/**
+ * Collapses a persisted note's observations to one row per valuation date
+ * (merging any legacy separate coupon/autocall rows) — used by the detail page
+ * so already-imported notes show a single, non-double-counted schedule.
+ */
+export function dedupeObservationsByDate(observations: StructuredNoteObservation[]): StructuredNoteObservation[] {
+  const byDate = new Map<string, StructuredNoteObservation>()
+  for (const o of observations) {
+    const existing = byDate.get(o.valuationDate)
+    if (!existing) { byDate.set(o.valuationDate, { ...o }); continue }
+    // Merge: keep the coupon/final row; fold in the autocall barrier + payment.
+    const keep = o.observationType === 'autocall' ? existing : o
+    const other = o.observationType === 'autocall' ? o : existing
+    byDate.set(o.valuationDate, {
+      ...keep,
+      observationType: keep.observationType === 'autocall' ? 'coupon' : keep.observationType,
+      paymentDate: keep.paymentDate ?? other.paymentDate ?? null,
+      redemptionDate: keep.redemptionDate ?? other.redemptionDate ?? null,
+      couponDuePct: keep.couponDuePct ?? other.couponDuePct,
+      couponBarrierPct: keep.couponBarrierPct ?? other.couponBarrierPct,
+      autocallBarrierPct: keep.autocallBarrierPct ?? other.autocallBarrierPct,
+    })
+  }
+  return [...byDate.values()]
+    .sort((a, b) => a.valuationDate.localeCompare(b.valuationDate))
+    .map((o, i) => ({ ...o, observationNumber: i + 1 }))
 }

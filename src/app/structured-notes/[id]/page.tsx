@@ -9,6 +9,8 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useLang } from '@/components/providers/LangProvider'
 import { SectionHeader } from '@/components/ui/SectionHeader'
+import { DEFAULT_ENTITIES } from '@/lib/structuredNotes/types'
+import { dedupeObservationsByDate } from '@/lib/structuredNotes/pdf/extractStructuredNoteTerms'
 import type { StructuredNote, UnderlyingPrice, RiskStatus } from '@/lib/structuredNotes/types'
 import { fmtPct, fmtNum } from '../page'
 
@@ -66,15 +68,12 @@ export default function StructuredNoteDetailPage() {
     return () => { cancelled.value = true }
   }, [id])
 
-  async function addAllocation(entityName: string, custodian: string, notional: number) {
+  // Upsert the notional for one entity (0 clears it).
+  async function setEntityAllocation(entityName: string, notional: number) {
     await fetch(`/api/structured-notes/${id}/allocations`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ entityName, custodian, notionalAmount: notional }),
+      body: JSON.stringify({ entityName, notionalAmount: notional }),
     })
-    await load()
-  }
-  async function removeAllocation(allocationId: string) {
-    await fetch(`/api/structured-notes/${id}/allocations/${allocationId}`, { method: 'DELETE' })
     await load()
   }
   async function deleteNote() {
@@ -171,20 +170,21 @@ export default function StructuredNoteDetailPage() {
           </table>
         </Card>
 
-        {/* Schedule */}
+        {/* Schedule — one row per valuation date (coupon + autocall coincide) */}
         <Card title={t.sn.schedule}>
           <div className="max-h-64 overflow-y-auto">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-border">
-                {['#', 'Type', 'Valuation', 'Payment', 'Status'].map((h) => <th key={h} className="text-left py-1.5 px-2 ui-table-header text-muted-fg">{h}</th>)}
+                {['#', 'Valuation', 'Payment', 'Coupon barrier', 'Autocall barrier', 'Status'].map((h) => <th key={h} className="text-left py-1.5 px-2 ui-table-header text-muted-fg whitespace-nowrap">{h}</th>)}
               </tr></thead>
               <tbody>
-                {n.observations.slice().sort((a, b) => a.valuationDate.localeCompare(b.valuationDate)).map((o) => (
-                  <tr key={`${o.observationType}-${o.observationNumber}`} className="border-b border-border last:border-0">
-                    <td className="py-1.5 px-2">{o.observationNumber}</td>
-                    <td className="py-1.5 px-2 text-muted-fg">{o.observationType}</td>
+                {dedupeObservationsByDate(n.observations).map((o) => (
+                  <tr key={`${o.observationNumber}-${o.valuationDate}`} className="border-b border-border last:border-0">
+                    <td className="py-1.5 px-2">{o.observationNumber}{o.observationType === 'final' ? ' ·F' : ''}</td>
                     <td className="py-1.5 px-2 ui-number">{o.valuationDate}</td>
                     <td className="py-1.5 px-2 ui-number">{o.paymentDate ?? o.redemptionDate ?? '—'}</td>
+                    <td className="py-1.5 px-2 ui-number">{fmtPct(o.couponBarrierPct)}</td>
+                    <td className="py-1.5 px-2 ui-number">{fmtPct(o.autocallBarrierPct)}</td>
                     <td className="py-1.5 px-2 text-xs text-muted-fg">{o.status}</td>
                   </tr>
                 ))}
@@ -193,32 +193,19 @@ export default function StructuredNoteDetailPage() {
           </div>
         </Card>
 
-        {/* Allocations (internal) */}
+        {/* Allocation by entity (internal) — predefined sociedades + custom */}
         <Card title={t.sn.allocations} note={t.sn.allocationsNote}>
-          {n.allocations.length > 0 && (
-            <table className="w-full text-sm mb-3">
-              <thead><tr className="border-b border-border">
-                {[t.sn.entity, t.sn.custodian, t.sn.notional, ''].map((h) => <th key={h} className="text-left py-1.5 px-2 ui-table-header text-muted-fg">{h}</th>)}
-              </tr></thead>
-              <tbody>
-                {n.allocations.map((a) => (
-                  <tr key={a.id} className="border-b border-border last:border-0">
-                    <td className="py-1.5 px-2">{a.entityName}</td>
-                    <td className="py-1.5 px-2">{a.custodian ?? '—'}</td>
-                    <td className="py-1.5 px-2 ui-number">{a.currency} {fmtNum(a.notionalAmount)}</td>
-                    <td className="py-1.5 px-2 text-right">
-                      <button onClick={() => a.id && removeAllocation(a.id)} className="text-xs text-negative no-print">✕</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          <div className="text-xs mb-2">
+          <EntityAllocationGrid
+            allocations={n.allocations}
+            currency={n.currency}
+            onSet={setEntityAllocation}
+            onAddCustom={(name) => setEntityAllocation(name, 0)}
+          />
+          <div className="text-xs mt-2">
             {t.sn.allocationTotal}: <span className="ui-number">{n.currency} {fmtNum(allocationTotal)}</span>
+            {n.issueSize !== null && <span className="text-muted-fg"> / {t.sn.issueSize} {n.currency} {fmtNum(n.issueSize)}</span>}
             {mismatch && <span className="text-warning ml-2">⚠ {t.sn.allocationMismatch}</span>}
           </div>
-          <AllocationForm onAdd={addAllocation} />
         </Card>
       </div>
 
@@ -235,27 +222,60 @@ export default function StructuredNoteDetailPage() {
   )
 }
 
-function AllocationForm({ onAdd }: { onAdd: (entity: string, custodian: string, notional: number) => void }) {
+/**
+ * Allocation grid: the predefined in-house sociedades (plus any custom ones
+ * already allocated) each with an editable USD notional. Blank/0 clears the
+ * entity. "Add entity" appends a custom row. Every change upserts by entity.
+ */
+function EntityAllocationGrid({
+  allocations, currency, onSet, onAddCustom,
+}: {
+  allocations: { entityName: string; notionalAmount: number }[]
+  currency: string
+  onSet: (entity: string, notional: number) => void
+  onAddCustom: (entity: string) => void
+}) {
   const { t } = useLang()
-  const [entity, setEntity] = useState('')
-  const [custodian, setCustodian] = useState('')
-  const [notional, setNotional] = useState('')
+  const [custom, setCustom] = useState('')
+  const byName = new Map(allocations.map((a) => [a.entityName, a.notionalAmount]))
+  // Predefined list first, then any custom entities that already have a row.
+  const extras = allocations.map((a) => a.entityName).filter((n) => !DEFAULT_ENTITIES.includes(n as (typeof DEFAULT_ENTITIES)[number]))
+  const rows = [...DEFAULT_ENTITIES, ...extras]
+
   return (
-    <form
-      className="flex flex-wrap gap-2 no-print"
-      onSubmit={(e) => {
-        e.preventDefault()
-        const amt = Number(notional)
-        if (!entity.trim() || !Number.isFinite(amt) || amt <= 0) return
-        onAdd(entity.trim(), custodian.trim(), amt)
-        setEntity(''); setCustodian(''); setNotional('')
-      }}
-    >
-      <input value={entity} onChange={(e) => setEntity(e.target.value)} placeholder={t.sn.entity} className="px-2 py-1 text-sm border border-border rounded bg-surface" />
-      <input value={custodian} onChange={(e) => setCustodian(e.target.value)} placeholder={t.sn.custodian} className="px-2 py-1 text-sm border border-border rounded bg-surface" />
-      <input value={notional} onChange={(e) => setNotional(e.target.value)} placeholder={t.sn.notional} inputMode="decimal" className="px-2 py-1 text-sm border border-border rounded bg-surface w-28" />
-      <button type="submit" className="px-3 py-1 text-sm rounded bg-primary text-primary-fg">{t.sn.addAllocation}</button>
-    </form>
+    <div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+        {rows.map((name) => (
+          <EntityRow key={name} name={name} currency={currency} value={byName.get(name) ?? 0} onCommit={(v) => onSet(name, v)} removable={extras.includes(name)} onRemove={() => onSet(name, 0)} />
+        ))}
+      </div>
+      <form className="flex gap-2 mt-3 no-print" onSubmit={(e) => { e.preventDefault(); const n = custom.trim(); if (n) { onAddCustom(n); setCustom('') } }}>
+        <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder={t.sn.entity} className="px-2 py-1 text-sm border border-border rounded bg-surface" />
+        <button type="submit" className="px-3 py-1 text-sm rounded border border-border">＋ {t.sn.addAllocation}</button>
+      </form>
+    </div>
+  )
+}
+
+function EntityRow({ name, currency, value, onCommit, removable, onRemove }: { name: string; currency: string; value: number; onCommit: (v: number) => void; removable: boolean; onRemove: () => void }) {
+  const [draft, setDraft] = useState(value ? String(value) : '')
+  // Keep the input in sync when the persisted value changes (render-time prev pattern).
+  const [prev, setPrev] = useState(value)
+  if (value !== prev) { setPrev(value); setDraft(value ? String(value) : '') }
+  return (
+    <div className="flex items-center gap-2 text-sm">
+      <span className="flex-1 truncate" title={name}>{name}</span>
+      <span className="text-xs text-muted-fg">{currency}</span>
+      <input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => { const v = Number(draft.replace(/,/g, '')); if (Number.isFinite(v) && v !== value) onCommit(v > 0 ? v : 0) }}
+        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+        inputMode="decimal" placeholder="0"
+        className="w-28 px-2 py-1 text-sm text-right border border-border rounded bg-surface ui-number no-print"
+      />
+      {removable && <button onClick={onRemove} className="text-xs text-negative no-print" title="remove">✕</button>}
+    </div>
   )
 }
 

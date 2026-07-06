@@ -17,7 +17,9 @@ import {
   calculateDaysToNextObservation,
   calculateDistanceToBarrier,
   calculateIssuerExposure,
+  calculateEntityExposure,
 } from './calculations.ts'
+import { ARCHIVED_STATUSES } from './types.ts'
 
 export interface NoteDashboardMetrics {
   noteId: string | undefined
@@ -35,6 +37,7 @@ export interface NoteDashboardMetrics {
 export interface BookSummary {
   totalNotes: number
   activeNotes: number
+  calledNotes: number // status autocalled/matured/etc — archived off the live book
   autocallableNotes: number // all underlyings ≥ autocall barrier → would call on next date
   safeNotes: number
   watchNotes: number
@@ -44,6 +47,7 @@ export interface BookSummary {
   currency: string
   mixedCurrency: boolean
   issuerExposure: { issuer: string; notional: number; noteCount: number }[]
+  entityExposure: { entityName: string; notional: number; noteCount: number }[]
   pricesAsOf: string | null
 }
 
@@ -110,6 +114,7 @@ export function buildBookDashboard(
   const summary: BookSummary = {
     totalNotes: notes.length,
     activeNotes: active.length,
+    calledNotes: notes.filter((n) => ARCHIVED_STATUSES.includes(n.status)).length,
     autocallableNotes: count('autocallable'),
     safeNotes: count('safe'),
     watchNotes: count('watch'),
@@ -119,6 +124,7 @@ export function buildBookDashboard(
     currency: dominant,
     mixedCurrency: currencies.size > 1,
     issuerExposure: calculateIssuerExposure(notes.map((n) => ({ issuerDisplayName: n.issuerDisplayName, status: n.status, allocations: n.allocations }))),
+    entityExposure: calculateEntityExposure(notes.map((n) => ({ status: n.status, allocations: n.allocations }))),
     pricesAsOf: asOf,
   }
   return { metrics, summary }

@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseUserClient } from '@/lib/supabase/server'
-import { addAllocation, getStructuredNoteById } from '@/lib/db/repositories/structuredNotesRepository'
+import { upsertAllocation, getStructuredNoteById } from '@/lib/db/repositories/structuredNotesRepository'
 import { calculateAllocationTotal } from '@/lib/structuredNotes/calculations'
 
 export const dynamic = 'force-dynamic'
@@ -25,9 +25,10 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   const entityName = (body.entityName ?? '').trim()
   const notionalAmount = Number(body.notionalAmount)
   if (!entityName) return NextResponse.json({ error: 'missing_entity' }, { status: 400 })
-  if (!Number.isFinite(notionalAmount) || notionalAmount <= 0) return NextResponse.json({ error: 'invalid_notional' }, { status: 400 })
+  // notional 0 is allowed here — it clears the entity's allocation (upsert-by-entity).
+  if (!Number.isFinite(notionalAmount) || notionalAmount < 0) return NextResponse.json({ error: 'invalid_notional' }, { status: 400 })
 
-  const ok = await addAllocation(client, id, {
+  const ok = await upsertAllocation(client, id, {
     entityName: entityName.slice(0, 120),
     custodian: body.custodian?.slice(0, 120) ?? null,
     notionalAmount,

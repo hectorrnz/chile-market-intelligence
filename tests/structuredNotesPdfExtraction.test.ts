@@ -10,7 +10,8 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { extractStructuredNoteTerms, parseTermSheetDate } from '../src/lib/structuredNotes/pdf/extractStructuredNoteTerms.ts'
+import { extractStructuredNoteTerms, parseTermSheetDate, dedupeObservationsByDate } from '../src/lib/structuredNotes/pdf/extractStructuredNoteTerms.ts'
+import type { StructuredNoteObservation } from '../src/lib/structuredNotes/types.ts'
 import { resolveUnderlyingSymbol, isUnderlyingSupported } from '../src/lib/structuredNotes/underlyingSymbolMap.ts'
 
 const FIXTURE = fileURLToPath(new URL('fixtures/structured-notes/citi_sample_terms.txt', import.meta.url))
@@ -63,10 +64,15 @@ describe('HSBC sample extraction (EU template)', () => {
     assert.equal(spx.yahooSymbol, '^GSPC')
     assert.equal(hn.underlyings.find((u) => u.underlyingName === 'RTY Index')!.yahooSymbol, '^RUT')
   })
-  it('extracts the combined schedule (7 coupon + 7 autocall + 1 final)', () => {
+  it('extracts one observation per valuation date (7 coupon + 1 final, no double-count)', () => {
     assert.equal(hn.observations.filter((o) => o.observationType === 'coupon').length, 7)
-    assert.equal(hn.observations.filter((o) => o.observationType === 'autocall').length, 7)
+    assert.equal(hn.observations.filter((o) => o.observationType === 'autocall').length, 0) // folded into the coupon row
     assert.equal(hn.observations.filter((o) => o.observationType === 'final').length, 1)
+    // every valuation date is unique (no coupon+autocall duplicate for the same date)
+    const dates = hn.observations.map((o) => o.valuationDate)
+    assert.equal(new Set(dates).size, dates.length)
+    // each row still carries the autocall barrier
+    assert.ok(hn.observations.every((o) => o.autocallBarrierPct === 1))
   })
 })
 
@@ -131,15 +137,35 @@ describe('Citi sample extraction — underlyings', () => {
   })
 })
 
-describe('Citi sample extraction — schedule', () => {
-  it('extracts 7 coupon + 7 autocall + 1 final observation', () => {
+describe('Citi sample extraction — schedule (one row per valuation date)', () => {
+  it('extracts 7 coupon + 1 final observation, no separate autocall rows', () => {
     assert.equal(n.observations.filter((o) => o.observationType === 'coupon').length, 7)
-    assert.equal(n.observations.filter((o) => o.observationType === 'autocall').length, 7)
+    assert.equal(n.observations.filter((o) => o.observationType === 'autocall').length, 0)
     assert.equal(n.observations.filter((o) => o.observationType === 'final').length, 1)
+    const dates = n.observations.map((o) => o.valuationDate)
+    assert.equal(new Set(dates).size, dates.length) // no double-count
   })
   it('first coupon observation has valuation + payment dates', () => {
     const first = n.observations.find((o) => o.observationType === 'coupon' && o.observationNumber === 1)!
     assert.equal(first.valuationDate, '2026-09-04')
+    assert.equal(first.paymentDate, '2026-09-14')
+  })
+})
+
+describe('dedupeObservationsByDate (collapses legacy coupon+autocall rows)', () => {
+  it('merges a same-date coupon + autocall pair into one row carrying both barriers', () => {
+    const legacy: StructuredNoteObservation[] = [
+      { observationNumber: 1, observationType: 'coupon', valuationDate: '2026-09-04', paymentDate: '2026-09-14', redemptionDate: null, couponDuePct: 0.025, autocallBarrierPct: null, couponBarrierPct: 0.65, status: 'scheduled' },
+      { observationNumber: 1, observationType: 'autocall', valuationDate: '2026-09-04', paymentDate: null, redemptionDate: '2026-09-14', couponDuePct: null, autocallBarrierPct: 1, couponBarrierPct: null, status: 'scheduled' },
+      { observationNumber: 2, observationType: 'final', valuationDate: '2028-06-05', paymentDate: '2028-06-12', redemptionDate: '2028-06-12', couponDuePct: 0.025, autocallBarrierPct: 1, couponBarrierPct: 0.65, status: 'scheduled' },
+    ]
+    const deduped = dedupeObservationsByDate(legacy)
+    assert.equal(deduped.length, 2) // 15→8 in practice; here 3→2
+    const first = deduped[0]
+    assert.equal(first.valuationDate, '2026-09-04')
+    assert.notEqual(first.observationType, 'autocall')
+    assert.equal(first.couponBarrierPct, 0.65)
+    assert.equal(first.autocallBarrierPct, 1) // folded in from the autocall row
     assert.equal(first.paymentDate, '2026-09-14')
   })
 })

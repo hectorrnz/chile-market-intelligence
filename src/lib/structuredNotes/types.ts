@@ -4,6 +4,15 @@
 // including client components and plain `node --test`.
 
 export type NoteStatus = 'active' | 'autocalled' | 'matured' | 'defaulted' | 'cancelled' | 'draft'
+
+/** The in-house sociedades the book is split across (workbook rows R42–R50). */
+export const DEFAULT_ENTITIES = [
+  'Watermill', 'Dubai', 'Staten', 'La Esperanza', 'Naidelt',
+  'Los Sauzales', 'Retboy', 'Los Laureles', 'Vanglor',
+] as const
+
+/** A note is "archived" (off the live book) when it has been called or has ended. */
+export const ARCHIVED_STATUSES: NoteStatus[] = ['autocalled', 'matured', 'cancelled', 'defaulted']
 export type NoteSourceType = 'pdf_extraction' | 'manual' | 'vendor_feed' | 'import'
 export type ObservationType = 'coupon' | 'autocall' | 'final'
 export type ObservationStatus =
