@@ -18,12 +18,55 @@ const text = readFileSync(FIXTURE, 'utf8')
 const result = extractStructuredNoteTerms([text], { fileName: 'citi_sample_terms.txt' })
 const n = result.note!
 
-describe('date parsing', () => {
-  it('parses "June 4, 2026" → ISO', () => {
+describe('date parsing (multi-format)', () => {
+  it('parses "June 4, 2026" (US) → ISO', () => {
     assert.equal(parseTermSheetDate('June 4, 2026'), '2026-06-04')
+  })
+  it('parses "04 Sep 2026" (EU schedule) → ISO', () => {
+    assert.equal(parseTermSheetDate('04 Sep 2026'), '2026-09-04')
+  })
+  it('parses "03/06/2026" (DD/MM/YYYY, day-first) → ISO', () => {
+    assert.equal(parseTermSheetDate('03/06/2026'), '2026-06-03')
+    assert.equal(parseTermSheetDate('12/06/2028'), '2028-06-12')
   })
   it('returns null for garbage', () => {
     assert.equal(parseTermSheetDate('not a date'), null)
+  })
+})
+
+describe('HSBC sample extraction (EU template)', () => {
+  const hsbcText = readFileSync(fileURLToPath(new URL('fixtures/structured-notes/hsbc_sample_terms.txt', import.meta.url)), 'utf8')
+  const hr = extractStructuredNoteTerms([hsbcText], { fileName: 'hsbc_sample_terms.txt' })
+  const hn = hr.note!
+  it('extracts full-confidence despite a different template than Citi', () => {
+    assert.equal(hr.ok, true)
+    assert.equal(hr.confidenceScore, 1)
+  })
+  it('extracts ISIN, issuer, DD/MM/YYYY dates', () => {
+    assert.equal(hn.isin, 'XS3376583269')
+    assert.equal(hn.issuerDisplayName, 'HSBC')
+    assert.equal(hn.tradeDate, '2026-06-03')
+    assert.equal(hn.maturityDate, '2028-06-12')
+  })
+  it('extracts coupon + barriers + issue size', () => {
+    assert.equal(hn.couponRatePeriodic, 0.025125)
+    assert.equal(hn.couponRateAnnualized, 0.1005)
+    assert.equal(hn.knockInBarrierPct, 0.65)
+    assert.equal(hn.autocallBarrierPct, 1)
+    assert.equal(hn.issueSize, 1005000)
+  })
+  it('extracts both underlyings with 3-column levels + Yahoo symbols', () => {
+    assert.equal(hn.underlyings.length, 2)
+    const spx = hn.underlyings.find((u) => u.underlyingName === 'SPX Index')!
+    assert.equal(spx.initialLevel, 7560.9)
+    assert.equal(spx.knockInBarrierLevel, 4914.585)
+    assert.equal(spx.yahooSymbol, '^GSPC')
+    assert.equal(hn.underlyings.find((u) => u.underlyingName === 'RTY Index')!.yahooSymbol, '^RUT')
+  })
+  it('extracts the combined schedule (7 coupon + 7 autocall + 1 final)', () => {
+    assert.equal(hn.observations.filter((o) => o.observationType === 'coupon').length, 7)
+    assert.equal(hn.observations.filter((o) => o.observationType === 'autocall').length, 7)
+    assert.equal(hn.observations.filter((o) => o.observationType === 'final').length, 1)
   })
 })
 

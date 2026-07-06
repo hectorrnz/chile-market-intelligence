@@ -1,0 +1,35 @@
+Structured Equity Products
+(10.05% p.a.) USD 2 Years Autocallable Phoenix Worst Of
+S&P 500 / RUSSELL 2000
+NON PRINCIPAL PROTECTED
+Due 12/06/2028
+KEY TERMS OF THE NOTES
+Issuer HSBC Bank plc (a limited liability company incorporated in England)
+Dealer HSBC Bank plc
+ADDITIONAL INFORMATION ON THE NOTES
+ISIN XS3376583269
+Principal Amount USD 1,005,000 (1,005 Notes)
+Denomination USD 1,000
+Issue Price 100%
+Settlement Currency USD
+Trade Date 03/06/2026
+Issue Date 10/06/2026
+Strike Date 03/06/2026
+Final Valuation Date 05/06/2028
+Maturity Date 12/06/2028
+i Underlying Bloomberg Ticker Exchange Initial Value Strike Value Barrier Value
+1 S&P 500 SPX Multiple Exchange 7,560.90 7,560.90 4,914.585
+2 RUSSELL 2000 RTY NYSE 2,892.15 2,892.15 1,879.8975
+Coupon Where: Coupon Ratej = j x 2.5125% - previously paid coupons. With Coupon Rate0 = 0
+Autocall Event An Autocall Event occurs if Reference Performancej >= Autocall Levelj
+j Autocall Valuation Date Autocall Level Autocall Autocall Redemption Date Coupon Valuation Date Coupon Level Coupon Payment Date
+1 04 Sep 2026 100.00% 100.00% 14 Sep 2026 04 Sep 2026 65.00% 14 Sep 2026
+2 07 Dec 2026 100.00% 100.00% 14 Dec 2026 07 Dec 2026 65.00% 14 Dec 2026
+3 05 Mar 2027 100.00% 100.00% 12 Mar 2027 05 Mar 2027 65.00% 12 Mar 2027
+4 07 Jun 2027 100.00% 100.00% 14 Jun 2027 07 Jun 2027 65.00% 14 Jun 2027
+5 03 Sep 2027 100.00% 100.00% 13 Sep 2027 03 Sep 2027 65.00% 13 Sep 2027
+6 06 Dec 2027 100.00% 100.00% 13 Dec 2027 06 Dec 2027 65.00% 13 Dec 2027
+7 06 Mar 2028 100.00% 100.00% 13 Mar 2028 06 Mar 2028 65.00% 13 Mar 2028
+8 - - - - 05 Jun 2028 65.00% 12 Jun 2028
+Barrier Level 65.00%
+Barrier Event A Barrier Event will occur if the Final Performance is at or below the Barrier Level.

@@ -454,6 +454,11 @@ native deps, Vercel-compatible). No new env vars. Middleware now protects
 `/structured-notes` + `/api/structured-notes` (authenticated-only, same pattern
 as watchlist/portfolio).
 
+**Phase 9B** adds a second migration `20260706120000_structured_notes_shared_book.sql` — apply it AFTER the
+9A migration. It converts the tables from per-user to a **shared internal book** (RLS `auth.uid() is not
+null`, ownership-guard triggers dropped, ISIN globally unique) so every authenticated user sees the same
+positions + a book-level dashboard. Public/anon access stays blocked.
+
 New routes: `/structured-notes`, `/structured-notes/[id]`, and
 `/api/structured-notes` (+ `/extract`, `/import`, `/[id]`, `/[id]/allocations`,
 `/[id]/allocations/[allocationId]`). Uploaded PDFs are parsed server-side and

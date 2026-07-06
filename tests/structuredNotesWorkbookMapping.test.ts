@@ -14,6 +14,7 @@ function read(rel: string): string {
 }
 
 const MIGRATION = read('../supabase/migrations/20260706000000_structured_notes_foundation.sql')
+const SHARED_MIGRATION = read('../supabase/migrations/20260706120000_structured_notes_shared_book.sql')
 const MAPPING_DOC = read('../docs/structured_notes_workbook_mapping.md')
 const MARKET_PROVIDER = read('../src/lib/structuredNotes/structuredNoteMarketProvider.ts')
 const SYMBOL_MAP = read('../src/lib/structuredNotes/underlyingSymbolMap.ts')
@@ -47,6 +48,22 @@ describe('migration — 7 tables, user-scoped, RLS', () => {
   })
   it('guards child ownership against the parent note', () => {
     assert.ok(MIGRATION.includes('check_structured_note_ownership'))
+  })
+})
+
+describe('shared book migration (9B) — all authenticated users share one book', () => {
+  it('replaces per-user RLS with authenticated-only (still no public/anon access)', () => {
+    assert.ok(SHARED_MIGRATION.includes('auth.uid() is not null'))
+    assert.ok(!/using \(true\)/.test(SHARED_MIGRATION))
+    assert.ok(!/to anon/i.test(SHARED_MIGRATION))
+    assert.ok(SHARED_MIGRATION.includes('sn_shared_select'))
+  })
+  it('drops the per-user ownership-guard triggers (isolation no longer applies)', () => {
+    assert.ok(SHARED_MIGRATION.includes('drop trigger if exists guard_sn_underlyings_owner'))
+    assert.ok(SHARED_MIGRATION.includes('drop function if exists check_structured_note_ownership'))
+  })
+  it('makes ISIN globally unique for the shared book', () => {
+    assert.ok(/unique index if not exists structured_notes_isin_unique/.test(SHARED_MIGRATION))
   })
 })
 

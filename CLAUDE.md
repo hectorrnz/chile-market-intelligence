@@ -390,6 +390,42 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 9B — Structured Notes: multi-issuer extraction + shared book dashboard** ✓ COMPLETE (2026-07-06)
+
+Follow-up to 9A addressing two user requirements: (1) the tab must be a **shared book-level dashboard** (all
+authenticated users see the same positions — how many are live, in/out of the money, about to autocall, total
+exposure — like the legacy workbook); (2) extraction must work beyond the single Citi sample.
+
+- **Parser generalized to multiple issuer templates** (`extractStructuredNoteTerms.ts`, `PARSER_VERSION 9B.multi.1`):
+  multi-format dates (`Month DD, YYYY` · `DD Mon YYYY` · `DD/MM/YYYY` day-first), label aliases
+  (Issue Size|Principal Amount, Currency|Settlement Currency, Trade|Strike Date, Maturity|Due), flexible
+  underlying rows (2–5 trailing levels; inline bare ticker like `SPX`/`RTY` **or** preceding `XXX Index`),
+  barrier aliases (Knock-In|Barrier Level, Coupon|Coupon Barrier Level, Autocall|Autocall Barrier Level),
+  coupon `X% per quarter` **or** `j × X%`, and a **combined EU schedule table** (HSBC) in addition to the
+  Citi two-block schedule. **Validated over the real book: 27/45 term sheets extract at confidence 1.0 —
+  every recent Citi + HSBC (the active June-2026 book), incl. the user's HSBC `XS3376583269`.** Barclays/BNP/
+  Santander/Crédit Agricole/BBVA/older-2024-Citi use distinct appendix/single-underlying layouts and still
+  **flag for review with honest per-field gaps** (never mis-parsed) — they are the next parser targets.
+- **Shared book** (migration `20260706120000_structured_notes_shared_book.sql`): RLS changed from per-user
+  (`auth.uid()=user_id`) to **any authenticated user** (`auth.uid() is not null`); ownership-guard triggers
+  dropped; ISIN made globally unique. `user_id` stays only as an upload/audit stamp. Public/anon still blocked.
+- **Dashboard** (`src/lib/structuredNotes/dashboard.ts`, pure): `GET /api/structured-notes` now returns
+  per-note live metrics (risk status safe/watch/breached/autocallable/unavailable, worst performer, distance
+  to barrier, current notional, next observation) + a book summary (live/ITM/near-barrier/autocallable counts,
+  total notional, issuer exposure) from ONE batched Yahoo call (`fetchYahooPriceMap`). The list page is now a
+  dashboard: KPI cards + a live status/worst/distance/notional column per position. Missing prices →
+  `unavailable`, never fabricated.
+- **Tests:** 86 structured-notes tests (added HSBC EU-template extraction against a sanitized fixture,
+  multi-format date parsing, dashboard aggregation, shared-migration RLS checks). Build 56 routes · lint 0 ·
+  tests 738.
+
+**Apply BOTH migrations** in order: `20260706000000_*` (9A) then `20260706120000_*` (9B shared book).
+
+Next: **Phase 9C** — extend the parser to Barclays/BNP/Santander/CA/BBVA appendix templates; scheduled
+price-snapshot persistence + observation-event automation.
+
+---
+
 **Phase 9A — Structured Notes Foundation + Excel Workbook Audit + PDF Extraction MVP** ✓ COMPLETE (2026-07-06)
 
 New **Structured Notes** module (`/structured-notes`, ES **Notas Estructuradas**) — an authenticated,

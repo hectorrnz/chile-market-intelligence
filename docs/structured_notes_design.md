@@ -91,10 +91,29 @@ note only persists on explicit user confirm. Low-confidence (<0.9) or error-bear
 - No service-role key in client code; the admin client is not used for these user-scoped tables.
 - Errors are sanitized (no JWTs/keys in responses).
 
+## Shared book (Phase 9B)
+
+The structured-notes tab is a **single shared book**: migration
+`20260706120000_structured_notes_shared_book.sql` changes RLS from per-user to *any authenticated user*
+(`auth.uid() is not null`), drops the ownership-guard triggers, and makes ISIN globally unique. Every signed-in
+user of the internal terminal sees the same positions and the same book-level dashboard (live count, in/out of
+the money, about-to-autocall, exposure) — auto-populating as PDFs are uploaded. `user_id` is retained only as
+an upload/audit stamp. Public/anon access remains blocked.
+
+## Multi-issuer extraction (Phase 9B)
+
+The parser (`PARSER_VERSION 9B.multi.1`) handles multiple issuer templates for the shared autocallable
+worst-of Phoenix-memory product: multi-format dates (`Month DD, YYYY`, `DD Mon YYYY`, `DD/MM/YYYY`), label
+aliases, flexible underlying rows (2–5 trailing levels, inline or preceding ticker), and both the Citi
+two-block and the EU combined schedule tables. Verified over the real book: **27/45 term sheets extract at
+confidence 1.0 — every recent Citi and HSBC.** Unhandled templates flag for review with honest gaps.
+
 ## Known limitations
 
-- Only the **Citi CGMFL "Memory Coupon Barrier Autocall"** family is validated for extraction. Other
-  issuers/families extract partially and are flagged for review rather than mis-parsed.
+- **Citi CGMFL** and **HSBC (EU)** families are validated at confidence 1.0. **Barclays / BNP Paribas /
+  Santander / Crédit Agricole / BBVA / older-2024 Citi** use distinct appendix-table or single-underlying
+  layouts and currently extract partially — they are flagged for human review (never mis-parsed) and are the
+  next parser targets (Phase 9C).
 - **No OCR** — scanned PDFs without a text layer are rejected (`no_text_layer`), not processed.
 - **No AI extraction** — deterministic regex/keyword anchoring only.
 - **No Bloomberg dependency** — the workbook's `BDP` live-price mechanism is replaced by Yahoo; some

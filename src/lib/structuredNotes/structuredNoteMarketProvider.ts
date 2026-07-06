@@ -35,6 +35,33 @@ export function yahooSymbolForUnderlying(u: Pick<StructuredNoteUnderlying, 'yaho
 }
 
 /**
+ * Fetches current prices for a set of Yahoo symbols in ONE batch call. Used by
+ * the dashboard so a whole book of notes costs a single Yahoo request. Returns
+ * a map of symbol → price (only symbols that resolved to a finite quote). If
+ * Yahoo is unreachable the map is empty and callers report `unavailable`.
+ */
+export async function fetchYahooPriceMap(symbols: string[]): Promise<{ prices: Map<string, number>; asOf: string | null }> {
+  const unique = [...new Set(symbols.filter((s): s is string => !!s))]
+  const prices = new Map<string, number>()
+  if (unique.length === 0) return { prices, asOf: null }
+  try {
+    const quotePromise = yf.quote(unique, {}, { validateResult: false })
+    const timeoutPromise = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Timeout')), TIMEOUT_MS))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw: any = await Promise.race([quotePromise, timeoutPromise])
+    const quotes = Array.isArray(raw) ? raw : [raw]
+    for (const q of quotes) {
+      const sym = q?.symbol as string | undefined
+      const px = q?.regularMarketPrice
+      if (sym && typeof px === 'number' && Number.isFinite(px)) prices.set(sym, px)
+    }
+    return { prices, asOf: prices.size > 0 ? new Date().toISOString() : null }
+  } catch {
+    return { prices, asOf: null }
+  }
+}
+
+/**
  * Fetches current prices for the given underlyings. Always returns one
  * UnderlyingPrice per input (never drops one). Unsupported/failed symbols are
  * marked `unavailable`. If Yahoo is unreachable entirely, every price is
