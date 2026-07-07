@@ -138,3 +138,47 @@ sits under.
 Critical fields (reject/flag extraction if missing): ISIN, issuer, trade date,
 maturity date, ≥1 underlying with an initial/strike level, barriers, coupon
 rate, and ≥1 observation.
+
+## 7. Phase 9C candidate templates (reviewed, not yet implemented)
+
+Four additional real term sheets were reviewed locally (2026-07-07, not committed — same
+no-commit rule as the Citi sample) to scope future parser generalization. All four are
+worst-of autocallable Phoenix/Snowball structures on SPX+RTY, structurally similar to the
+already-supported Citi/HSBC families, but each uses a distinct label vocabulary and table
+layout the current parser does not recognize:
+
+- **Crédit Agricole CIB** (`XS3306812929`, "Climber Reload Autocall"): numbered-section
+  layout (`3) Underlying(s)`, `4) Indicative Barrier Level(s)`, `6) Dates`). Barriers
+  labeled `Interest Barrier` / `Early Redemption Barrier` / `Final Redemption Barrier`
+  (not "Knock-In"/"Coupon"/"Autocall"). Schedule is a single combined table (`Interest
+  Observation Date / Interest Payment Date / IB / Fixed Rate` plus a separate `Automatic
+  Early Redemption Observation Date / ... Date / ERB / Reference Price` table) — two
+  tables like HSBC, but different column headers. Issuer is `Crédit Agricole CIB
+  Financial Solutions`, Guarantor `Crédit Agricole Corporate and Investment Bank`.
+- **BNP Paribas** (`XS2999188746`, "Phoenix Snowball"): dates written `Month DDth, YYYY`
+  (ordinal suffixes — `April 09th, 2025`, not handled by the current date regexes).
+  Barrier labels: `Knock-in Level` / `Automatic Early Redemption Level` / `Coupon Barrier
+  Level`. Underlying table columns are transposed/compressed with OCR-run-together
+  headers (`Initi Strike Level`, `Knock-in Leveli`) — needs a more tolerant column
+  parser. Issuer `BNP Paribas Issuance B.V.`, Guarantor `BNP Paribas`.
+- **Barclays Bank PLC** (`XS2998054097`, "Worst-of European Barrier Autocallable"):
+  clean label/value pairs (`Trade Date`, `Issue Date`, `Initial Valuation Date`, `Final
+  Valuation Date`) with plain `D Month YYYY` dates (day-first, no ordinal). Barrier
+  labels: `Knock-in Barrier Price` / `Interest Barrier` / `Autocall Barrier`, each
+  expressed as "N% of the Initial Price". Underlying table includes Bloomberg *and*
+  Refinitiv tickers inline in the name cell (`(Bloomberg Screen: SPX Index; Refinitiv
+  Screen: .SPX)`) — ticker extraction needs to prefer the Bloomberg one.
+- **BBVA Global Markets, B.V.** (`LA-SN-2025-0193` / series `25561`): a full EU
+  "Pricing Supplement" (Part A - Contractual Terms) format, the most verbose/legalistic
+  of the four — fields are buried inside numbered contractual clauses rather than a
+  compact term-sheet table, closer to a prospectus supplement than a one-page term
+  sheet. Issuer `BBVA GLOBAL MARKETS, B.V.`, Guarantor `BANCO BILBAO VIZCAYA
+  ARGENTARIA, S.A.`. Likely the hardest of the four to parse deterministically without
+  a dedicated clause-anchor set.
+
+None of these are extractable with the current `PARSER_VERSION 9B.multi.1` anchors —
+uploading them today would correctly **flag for review** with honest per-field gaps
+(the safe, expected behavior), not silently mis-parse. Extending support to any of them
+is a distinct, scoped Phase 9C task per issuer (new date-format handling for BNP's
+ordinal dates, new label aliases per issuer, and — for BBVA specifically — a different
+overall document structure).
