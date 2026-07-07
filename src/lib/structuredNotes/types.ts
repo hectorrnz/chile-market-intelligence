@@ -63,6 +63,21 @@ export interface StructuredNoteObservation {
   autocallBarrierPct: number | null
   couponBarrierPct: number | null
   status: ObservationStatus
+  // Phase 9D — populated by the scheduled monitoring job when this observation
+  // is evaluated (on/after its valuation date). Null until evaluated. These are
+  // MONITORING ESTIMATES from a free market-data provider, never an official
+  // calculation-agent determination — see reviewRequired/reviewReason.
+  observedAt?: string | null
+  observedSource?: string | null
+  observedSourceSymbol?: string | null
+  observedLevels?: Record<string, number | null> | null
+  worstPerformerTicker?: string | null
+  worstPerformerReturn?: number | null
+  couponEligible?: boolean | null
+  autocallEligible?: boolean | null
+  finalBarrierBreached?: boolean | null
+  reviewRequired?: boolean
+  reviewReason?: string | null
 }
 
 export interface StructuredNoteAllocation {

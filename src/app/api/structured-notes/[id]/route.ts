@@ -7,8 +7,10 @@ import {
   getStructuredNoteById,
   updateStructuredNote,
   deleteStructuredNote,
+  getLatestStructuredNotePriceSnapshots,
 } from '@/lib/db/repositories/structuredNotesRepository'
 import { fetchUnderlyingPrices } from '@/lib/structuredNotes/structuredNoteMarketProvider'
+import { detectStalePrice } from '@/lib/structuredNotes/monitoring'
 import {
   calculateWorstPerformer,
   calculateCurrentRiskStatus,
@@ -45,8 +47,15 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   const worst = calculateWorstPerformer(note.underlyings, prices)
   const riskStatus = calculateCurrentRiskStatus(note, prices)
   const nextObs = calculateNextObservation(note.observations, asOf)
+
+  // Latest PERSISTED snapshot per underlying (from the scheduled monitoring
+  // cron) — distinct from the live `prices` above (fetched fresh on every
+  // page load for the "Update" button's immediate-refresh behavior).
+  const latestSnapshots = note.id ? await getLatestStructuredNotePriceSnapshots(client, [note.id]) : new Map()
+
   const distances = note.underlyings.map((u) => {
     const price = prices.find((p) => p.underlyingOrder === u.underlyingOrder)
+    const snapshot = u.id ? latestSnapshots.get(u.id) : undefined
     return {
       underlyingOrder: u.underlyingOrder,
       underlyingName: u.underlyingName,
@@ -55,6 +64,9 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       distanceToCouponBarrier: calculateDistanceToBarrier(price?.price ?? null, u.couponBarrierLevel),
       distanceToKnockInBarrier: calculateDistanceToBarrier(price?.price ?? null, u.knockInBarrierLevel),
       distanceToAutocallBarrier: calculateDistanceToBarrier(price?.price ?? null, u.autocallBarrierLevel),
+      lastMonitoredPrice: snapshot?.price ?? null,
+      lastMonitoredDate: snapshot?.priceDate ?? null,
+      lastMonitoredStale: snapshot ? detectStalePrice({ priceDate: snapshot.priceDate, price: snapshot.price }, asOf) : true,
     }
   })
 

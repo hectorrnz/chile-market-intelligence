@@ -22,6 +22,9 @@ interface Distance {
   distanceToCouponBarrier: number | null
   distanceToKnockInBarrier: number | null
   distanceToAutocallBarrier: number | null
+  lastMonitoredPrice: number | null
+  lastMonitoredDate: string | null
+  lastMonitoredStale: boolean
 }
 interface DetailResponse {
   note: StructuredNote
@@ -133,7 +136,7 @@ export default function StructuredNoteDetailPage() {
         <Card title={t.sn.currentPrices} note={t.sn.sourceMarket}>
           <table className="w-full text-sm">
             <thead><tr className="border-b border-border">
-              {[t.sn.colUnderlyings, 'Level', t.sn.distanceCoupon, t.sn.distanceKnockIn].map((h) => <th key={h} className="text-center py-1.5 px-2 ui-table-header text-muted-fg">{h}</th>)}
+              {[t.sn.colUnderlyings, 'Level', t.sn.distanceCoupon, t.sn.distanceKnockIn, t.sn.monitoring.lastRun].map((h) => <th key={h} className="text-center py-1.5 px-2 ui-table-header text-muted-fg">{h}</th>)}
             </tr></thead>
             <tbody>
               {data.metrics.distances.map((d) => (
@@ -142,10 +145,16 @@ export default function StructuredNoteDetailPage() {
                   <td className="py-1.5 px-2 text-center ui-number">{d.currentLevel !== null ? fmtNum(d.currentLevel) : <span className="text-muted-fg">{t.sn.unavailable}</span>}</td>
                   <td className="py-1.5 px-2 text-center ui-number">{fmtPct(d.distanceToCouponBarrier)}</td>
                   <td className="py-1.5 px-2 text-center ui-number">{fmtPct(d.distanceToKnockInBarrier)}</td>
+                  <td className="py-1.5 px-2 text-center ui-number text-xs">
+                    {d.lastMonitoredDate ? (
+                      <span className={d.lastMonitoredStale ? 'text-warning' : 'text-muted-fg'}>{d.lastMonitoredDate}{d.lastMonitoredStale ? ' ⚠' : ''}</span>
+                    ) : <span className="text-muted-fg">{t.sn.monitoring.never}</span>}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          <p className="mt-2 text-xs text-muted-fg italic">{t.sn.monitoring.estimateDisclaimer}</p>
         </Card>
 
         {/* Underlyings */}
@@ -171,22 +180,37 @@ export default function StructuredNoteDetailPage() {
           </table>
         </Card>
 
-        {/* Schedule — one row per valuation date (coupon + autocall coincide) */}
+        {/* Schedule — one row per valuation date (coupon + autocall coincide).
+            Coupon/Autocall columns show the scheduled monitoring job's evaluation
+            once an observation's valuation date arrives — a monitoring estimate,
+            never an official calculation-agent determination. */}
         <Card title={t.sn.schedule}>
           <div className="max-h-64 overflow-y-auto">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-border">
-                {['#', 'Valuation', 'Payment', 'Coupon barrier', 'Autocall barrier', 'Status'].map((h) => <th key={h} className="text-center py-1.5 px-2 ui-table-header text-muted-fg whitespace-nowrap">{h}</th>)}
+                {['#', 'Valuation', 'Payment', 'Coupon barrier', 'Autocall barrier', 'Status', t.sn.monitoring.coupon, t.sn.monitoring.autocall].map((h) => <th key={h} className="text-center py-1.5 px-2 ui-table-header text-muted-fg whitespace-nowrap">{h}</th>)}
               </tr></thead>
               <tbody>
                 {dedupeObservationsByDate(n.observations).map((o) => (
-                  <tr key={`${o.observationNumber}-${o.valuationDate}`} className="border-b border-border last:border-0">
+                  <tr key={`${o.observationNumber}-${o.valuationDate}`} className="border-b border-border last:border-0" title={o.reviewRequired && o.reviewReason ? `${t.sn.monitoring.reviewReason}: ${o.reviewReason}` : undefined}>
                     <td className="py-1.5 px-2 text-center">{o.observationNumber}{o.observationType === 'final' ? ' ·F' : ''}</td>
                     <td className="py-1.5 px-2 text-center ui-number">{o.valuationDate}</td>
                     <td className="py-1.5 px-2 text-center ui-number">{o.paymentDate ?? o.redemptionDate ?? '—'}</td>
                     <td className="py-1.5 px-2 text-center ui-number">{fmtPct(o.couponBarrierPct)}</td>
                     <td className="py-1.5 px-2 text-center ui-number">{fmtPct(o.autocallBarrierPct)}</td>
-                    <td className="py-1.5 px-2 text-center text-xs text-muted-fg">{o.status}</td>
+                    <td className="py-1.5 px-2 text-center text-xs text-muted-fg">
+                      {o.status}{o.reviewRequired ? <span className="text-warning"> ⚠</span> : ''}
+                    </td>
+                    <td className="py-1.5 px-2 text-center text-xs">
+                      {o.couponEligible === true ? <span className="text-positive">{t.sn.monitoring.eligible}</span>
+                        : o.couponEligible === false ? <span className="text-negative">{t.sn.monitoring.notEligible}</span>
+                        : <span className="text-muted-fg">—</span>}
+                    </td>
+                    <td className="py-1.5 px-2 text-center text-xs">
+                      {o.autocallEligible === true ? <span className="text-positive">{t.sn.monitoring.eligible}</span>
+                        : o.autocallEligible === false ? <span className="text-negative">{t.sn.monitoring.notEligible}</span>
+                        : <span className="text-muted-fg">—</span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>

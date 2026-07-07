@@ -461,16 +461,29 @@ positions + a book-level dashboard. Public/anon access stays blocked.
 
 **Phase 9B.1** adds `20260707000000_structured_notes_allocation_upsert.sql` (unique `(note_id, entity_name)`
 constraint for the allocation-by-entity grid). **Phase 9B.2** adds `20260708000000_structured_notes_archived_at.sql`
-(a single additive `archived_at timestamptz` column). Apply all four migrations in order:
-`20260706000000_*` → `20260706120000_*` → `20260707000000_*` → `20260708000000_*`.
+(a single additive `archived_at timestamptz` column). **Phase 9D** adds
+`20260709000000_structured_notes_monitoring.sql` (makes `structured_note_price_snapshots.user_id` nullable,
+adds monitoring-evaluation columns to `structured_note_observations`, creates
+`structured_note_monitoring_runs`). Apply all five migrations in order:
+`20260706000000_*` → `20260706120000_*` → `20260707000000_*` → `20260708000000_*` → `20260709000000_*`.
 
 **Phase 9C** (parser expansion to Crédit Agricole/BNP Paribas/Barclays/BBVA) added **no new migration, no new
 routes, and no new env vars** — it is a pure parser-code change behind the existing `/api/structured-notes/extract`
 route (new files under `src/lib/structuredNotes/pdf/parsers/`).
 
+**Phase 9D** (scheduled price-snapshot persistence + observation-event automation) adds:
+- `GET /api/cron/structured-notes/snapshot` — Bearer `CRON_SECRET` auth (same pattern as
+  `/api/cron/ingest-bcch-macro` and `/api/cron/check-ingestion-health`), service-role admin client. Vercel
+  cron schedule `30 21 * * 1-5` (weekdays, 21:30 UTC — see `docs/structured_notes_design.md` for the DST
+  rationale). **No new env var** — reuses the existing `CRON_SECRET`.
+- `GET /api/structured-notes/monitoring-status` — authenticated-only, read-only, same middleware protection
+  as the rest of `/api/structured-notes/*`.
+- The existing "Update" button and on-demand dashboard/detail routes are **unchanged** — the scheduled cron
+  is additive, not a replacement of the live-refresh path.
+
 New routes: `/structured-notes`, `/structured-notes/[id]`, and
 `/api/structured-notes` (+ `/extract`, `/import`, `/[id]`, `/[id]/allocations`,
-`/[id]/allocations/[allocationId]`). Uploaded PDFs are parsed server-side and
+`/[id]/allocations/[allocationId]`, `/monitoring-status`). Uploaded PDFs are parsed server-side and
 never persisted or served publicly. **Never commit the real workbook or private
 term-sheet PDFs** — only the sanitized text fixtures under
 `tests/fixtures/structured-notes/` belong in the repo. See

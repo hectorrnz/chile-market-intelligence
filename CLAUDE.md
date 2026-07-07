@@ -390,6 +390,86 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 9D — Structured Notes: scheduled price snapshots + observation automation** ✓ COMPLETE (2026-07-07)
+
+Turns Structured Notes from automated PDF ingestion into **automated monitoring** — a scheduled cron now
+persists price snapshots for every active note's underlyings, evaluates due observations (coupon/autocall/
+final) against those levels, and applies one conservative automatic status transition. The existing
+on-demand "Update" button and live dashboard/detail routes are **unchanged** — scheduled monitoring is
+additive, never a replacement of the immediate-refresh path.
+
+**Monitoring policy** (see `docs/structured_notes_design.md` § "Scheduled monitoring"): every level is a
+MONITORING ESTIMATE from Yahoo Finance, never an official calculation-agent determination — labeled as such
+everywhere it's surfaced. Missing/unsupported prices → `unavailable`, never fabricated. Coupon/autocall
+observations transition deterministically once due (the worst-of barrier math is exact); **final/maturity
+observations are always flagged `reviewRequired`** — the legal payoff requires manual verification and is
+never auto-finalized without an official source. Archived/called notes are never reactivated by scheduled
+monitoring (`getActiveStructuredNotesForMonitoring` filters to `active` only; `shouldUpdateNoteStatus`
+additionally guards against touching an archived note).
+
+**Migration** `20260709000000_structured_notes_monitoring.sql`: makes
+`structured_note_price_snapshots.user_id` nullable (the cron writes via the service-role admin client — no
+session exists to populate `default auth.uid()`, consistent with the Phase 9B shared-book model where
+`user_id` is already just an upload/audit stamp); adds 11 monitoring-evaluation columns to
+`structured_note_observations` (`observed_at`, `observed_source`, `observed_levels`, `coupon_eligible`,
+`autocall_eligible`, `final_barrier_breached`, `review_required`, `review_reason`, etc.), distinct from the
+extraction-time terms already on that table; creates `structured_note_monitoring_runs` (system-level audit
+log mirroring the `structured_note_extraction_runs` precedent — no `user_id`, read-only RLS for any
+authenticated user, **no insert/update/delete policy at all** — writes are service-role only).
+
+**Pure calculations** (`src/lib/structuredNotes/monitoring.ts`): `getActiveStructuredNotesForMonitoring`,
+`getUniqueUnderlyingSymbols`, `calculateStructuredNoteSnapshot`, `detectStalePrice`,
+`classifyStructuredNoteRisk` (reuses the Phase 9B severity model so the cron and the on-demand dashboard
+never disagree), `evaluateCouponObservation`/`evaluateAutocallObservation`/`evaluateFinalObservation`,
+`evaluateObservation` (dispatch + due-date gating — an observation only evaluates once, when its valuation
+date is due and it's still `scheduled`), `shouldUpdateNoteStatus` (the **one** conservative automatic
+transition this module makes: autocall-eligible + clean/complete data → note `autocalled`),
+`deriveObservationStatus`, `calculateDashboardAggregates`.
+
+**Market provider** (`structuredNoteMonitoringProvider.ts`): wraps the existing batched Yahoo call
+(`fetchYahooPriceMap`) with per-symbol success/failure accounting, so one bad symbol never blocks the rest
+of the book — the cron correctly reports `partial_success` rather than an all-or-nothing pass/fail. No
+Bloomberg, no paid vendor feed — same as the rest of the module.
+
+**Cron route** `GET /api/cron/structured-notes/snapshot` — Bearer `CRON_SECRET` (same pattern as
+`/api/cron/ingest-bcch-macro` and `/api/cron/check-ingestion-health`; no new env var), service-role admin
+client (the one intentional service-role use in this module, justified by there being no authenticated
+session for a scheduled job). Vercel schedule `30 21 * * 1-5` (weekdays, 21:30 UTC) — fixed safely after the
+US market's 4:00pm ET close across both the EDT (→4:30pm ET) and EST (→5:30pm ET) halves of the year, since
+Vercel Cron has no timezone parameter. **Read endpoint** `GET /api/structured-notes/monitoring-status` —
+authenticated, user-session client, latest run + stale/unsupported/due-soon/review-required counts.
+
+**UI** (no layout redesign): dashboard shows the last monitoring run timestamp/status + stale/unsupported/
+due-soon/review-required counts + a monitoring-estimate disclaimer line; detail page's current-levels table
+gains a "last monitored" column (with a staleness warning icon), and the observation-schedule table gains
+Coupon/Autocall eligibility columns plus a `title` tooltip surfacing the review-required reason.
+
+**Real-data validation** (ran against the live production Supabase book — the only environment available,
+no separate staging DB): 5 active notes, 2 unique underlying symbols (SPX/RTY shared across the whole
+current book). First run persisted 10 price-snapshot rows and correctly evaluated 5 already-due Barclays
+coupon observations (valuation dates 2025-07-07 through 2026-07-06, all in the past relative to the
+validation date) as `coupon_paid` — both underlyings were genuinely well above their 65% coupon barrier at
+current market levels, so this is accurate real history, not test pollution. A second run confirmed
+idempotent upsert behavior: still exactly 10 snapshot rows (refreshed in place), and 0 observations
+re-evaluated (they were no longer `scheduled`, correctly skipped by the due-date/status gate).
+
+**Tests:** 2 new test files, 55 new tests — `tests/structuredNotesMonitoring.test.ts` (pure calculations:
+worst-of strict eligibility, no NaN/Infinity, stale-price detection, archived-note non-reactivation,
+conservative status transitions, dashboard aggregates) and `tests/structuredNotesMonitoringRoutes.test.ts`
+(cron auth, no-secret-leakage, RLS/migration structure, Vercel cron config, macro/health cron regression).
+862 tests total (807 → 862). Build 59 routes · lint 0.
+
+Scope limits (explicit): scheduled monitoring only — no CMF/XBRL work, no News/Hechos/FX/calendar work, no
+mobile work, auth/watchlist/portfolio/macro/market/financials untouched except by reusing the existing
+market-provider utilities. No official calculation-agent feed, no paid/vendor data, no Bloomberg dependency.
+Global (non-US) underlyings and a more robust/official market-data source remain future work.
+
+**Apply FIVE migrations** in order: `20260706000000_*` (9A) → `20260706120000_*` (9B shared book) →
+`20260707000000_*` (9B.1 allocation upsert) → `20260708000000_*` (9B.2 archived_at) → `20260709000000_*`
+(9D monitoring).
+
+---
+
 **Phase 9C — Structured Notes: multi-issuer parser expansion** ✓ COMPLETE (2026-07-07)
 
 Extended the deterministic PDF parser from 2 issuer families (Citi/HSBC, Phase 9B) to 6, adding **Crédit

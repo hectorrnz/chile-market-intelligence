@@ -894,3 +894,64 @@ Build 56 routes · lint 0 · tests 807/807.
 
 Next: **Phase 9D** (scheduled price snapshots + observation-event automation) or return to **Phase 8C.2**
 (CMF/XBRL automated financials ingestion).
+
+---
+
+## Phase 9D — Structured Notes: Scheduled Price Snapshots + Observation Automation ✓ COMPLETE (2026-07-07)
+
+Turns Structured Notes from automated PDF ingestion into **automated monitoring** — the primary requirement
+for this phase. A scheduled cron now persists price snapshots for every active note's underlyings, evaluates
+due observations (coupon/autocall/final) against those levels, and applies one conservative automatic
+status transition. The existing on-demand "Update" button and live dashboard/detail routes are unchanged —
+scheduled monitoring is additive, not a replacement.
+
+- **Monitoring policy:** every level is a MONITORING ESTIMATE from Yahoo Finance, never an official
+  calculation-agent determination — labeled as such everywhere it's surfaced. Missing/unsupported prices →
+  `unavailable`, never fabricated. Coupon/autocall observations can transition deterministically once due
+  (the barrier math is exact); final/maturity observations are **always** flagged `reviewRequired` — the
+  legal payoff requires manual verification, never auto-finalized. Archived/called notes are never
+  reactivated by scheduled monitoring.
+- **Migration** `20260709000000_structured_notes_monitoring.sql`: makes
+  `structured_note_price_snapshots.user_id` nullable (the cron writes via the service-role admin client, no
+  session exists to populate `default auth.uid()`); adds 11 monitoring-evaluation columns to
+  `structured_note_observations` (`observed_at`, `observed_source`, `observed_levels`, `coupon_eligible`,
+  `autocall_eligible`, `final_barrier_breached`, `review_required`, `review_reason`, etc.); creates
+  `structured_note_monitoring_runs` (system-level audit log, no `user_id`, read-only RLS for any
+  authenticated user, no insert/update/delete policy — writes are service-role only).
+- **Pure calculations** (`src/lib/structuredNotes/monitoring.ts`): `getActiveStructuredNotesForMonitoring`,
+  `getUniqueUnderlyingSymbols`, `calculateStructuredNoteSnapshot`, `detectStalePrice`,
+  `classifyStructuredNoteRisk` (reuses the Phase 9B severity model so the cron and the on-demand dashboard
+  never disagree), `evaluateCouponObservation`/`evaluateAutocallObservation`/`evaluateFinalObservation`,
+  `evaluateObservation` (dispatch + due-date gating), `shouldUpdateNoteStatus` (the one conservative
+  automatic transition — autocall-eligible + clean data → `autocalled`), `deriveObservationStatus`,
+  `calculateDashboardAggregates`.
+- **Market provider** (`structuredNoteMonitoringProvider.ts`): wraps the existing batched Yahoo call with
+  per-symbol success/failure accounting, so one bad symbol never blocks the rest of the book — the cron
+  correctly reports `partial_success` rather than an all-or-nothing pass/fail.
+- **Cron route** `GET /api/cron/structured-notes/snapshot` — Bearer `CRON_SECRET` (same pattern as the
+  existing macro/health crons), service-role admin client. Vercel schedule `30 21 * * 1-5` (weekdays, 21:30
+  UTC — fixed post-US-close across both EDT/EST halves of the year, since Vercel Cron has no timezone
+  parameter). **Read endpoint** `GET /api/structured-notes/monitoring-status` — authenticated, latest run +
+  stale/unsupported/due-soon/review-required counts.
+- **UI:** dashboard shows the last monitoring run + stale/unsupported/due-soon/review-required counts + a
+  monitoring-estimate disclaimer, without redesigning the layout; detail page's current-levels table gains a
+  "last monitored" column (with a staleness warning), and the observation-schedule table gains Coupon/Autocall
+  eligibility columns with a review-required tooltip.
+- **Real-data validation:** ran the cron against the live production Supabase book (5 active notes, 2 unique
+  underlying symbols) — persisted 10 price-snapshot rows, correctly evaluated 5 already-due Barclays coupon
+  observations as `coupon_paid` (both underlyings well above their 65% barrier), recorded a `success`
+  monitoring run, and a second run confirmed idempotent upsert (still 10 rows, 0 re-evaluated since those
+  observations were no longer `scheduled`).
+- **Tests:** 2 new test files, 55 new tests (pure monitoring calculations: worst-of strict eligibility, no
+  NaN/Infinity, stale-price detection, archived-note non-reactivation, conservative status transitions; plus
+  route/migration hygiene checks: cron auth, no-secret-leakage, RLS structure). 862 tests total (807 → 862).
+
+Scope limits (explicit): scheduled monitoring only — no CMF/XBRL work, no News/Hechos/FX/calendar work, no
+mobile work, auth/watchlist/portfolio/macro/market/financials untouched except by reusing the existing
+market-provider utilities. No official calculation-agent feed, no paid/vendor data, no Bloomberg. Global
+(non-US) underlyings and a robust/official market-data source remain future work (Phase 9E).
+
+Build 59 routes · lint 0 · tests 862/862.
+
+Next: **Phase 9E** (official/robust structured-note market-data provider expansion) or return to
+**Phase 8C.2** (CMF/XBRL automated financials ingestion).

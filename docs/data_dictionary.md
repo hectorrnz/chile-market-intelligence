@@ -510,24 +510,40 @@ parentheses, no bp/pp suffixes.
 
 ---
 
-## Entity: Structured Notes (Phase 9A)
+## Entity: Structured Notes (Phase 9A–9D)
 
-Internal, user-scoped structured-note tracking — replaces the legacy `NUEVA BASE - Notas Estructuradas.xlsx`.
+Internal, shared-book structured-note tracking — replaces the legacy `NUEVA BASE - Notas Estructuradas.xlsx`.
 Populated automation-first via term-sheet PDF extraction; manual entry is a fallback. Full audit + workbook
 mapping in `docs/structured_notes_workbook_mapping.md`; design in `docs/structured_notes_design.md`.
 
-Tables (migration `20260706000000_structured_notes_foundation.sql`, all user-scoped, RLS `auth.uid()=user_id`):
+Tables (migrations `20260706000000_structured_notes_foundation.sql` → `20260706120000_*` (shared book) →
+`20260707000000_*` (allocation upsert) → `20260708000000_*` (archived_at) → `20260709000000_*` (monitoring),
+RLS `auth.uid() is not null` — shared book, `user_id` is an upload/audit stamp only):
 
 - **structured_notes** — note header + terms + barriers + `source_type`/`source_file_name`/`confidence_score`/
-  `extraction_run_id` provenance; `status` ∈ active/autocalled/matured/defaulted/cancelled/draft.
+  `extraction_run_id` provenance + `archived_at`; `status` ∈ active/autocalled/matured/defaulted/cancelled/draft.
 - **structured_note_underlyings** — per-underlying `initial/strike/knock_in/coupon/autocall` levels + pct +
   `yahoo_symbol` (Bloomberg ticker mapped to Yahoo; **no Bloomberg call in the app**).
 - **structured_note_observations** — coupon/autocall/final schedule (`observation_type`, `valuation_date`,
-  `payment_date`, `status`).
+  `payment_date`, `status`). Phase 9D adds monitoring-evaluation columns, populated only by the scheduled
+  cron and distinct from the extraction-time terms above: `observed_at`, `observed_source`,
+  `observed_source_symbol`, `observed_levels` (jsonb), `worst_performer_ticker`, `worst_performer_return`,
+  `coupon_eligible`, `autocall_eligible`, `final_barrier_breached`, `review_required` (default `false`),
+  `review_reason`.
 - **structured_note_allocations** — **internal** entity/sociedad notional split (never extracted from a PDF).
-- **structured_note_price_snapshots** — persisted Yahoo levels (compute-on-request today).
+- **structured_note_price_snapshots** — persisted Yahoo levels, now **written on a daily schedule** by the
+  Phase 9D cron (upsert on `(underlying_id, price_date, source)` — safe to re-run same-day). `user_id` is
+  **nullable** as of Phase 9D (the cron writes via the service-role admin client, which has no session to
+  populate `default auth.uid()`).
 - **structured_note_extraction_runs** — one audit row per extraction attempt (confidence, warnings, errors, payload).
 - **structured_note_extracted_fields** — per-field provenance (raw excerpt, confidence, page, section, warning).
+- **structured_note_monitoring_runs** (Phase 9D) — one audit row per scheduled-monitoring run: `run_type` ∈
+  scheduled_snapshot/manual_refresh/observation_check/backfill, `status` ∈ running/success/partial_success/failed,
+  active-note/underlying/price/observation counts, `warnings`/`errors` (jsonb). No `user_id` (system-level,
+  like `structured_note_extraction_runs`); RLS allows `select` for any authenticated user and has **no
+  insert/update/delete policy** — writes are service-role only.
 
 **No consensus/estimate fields exist** on any structured-note table. Market levels are always read live from
-Yahoo (or reported `unavailable`), never fabricated.
+Yahoo (or reported `unavailable`), never fabricated. Observation `coupon_eligible`/`autocall_eligible`/
+`final_barrier_breached` are MONITORING ESTIMATES from the same Yahoo levels — never an official
+calculation-agent determination; `review_required` + `review_reason` make that limitation explicit per row.

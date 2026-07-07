@@ -1092,6 +1092,19 @@ export interface Database {
           metadata: Record<string, unknown>
           created_at: string
           updated_at: string
+          // Phase 9D — populated by the scheduled monitoring cron, distinct from
+          // the extraction-time terms above.
+          observed_at: string | null
+          observed_source: string | null
+          observed_source_symbol: string | null
+          observed_levels: Record<string, unknown> | null
+          worst_performer_ticker: string | null
+          worst_performer_return: number | null
+          coupon_eligible: boolean | null
+          autocall_eligible: boolean | null
+          final_barrier_breached: boolean | null
+          review_required: boolean
+          review_reason: string | null
         }
         Insert: Record<string, unknown>
         Update: Record<string, unknown>
@@ -1118,11 +1131,37 @@ export interface Database {
           id: string
           note_id: string
           underlying_id: string
-          user_id: string
+          // Phase 9D — nullable: the scheduled monitoring cron writes via the
+          // service-role admin client with no authenticated session, so
+          // `default auth.uid()` can no longer be relied on to populate this.
+          user_id: string | null
           price_date: string
           price: number | null
           source: string
           source_symbol: string | null
+          metadata: Record<string, unknown>
+          created_at: string
+        }
+        Insert: Record<string, unknown>
+        Update: Record<string, unknown>
+      }
+      structured_note_monitoring_runs: {
+        Row: {
+          id: string
+          run_type: string
+          status: string
+          started_at: string
+          completed_at: string | null
+          active_note_count: number | null
+          underlying_count: number | null
+          prices_requested: number | null
+          prices_succeeded: number | null
+          prices_failed: number | null
+          observations_checked: number | null
+          observations_updated: number | null
+          notes_updated: number | null
+          warnings: unknown[]
+          errors: unknown[]
           metadata: Record<string, unknown>
           created_at: string
         }
@@ -1209,5 +1248,6 @@ export type StructuredNoteUnderlyingRow = Database['public']['Tables']['structur
 export type StructuredNoteObservationRow = Database['public']['Tables']['structured_note_observations']['Row']
 export type StructuredNoteAllocationRow = Database['public']['Tables']['structured_note_allocations']['Row']
 export type StructuredNotePriceSnapshotRow = Database['public']['Tables']['structured_note_price_snapshots']['Row']
+export type StructuredNoteMonitoringRunRow = Database['public']['Tables']['structured_note_monitoring_runs']['Row']
 export type StructuredNoteExtractionRunRow = Database['public']['Tables']['structured_note_extraction_runs']['Row']
 export type StructuredNoteExtractedFieldRow = Database['public']['Tables']['structured_note_extracted_fields']['Row']

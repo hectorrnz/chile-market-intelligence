@@ -15,6 +15,16 @@ import { ARCHIVED_STATUSES } from '@/lib/structuredNotes/types'
 import type { StructuredNote } from '@/lib/structuredNotes/types'
 import type { NoteDashboardMetrics, BookSummary } from '@/lib/structuredNotes/dashboard'
 
+interface MonitoringStatus {
+  latestRun: { status: string; startedAt: string; completedAt: string | null; pricesSucceeded: number | null; pricesFailed: number | null } | null
+  latestSnapshotDate: string | null
+  activeNoteCount: number
+  unsupportedUnderlyingCount: number
+  staleNoteCount: number
+  dueSoonCount: number
+  reviewRequiredCount: number
+}
+
 type ReviewState = 'ready' | 'review_recommended' | 'review_required' | 'unsupported'
 
 interface ExtractResponse {
@@ -65,6 +75,7 @@ export default function StructuredNotesPage() {
   const [preview, setPreview] = useState<ExtractResponse | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [monitoring, setMonitoring] = useState<MonitoringStatus | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const ingest = useCallback((json: { notes?: StructuredNote[]; metrics?: NoteDashboardMetrics[]; summary?: BookSummary }) => {
@@ -75,11 +86,22 @@ export default function StructuredNotesPage() {
     setSummary(json.summary ?? null)
   }, [])
 
+  const loadMonitoring = useCallback(async () => {
+    try {
+      const res = await fetch('/api/structured-notes/monitoring-status', { cache: 'no-store' })
+      const json = await res.json().catch(() => null)
+      setMonitoring(res.ok ? (json as MonitoringStatus) : null)
+    } catch {
+      setMonitoring(null)
+    }
+  }, [])
+
   const load = useCallback(async () => {
     const res = await fetch('/api/structured-notes', { cache: 'no-store' })
     const json = await res.json().catch(() => ({}))
     ingest(json)
-  }, [ingest])
+    await loadMonitoring()
+  }, [ingest, loadMonitoring])
 
   useEffect(() => {
     const cancelled = { value: false }
@@ -94,9 +116,10 @@ export default function StructuredNotesPage() {
       } finally {
         if (!cancelled.value) setLoading(false)
       }
+      void loadMonitoring()
     })()
     return () => { cancelled.value = true }
-  }, [ingest])
+  }, [ingest, loadMonitoring])
 
   async function refresh() {
     setRefreshing(true)
@@ -222,7 +245,22 @@ export default function StructuredNotesPage() {
           )}
         </div>
       )}
-      {summary?.pricesAsOf && <div className="mb-4 text-xs text-muted-fg">{t.sn.pricesAsOf} {new Date(summary.pricesAsOf).toLocaleString()}</div>}
+      {summary?.pricesAsOf && <div className="text-xs text-muted-fg">{t.sn.pricesAsOf} {new Date(summary.pricesAsOf).toLocaleString()}</div>}
+
+      {/* Scheduled monitoring status — Update above stays an immediate on-demand
+          refresh; this line reports the automated background job separately. */}
+      {monitoring && (
+        <div className="mb-4 text-xs text-muted-fg flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span>
+            {t.sn.monitoring.lastRun}: {monitoring.latestRun ? `${new Date(monitoring.latestRun.startedAt).toLocaleString()} (${monitoring.latestRun.status})` : t.sn.monitoring.never}
+          </span>
+          {monitoring.staleNoteCount > 0 && <span className="text-warning">{monitoring.staleNoteCount} {t.sn.monitoring.stale}</span>}
+          {monitoring.unsupportedUnderlyingCount > 0 && <span className="text-warning">{monitoring.unsupportedUnderlyingCount} {t.sn.monitoring.unsupported}</span>}
+          {monitoring.dueSoonCount > 0 && <span style={{ color: 'var(--accent)' }}>{monitoring.dueSoonCount} {t.sn.monitoring.dueSoon}</span>}
+          {monitoring.reviewRequiredCount > 0 && <span className="text-negative">{monitoring.reviewRequiredCount} {t.sn.monitoring.reviewRequired}</span>}
+          <span className="italic">{t.sn.monitoring.estimateDisclaimer}</span>
+        </div>
+      )}
 
       {/* Upload + Update bar + view toggle */}
       <div className="mb-5 flex flex-wrap items-center gap-3 no-print">

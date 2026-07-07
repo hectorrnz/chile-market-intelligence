@@ -155,6 +155,7 @@ without them** (they never run during build). Full guide:
 | **Phase 9A** | Structured Notes module — automation-first term-sheet PDF extraction (Citi CGMFL family), workbook audit, normalized schema, barrier/worst-of/exposure calculations, Yahoo live levels (replacing Bloomberg BDP) | ✓ Complete |
 | **Phase 9B/9B.1/9B.2** | Structured Notes — HSBC parser generalization, shared book-level dashboard, Called/Archived flow, allocation-by-entity grid, issuer/entity charts, dashboard sorting/filtering/legend UX | ✓ Complete |
 | **Phase 9C** | Structured Notes — parser expansion to Crédit Agricole, BNP Paribas, Barclays, and BBVA via a new issuer-detection router; 4-state confidence/review-state model | ✓ Complete |
+| **Phase 9D** | Structured Notes — scheduled price-snapshot persistence + observation-event automation (daily cron, conservative autocall status transition, monitoring-status endpoint) | ✓ Complete |
 | **Phase 8D** | FX/rates + US macro + economic calendar live source completion | Planned |
 | **Phase 8E** | Hechos Relevantes + News ingestion workaround | Planned |
 | **Phase 6E** | Portfolio analytics / performance attribution | Planned |

@@ -185,6 +185,92 @@ promote an incomplete extraction to "ready".
   itself declares every term provisional. An ISIN found only inside an unrelated boilerplate clause of a draft
   document is flagged with an explicit "verify manually" warning rather than trusted at face value.
 
+## Scheduled monitoring (Phase 9D)
+
+Turns the compute-on-request dashboard (Phase 9B) into **scheduled, persisted monitoring**: a daily cron
+route fetches current underlying levels, persists a price-snapshot row per underlying, evaluates any
+observation whose valuation date has arrived, and applies one conservative automatic status transition.
+The on-demand "Update" button is unchanged — it stays an **immediate refresh** (fetch-and-display, no
+persistence), while the scheduled job is the **primary, automated path** going forward, per the module's
+automation-first requirement.
+
+### Monitoring data policy
+
+- **Current underlying levels are MONITORING INPUTS**, not an official calculation-agent determination.
+  The source (`yahoo-finance`) and an `asOf`/`price_date` are recorded on every persisted row, and every
+  UI surface that shows a monitoring-derived value carries an explicit disclaimer to that effect.
+- **Missing or unsupported prices → `unavailable`**, never a fabricated level — an underlying with no
+  Yahoo symbol simply has no snapshot; the note's risk status and observation eligibility both fall back
+  to `unavailable`/`reviewRequired` rather than guessing.
+- **Coupon and autocall observations CAN be evaluated deterministically** once their valuation date
+  arrives: the worst-of barrier math itself is exact, and a regular-market price is an adequate signal for
+  a binary "at/above the level" check. A clean, complete evaluation is the one case allowed to
+  automatically transition an observation's status (`coupon_paid`/`coupon_missed`/`autocalled`) and, for
+  autocall specifically, the note's own status (`active` → `autocalled`).
+- **Final/maturity observations are NEVER auto-finalized.** `evaluateFinalObservation` always sets
+  `reviewRequired: true` — the exact redemption amount is a legal determination this app cannot make
+  without an official calculation-agent or verified closing-price feed, so it is always surfaced as an
+  estimate pending manual verification, never written as a terminal `matured` status.
+- **A note a user has archived (or that is already in a terminal state) is never reactivated or
+  overwritten** by scheduled monitoring — `getActiveStructuredNotesForMonitoring` filters to `status:
+  'active'` only, and `shouldUpdateNoteStatus` additionally guards against touching an already-archived
+  note (defense in depth).
+
+### Architecture
+
+| Layer | File(s) |
+|---|---|
+| Pure monitoring calculations | `src/lib/structuredNotes/monitoring.ts` — snapshot building, staleness detection, worst-of observation evaluation (coupon/autocall/final), conservative status-transition rules, dashboard aggregates |
+| Market data wrapper | `src/lib/structuredNotes/structuredNoteMonitoringProvider.ts` — batched Yahoo fetch with per-symbol success/failure accounting for honest `partial_success` reporting |
+| Repository | `src/lib/db/repositories/structuredNotesRepository.ts` — `getActiveNotesForMonitoring`, `insertStructuredNotePriceSnapshots` (upsert), `getLatestStructuredNotePriceSnapshots`, monitoring-run create/complete, `updateObservationResult`, `updateNoteStatusFromObservation` |
+| Cron route | `POST/GET /api/cron/structured-notes/snapshot` — Bearer `CRON_SECRET`, service-role admin client (no user session exists for a scheduled job) |
+| Status route | `GET /api/structured-notes/monitoring-status` — authenticated, user-session client, read-only |
+| Schema | migration `20260709000000_structured_notes_monitoring.sql` |
+
+### Schema additions (migration `20260709000000_structured_notes_monitoring.sql`)
+
+- `structured_note_price_snapshots.user_id` is now **nullable** — the cron writes via the service-role
+  admin client, which has no JWT/session, so `default auth.uid()` can no longer populate it. This is
+  consistent with (not an exception to) the Phase 9B shared-book model, which already redefined `user_id`
+  on these tables as an upload/audit stamp rather than an ownership mechanism.
+- `structured_note_observations` gains: `observed_at`, `observed_source`, `observed_source_symbol`,
+  `observed_levels` (jsonb), `worst_performer_ticker`, `worst_performer_return`, `coupon_eligible`,
+  `autocall_eligible`, `final_barrier_breached`, `review_required` (default `false`), `review_reason`.
+  These are set only by the monitoring job and are distinct from the extraction-time terms
+  (`coupon_due_pct`, `autocall_barrier_pct`, `coupon_barrier_pct`) already on the same table.
+- New table `structured_note_monitoring_runs` — a system-level audit log (no `user_id`, mirrors the
+  module's existing `structured_note_extraction_runs` precedent rather than the generic `ingestion_runs`
+  table). RLS: `select` for any authenticated user, **no insert/update/delete policy at all** — writes are
+  service-role only.
+
+### Cron schedule
+
+`vercel.json`: `30 21 * * 1-5` (weekdays, 21:30 UTC). This is fixed after the US market's 4:00pm ET close
+in both the EDT (UTC-4, → 4:30pm ET) and EST (UTC-5, → 5:30pm ET) halves of the year — Vercel Cron has no
+timezone parameter, so a single UTC time was chosen that stays safely post-close year-round rather than
+drifting into pre-close territory across the DST boundary. Once per weekday, matching the "no intraday
+guarantee, no hourly polling" scope for this phase.
+
+### Observation-event automation summary
+
+| Observation type | Automatic status transition | Note status transition |
+|---|---|---|
+| Coupon | `coupon_paid` / `coupon_missed` (clean data) or `observed` (missing data → reviewRequired) | none |
+| Autocall | `autocalled` (clean, eligible) or `observed` (ineligible or missing data) | `active` → `autocalled` (clean, eligible only) |
+| Final | always `observed`, always `reviewRequired: true` | none — never auto-`matured` |
+
+### Known monitoring limitations
+
+- **No official calculation-agent or verified closing-price feed** — every level is a Yahoo Finance
+  monitoring estimate, explicitly labeled as such everywhere it's surfaced.
+- **No paid/vendor data, no Bloomberg** — same policy as the rest of the module.
+- **No intraday guarantee** — the cron runs once per weekday after the US close; a note's risk status
+  between runs reflects the last snapshot, flagged stale beyond a 4-day window (`detectStalePrice`).
+- **Global (non-US) underlyings may need provider expansion** before this monitoring policy extends
+  cleanly to them — out of scope for this phase (see "Phase 9E" in the implementation plan).
+- **Final/maturity payoff always requires manual verification** — this is a deliberate, permanent policy
+  in the absence of an official source, not a temporary gap expected to close on its own.
+
 ## Known limitations
 
 - **Citi CGMFL**, **HSBC (EU)**, **Crédit Agricole**, **BNP Paribas**, and **Barclays** extract at confidence

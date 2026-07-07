@@ -275,9 +275,9 @@ No data-source claims on this page (authentication only) — not applicable.
 
 ---
 
-## Structured Notes (`/structured-notes`) — Phase 9A–9C
+## Structured Notes (`/structured-notes`) — Phase 9A–9D
 
-**Overall module status: `persisted` (terms) + `live`/`unavailable` (levels) — no static-terminal state.**
+**Overall module status: `persisted` (terms + scheduled snapshots) + `live`/`unavailable` (on-demand levels) — no static-terminal state.**
 
 - **Terms** (ISIN, issuer, dates, barriers, coupon, underlyings, schedules): **persisted** in the 7
   user-scoped `structured_note*` Supabase tables, written automation-first from term-sheet PDF extraction
@@ -286,14 +286,25 @@ No data-source claims on this page (authentication only) — not applicable.
   available). Provenance + confidence recorded per note and per field.
 - **Internal allocations** (entity/sociedad split): **user input** — internal portfolio data, never extracted
   from a PDF.
-- **Current underlying levels + distance to barrier + risk status**: **live** via the Yahoo provider
-  (`structuredNoteMarketProvider.ts`, reusing the market stack) — **replaces the workbook's Bloomberg `BDP`**.
-  An unmapped/unverified underlying reports `unavailable`, never a fabricated level.
-- **Conversion path (next):** extend the parser to remaining templates (Santander, older-2024 Citi); persist
-  scheduled price snapshots + automate observation-event transitions (coupon-paid / autocalled). See
+- **Current underlying levels + distance to barrier + risk status**: **live** via the Yahoo provider on every
+  page load (`structuredNoteMarketProvider.ts`, "Update" button = immediate refresh) **and now also
+  `persisted`** via a daily scheduled cron (`structured_note_price_snapshots`, Phase 9D) — **replaces the
+  workbook's Bloomberg `BDP`**, labeled everywhere as a monitoring estimate, never an official
+  calculation-agent determination. An unmapped/unverified underlying reports `unavailable`, never a
+  fabricated level.
+- **Observation status** (coupon/autocall/final): **persisted + automated** (Phase 9D) — a scheduled cron
+  evaluates any observation whose valuation date has arrived using worst-of barrier math against the
+  persisted levels, and applies the one deterministic automatic transition this module allows (autocall
+  eligible + clean data → note `autocalled`). Final/maturity observations are always flagged
+  `review_required` — never auto-finalized without an official source.
+- **Monitoring health**: `GET /api/structured-notes/monitoring-status` (authenticated) — latest run, latest
+  snapshot date, stale/unsupported/review-required/due-soon counts.
+- **Conversion path (next):** extend the parser to remaining templates (Santander, older-2024 Citi); expand
+  the market-data provider beyond Yahoo/US-index underlyings for global/robust monitoring (Phase 9E); add an
+  official calculation-agent or verified closing-price source for final/maturity determinations. See
   `docs/structured_notes_design.md`.
-- **Never static-terminal:** the module is either persisted (imported), live (market levels), or explicitly
-  `unavailable` — there is no fabricated/static-forever field.
+- **Never static-terminal:** the module is either persisted (imported terms, scheduled snapshots), live
+  (on-demand market levels), or explicitly `unavailable`/`review_required` — there is no fabricated/static-forever field.
 
 ---
 
