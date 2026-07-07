@@ -418,6 +418,13 @@ export interface PriceSnapshotInsert {
   price: number | null
   source: string
   sourceSymbol: string | null
+  /**
+   * Phase 9E quote-quality metadata (provider id, source type, as-of
+   * timestamp, quality level/reasons, staleness, warning, raw provider
+   * fields). Written into the existing `metadata jsonb` column — no
+   * migration needed, this column has existed since the Phase 9A schema.
+   */
+  metadata?: Record<string, unknown>
 }
 
 /**
@@ -437,6 +444,7 @@ export async function insertStructuredNotePriceSnapshots(client: Client, rows: P
       price: r.price,
       source: r.source,
       source_symbol: r.sourceSymbol,
+      metadata: r.metadata ?? {},
     }))
   if (payload.length === 0) return { ok: true }
   const res = await q(client).from('structured_note_price_snapshots').upsert(payload, { onConflict: 'underlying_id,price_date,source' })
@@ -449,6 +457,7 @@ export interface LatestSnapshot {
   price: number | null
   source: string
   sourceSymbol: string | null
+  metadata: Record<string, unknown>
 }
 
 /** The most recent snapshot row per underlying, across the given notes. */
@@ -460,10 +469,10 @@ export async function getLatestStructuredNotePriceSnapshots(client: Client, note
     .select('*')
     .in('note_id', noteIds)
     .order('price_date', { ascending: false })
-  const rows = (res.data ?? []) as { underlying_id: string; price_date: string; price: number | null; source: string; source_symbol: string | null }[]
+  const rows = (res.data ?? []) as { underlying_id: string; price_date: string; price: number | null; source: string; source_symbol: string | null; metadata: Record<string, unknown> | null }[]
   for (const r of rows) {
     if (!out.has(r.underlying_id)) {
-      out.set(r.underlying_id, { underlyingId: r.underlying_id, priceDate: r.price_date, price: r.price, source: r.source, sourceSymbol: r.source_symbol })
+      out.set(r.underlying_id, { underlyingId: r.underlying_id, priceDate: r.price_date, price: r.price, source: r.source, sourceSymbol: r.source_symbol, metadata: r.metadata ?? {} })
     }
   }
   return out
@@ -534,6 +543,8 @@ export interface ObservationResultUpdate {
   finalBarrierBreached: boolean | null
   reviewRequired: boolean
   reviewReason: string | null
+  /** Structured review-reason codes (see monitoring.ts's ReviewRequiredReason) plus any other Phase 9E quote-quality diagnostics, written into the existing `metadata jsonb` column — no migration needed. */
+  metadata?: Record<string, unknown>
 }
 
 /** Writes a monitoring job's evaluation of one observation. Never touches extraction-time fields (couponDuePct, autocallBarrierPct, couponBarrierPct). */
@@ -553,6 +564,7 @@ export async function updateObservationResult(client: Client, observationId: str
       final_barrier_breached: result.finalBarrierBreached,
       review_required: result.reviewRequired,
       review_reason: result.reviewReason,
+      ...(result.metadata ? { metadata: result.metadata } : {}),
     })
     .eq('id', observationId)
   return !res.error
@@ -577,6 +589,8 @@ export interface MonitoringStatusSummary {
     notesUpdated: number | null
     warnings: unknown[]
     errors: unknown[]
+    /** Phase 9E quote-quality summary (providerSummary, unsupportedSymbols, staleSymbols, reviewRequiredObservations, fallbackProviderUsed, providerDisagreement) — read straight from the run's existing `metadata jsonb` column. */
+    metadata: Record<string, unknown>
   } | null
   activeNoteCount: number
   unsupportedUnderlyingCount: number
@@ -595,6 +609,7 @@ export async function getStructuredNoteMonitoringStatus(client: Client): Promise
         id: string; run_type: string; status: string; started_at: string; completed_at: string | null
         active_note_count: number | null; prices_succeeded: number | null; prices_failed: number | null
         observations_updated: number | null; notes_updated: number | null; warnings: unknown[]; errors: unknown[]
+        metadata: Record<string, unknown> | null
       }
     | undefined
   const activeNotes = (notesRes.data ?? []) as { id: string }[]
@@ -614,6 +629,7 @@ export async function getStructuredNoteMonitoringStatus(client: Client): Promise
           id: runRow.id, runType: runRow.run_type, status: runRow.status, startedAt: runRow.started_at, completedAt: runRow.completed_at,
           activeNoteCount: runRow.active_note_count, pricesSucceeded: runRow.prices_succeeded, pricesFailed: runRow.prices_failed,
           observationsUpdated: runRow.observations_updated, notesUpdated: runRow.notes_updated, warnings: runRow.warnings, errors: runRow.errors,
+          metadata: runRow.metadata ?? {},
         }
       : null,
     activeNoteCount: activeNotes.length,

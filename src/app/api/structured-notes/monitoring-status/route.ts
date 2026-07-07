@@ -59,6 +59,10 @@ export async function GET(): Promise<NextResponse> {
     }
   }
 
+  // Phase 9E quote-quality summary from the latest run's metadata — absent
+  // (undefined) on any run recorded before this phase, never fabricated.
+  const runMeta = summary.latestRun?.metadata ?? {}
+
   return NextResponse.json({
     latestRun: summary.latestRun,
     latestSnapshotDate: summary.latestSnapshotDate,
@@ -70,6 +74,12 @@ export async function GET(): Promise<NextResponse> {
     reviewRequiredCount,
     reviewRequiredNotes,
     failedSymbols: (summary.latestRun?.warnings ?? []),
+    providerSummary: runMeta.providerSummary ?? null,
+    unsupportedSymbols: runMeta.unsupportedSymbols ?? [],
+    staleSymbols: runMeta.staleSymbols ?? [],
+    reviewRequiredObservations: runMeta.reviewRequiredObservations ?? [],
+    fallbackProviderUsed: runMeta.fallbackProviderUsed ?? false,
+    providerDisagreement: runMeta.providerDisagreement ?? false,
     sourceMetadata: {
       provider: 'yahoo-finance',
       note: 'Monitoring estimate only — not an official calculation-agent determination.',

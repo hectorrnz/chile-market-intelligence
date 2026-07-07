@@ -75,8 +75,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const priceResult = await fetchMonitoringPrices(symbols)
     warnings.push(...priceResult.warnings)
 
-    // ── Persist one snapshot row per underlying ────────────────────────────
-    const snapshotRows = notes.flatMap((note) => calculateStructuredNoteSnapshot(note, priceResult.prices, asOf))
+    // ── Persist one snapshot row per underlying (with quote-quality metadata) ──
+    const snapshotRows = notes.flatMap((note) => calculateStructuredNoteSnapshot(note, priceResult.prices, asOf, priceResult.quoteMeta))
     const insertRes = await insertStructuredNotePriceSnapshots(client, snapshotRows)
     if (!insertRes.ok) errors.push(insertRes.error ?? 'failed to persist price snapshots')
 
@@ -84,13 +84,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     let observationsChecked = 0
     let observationsUpdated = 0
     let notesUpdated = 0
+    const reviewRequiredObservationIds: string[] = []
 
     for (const note of notes) {
       for (const observation of note.observations) {
-        const evalResult = evaluateObservation(note, observation, priceResult.prices, asOf)
+        const evalResult = evaluateObservation(note, observation, priceResult.prices, asOf, priceResult.quoteMeta)
         if (!evalResult) continue
         observationsChecked += 1
         if (!observation.id) continue
+
+        if (evalResult.reviewRequired) reviewRequiredObservationIds.push(observation.id)
 
         const status = deriveObservationStatus(evalResult)
         const ok = await updateObservationResult(client, observation.id, {
@@ -106,6 +109,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           finalBarrierBreached: evalResult.finalBarrierBreached,
           reviewRequired: evalResult.reviewRequired,
           reviewReason: evalResult.reviewReason,
+          metadata: { reviewReasons: evalResult.reviewReasons },
         })
         if (ok) observationsUpdated += 1
         else errors.push(`failed to update observation ${observation.id} for note ${note.id}`)
@@ -121,6 +125,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     const status = errors.length > 0 ? (priceResult.succeeded.length > 0 || snapshotRows.length > 0 ? 'partial_success' : 'failed') : priceResult.failed.length > 0 ? 'partial_success' : 'success'
 
+    // Phase 9E monitoring-quality summary — written into the monitoring run's
+    // existing `metadata jsonb` column (no migration needed) and echoed in the
+    // response so the dashboard/monitoring-status route can surface it.
+    const qualitySummary = {
+      providerSummary: priceResult.providerSummary,
+      unsupportedSymbols: priceResult.unsupportedSymbols,
+      staleSymbols: priceResult.staleSymbols,
+      reviewRequiredSymbols: priceResult.reviewRequiredSymbols,
+      reviewRequiredObservations: reviewRequiredObservationIds,
+      fallbackProviderUsed: priceResult.fallbackProviderUsed,
+      providerDisagreement: priceResult.providerDisagreement,
+    }
+
     await completeStructuredNoteMonitoringRun(client, runId, {
       status,
       activeNoteCount: notes.length,
@@ -133,7 +150,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       notesUpdated,
       warnings,
       errors,
-      metadata: { asOf, failedSymbols: priceResult.failed },
+      metadata: { asOf, failedSymbols: priceResult.failed, ...qualitySummary },
     })
 
     return NextResponse.json({
@@ -148,6 +165,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       notesUpdated,
       warnings,
       errors,
+      providerSummary: qualitySummary.providerSummary,
+      unsupportedSymbols: qualitySummary.unsupportedSymbols,
+      staleSymbols: qualitySummary.staleSymbols,
+      reviewRequiredObservations: qualitySummary.reviewRequiredObservations,
+      fallbackProviderUsed: qualitySummary.fallbackProviderUsed,
+      providerDisagreement: qualitySummary.providerDisagreement,
+      dataPolicy: 'Monitoring estimate — not an official calculation-agent determination.',
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message.slice(0, 200) : 'Unknown error'

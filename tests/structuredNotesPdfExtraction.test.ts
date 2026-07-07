@@ -212,4 +212,24 @@ describe('underlying symbol map (no Bloomberg, verified-only)', () => {
   it('an unverified symbol is not treated as supported', () => {
     assert.equal(isUnderlyingSupported('SX5E Index'), false) // present but verified:false
   })
+  it('Phase 9E — a verified entry carries provider symbols, currency, confidence, sourceType, and a verifiedAt date, while preserving the original yahooSymbol field 7 call sites depend on', () => {
+    const spx = resolveUnderlyingSymbol('SPX Index')
+    assert.equal(spx?.yahooSymbol, '^GSPC') // backward-compatible field, still present
+    assert.equal(spx?.providerSymbols.yahoo, '^GSPC')
+    assert.equal(spx?.providerSymbols.stooq, null) // no secondary provider passed discovery this phase
+    assert.equal(spx?.currency, 'USD')
+    assert.equal(spx?.confidence, 'high')
+    assert.equal(spx?.sourceType, 'free_monitoring_estimate')
+    assert.ok(spx?.verifiedAt)
+  })
+  it('Phase 9E — an unverified entry is explicitly unsupported (never proxy or free_monitoring_estimate) and confidence is low', () => {
+    const sx5e = resolveUnderlyingSymbol('SX5E Index')
+    assert.equal(sx5e?.sourceType, 'unsupported')
+    assert.equal(sx5e?.confidence, 'low')
+    assert.equal(sx5e?.verifiedAt, null)
+  })
+  it('Phase 9E — normalizedCode is a stable slug independent of any provider symbol format', () => {
+    assert.equal(resolveUnderlyingSymbol('SPX Index')?.normalizedCode, 'spx-index')
+    assert.equal(resolveUnderlyingSymbol('RTY Index')?.normalizedCode, 'rty-index')
+  })
 })

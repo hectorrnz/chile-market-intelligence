@@ -275,7 +275,7 @@ No data-source claims on this page (authentication only) — not applicable.
 
 ---
 
-## Structured Notes (`/structured-notes`) — Phase 9A–9D
+## Structured Notes (`/structured-notes`) — Phase 9A–9E
 
 **Overall module status: `persisted` (terms + scheduled snapshots) + `live`/`unavailable` (on-demand levels) — no static-terminal state.**
 
@@ -298,11 +298,18 @@ No data-source claims on this page (authentication only) — not applicable.
   eligible + clean data → note `autocalled`). Final/maturity observations are always flagged
   `review_required` — never auto-finalized without an official source.
 - **Monitoring health**: `GET /api/structured-notes/monitoring-status` (authenticated) — latest run, latest
-  snapshot date, stale/unsupported/review-required/due-soon counts.
-- **Conversion path (next):** extend the parser to remaining templates (Santander, older-2024 Citi); expand
-  the market-data provider beyond Yahoo/US-index underlyings for global/robust monitoring (Phase 9E); add an
-  official calculation-agent or verified closing-price source for final/maturity determinations. See
-  `docs/structured_notes_design.md`.
+  snapshot date, stale/unsupported/review-required/due-soon counts, plus (Phase 9E) `providerSummary`,
+  `fallbackProviderUsed`, and `providerDisagreement`.
+- **Market-data architecture (Phase 9E):** a provider abstraction + fallback/sanity-check orchestrator +
+  quote-quality rule set (staleness, invalid/large-move detection, cross-provider disagreement) now sits in
+  front of Yahoo. Free-provider discovery found **no viable secondary source** (Stooq is blocked by a JS
+  proof-of-work wall, confirmed live — see `docs/structured_notes_market_data_sources.md`), so Yahoo remains
+  the sole active provider; the abstraction is ready for a second provider with zero orchestrator changes.
+  Every quote is labeled `free_monitoring_estimate` or `proxy` — never `official`.
+- **Conversion path (next):** extend the parser to remaining templates (Santander, older-2024 Citi); revisit
+  free-provider discovery periodically (a new no-key source could appear) or evaluate a paid/vendor feed if
+  ever authorized; add an official calculation-agent or verified closing-price source for final/maturity
+  determinations. See `docs/structured_notes_design.md`.
 - **Never static-terminal:** the module is either persisted (imported terms, scheduled snapshots), live
   (on-demand market levels), or explicitly `unavailable`/`review_required` — there is no fabricated/static-forever field.
 

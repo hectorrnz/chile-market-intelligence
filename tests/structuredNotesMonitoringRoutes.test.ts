@@ -44,6 +44,22 @@ describe('cron snapshot route — auth', () => {
   })
 })
 
+describe('cron snapshot route — Phase 9E quote-quality summary', () => {
+  it('threads quoteMeta into snapshot persistence and observation evaluation', () => {
+    assert.ok(CRON_ROUTE.includes('priceResult.quoteMeta'))
+  })
+  it('records provider/quality diagnostics on the monitoring run without a migration (reuses metadata jsonb)', () => {
+    assert.ok(CRON_ROUTE.includes('providerSummary'))
+    assert.ok(CRON_ROUTE.includes('unsupportedSymbols'))
+    assert.ok(CRON_ROUTE.includes('staleSymbols'))
+    assert.ok(CRON_ROUTE.includes('fallbackProviderUsed'))
+    assert.ok(CRON_ROUTE.includes('providerDisagreement'))
+  })
+  it('response labels every run a monitoring estimate, never an official calculation-agent determination', () => {
+    assert.ok(/not an official calculation-agent determination/i.test(CRON_ROUTE))
+  })
+})
+
 describe('monitoring-status route — authenticated read', () => {
   it('uses the user-session client, not the admin client (per-request authenticated read)', () => {
     assert.ok(STATUS_ROUTE.includes('getSupabaseUserClient'))
@@ -51,6 +67,12 @@ describe('monitoring-status route — authenticated read', () => {
   })
   it('returns 503 when Supabase is not configured, never a fabricated empty-success', () => {
     assert.ok(STATUS_ROUTE.includes("status: 503"))
+  })
+  it('surfaces Phase 9E quote-quality fields from the latest run metadata, defaulting safely on an old run with no metadata', () => {
+    assert.ok(STATUS_ROUTE.includes('providerSummary'))
+    assert.ok(STATUS_ROUTE.includes('fallbackProviderUsed'))
+    assert.ok(STATUS_ROUTE.includes('providerDisagreement'))
+    assert.ok(STATUS_ROUTE.includes('runMeta.providerSummary ?? null'))
   })
 })
 

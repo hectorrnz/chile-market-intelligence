@@ -271,6 +271,71 @@ guarantee, no hourly polling" scope for this phase.
 - **Final/maturity payoff always requires manual verification** — this is a deliberate, permanent policy
   in the absence of an official source, not a temporary gap expected to close on its own.
 
+## Phase 9E — Free market-data architecture + observation QA hardening
+
+Phase 9D's monitoring relied on Yahoo Finance directly with no abstraction, no cross-checking, and no
+structured quality signal beyond a binary missing/present price. Phase 9E hardens this into a **provider
+abstraction + fallback/sanity-check orchestrator + quote-quality rule set**, while keeping Yahoo as the sole
+active provider (see `docs/structured_notes_market_data_sources.md` for the free-provider discovery pass —
+Stooq was investigated and rejected as a secondary source: its CSV endpoints now serve a JS proof-of-work
+challenge, not stable data).
+
+### Architecture additions
+
+| Layer | File(s) |
+|---|---|
+| Provider contract (pure types, no runtime imports) | `src/lib/structuredNotes/marketData/providers/types.ts` — `StructuredNoteMarketDataProvider`, `Quote`, `Request`, `Result`; `sourceType` is `free_monitoring_estimate \| proxy \| unsupported` — there is deliberately no `official` value |
+| Yahoo provider (refactor, same external behavior) | `src/lib/structuredNotes/marketData/providers/yahooStructuredNoteProvider.ts` — wraps the existing `fetchYahooPriceMap`, never claims to be official |
+| Quote-quality rules (pure) | `src/lib/structuredNotes/marketData/quoteQuality.ts` — `isQuoteStale`, `isQuotePriceValid`, `detectLargePriceMove`, `detectCurrencyMismatch`, `detectProviderDisagreement`, `classifyQuoteQuality`, `compareProviderQuotes`; thresholds are named exported constants (`STALE_THRESHOLD_DASHBOARD_DAYS=3`, `STALE_THRESHOLD_OBSERVATION_DAYS=1`, `LARGE_PRICE_MOVE_WARNING_PCT=15`, `PROVIDER_DISAGREEMENT_WARNING_PCT=1`) |
+| Fallback/sanity-check orchestrator (pure) | `src/lib/structuredNotes/marketData/resolveStructuredNoteQuotes.ts` — queries **every** registered provider that supports a symbol (not only on failure), so a later provider both fills gaps (fallback) and lets its price be cross-checked against the primary's (sanity-check); a provider that throws is caught per-provider and never takes down the batch |
+| Symbol mapping (hardened, additive) | `src/lib/structuredNotes/underlyingSymbolMap.ts` — `UnderlyingSymbolEntry` gained `normalizedCode`, `providerSymbols` (`{ yahoo, stooq }`, `stooq` always `null` today), `currency`, `verifiedAt`, `confidence`, `sourceType`, while keeping the exact pre-9E field names (`bloombergTicker`, `yahooSymbol`, `assetClass`, `displayName`, `verified`, `notes`) the 6 issuer parsers + `structuredNoteMarketProvider.ts` already depend on |
+
+### Provider-query model: always-query, not fallback-on-failure
+
+The orchestrator queries **every** registered provider for every symbol it supports, rather than only calling
+a second provider when the first fails. With exactly one provider active (Yahoo), this costs the same single
+call per symbol as before Phase 9E. The moment a second free provider is ever registered, this same code path
+starts doing real work: it fills any gap the primary missed (`fallbackProviderUsed: true`), and if both
+providers return a price for the same symbol, `compareProviderQuotes` flags a disagreement beyond the 1%
+threshold — a genuine sanity check, not just a failover.
+
+### Quote-quality classification
+
+Every resolved quote is classified `ok` / `warning` / `reject`:
+- **`reject`** — missing price, invalid (non-positive/non-finite) price, unsupported symbol, or a provider
+  error. A `reject`-level quote is never written into a note's live price map.
+- **`warning`** — usable but flagged: stale (beyond the threshold — tighter for a DUE coupon/autocall/final
+  observation than for a routine dashboard read), a large day-over-day move, or a currency mismatch against
+  the underlying's expected quote currency.
+- **`ok`** — no issues.
+
+### Observation QA reason vocabulary (`monitoring.ts`)
+
+`ObservationEvaluation.reviewReasons` is now a structured `ReviewRequiredReason[]` (the pre-9E free-text
+`reviewReason` string is derived from this list, not authored separately): `missing_price`, `stale_price`,
+`unsupported_symbol`, `provider_error`, `large_price_move_warning`, `provider_disagreement`,
+`final_observation_requires_official_verification` (always present on every final observation),
+`non_trading_day_or_unavailable_close`, `ambiguous_underlying_mapping` (an underlying with no resolved symbol
+at all). Passing a `quoteMeta` map (optional, additive) into `evaluateCouponObservation` /
+`evaluateAutocallObservation` / `evaluateFinalObservation` / `evaluateObservation` enables this fuller
+classification; omitting it preserves the exact pre-9E reason set (`missing_price` /
+`ambiguous_underlying_mapping` only).
+
+### No migration needed
+
+`structured_note_price_snapshots`, `structured_note_observations`, and `structured_note_monitoring_runs` all
+already had a `metadata jsonb not null default '{}'` column from earlier phases. Provider id, source type,
+as-of, quality level/reasons, and staleness/warning diagnostics are written into these existing columns —
+Phase 9E ships with **zero schema changes**.
+
+### API additions
+
+The cron response (`GET /api/cron/structured-notes/snapshot`) and the monitoring-status route
+(`GET /api/structured-notes/monitoring-status`) both now include `providerSummary`, `unsupportedSymbols`,
+`staleSymbols`, `reviewRequiredObservations`/`reviewRequiredSymbols`, `fallbackProviderUsed`, and
+`providerDisagreement` — all sourced from the same monitoring run's `metadata` jsonb, so an old run recorded
+before this phase safely reports these as absent/empty rather than fabricating a value.
+
 ## Known limitations
 
 - **Citi CGMFL**, **HSBC (EU)**, **Crédit Agricole**, **BNP Paribas**, and **Barclays** extract at confidence
@@ -283,5 +348,8 @@ guarantee, no hourly polling" scope for this phase.
 - **No Bloomberg dependency** — the workbook's `BDP` live-price mechanism is replaced by Yahoo; some
   underlyings (e.g. EURO STOXX 50) are present-but-unverified and report `unavailable` until confirmed.
 - Internal **allocations still require user input** — they are portfolio data, never in the PDF.
-- **No scheduled observation-event automation yet** — coupon-paid/autocalled transitions are manual/status
-  edits in this phase; live price snapshots are compute-on-request (not yet persisted on a schedule).
+- **Only one free market-data provider is active** (Yahoo) — the abstraction and fallback/disagreement logic
+  are fully implemented and tested against mocked second providers, but no real secondary provider passed
+  Phase 9E's discovery pass (see `docs/structured_notes_market_data_sources.md`).
+- **Final/maturity payoff always requires manual verification** — no free source is treated as an official
+  calculation-agent determination; this is a deliberate, permanent policy, not a temporary gap.

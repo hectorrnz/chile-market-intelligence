@@ -38,6 +38,53 @@ import {
   calculateWorstPerformer,
   calculateMaturityRedemptionAmount,
 } from './calculations.ts'
+import { isQuoteStale, STALE_THRESHOLD_OBSERVATION_DAYS, type QuoteQualityReason } from './marketData/quoteQuality.ts'
+
+// ── Observation QA — review-required reason vocabulary (Phase 9E) ───────────
+//
+// Every observation evaluation reports WHY it needs a human's eyes, using a
+// fixed, structured vocabulary rather than an ad-hoc string, so the API/UI can
+// filter and count reasons instead of pattern-matching free text. The
+// human-readable `reviewReason` string (kept for backward compatibility) is
+// derived FROM this list, never authored independently of it.
+export type ReviewRequiredReason =
+  | 'missing_price'
+  | 'stale_price'
+  | 'unsupported_symbol'
+  | 'provider_error'
+  | 'large_price_move_warning'
+  | 'provider_disagreement'
+  | 'final_observation_requires_official_verification'
+  | 'non_trading_day_or_unavailable_close'
+  | 'ambiguous_underlying_mapping'
+
+/** Per-symbol quote metadata a caller (the monitoring cron route) can optionally supply so evaluators can distinguish "why" a price is missing/suspect, instead of only knowing that it is. Omitting this param preserves the exact pre-9E behavior (reasons collapse to missing_price/ambiguous_underlying_mapping only). */
+export interface QuoteMetaEntry {
+  asOf: string | null
+  supported: boolean
+  providerError: boolean
+  /** Quality reasons already computed upstream (e.g. by resolveStructuredNoteQuotes / classifyQuoteQuality) for this symbol. */
+  qualityReasons?: QuoteQualityReason[]
+  /** Set when the provider/caller has positive evidence the valuation date was a non-trading day or the close is otherwise structurally unavailable (distinct from a plain provider miss). */
+  nonTradingDay?: boolean
+}
+
+const REVIEW_REASON_TEXT: Record<ReviewRequiredReason, string> = {
+  missing_price: 'one or more underlying prices unavailable',
+  stale_price: 'one or more underlying prices are stale (older than the observation freshness threshold)',
+  unsupported_symbol: 'one or more underlyings have no supported/verified market-data symbol',
+  provider_error: 'the market-data provider returned an error for one or more underlyings',
+  large_price_move_warning: 'one or more underlyings moved further than the large-move threshold since the prior snapshot — verify before trusting',
+  provider_disagreement: 'multiple providers disagreed on a price beyond the configured threshold',
+  final_observation_requires_official_verification: 'final redemption is a legal determination — verify against an official calculation-agent or closing-price source before treating as final',
+  non_trading_day_or_unavailable_close: 'no close is available for the valuation date (non-trading day or provider gap)',
+  ambiguous_underlying_mapping: 'one or more underlyings have no resolved market-data symbol (ambiguous or unverified mapping)',
+}
+
+function reasonsToText(reasons: ReviewRequiredReason[]): string | null {
+  if (reasons.length === 0) return null
+  return reasons.map((r) => REVIEW_REASON_TEXT[r]).join('; ')
+}
 
 /** Returns n only if it is a finite real number, else null. */
 function finite(n: number | null | undefined): number | null {
@@ -73,6 +120,8 @@ export interface PriceSnapshotRow {
   price: number | null
   source: string // 'yahoo-finance' | 'unavailable'
   sourceSymbol: string | null
+  /** Phase 9E quote-quality metadata (provider, sourceType, quality level/reasons, staleness, warning) — written into the price snapshot's existing `metadata jsonb` column. */
+  metadata?: Record<string, unknown>
 }
 
 function priceForUnderlying(u: StructuredNoteUnderlying, latestPrices: Map<string, number>): number | null {
@@ -86,16 +135,20 @@ function priceForUnderlying(u: StructuredNoteUnderlying, latestPrices: Map<strin
  * `priceDate` is the calendar date the monitoring run executed (not the
  * underlying market's own trading-day calendar) — see detectStalePrice() for
  * how a caller should treat a snapshot that predates a note's next
- * observation by more than a trading week.
+ * observation by more than a trading week. `quoteMeta` (optional, Phase 9E)
+ * carries the quality classification computed at fetch time so it can be
+ * persisted alongside the price without a second lookup.
  */
 export function calculateStructuredNoteSnapshot(
   note: Pick<StructuredNote, 'id' | 'underlyings'>,
   latestPrices: Map<string, number>,
   asOf: string,
+  quoteMeta?: Map<string, QuoteMetaEntry>,
 ): PriceSnapshotRow[] {
   if (!note.id) return []
   return note.underlyings.map((u) => {
     const price = priceForUnderlying(u, latestPrices)
+    const meta = u.yahooSymbol ? quoteMeta?.get(u.yahooSymbol) : undefined
     return {
       noteId: note.id!,
       underlyingId: u.id ?? '',
@@ -104,9 +157,22 @@ export function calculateStructuredNoteSnapshot(
       price,
       source: price !== null ? 'yahoo-finance' : 'unavailable',
       sourceSymbol: u.yahooSymbol,
+      metadata: meta
+        ? {
+            provider: MONITORING_METADATA_PROVIDER_ID,
+            sourceType: 'free_monitoring_estimate',
+            asOf: meta.asOf,
+            supported: meta.supported,
+            providerError: meta.providerError,
+            qualityReasons: meta.qualityReasons ?? [],
+          }
+        : undefined,
     }
   })
 }
+
+/** Matches yahooStructuredNoteProvider's YAHOO_PROVIDER_ID — duplicated here (not imported) to keep this pure module free of any provider-implementation import. */
+const MONITORING_METADATA_PROVIDER_ID = 'yahoo-finance'
 
 /** True when a snapshot's price_date is more than `maxAgeDays` before `asOf` — i.e. monitoring hasn't refreshed recently. Never treats a missing snapshot as fresh. */
 export function detectStalePrice(
@@ -163,6 +229,8 @@ export interface ObservationEvaluation {
   finalBarrierBreached: boolean | null
   reviewRequired: boolean
   reviewReason: string | null
+  /** Structured reason codes underlying `reviewReason` — see ReviewRequiredReason. Empty when reviewRequired is false. */
+  reviewReasons: ReviewRequiredReason[]
 }
 
 function observedLevelsFor(underlyings: StructuredNoteUnderlying[], latestPrices: Map<string, number>): Record<string, number | null> {
@@ -177,20 +245,61 @@ function worstPerformerFields(underlyings: StructuredNoteUnderlying[], latestPri
   return { ticker: worst?.underlyingName ?? null, ret: worst?.performance ?? null }
 }
 
+/**
+ * Structured, per-underlying review reasons for a DUE observation. Uses the
+ * tighter observation-grade staleness threshold (STALE_THRESHOLD_OBSERVATION_DAYS)
+ * — a decision that drives a status transition demands fresher data than a
+ * routine dashboard read. Omitting `quoteMeta` degrades gracefully: an
+ * unresolved underlying still reports `ambiguous_underlying_mapping` and a
+ * missing price still reports `missing_price`, matching pre-9E behavior.
+ */
+function reviewReasonsForUnderlyings(
+  underlyings: StructuredNoteUnderlying[],
+  latestPrices: Map<string, number>,
+  quoteMeta: Map<string, QuoteMetaEntry> | undefined,
+  referenceDate: string,
+): ReviewRequiredReason[] {
+  const reasons = new Set<ReviewRequiredReason>()
+  for (const u of underlyings) {
+    if (!u.yahooSymbol) {
+      reasons.add('ambiguous_underlying_mapping')
+      continue
+    }
+    const price = priceForUnderlying(u, latestPrices)
+    const meta = quoteMeta?.get(u.yahooSymbol)
+    if (price === null) {
+      if (meta?.nonTradingDay) reasons.add('non_trading_day_or_unavailable_close')
+      else if (meta?.providerError) reasons.add('provider_error')
+      else if (meta && meta.supported === false) reasons.add('unsupported_symbol')
+      else reasons.add('missing_price')
+      continue
+    }
+    if (meta) {
+      if (isQuoteStale(meta.asOf, referenceDate, STALE_THRESHOLD_OBSERVATION_DAYS)) reasons.add('stale_price')
+      if (meta.qualityReasons?.includes('large_price_move_warning')) reasons.add('large_price_move_warning')
+      if (meta.qualityReasons?.includes('provider_disagreement')) reasons.add('provider_disagreement')
+    }
+  }
+  return [...reasons]
+}
+
 /** Coupon observation: eligible iff every underlying is at/above its coupon barrier level. Missing prices -> null (unknown), never a fabricated eligibility. */
 export function evaluateCouponObservation(
   note: Pick<StructuredNote, 'underlyings'>,
   observation: StructuredNoteObservation,
   latestPrices: Map<string, number>,
+  quoteMeta?: Map<string, QuoteMetaEntry>,
 ): ObservationEvaluation {
   const eligible = calculateCouponEligibility(note.underlyings, pricesForNote(note.underlyings, latestPrices, null))
   const { ticker, ret } = worstPerformerFields(note.underlyings, latestPrices)
-  const anyMissing = note.underlyings.some((u) => priceForUnderlying(u, latestPrices) === null)
+  const now = new Date().toISOString()
+  const reasons = reviewReasonsForUnderlyings(note.underlyings, latestPrices, quoteMeta, now)
+  const reviewRequired = reasons.length > 0 || eligible === null
   return {
     observationId: observation.id,
     observationType: 'coupon',
     due: true,
-    observedAt: new Date().toISOString(),
+    observedAt: now,
     observedSource: 'yahoo-finance (monitoring estimate)',
     observedLevels: observedLevelsFor(note.underlyings, latestPrices),
     worstPerformerTicker: ticker,
@@ -198,25 +307,29 @@ export function evaluateCouponObservation(
     couponEligible: eligible,
     autocallEligible: null,
     finalBarrierBreached: null,
-    reviewRequired: anyMissing || eligible === null,
-    reviewReason: anyMissing || eligible === null ? 'one or more underlying prices unavailable — coupon eligibility could not be determined' : null,
+    reviewRequired,
+    reviewReason: reviewRequired ? (reasonsToText(reasons) ?? 'coupon eligibility could not be determined') : null,
+    reviewReasons: reasons,
   }
 }
 
-/** Autocall observation: eligible iff every underlying is at/above its autocall barrier level. This is the one observation type allowed to drive an automatic status transition (see shouldUpdateNoteStatus). */
+/** Autocall observation: eligible iff every underlying is at/above its autocall barrier level. This is the one observation type allowed to drive an automatic status transition (see shouldUpdateNoteStatus) — and only when `reviewRequired` is false. */
 export function evaluateAutocallObservation(
   note: Pick<StructuredNote, 'underlyings'>,
   observation: StructuredNoteObservation,
   latestPrices: Map<string, number>,
+  quoteMeta?: Map<string, QuoteMetaEntry>,
 ): ObservationEvaluation {
   const eligible = calculateAutocallEligibility(note.underlyings, pricesForNote(note.underlyings, latestPrices, null))
   const { ticker, ret } = worstPerformerFields(note.underlyings, latestPrices)
-  const anyMissing = note.underlyings.some((u) => priceForUnderlying(u, latestPrices) === null)
+  const now = new Date().toISOString()
+  const reasons = reviewReasonsForUnderlyings(note.underlyings, latestPrices, quoteMeta, now)
+  const reviewRequired = reasons.length > 0 || eligible === null
   return {
     observationId: observation.id,
     observationType: 'autocall',
     due: true,
-    observedAt: new Date().toISOString(),
+    observedAt: now,
     observedSource: 'yahoo-finance (monitoring estimate)',
     observedLevels: observedLevelsFor(note.underlyings, latestPrices),
     worstPerformerTicker: ticker,
@@ -224,8 +337,9 @@ export function evaluateAutocallObservation(
     couponEligible: null,
     autocallEligible: eligible,
     finalBarrierBreached: null,
-    reviewRequired: anyMissing || eligible === null,
-    reviewReason: anyMissing || eligible === null ? 'one or more underlying prices unavailable — autocall eligibility could not be determined' : null,
+    reviewRequired,
+    reviewReason: reviewRequired ? (reasonsToText(reasons) ?? 'autocall eligibility could not be determined') : null,
+    reviewReasons: reasons,
   }
 }
 
@@ -239,6 +353,7 @@ export function evaluateFinalObservation(
   note: Pick<StructuredNote, 'underlyings'>,
   observation: StructuredNoteObservation,
   latestPrices: Map<string, number>,
+  quoteMeta?: Map<string, QuoteMetaEntry>,
 ): ObservationEvaluation {
   const finalLevels = new Map<number, number>()
   for (const u of note.underlyings) {
@@ -247,12 +362,14 @@ export function evaluateFinalObservation(
   }
   const estimate = calculateMaturityRedemptionAmount(note, finalLevels)
   const { ticker, ret } = worstPerformerFields(note.underlyings, latestPrices)
-  const anyMissing = note.underlyings.some((u) => priceForUnderlying(u, latestPrices) === null)
+  const now = new Date().toISOString()
+  const reasons = reviewReasonsForUnderlyings(note.underlyings, latestPrices, quoteMeta, now)
+  reasons.push('final_observation_requires_official_verification')
   return {
     observationId: observation.id,
     observationType: 'final',
     due: true,
-    observedAt: new Date().toISOString(),
+    observedAt: now,
     observedSource: 'yahoo-finance (monitoring estimate, not an official calculation-agent close)',
     observedLevels: observedLevelsFor(note.underlyings, latestPrices),
     worstPerformerTicker: ticker,
@@ -261,9 +378,8 @@ export function evaluateFinalObservation(
     autocallEligible: null,
     finalBarrierBreached: estimate.barrierEvent,
     reviewRequired: true, // final/maturity payoff always requires manual verification in this phase
-    reviewReason: anyMissing
-      ? 'one or more underlying prices unavailable — final redemption estimate is incomplete'
-      : 'final redemption is a legal determination — verify against an official calculation-agent or closing-price source before treating as final',
+    reviewReason: reasonsToText(reasons),
+    reviewReasons: reasons,
   }
 }
 
@@ -277,15 +393,16 @@ export function evaluateObservation(
   observation: StructuredNoteObservation,
   latestPrices: Map<string, number>,
   asOf: string,
+  quoteMeta?: Map<string, QuoteMetaEntry>,
 ): ObservationEvaluation | null {
   if (observation.status !== 'scheduled') return null
   const valDate = Date.parse(observation.valuationDate)
   const asOfDate = Date.parse(asOf)
   if (Number.isNaN(valDate) || Number.isNaN(asOfDate) || valDate > asOfDate) return null
 
-  if (observation.observationType === 'coupon') return evaluateCouponObservation(note, observation, latestPrices)
-  if (observation.observationType === 'autocall') return evaluateAutocallObservation(note, observation, latestPrices)
-  return evaluateFinalObservation(note, observation, latestPrices)
+  if (observation.observationType === 'coupon') return evaluateCouponObservation(note, observation, latestPrices, quoteMeta)
+  if (observation.observationType === 'autocall') return evaluateAutocallObservation(note, observation, latestPrices, quoteMeta)
+  return evaluateFinalObservation(note, observation, latestPrices, quoteMeta)
 }
 
 // ── Status transitions ───────────────────────────────────────────────────────

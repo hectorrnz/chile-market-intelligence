@@ -510,7 +510,7 @@ parentheses, no bp/pp suffixes.
 
 ---
 
-## Entity: Structured Notes (Phase 9A–9D)
+## Entity: Structured Notes (Phase 9A–9E)
 
 Internal, shared-book structured-note tracking — replaces the legacy `NUEVA BASE - Notas Estructuradas.xlsx`.
 Populated automation-first via term-sheet PDF extraction; manual entry is a fallback. Full audit + workbook
@@ -529,21 +529,27 @@ RLS `auth.uid() is not null` — shared book, `user_id` is an upload/audit stamp
   cron and distinct from the extraction-time terms above: `observed_at`, `observed_source`,
   `observed_source_symbol`, `observed_levels` (jsonb), `worst_performer_ticker`, `worst_performer_return`,
   `coupon_eligible`, `autocall_eligible`, `final_barrier_breached`, `review_required` (default `false`),
-  `review_reason`.
+  `review_reason`. Phase 9E writes structured `reviewReasons` codes (see `monitoring.ts`'s
+  `ReviewRequiredReason`) into the existing `metadata` jsonb column — no new column needed.
 - **structured_note_allocations** — **internal** entity/sociedad notional split (never extracted from a PDF).
 - **structured_note_price_snapshots** — persisted Yahoo levels, now **written on a daily schedule** by the
   Phase 9D cron (upsert on `(underlying_id, price_date, source)` — safe to re-run same-day). `user_id` is
   **nullable** as of Phase 9D (the cron writes via the service-role admin client, which has no session to
-  populate `default auth.uid()`).
+  populate `default auth.uid()`). Phase 9E writes provider id/source type/as-of/quality-level/quality-reasons
+  into the existing `metadata` jsonb column.
 - **structured_note_extraction_runs** — one audit row per extraction attempt (confidence, warnings, errors, payload).
 - **structured_note_extracted_fields** — per-field provenance (raw excerpt, confidence, page, section, warning).
 - **structured_note_monitoring_runs** (Phase 9D) — one audit row per scheduled-monitoring run: `run_type` ∈
   scheduled_snapshot/manual_refresh/observation_check/backfill, `status` ∈ running/success/partial_success/failed,
   active-note/underlying/price/observation counts, `warnings`/`errors` (jsonb). No `user_id` (system-level,
   like `structured_note_extraction_runs`); RLS allows `select` for any authenticated user and has **no
-  insert/update/delete policy** — writes are service-role only.
+  insert/update/delete policy** — writes are service-role only. Phase 9E writes `providerSummary`,
+  `unsupportedSymbols`, `staleSymbols`, `reviewRequiredObservations`, `fallbackProviderUsed`,
+  `providerDisagreement` into the existing `metadata` jsonb column — **no migration was needed this phase**.
 
 **No consensus/estimate fields exist** on any structured-note table. Market levels are always read live from
 Yahoo (or reported `unavailable`), never fabricated. Observation `coupon_eligible`/`autocall_eligible`/
 `final_barrier_breached` are MONITORING ESTIMATES from the same Yahoo levels — never an official
 calculation-agent determination; `review_required` + `review_reason` make that limitation explicit per row.
+Phase 9E's `sourceType` vocabulary (`free_monitoring_estimate | proxy | unsupported`) deliberately has no
+`official` value.

@@ -955,3 +955,84 @@ Build 59 routes · lint 0 · tests 862/862.
 
 Next: **Phase 9E** (official/robust structured-note market-data provider expansion) or return to
 **Phase 8C.2** (CMF/XBRL automated financials ingestion).
+
+---
+
+## Phase 9E — Structured Notes: Free Market-Data Architecture + Observation QA ✓ COMPLETE (2026-07-07)
+
+Hardens Structured Notes monitoring's market-data layer without adding any paid/vendor dependency. Non-goal:
+replacing Yahoo. Goal: the best free, resilient architecture — a provider abstraction, a fallback/sanity-check
+orchestrator, and structured quote-quality rules — so a future free or licensed provider slots in without
+touching the orchestrator, and every observation review-reason is a typed code instead of free text.
+
+- **Free-provider discovery** (`docs/structured_notes_market_data_sources.md`): investigated Stooq (rejected —
+  its CSV endpoints now serve a client-side SHA-256 proof-of-work challenge, confirmed live via curl, not a
+  stable API; consistent with the project's no-scraping policy and the CMF CAPTCHA precedent), keyed free
+  tiers (Alpha Vantage/IEX/Polygon/Twelve Data — rejected, a new secret for no clear benefit over Yahoo), and
+  official exchange delayed-quote pages (rejected — JS-rendered, no public endpoint). **Verdict: Yahoo Finance
+  remains the only viable free provider this phase** — ships as `implement_now`, everything else is
+  `document_for_later` or `reject` with the evidence recorded.
+- **Provider abstraction** (`src/lib/structuredNotes/marketData/providers/types.ts`): a
+  `StructuredNoteMarketDataProvider` interface (`supportsSymbol`/`fetchQuotes`/`normalizeQuote`/
+  `getProviderStatus`) any provider implements; `sourceType` is `free_monitoring_estimate | proxy | unsupported`
+  — there is deliberately **no `official` value** in this phase, a structural guard against ever mislabeling
+  free data. Yahoo refactored into `yahooStructuredNoteProvider.ts` with zero behavior change.
+- **Fallback/sanity-check orchestrator** (`resolveStructuredNoteQuotes.ts`): queries **every** registered
+  provider that supports a symbol — not only on failure — so a later provider both fills a gap the primary
+  missed (fallback) and gets cross-checked against the primary's price for disagreement (sanity-check) once a
+  second provider exists; a provider that throws is caught per-symbol-batch and never takes the rest of the
+  book down with it. Runs with exactly one registered provider in production today.
+- **Quote-quality rules** (`quoteQuality.ts`, pure): `classifyQuoteQuality` → `ok`/`warning`/`reject` per quote
+  (missing/invalid price, unsupported symbol, provider error → reject; stale, large day-over-day move,
+  currency mismatch → warning); `compareProviderQuotes`/`detectProviderDisagreement` for cross-provider
+  sanity-checking (fully implemented and tested against mocked second providers). Thresholds are named
+  constants: stale >3 calendar days (dashboard) / >1 day (a DUE observation), large move >15%, disagreement
+  >1%.
+- **Symbol mapping hardened** (`underlyingSymbolMap.ts`, additive): `UnderlyingSymbolEntry` gained
+  `normalizedCode`, `providerSymbols` (`{ yahoo, stooq: null }`), `currency`, `verifiedAt`, `confidence`,
+  `sourceType` — while preserving every pre-9E field name (`bloombergTicker`, `yahooSymbol`, `assetClass`,
+  `displayName`, `verified`, `notes`) the 6 issuer parsers + `structuredNoteMarketProvider.ts` already read via
+  `.yahooSymbol`/`.assetClass` (verified via grep across all 7 call sites before and after the change).
+- **Observation QA** (`monitoring.ts`): `ObservationEvaluation.reviewReasons` is now a typed
+  `ReviewRequiredReason[]` (`missing_price`, `stale_price`, `unsupported_symbol`, `provider_error`,
+  `large_price_move_warning`, `provider_disagreement`, `final_observation_requires_official_verification`
+  always on every final observation, `non_trading_day_or_unavailable_close`, `ambiguous_underlying_mapping`);
+  the free-text `reviewReason` is derived from this list, not authored separately. An optional `quoteMeta`
+  parameter (additive) enables the richer classification; omitting it preserves the exact pre-9E behavior.
+- **No migration needed** — `structured_note_price_snapshots`/`_observations`/`_monitoring_runs` already had a
+  `metadata jsonb` column from earlier phases; provider/quality diagnostics are written into it.
+- **API additions:** the cron response and `GET /api/structured-notes/monitoring-status` both now include
+  `providerSummary`, `unsupportedSymbols`, `staleSymbols`, `reviewRequiredObservations`/`reviewRequiredSymbols`,
+  `fallbackProviderUsed`, `providerDisagreement` — all read from the run's `metadata`, absent/empty (never
+  fabricated) on a pre-9E run.
+- **UI:** subtle additions only — the dashboard's monitoring status line gains a provider-label chip
+  ("Yahoo Finance monitoring estimate") and conditional "Free-source fallback used"/"Provider disagreement"
+  badges (both inactive today, since only one provider is registered); no redesign.
+- **Two real bugs caught by the new tests before they shipped:** (1) the orchestrator didn't catch a provider's
+  `fetchQuotes` throwing — a hypothetical misbehaving provider would have crashed the whole batch instead of
+  degrading to `provider_error`, now caught per-provider; (2) the no-providers-registered path returned an
+  empty `quotes` array instead of one `unsupported` entry per requested symbol — fixed so every symbol always
+  gets a quote object, even when zero providers are configured.
+- **Tests:** 3 new test files + additions to 2 existing ones — 72 new tests (quote-quality pure functions,
+  provider-abstraction shape, orchestrator fallback/disagreement/error-handling against mocked providers,
+  observation-QA reason classification, symbol-map hardening, route/discovery-doc hygiene checks). 862 → 934.
+
+**Real cron validation against the live production Supabase book** (no separate staging environment exists):
+runId `33125122-b664-4592-ba43-a9b88f1c6b45`, `status: success`, 5 active notes, 2 underlying symbols, 2/2
+succeeded, `providerSummary: {"yahoo-finance":{"requested":2,"succeeded":2,"failed":0}}`,
+`fallbackProviderUsed: false`, `providerDisagreement: false` (both correctly false/absent with one provider
+registered) — confirming the new response shape end-to-end against real data before deploying.
+
+Build (0 errors, `npx tsc --noEmit` clean) · lint 0 · tests 934/934. Regression-checked: `/api/health/ingestion`
+healthy, `/api/macro` and `/api/market/stocks` 200, `/structured-notes` still redirects unauthenticated
+requests to `/login`, no console errors.
+
+Scope limits (explicit): free-data architecture only — no paid/vendor API, no Bloomberg, no API key required
+(none was justified), no claim that any free provider is official, no final/legal payoff determination from
+free data, no CMF/XBRL work, no News/Hechos/FX/calendar work, no parser-behavior change beyond the additive
+symbol-map metadata, auth/watchlist/portfolio/macro/financials untouched, no mobile work.
+
+Next: extend the parser to Santander/older-2024-Citi templates; revisit free-provider discovery periodically
+or evaluate a paid/vendor/official feed if ever authorized; add persisted scheduled snapshots for global
+(non-US) underlyings once a note requires one — or return to **Phase 8C.2** (CMF/XBRL automated financials
+ingestion).

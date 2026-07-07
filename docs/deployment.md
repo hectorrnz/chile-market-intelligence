@@ -488,3 +488,10 @@ never persisted or served publicly. **Never commit the real workbook or private
 term-sheet PDFs** — only the sanitized text fixtures under
 `tests/fixtures/structured-notes/` belong in the repo. See
 `docs/structured_notes_design.md` and `docs/structured_notes_workbook_mapping.md`.
+
+**Phase 9E** (free market-data provider abstraction + fallback/sanity-check orchestrator + quote-quality
+rules) adds **no new migration, no new routes, and no new env vars**. The provider/quality diagnostics it
+introduces are written into the `metadata jsonb` column that `structured_note_price_snapshots`,
+`structured_note_observations`, and `structured_note_monitoring_runs` already had from earlier phases — the
+five migrations listed above (ending in `20260709000000_*`) remain the complete migration set for this
+module. See `docs/structured_notes_market_data_sources.md` for the free-provider discovery findings.

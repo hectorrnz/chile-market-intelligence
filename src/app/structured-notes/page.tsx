@@ -23,6 +23,9 @@ interface MonitoringStatus {
   staleNoteCount: number
   dueSoonCount: number
   reviewRequiredCount: number
+  // Phase 9E — free-provider quality signals from the latest monitoring run's metadata.
+  fallbackProviderUsed?: boolean
+  providerDisagreement?: boolean
 }
 
 type ReviewState = 'ready' | 'review_recommended' | 'review_required' | 'unsupported'
@@ -258,7 +261,9 @@ export default function StructuredNotesPage() {
           {monitoring.unsupportedUnderlyingCount > 0 && <span className="text-warning">{monitoring.unsupportedUnderlyingCount} {t.sn.monitoring.unsupported}</span>}
           {monitoring.dueSoonCount > 0 && <span style={{ color: 'var(--accent)' }}>{monitoring.dueSoonCount} {t.sn.monitoring.dueSoon}</span>}
           {monitoring.reviewRequiredCount > 0 && <span className="text-negative">{monitoring.reviewRequiredCount} {t.sn.monitoring.reviewRequired}</span>}
-          <span className="italic">{t.sn.monitoring.estimateDisclaimer}</span>
+          {monitoring.fallbackProviderUsed && <span style={{ color: 'var(--accent)' }}>{t.sn.monitoring.fallbackUsed}</span>}
+          {monitoring.providerDisagreement && <span className="text-warning">{t.sn.monitoring.providerDisagreement}</span>}
+          <span className="italic">{t.sn.monitoring.providerLabel} · {t.sn.monitoring.estimateDisclaimer}</span>
         </div>
       )}
 

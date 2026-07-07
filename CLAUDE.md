@@ -390,6 +390,85 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 9E — Structured Notes: free market-data architecture + observation QA** ✓ COMPLETE (2026-07-07)
+
+Hardens Structured Notes monitoring's market-data layer with a provider abstraction, a fallback/sanity-check
+orchestrator, and structured quote-quality rules — without adding any paid/vendor dependency. Not about
+replacing Yahoo; about building the best free, resilient architecture.
+
+**Free-provider discovery** (`docs/structured_notes_market_data_sources.md`): Stooq investigated and rejected
+— its CSV endpoints now serve a client-side SHA-256 proof-of-work challenge (confirmed live via curl), not a
+stable API, consistent with the standing no-scraping policy. Keyed free tiers (Alpha Vantage/IEX/Polygon/
+Twelve Data) rejected — a new secret for no clear benefit over Yahoo. Official exchange delayed-quote pages
+rejected — JS-rendered, no public endpoint. **Yahoo Finance remains the only viable free provider.**
+
+**Provider abstraction** (`src/lib/structuredNotes/marketData/providers/types.ts`): a
+`StructuredNoteMarketDataProvider` interface any provider implements. `sourceType` is
+`free_monitoring_estimate | proxy | unsupported` — **deliberately no `official` value**, a structural guard
+against ever mislabeling free data. Yahoo refactored into `yahooStructuredNoteProvider.ts` with zero behavior
+change.
+
+**Fallback/sanity-check orchestrator** (`marketData/resolveStructuredNoteQuotes.ts`): queries **every**
+registered provider that supports a symbol, not only on failure — a later provider both fills a gap the
+primary missed (fallback) and gets cross-checked against the primary's price (sanity-check via
+`compareProviderQuotes`) once a second provider exists. A provider that throws is caught per-provider and
+never takes the batch down. Runs with exactly one registered provider today (see discovery above).
+
+**Quote-quality rules** (`marketData/quoteQuality.ts`, pure): `classifyQuoteQuality` → `ok`/`warning`/`reject`
+per quote. Named threshold constants: stale >3 calendar days (dashboard) / >1 day (a DUE observation), large
+daily move >15%, cross-provider disagreement >1%.
+
+**Symbol mapping hardened** (`underlyingSymbolMap.ts`, additive-only): `UnderlyingSymbolEntry` gained
+`normalizedCode`, `providerSymbols` (`{ yahoo, stooq: null }`), `currency`, `verifiedAt`, `confidence`,
+`sourceType` — while preserving every pre-9E field name (`bloombergTicker`, `yahooSymbol`, `assetClass`,
+`displayName`, `verified`, `notes`) that the 6 issuer parsers + `structuredNoteMarketProvider.ts` already read.
+
+**Observation QA** (`monitoring.ts`): `ObservationEvaluation.reviewReasons` is now a typed
+`ReviewRequiredReason[]` (`missing_price`, `stale_price`, `unsupported_symbol`, `provider_error`,
+`large_price_move_warning`, `provider_disagreement`, `final_observation_requires_official_verification` always
+on every final observation, `non_trading_day_or_unavailable_close`, `ambiguous_underlying_mapping`) — the
+free-text `reviewReason` is derived from this list. An optional `quoteMeta` param enables the fuller
+classification; omitting it preserves exact pre-9E behavior.
+
+**No migration needed** — the price-snapshot/observation/monitoring-run tables already had a `metadata jsonb`
+column from earlier phases; provider/quality diagnostics are written into it.
+
+**API additions:** the cron response and `GET /api/structured-notes/monitoring-status` both now include
+`providerSummary`, `unsupportedSymbols`, `staleSymbols`, `reviewRequiredObservations`/`reviewRequiredSymbols`,
+`fallbackProviderUsed`, `providerDisagreement` — read from the run's `metadata`, safely absent on a pre-9E run.
+
+**UI:** subtle additions only — a provider-label chip ("Yahoo Finance monitoring estimate") and conditional
+"Free-source fallback used"/"Provider disagreement" badges on the dashboard's monitoring status line (both
+inactive today with one provider registered); no redesign.
+
+**Two real bugs caught by tests before shipping:** (1) the orchestrator didn't catch a provider's `fetchQuotes`
+throwing — now caught per-provider, degrades to `provider_error` instead of crashing the batch; (2) the
+no-providers-registered path returned an empty quotes array instead of one `unsupported` entry per symbol —
+fixed so every symbol always gets a quote object.
+
+**Tests:** 3 new test files + additions to 2 existing — 72 new tests (quote quality, provider abstraction,
+orchestrator fallback/disagreement/error-handling against mocked providers, observation-QA reason
+classification, symbol-map hardening, route/discovery-doc hygiene). 862 → 934.
+
+**Real cron validation** against the live production Supabase book (no separate staging environment exists):
+`status: success`, 5 active notes, 2 symbols, 2/2 succeeded, `providerSummary` populated correctly,
+`fallbackProviderUsed`/`providerDisagreement` both correctly `false` with one provider registered.
+
+Build 0 errors (`npx tsc --noEmit` clean) · lint 0 · tests 934/934. Regression-checked: `/api/health/ingestion`
+healthy, `/api/macro` and `/api/market/stocks` 200, `/structured-notes` still redirects unauthenticated to
+`/login`, no console errors.
+
+Scope limits (explicit): free-data architecture only — no paid/vendor API, no Bloomberg, no API key required,
+no claim that any free provider is official, no final/legal payoff determination from free data, no CMF/XBRL
+or News/Hechos/FX/calendar work, no parser-behavior change beyond additive symbol-map metadata, auth/
+watchlist/portfolio/macro/financials untouched, no mobile work.
+
+Next: extend the parser to Santander/older-2024-Citi templates; revisit free-provider discovery periodically;
+add persisted scheduled snapshots for global (non-US) underlyings once a real note requires one — or return
+to **Phase 8C.2** (CMF/XBRL automated financials ingestion).
+
+---
+
 **Phase 9D — Structured Notes: scheduled price snapshots + observation automation** ✓ COMPLETE (2026-07-07)
 
 Turns Structured Notes from automated PDF ingestion into **automated monitoring** — a scheduled cron now
