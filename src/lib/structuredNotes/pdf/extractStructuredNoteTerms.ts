@@ -337,7 +337,7 @@ export function extractStructuredNoteTerms(pages: string[], opts: ExtractOptions
     memoryCoupon: isMemory, principalProtection: false,
     knockInBarrierPct: kiPct, couponBarrierPct, autocallBarrierPct: autocallPct,
     status: 'draft', sourceType: 'pdf_extraction', sourceName: issuerDisplay ? `Term sheet (${issuerDisplay})` : 'Term sheet',
-    sourceFileName: opts.fileName ?? null, confidenceScore: 0,
+    sourceFileName: opts.fileName ?? null, confidenceScore: 0, archivedAt: null,
     underlyings, observations, allocations: [],
   }
 

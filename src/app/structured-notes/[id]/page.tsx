@@ -77,6 +77,7 @@ export default function StructuredNoteDetailPage() {
     await load()
   }
   async function deleteNote() {
+    if (!window.confirm(t.sn.confirmDelete)) return
     await fetch(`/api/structured-notes/${id}`, { method: 'DELETE' })
     router.push('/structured-notes')
   }
@@ -132,15 +133,15 @@ export default function StructuredNoteDetailPage() {
         <Card title={t.sn.currentPrices} note={t.sn.sourceMarket}>
           <table className="w-full text-sm">
             <thead><tr className="border-b border-border">
-              {[t.sn.colUnderlyings, 'Level', t.sn.distanceCoupon, t.sn.distanceKnockIn].map((h) => <th key={h} className="text-left py-1.5 px-2 ui-table-header text-muted-fg">{h}</th>)}
+              {[t.sn.colUnderlyings, 'Level', t.sn.distanceCoupon, t.sn.distanceKnockIn].map((h) => <th key={h} className="text-center py-1.5 px-2 ui-table-header text-muted-fg">{h}</th>)}
             </tr></thead>
             <tbody>
               {data.metrics.distances.map((d) => (
                 <tr key={d.underlyingOrder} className="border-b border-border last:border-0">
-                  <td className="py-1.5 px-2">{d.underlyingName}</td>
-                  <td className="py-1.5 px-2 ui-number">{d.currentLevel !== null ? fmtNum(d.currentLevel) : <span className="text-muted-fg">{t.sn.unavailable}</span>}</td>
-                  <td className="py-1.5 px-2 ui-number">{fmtPct(d.distanceToCouponBarrier)}</td>
-                  <td className="py-1.5 px-2 ui-number">{fmtPct(d.distanceToKnockInBarrier)}</td>
+                  <td className="py-1.5 px-2 text-center">{d.underlyingName}</td>
+                  <td className="py-1.5 px-2 text-center ui-number">{d.currentLevel !== null ? fmtNum(d.currentLevel) : <span className="text-muted-fg">{t.sn.unavailable}</span>}</td>
+                  <td className="py-1.5 px-2 text-center ui-number">{fmtPct(d.distanceToCouponBarrier)}</td>
+                  <td className="py-1.5 px-2 text-center ui-number">{fmtPct(d.distanceToKnockInBarrier)}</td>
                 </tr>
               ))}
             </tbody>
@@ -151,19 +152,19 @@ export default function StructuredNoteDetailPage() {
         <Card title={t.sn.underlyings}>
           <table className="w-full text-sm">
             <thead><tr className="border-b border-border">
-              {['#', t.sn.colUnderlyings, 'Yahoo', 'Initial', 'Strike', 'Knock-in', 'Coupon', 'Autocall'].map((h) => <th key={h} className="text-left py-1.5 px-2 ui-table-header text-muted-fg">{h}</th>)}
+              {['#', t.sn.colUnderlyings, 'Yahoo', 'Initial', 'Strike', 'Knock-in', 'Coupon', 'Autocall'].map((h) => <th key={h} className="text-center py-1.5 px-2 ui-table-header text-muted-fg">{h}</th>)}
             </tr></thead>
             <tbody>
               {n.underlyings.map((u) => (
                 <tr key={u.underlyingOrder} className="border-b border-border last:border-0">
-                  <td className="py-1.5 px-2">{u.underlyingOrder}</td>
-                  <td className="py-1.5 px-2">{u.underlyingName}</td>
-                  <td className="py-1.5 px-2 font-mono text-xs">{u.yahooSymbol ?? '—'}</td>
-                  <td className="py-1.5 px-2 ui-number">{fmtNum(u.initialLevel)}</td>
-                  <td className="py-1.5 px-2 ui-number">{fmtNum(u.strikeLevel)}</td>
-                  <td className="py-1.5 px-2 ui-number">{fmtNum(u.knockInBarrierLevel)}</td>
-                  <td className="py-1.5 px-2 ui-number">{fmtNum(u.couponBarrierLevel)}</td>
-                  <td className="py-1.5 px-2 ui-number">{fmtNum(u.autocallBarrierLevel)}</td>
+                  <td className="py-1.5 px-2 text-center">{u.underlyingOrder}</td>
+                  <td className="py-1.5 px-2 text-center">{u.underlyingName}</td>
+                  <td className="py-1.5 px-2 text-center font-mono text-xs">{u.yahooSymbol ?? '—'}</td>
+                  <td className="py-1.5 px-2 text-center ui-number">{fmtNum(u.initialLevel)}</td>
+                  <td className="py-1.5 px-2 text-center ui-number">{fmtNum(u.strikeLevel)}</td>
+                  <td className="py-1.5 px-2 text-center ui-number">{fmtNum(u.knockInBarrierLevel)}</td>
+                  <td className="py-1.5 px-2 text-center ui-number">{fmtNum(u.couponBarrierLevel)}</td>
+                  <td className="py-1.5 px-2 text-center ui-number">{fmtNum(u.autocallBarrierLevel)}</td>
                 </tr>
               ))}
             </tbody>
@@ -175,17 +176,17 @@ export default function StructuredNoteDetailPage() {
           <div className="max-h-64 overflow-y-auto">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-border">
-                {['#', 'Valuation', 'Payment', 'Coupon barrier', 'Autocall barrier', 'Status'].map((h) => <th key={h} className="text-left py-1.5 px-2 ui-table-header text-muted-fg whitespace-nowrap">{h}</th>)}
+                {['#', 'Valuation', 'Payment', 'Coupon barrier', 'Autocall barrier', 'Status'].map((h) => <th key={h} className="text-center py-1.5 px-2 ui-table-header text-muted-fg whitespace-nowrap">{h}</th>)}
               </tr></thead>
               <tbody>
                 {dedupeObservationsByDate(n.observations).map((o) => (
                   <tr key={`${o.observationNumber}-${o.valuationDate}`} className="border-b border-border last:border-0">
-                    <td className="py-1.5 px-2">{o.observationNumber}{o.observationType === 'final' ? ' ·F' : ''}</td>
-                    <td className="py-1.5 px-2 ui-number">{o.valuationDate}</td>
-                    <td className="py-1.5 px-2 ui-number">{o.paymentDate ?? o.redemptionDate ?? '—'}</td>
-                    <td className="py-1.5 px-2 ui-number">{fmtPct(o.couponBarrierPct)}</td>
-                    <td className="py-1.5 px-2 ui-number">{fmtPct(o.autocallBarrierPct)}</td>
-                    <td className="py-1.5 px-2 text-xs text-muted-fg">{o.status}</td>
+                    <td className="py-1.5 px-2 text-center">{o.observationNumber}{o.observationType === 'final' ? ' ·F' : ''}</td>
+                    <td className="py-1.5 px-2 text-center ui-number">{o.valuationDate}</td>
+                    <td className="py-1.5 px-2 text-center ui-number">{o.paymentDate ?? o.redemptionDate ?? '—'}</td>
+                    <td className="py-1.5 px-2 text-center ui-number">{fmtPct(o.couponBarrierPct)}</td>
+                    <td className="py-1.5 px-2 text-center ui-number">{fmtPct(o.autocallBarrierPct)}</td>
+                    <td className="py-1.5 px-2 text-center text-xs text-muted-fg">{o.status}</td>
                   </tr>
                 ))}
               </tbody>
@@ -257,22 +258,35 @@ function EntityAllocationGrid({
   )
 }
 
+/** Strips everything but digits/decimal point, then re-inserts thousand separators as the user types. */
+function formatWithThousands(raw: string): string {
+  const cleaned = raw.replace(/[^\d.]/g, '')
+  if (!cleaned) return ''
+  const [intPart, ...rest] = cleaned.split('.')
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+  return rest.length > 0 ? `${grouped}.${rest.join('').slice(0, 2)}` : grouped
+}
+function parseFormattedNumber(formatted: string): number {
+  const n = Number(formatted.replace(/,/g, ''))
+  return Number.isFinite(n) ? n : 0
+}
+
 function EntityRow({ name, currency, value, onCommit, removable, onRemove }: { name: string; currency: string; value: number; onCommit: (v: number) => void; removable: boolean; onRemove: () => void }) {
-  const [draft, setDraft] = useState(value ? String(value) : '')
+  const [draft, setDraft] = useState(value ? formatWithThousands(String(value)) : '')
   // Keep the input in sync when the persisted value changes (render-time prev pattern).
   const [prev, setPrev] = useState(value)
-  if (value !== prev) { setPrev(value); setDraft(value ? String(value) : '') }
+  if (value !== prev) { setPrev(value); setDraft(value ? formatWithThousands(String(value)) : '') }
   return (
     <div className="flex items-center gap-2 text-sm">
       <span className="flex-1 truncate" title={name}>{name}</span>
       <span className="text-xs text-muted-fg">{currency}</span>
       <input
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => { const v = Number(draft.replace(/,/g, '')); if (Number.isFinite(v) && v !== value) onCommit(v > 0 ? v : 0) }}
+        onChange={(e) => setDraft(formatWithThousands(e.target.value))}
+        onBlur={() => { const v = parseFormattedNumber(draft); if (v !== value) onCommit(v > 0 ? v : 0) }}
         onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
         inputMode="decimal" placeholder="0"
-        className="w-28 px-2 py-1 text-sm text-right border border-border rounded bg-surface ui-number no-print"
+        className="w-32 px-2 py-1 text-sm text-right border border-border rounded bg-surface ui-number no-print"
       />
       {removable && <button onClick={onRemove} className="text-xs text-negative no-print" title="remove">✕</button>}
     </div>

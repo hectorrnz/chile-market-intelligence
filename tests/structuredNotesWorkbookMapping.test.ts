@@ -85,6 +85,22 @@ describe('allocation upsert + entity list (9B.1)', () => {
   })
 })
 
+describe('archived_at tracking (9B.2)', () => {
+  it('migration adds the archived_at column', () => {
+    const m = read('../supabase/migrations/20260708000000_structured_notes_archived_at.sql')
+    assert.ok(/add column if not exists archived_at timestamptz/.test(m))
+  })
+  it('repository stamps archived_at when status moves into an archived state, and clears it otherwise', () => {
+    const repo = read('../src/lib/db/repositories/structuredNotesRepository.ts')
+    assert.ok(repo.includes('ARCHIVED_STATUSES.includes(patch.status)'))
+    assert.ok(repo.includes('dbPatch.archived_at ='))
+  })
+  it('mapNote reads archived_at into the domain type', () => {
+    const repo = read('../src/lib/db/repositories/structuredNotesRepository.ts')
+    assert.ok(repo.includes('archivedAt: r.archived_at'))
+  })
+})
+
 describe('no Bloomberg dependency in the app', () => {
   it('market provider uses Yahoo, and makes no Bloomberg call/import (comments may mention it)', () => {
     assert.ok(/yahoo-finance2|yahoo/i.test(MARKET_PROVIDER))

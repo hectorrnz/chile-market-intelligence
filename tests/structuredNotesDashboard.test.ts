@@ -15,7 +15,7 @@ function note(over: Partial<StructuredNote> = {}): StructuredNote {
     couponFrequency: 'quarterly', couponRatePeriodic: 0.025, couponRateAnnualized: 0.1,
     memoryCoupon: true, principalProtection: false,
     knockInBarrierPct: 0.65, couponBarrierPct: 0.65, autocallBarrierPct: 1,
-    status: 'active', sourceType: 'pdf_extraction', sourceName: null, sourceFileName: null, confidenceScore: 1,
+    status: 'active', sourceType: 'pdf_extraction', sourceName: null, sourceFileName: null, confidenceScore: 1, archivedAt: null,
     underlyings: [
       { underlyingOrder: 1, underlyingName: 'SPX Index', sourceTicker: 'SPX Index', bloombergTicker: 'SPX Index', yahooSymbol: '^GSPC', assetClass: 'index', initialLevel: 7576, strikeLevel: 7576, knockInBarrierLevel: 4924.4, couponBarrierLevel: 4924.4, autocallBarrierLevel: 7576, knockInBarrierPct: 0.65, couponBarrierPct: 0.65, autocallBarrierPct: 1 },
       { underlyingOrder: 2, underlyingName: 'RTY Index', sourceTicker: 'RTY Index', bloombergTicker: 'RTY Index', yahooSymbol: '^RUT', assetClass: 'index', initialLevel: 2927, strikeLevel: 2927, knockInBarrierLevel: 1902.55, couponBarrierLevel: 1902.55, autocallBarrierLevel: 2927, knockInBarrierPct: 0.65, couponBarrierPct: 0.65, autocallBarrierPct: 1 },

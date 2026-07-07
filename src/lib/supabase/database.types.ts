@@ -1043,6 +1043,7 @@ export interface Database {
           extraction_run_id: string | null
           confidence_score: number | null
           metadata: Record<string, unknown>
+          archived_at: string | null
           created_at: string
           updated_at: string
         }

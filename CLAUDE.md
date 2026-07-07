@@ -390,6 +390,31 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 9B.2 — Structured Notes: dashboard UX refinements from real use** ✓ COMPLETE (2026-07-07)
+
+Eight small UX fixes requested after using the shared dashboard for real: (1) **allocation-by-entity inputs**
+now auto-format with thousand separators while typing (`formatWithThousands`/`parseFormattedNumber` in the
+detail page); (2) the dashboard table, current-levels/distance-to-barrier, underlyings, and observation-schedule
+tables are all **center-aligned**; (3) the **"Live positions" KPI is now clickable** (same pattern as the
+existing "Called" KPI) and jumps straight to the Live view with no status filter; (4) archived notes show an
+**"Archived as of"** column (swapped in for "Next obs.", which isn't meaningful once called) sourced from a
+new `archived_at` timestamp — migration `20260708000000_structured_notes_archived_at.sql` adds the column;
+the repository stamps it when `status` transitions into an `ARCHIVED_STATUSES` value and clears it if reversed;
+(5) the dashboard table is **sortable** by Issuer / Issued / Status / Next obs. (click column header, arrow
+indicator), **defaulting to Issued newest-first**; Status sorts by severity (breached → autocallable → watch →
+safe → unavailable) via `STATUS_RANK`, not alphabetically; (6) every risk-status KPI (Safe/Watch/Autocallable/
+Breached) got a `title` tooltip explaining the state in plain English, plus a one-line legend caption under the
+KPI row — clicking a KPI filters the table to just that status (`focusStatus()`), giving an at-a-glance way to
+find which specific note(s) are near a barrier/autocall/breach without a heavier modal; (7) added **Status**
+and **Issuer** filter dropdowns to the toolbar, composable with the KPI-click shortcut; (8) **delete now asks
+for confirmation** (`window.confirm`) before removing a note. Tests 745 (+3 archived_at hygiene checks). Build
+56 routes · lint 0.
+
+**Apply FOUR migrations** in order: `20260706000000_*` (9A) → `20260706120000_*` (9B shared book) →
+`20260707000000_*` (9B.1 allocation upsert) → `20260708000000_*` (9B.2 archived_at).
+
+---
+
 **Phase 9B — Structured Notes: multi-issuer extraction + shared book dashboard** ✓ COMPLETE (2026-07-06)
 
 Follow-up to 9A addressing two user requirements: (1) the tab must be a **shared book-level dashboard** (all

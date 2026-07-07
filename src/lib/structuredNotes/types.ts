@@ -106,6 +106,8 @@ export interface StructuredNote {
   sourceName: string | null
   sourceFileName: string | null
   confidenceScore: number | null
+  /** ISO timestamp the note was marked Called/archived by a user. Null while live. */
+  archivedAt: string | null
   underlyings: StructuredNoteUnderlying[]
   observations: StructuredNoteObservation[]
   allocations: StructuredNoteAllocation[]

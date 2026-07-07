@@ -38,7 +38,10 @@ function fmtNum(v: number | null | undefined): string {
 const RISK_TONE: Record<string, string> = {
   safe: 'var(--positive)', watch: 'var(--warning)', breached: 'var(--negative)', autocallable: 'var(--accent)', unavailable: 'var(--muted-fg)',
 }
+// Severity order used when sorting/filtering by status — most urgent first.
+const STATUS_RANK: Record<string, number> = { breached: 0, autocallable: 1, watch: 2, safe: 3, unavailable: 4 }
 const CHART_PALETTE = ['#004A64', '#1A6630', '#8B0E04', '#B07A12', '#0E7FB8', '#5B6770', '#7399C6', '#2E7D32', '#9A6A00', '#417B9C']
+type SortKey = 'issued' | 'issuer' | 'status' | 'next'
 
 export default function StructuredNotesPage() {
   const { t } = useLang()
@@ -48,6 +51,10 @@ export default function StructuredNotesPage() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [view, setView] = useState<'live' | 'archived'>('live')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [issuerFilter, setIssuerFilter] = useState<string>('all')
+  const [sortKey, setSortKey] = useState<SortKey>('issued')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [preview, setPreview] = useState<ExtractResponse | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -132,23 +139,63 @@ export default function StructuredNotesPage() {
 
   const riskLabel = (s: string) => ({ safe: t.sn.riskSafe, watch: t.sn.riskWatch, breached: t.sn.riskBreached, autocallable: t.sn.riskAutocallable, unavailable: t.sn.riskUnavailable }[s] ?? s)
   const isArchived = (n: StructuredNote) => ARCHIVED_STATUSES.includes(n.status)
-  const shown = notes.filter((n) => (view === 'archived' ? isArchived(n) : !isArchived(n)))
+
+  const issuers = [...new Set(notes.map((n) => n.issuerDisplayName).filter((x): x is string => !!x))].sort()
+
+  const filtered = notes
+    .filter((n) => (view === 'archived' ? isArchived(n) : !isArchived(n)))
+    .filter((n) => issuerFilter === 'all' || n.issuerDisplayName === issuerFilter)
+    .filter((n) => {
+      if (statusFilter === 'all') return true
+      const m = n.id ? metrics[n.id] : undefined
+      return m?.riskStatus === statusFilter
+    })
+
+  const shown = [...filtered].sort((a, b) => {
+    const ma = a.id ? metrics[a.id] : undefined
+    const mb = b.id ? metrics[b.id] : undefined
+    let cmp = 0
+    if (sortKey === 'issued') cmp = (a.issueDate ?? a.tradeDate ?? '').localeCompare(b.issueDate ?? b.tradeDate ?? '')
+    else if (sortKey === 'issuer') cmp = (a.issuerDisplayName ?? '').localeCompare(b.issuerDisplayName ?? '')
+    else if (sortKey === 'status') cmp = (STATUS_RANK[ma?.riskStatus ?? 'unavailable'] ?? 5) - (STATUS_RANK[mb?.riskStatus ?? 'unavailable'] ?? 5)
+    else if (sortKey === 'next') cmp = (ma?.nextObservationDate ?? '').localeCompare(mb?.nextObservationDate ?? '')
+    return sortDir === 'asc' ? cmp : -cmp
+  })
+
+  function toggleSort(key: SortKey) {
+    if (key === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    else { setSortKey(key); setSortDir(key === 'issuer' ? 'asc' : 'desc') }
+  }
+  function sortArrow(key: SortKey) {
+    if (key !== sortKey) return ''
+    return sortDir === 'asc' ? ' ▲' : ' ▼'
+  }
+  /** Jumps to Live and filters to one risk status (or clears the filter for "Live positions"). */
+  function focusStatus(status: string | null) {
+    setView('live')
+    setStatusFilter(status ?? 'all')
+  }
 
   return (
     <div className="w-full">
       <SectionHeader tag={t.sn.tag} title={t.sn.tag} subtitle={t.sn.subtitle} />
 
-      {/* Dashboard summary */}
+      {/* Dashboard summary — click a status card to jump to Live filtered to it */}
       {summary && summary.totalNotes > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-7 gap-3 mb-5">
-          <Kpi label={t.sn.dashLive} value={String(summary.activeNotes)} />
-          <Kpi label={t.sn.dashSafe} value={String(summary.safeNotes)} tone="var(--positive)" />
-          <Kpi label={t.sn.dashWatch} value={String(summary.watchNotes)} tone="var(--warning)" />
-          <Kpi label={t.sn.dashAutocallable} value={String(summary.autocallableNotes)} tone="var(--accent)" />
-          <Kpi label={t.sn.dashBreached} value={String(summary.breachedNotes)} tone={summary.breachedNotes > 0 ? 'var(--negative)' : undefined} />
-          <Kpi label={t.sn.dashCalled} value={String(summary.calledNotes)} onClick={() => setView('archived')} />
-          <Kpi label={t.sn.dashNotional} value={`${summary.currency} ${fmtNum(summary.totalCurrentNotional)}`} />
-        </div>
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-7 gap-3 mb-2">
+            <Kpi label={t.sn.dashLive} value={String(summary.activeNotes)} onClick={() => focusStatus(null)} />
+            <Kpi label={t.sn.dashSafe} value={String(summary.safeNotes)} tone="var(--positive)" title={t.sn.legendSafe} onClick={() => focusStatus('safe')} />
+            <Kpi label={t.sn.dashWatch} value={String(summary.watchNotes)} tone="var(--warning)" title={t.sn.legendWatch} onClick={() => focusStatus('watch')} />
+            <Kpi label={t.sn.dashAutocallable} value={String(summary.autocallableNotes)} tone="var(--accent)" title={t.sn.legendAutocallable} onClick={() => focusStatus('autocallable')} />
+            <Kpi label={t.sn.dashBreached} value={String(summary.breachedNotes)} tone={summary.breachedNotes > 0 ? 'var(--negative)' : undefined} title={t.sn.legendBreached} onClick={() => focusStatus('breached')} />
+            <Kpi label={t.sn.dashCalled} value={String(summary.calledNotes)} onClick={() => setView('archived')} />
+            <Kpi label={t.sn.dashNotional} value={`${summary.currency} ${fmtNum(summary.totalCurrentNotional)}`} />
+          </div>
+          <p className="mb-5 text-xs text-muted-fg">
+            {t.sn.riskSafe}: {t.sn.legendSafe} · {t.sn.riskWatch}: {t.sn.legendWatch} · {t.sn.riskAutocallable}: {t.sn.legendAutocallable} · {t.sn.riskBreached}: {t.sn.legendBreached}
+          </p>
+        </>
       )}
 
       {/* Exposure charts */}
@@ -177,6 +224,20 @@ export default function StructuredNotesPage() {
           {busy ? t.sn.extracting : t.sn.upload}
         </label>
         <button onClick={refresh} disabled={refreshing} className="px-3 py-2 rounded-md border border-border text-sm disabled:opacity-50">↻ {refreshing ? t.sn.updating : t.sn.update}</button>
+
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-2 py-1.5 text-sm border border-border rounded bg-surface" aria-label={t.sn.filterStatus}>
+          <option value="all">{t.sn.filterStatus}: {t.sn.filterAll}</option>
+          <option value="safe">{t.sn.riskSafe}</option>
+          <option value="watch">{t.sn.riskWatch}</option>
+          <option value="autocallable">{t.sn.riskAutocallable}</option>
+          <option value="breached">{t.sn.riskBreached}</option>
+          <option value="unavailable">{t.sn.riskUnavailable}</option>
+        </select>
+        <select value={issuerFilter} onChange={(e) => setIssuerFilter(e.target.value)} className="px-2 py-1.5 text-sm border border-border rounded bg-surface" aria-label={t.sn.filterIssuer}>
+          <option value="all">{t.sn.filterIssuer}: {t.sn.filterAll}</option>
+          {issuers.map((iss) => <option key={iss} value={iss}>{iss}</option>)}
+        </select>
+
         <div className="ml-auto inline-flex rounded-md border border-border overflow-hidden text-sm">
           <button onClick={() => setView('live')} className={`px-3 py-1.5 ${view === 'live' ? 'bg-surface-2 text-foreground' : 'text-muted-fg'}`}>{t.sn.viewLive}{summary ? ` (${summary.activeNotes})` : ''}</button>
           <button onClick={() => setView('archived')} className={`px-3 py-1.5 ${view === 'archived' ? 'bg-surface-2 text-foreground' : 'text-muted-fg'}`}>{t.sn.viewArchived}{summary ? ` (${summary.calledNotes})` : ''}</button>
@@ -224,9 +285,20 @@ export default function StructuredNotesPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border">
-                {[t.sn.colCalled, t.sn.colIsin, t.sn.colIssuer, t.sn.colUnderlyings, t.sn.colIssued, t.sn.colCoupon, t.sn.colKnockIn, t.sn.colStatus, t.sn.colWorst, t.sn.colDistance, t.sn.colNext, t.sn.colNotional].map((h) => (
-                  <th key={h} className="text-left py-2.5 px-3 first:pl-4 ui-table-header text-muted-fg whitespace-nowrap">{h}</th>
-                ))}
+                <th className="text-center py-2.5 px-3 ui-table-header text-muted-fg whitespace-nowrap">{t.sn.colCalled}</th>
+                <th className="text-center py-2.5 px-3 ui-table-header text-muted-fg whitespace-nowrap">{t.sn.colIsin}</th>
+                <SortableHeader label={t.sn.colIssuer} active={sortKey === 'issuer'} arrow={sortArrow('issuer')} onClick={() => toggleSort('issuer')} />
+                <th className="text-center py-2.5 px-3 ui-table-header text-muted-fg whitespace-nowrap">{t.sn.colUnderlyings}</th>
+                <SortableHeader label={t.sn.colIssued} active={sortKey === 'issued'} arrow={sortArrow('issued')} onClick={() => toggleSort('issued')} />
+                <th className="text-center py-2.5 px-3 ui-table-header text-muted-fg whitespace-nowrap">{t.sn.colCoupon}</th>
+                <th className="text-center py-2.5 px-3 ui-table-header text-muted-fg whitespace-nowrap">{t.sn.colKnockIn}</th>
+                <SortableHeader label={t.sn.colStatus} active={sortKey === 'status'} arrow={sortArrow('status')} onClick={() => toggleSort('status')} />
+                <th className="text-center py-2.5 px-3 ui-table-header text-muted-fg whitespace-nowrap">{t.sn.colWorst}</th>
+                <th className="text-center py-2.5 px-3 ui-table-header text-muted-fg whitespace-nowrap">{t.sn.colDistance}</th>
+                {view === 'archived'
+                  ? <th className="text-center py-2.5 px-3 ui-table-header text-muted-fg whitespace-nowrap">{t.sn.colArchivedAt}</th>
+                  : <SortableHeader label={t.sn.colNext} active={sortKey === 'next'} arrow={sortArrow('next')} onClick={() => toggleSort('next')} />}
+                <th className="text-center py-2.5 px-3 ui-table-header text-muted-fg whitespace-nowrap">{t.sn.colNotional}</th>
               </tr>
             </thead>
             <tbody>
@@ -235,28 +307,32 @@ export default function StructuredNotesPage() {
                 const nearObs = m?.daysToNextObservation != null && m.daysToNextObservation <= 7 && m.daysToNextObservation >= 0
                 return (
                   <tr key={n.id} className="border-b border-border last:border-0 hover:bg-surface-2">
-                    <td className="py-2.5 px-3 first:pl-4 no-print">
+                    <td className="py-2.5 px-3 text-center no-print">
                       <input type="checkbox" checked={isArchived(n)} onChange={(e) => n.id && setCalled(n.id, e.target.checked)} title={t.sn.dashCalled} />
                     </td>
-                    <td className="py-2.5 px-3"><Link href={`/structured-notes/${n.id}`} className="font-mono text-accent hover:underline">{n.isin ?? '—'}</Link></td>
-                    <td className="py-2.5 px-3">{n.issuerDisplayName ?? '—'}</td>
-                    <td className="py-2.5 px-3">{n.underlyings.map((u) => u.underlyingName).join(' / ')}</td>
-                    <td className="py-2.5 px-3 ui-number">{n.issueDate ?? n.tradeDate ?? '—'}</td>
-                    <td className="py-2.5 px-3 ui-number">{fmtPct(n.couponRateAnnualized)}</td>
-                    <td className="py-2.5 px-3 ui-number">{fmtPct(n.knockInBarrierPct)}</td>
-                    <td className="py-2.5 px-3">
+                    <td className="py-2.5 px-3 text-center"><Link href={`/structured-notes/${n.id}`} className="font-mono text-accent hover:underline">{n.isin ?? '—'}</Link></td>
+                    <td className="py-2.5 px-3 text-center">{n.issuerDisplayName ?? '—'}</td>
+                    <td className="py-2.5 px-3 text-center">{n.underlyings.map((u) => u.underlyingName).join(' / ')}</td>
+                    <td className="py-2.5 px-3 text-center ui-number">{n.issueDate ?? n.tradeDate ?? '—'}</td>
+                    <td className="py-2.5 px-3 text-center ui-number">{fmtPct(n.couponRateAnnualized)}</td>
+                    <td className="py-2.5 px-3 text-center ui-number">{fmtPct(n.knockInBarrierPct)}</td>
+                    <td className="py-2.5 px-3 text-center">
                       {m ? <span className="text-xs px-2 py-0.5 rounded-full" style={{ color: RISK_TONE[m.riskStatus], backgroundColor: `color-mix(in oklab, ${RISK_TONE[m.riskStatus]} 12%, var(--surface))` }}>{riskLabel(m.riskStatus)}</span> : <StatusPill status={n.status} />}
                     </td>
-                    <td className="py-2.5 px-3">{m?.worstPerformer ? <span>{m.worstPerformer.underlyingName} <span className="ui-number">{fmtPct(m.worstPerformer.performance)}</span></span> : '—'}</td>
-                    <td className="py-2.5 px-3 ui-number">{m ? fmtPct(m.minDistanceToCouponBarrier) : '—'}</td>
-                    <td className="py-2.5 px-3 ui-number">
-                      {m?.nextObservationDate ? (
-                        <span className={nearObs ? 'inline-block px-1.5 py-0.5 rounded' : ''} style={nearObs ? { color: 'var(--negative)', backgroundColor: 'color-mix(in oklab, var(--negative) 14%, var(--surface))', border: '1px solid var(--negative)' } : undefined}>
-                          {m.nextObservationDate}{m.daysToNextObservation != null ? ` (${m.daysToNextObservation}d)` : ''}
-                        </span>
-                      ) : '—'}
-                    </td>
-                    <td className="py-2.5 px-3 ui-number">{n.currency} {fmtNum(m?.currentNotional ?? 0)}</td>
+                    <td className="py-2.5 px-3 text-center">{m?.worstPerformer ? <span>{m.worstPerformer.underlyingName} <span className="ui-number">{fmtPct(m.worstPerformer.performance)}</span></span> : '—'}</td>
+                    <td className="py-2.5 px-3 text-center ui-number">{m ? fmtPct(m.minDistanceToCouponBarrier) : '—'}</td>
+                    {view === 'archived' ? (
+                      <td className="py-2.5 px-3 text-center ui-number">{n.archivedAt ? new Date(n.archivedAt).toLocaleDateString() : '—'}</td>
+                    ) : (
+                      <td className="py-2.5 px-3 text-center ui-number">
+                        {m?.nextObservationDate ? (
+                          <span className={nearObs ? 'inline-block px-1.5 py-0.5 rounded' : ''} style={nearObs ? { color: 'var(--negative)', backgroundColor: 'color-mix(in oklab, var(--negative) 14%, var(--surface))', border: '1px solid var(--negative)' } : undefined}>
+                            {m.nextObservationDate}{m.daysToNextObservation != null ? ` (${m.daysToNextObservation}d)` : ''}
+                          </span>
+                        ) : '—'}
+                      </td>
+                    )}
+                    <td className="py-2.5 px-3 text-center ui-number">{n.currency} {fmtNum(m?.currentNotional ?? 0)}</td>
                   </tr>
                 )
               })}
@@ -279,7 +355,7 @@ function Field({ label, value }: { label: string; value: string | null | undefin
     </div>
   )
 }
-function Kpi({ label, value, tone, onClick }: { label: string; value: string; tone?: string; onClick?: () => void }) {
+function Kpi({ label, value, tone, onClick, title }: { label: string; value: string; tone?: string; onClick?: () => void; title?: string }) {
   const cls = `border border-border rounded-lg bg-surface p-3 text-left ${onClick ? 'cursor-pointer hover:bg-surface-2' : ''}`
   const inner = (
     <>
@@ -287,11 +363,21 @@ function Kpi({ label, value, tone, onClick }: { label: string; value: string; to
       <div className="text-lg mt-1" style={tone ? { color: tone } : undefined}>{value}</div>
     </>
   )
-  return onClick ? <button onClick={onClick} className={cls}>{inner}</button> : <div className={cls}>{inner}</div>
+  return onClick
+    ? <button onClick={onClick} className={cls} title={title}>{inner}</button>
+    : <div className={cls} title={title}>{inner}</div>
 }
 function StatusPill({ status }: { status: string }) {
   const color = status === 'active' ? 'var(--positive)' : status === 'autocalled' ? 'var(--accent)' : status === 'defaulted' ? 'var(--negative)' : 'var(--muted-fg)'
   return <span className="text-xs px-2 py-0.5 rounded-full" style={{ color, backgroundColor: `color-mix(in oklab, ${color} 12%, var(--surface))` }}>{status}</span>
+}
+/** Clickable, centered table header with an active sort-direction arrow. */
+function SortableHeader({ label, active, arrow, onClick }: { label: string; active: boolean; arrow: string; onClick: () => void }) {
+  return (
+    <th className="text-center py-2.5 px-3 ui-table-header text-muted-fg whitespace-nowrap">
+      <button onClick={onClick} className={`no-print ${active ? 'text-foreground' : ''}`}>{label}{arrow}</button>
+    </th>
+  )
 }
 
 /** Horizontal bar chart with notional + % of total. No chart library (SVG/CSS). */

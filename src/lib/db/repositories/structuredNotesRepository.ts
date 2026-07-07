@@ -14,6 +14,7 @@ import type {
   StructuredNoteObservationRow as DbObs,
   StructuredNoteAllocationRow as DbAlloc,
 } from '../../supabase/database.types.ts'
+import { ARCHIVED_STATUSES } from '../../structuredNotes/types.ts'
 import type {
   StructuredNote,
   StructuredNoteUnderlying,
@@ -113,6 +114,7 @@ function mapNote(r: DbNote, children?: { underlyings?: DbUnderlying[]; observati
     sourceName: r.source_name,
     sourceFileName: r.source_file_name,
     confidenceScore: r.confidence_score,
+    archivedAt: r.archived_at,
     underlyings: (children?.underlyings ?? []).map(mapUnderlying).sort((a, b) => a.underlyingOrder - b.underlyingOrder),
     observations: (children?.observations ?? []).map(mapObservation),
     allocations: (children?.allocations ?? []).map(mapAllocation),
@@ -264,7 +266,12 @@ export async function updateStructuredNote(
   patch: Partial<Pick<StructuredNote, 'status' | 'issuerDisplayName' | 'productName' | 'sourceName'>>,
 ): Promise<boolean> {
   const dbPatch: Record<string, unknown> = {}
-  if (patch.status !== undefined) dbPatch.status = patch.status
+  if (patch.status !== undefined) {
+    dbPatch.status = patch.status
+    // Stamp when the note actually entered an archived state (Called/matured/etc.),
+    // and clear it if a user reverses that (e.g. un-checks "Called").
+    dbPatch.archived_at = ARCHIVED_STATUSES.includes(patch.status) ? new Date().toISOString() : null
+  }
   if (patch.issuerDisplayName !== undefined) dbPatch.issuer_display_name = patch.issuerDisplayName
   if (patch.productName !== undefined) dbPatch.product_name = patch.productName
   if (patch.sourceName !== undefined) dbPatch.source_name = patch.sourceName
