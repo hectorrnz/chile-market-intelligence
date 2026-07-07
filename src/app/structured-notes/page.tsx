@@ -426,14 +426,14 @@ function Donut({ data, currency, ofTotal }: { data: { label: string; value: numb
   return (
     <div className="flex items-center gap-4">
       {total > 0 ? (
-        <svg viewBox="0 0 100 100" className="w-24 h-24 shrink-0" style={{ transform: 'rotate(-90deg)' }}>
+        <svg viewBox="0 0 100 100" className="w-44 h-44 shrink-0" style={{ transform: 'rotate(-90deg)' }}>
           {segs.map((s) => (
             <circle key={s.label} cx="50" cy="50" r={r} fill="none" strokeWidth="14" stroke={s.color}
               strokeDasharray={`${s.dash} ${C - s.dash}`} strokeDashoffset={-s.offset} />
           ))}
         </svg>
       ) : (
-        <div className="w-24 h-24 shrink-0 rounded-full border-8 border-border" />
+        <div className="w-44 h-44 shrink-0 rounded-full border-8 border-border" />
       )}
       <div className="text-xs space-y-1 min-w-0">
         {segs.map((s) => (
