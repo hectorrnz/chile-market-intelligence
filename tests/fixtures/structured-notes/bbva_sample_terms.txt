@@ -1,0 +1,32 @@
+DRAFT FOR DISCUSSION PURPOSES This Term Sheet is the preliminary pricing supplement and is not completed and may be changed. Subject to completion dated 5 January 2026.
+PRICING SUPPLEMENT
+BBVA GLOBAL MARKETS, B.V. (a private company with limited liability incorporated under Dutch law) (as "Issuer")
+Issue of Series 99001 USD 1,000,000 Index Linked Notes due 2028 guaranteed by BANCO BILBAO VIZCAYA ARGENTARIA, S.A. (incorporated with limited liability in Spain) (as "Guarantor")
+PART A - CONTRACTUAL TERMS
+Specified Denomination: USD 1,000
+6. (i) Issue Date: 12 January 2026 (ii) Trade Date: 5 January 2026
+7. Maturity Date: 13 January 2028
+8. Reference Item(s): Basket of Indices
+k Index Screen Page (Bloomberg Code) Index Sponsor Level
+1 Standard and Poor's 500 Index SPX INDEX S&P Dow Jones Indices LLC 6,000
+2 Russell 2000 Index RTY INDEX FTSE Russell 2,400
+PROVISIONS RELATING TO INTEREST PAYABLE
+9. Interest Basis: Index Linked Interest
+Rate of Interest - Memory
+(A) If the lowest or equal lowest (i) official closing level of an Index on a Coupon Valuation Date divided by (ii) the level of such Index for any Index in the Basket, expressed as a percentage, is equal to or greater than 65%: Rate (i) + Sum Rate (i)
+Where: "Rate (i)" means 2.24%.
+i Coupon Valuation Date Interest Payment Date
+1 5 April 2026 13 April 2026
+2 5 July 2026 13 July 2026
+3 5 October 2026 13 October 2026
+4 5 January 2027 13 January 2027
+PROVISIONS RELATING TO REDEMPTION
+10. Redemption Basis: Index Linked Redemption
+11. Final Redemption Amount: Redemption - Digital
+(A) If, in respect of the Redemption Valuation Date, the Worst Value is equal to or greater than 65%: Specified Denomination * 100%
+Automatic Early Redemption: Applicable
+(i) Automatic Early Redemption Event: The lowest or equal lowest (i) official closing level of an Index on any Automatic Early Redemption Valuation Date divided by (ii) the level of such Index for any Index in the Basket, expressed as a percentage, is greater than or equal to 100%.
+j Automatic Early Redemption Valuation Date Automatic Early Redemption Date
+1 5 April 2026 13 April 2026
+2 5 July 2026 13 July 2026
+3 5 October 2026 13 October 2026

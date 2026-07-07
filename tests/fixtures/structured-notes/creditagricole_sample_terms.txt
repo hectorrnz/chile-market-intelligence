@@ -1,0 +1,41 @@
+Term Sheet Exempt Offer Climber Reload Autocall linked to: S&P 500 INDEX AND RUSSELL 2000 INDEX
+ISIN Code : XS9999999991
+SeriesCode: 90001
+3) Underlying(s)
+i Underlying Type Index Sponsor Bloomberg Ticker Initial Underlying Value(i) Multiple Exchange
+1 S&P 500 INDEX Index S&P Dow Jones Indices LLC SPX 6,000.0000 Not Applicable
+N=2 RUSSELL 2000 INDEX Index FTSE International Limited RTY 2,400.0000 Not Applicable
+4) Indicative Barrier Level(s)
+i Underlying(i) 65.00% (Interest Barrier) 100.00% (Early Redemption Barrier) 65.00% (Final Redemption Barrier) 100.00% (Strike)
+1 S&P 500 INDEX 3,900.0000 6,000.0000 3,900.0000 6,000.0000
+N=2 RUSSELL 2000 INDEX 1,560.0000 2,400.0000 1,560.0000 2,400.0000
+5) General Information
+Issuer Crédit Agricole CIB Financial Solutions LEI : 969500HUHIE5GG515X42
+Guarantor Crédit Agricole Corporate and Investment Bank ("Crédit Agricole CIB") LEI : 1VUV7VQFKUOQSJ21A208
+Issue Price 100.00%
+Aggregate Nominal Amount USD 1,000,000.00
+Specified Denomination USD 1,000.00
+Specified Currency USD
+Trade Date 01/02/2026
+Issue Date 08/02/2026
+Redemption Date 08/02/2027
+6) Dates
+Initial Observation Date 01/02/2026
+Redemption Observation Date 01/02/2027
+Interest Observation Dates and Interest Payment Dates
+t Interest Observation Date Interest Payment Date IB Fixed Rate
+1 01/05/2026 08/05/2026 65.00% 2.9250%
+2 01/08/2026 08/08/2026 65.00% 2.9250%
+3 01/11/2026 08/11/2026 65.00% 2.9250%
+4 01/02/2027 08/02/2027 65.00% 2.9250%
+Automatic Early Redemption Observation Dates and Automatic Early Redemption Dates
+t Automatic Early Redemption Observation Date Automatic Early Redemption Date ERB Reference Price
+1 01/05/2026 08/05/2026 100.00% 100.0000%
+2 01/08/2026 08/08/2026 100.00% 100.0000%
+3 01/11/2026 08/11/2026 100.00% 100.0000%
+7) Interest and Redemption
+Standard Memory Digital/Performance Interest
+a. Automatic Early Redemption Event If the Performance_ER is higher than or equal to ERB on the relevant Automatic Early Redemption Observation Date, an Automatic Early Redemption Event will occur.
+b. Final Redemption Amount on the Redemption Date
+Favourable Scenario If the Performance is higher than or equal to 65.00% on the Redemption Observation Date, a Final Redemption Amount equal to: Specified Denomination x 100.00%
+Unfavourable Scenario Otherwise, a Final Redemption Amount equal to: Specified Denomination x Performance

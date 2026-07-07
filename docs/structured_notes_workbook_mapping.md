@@ -139,46 +139,75 @@ Critical fields (reject/flag extraction if missing): ISIN, issuer, trade date,
 maturity date, ≥1 underlying with an initial/strike level, barriers, coupon
 rate, and ≥1 observation.
 
-## 7. Phase 9C candidate templates (reviewed, not yet implemented)
+## 7. Phase 9C — four additional issuers, now supported
+
+The four term sheets scoped in the original Phase 9C candidate review (below, kept for history) were
+implemented as dedicated parser modules under `src/lib/structuredNotes/pdf/parsers/` and validated end-to-end
+against the real documents (confidence 1.0 for three of the four; BBVA extracts cleanly but is always forced
+to manual review because the only real sample is itself a draft — see
+`docs/structured_notes_design.md` § "Multi-issuer parser architecture (Phase 9C)" for the full router
+design and per-issuer notes). Deterministic-parse anchors for each:
+
+### Crédit Agricole CIB (`creditAgricoleParser.ts`)
+- ISIN: `ISIN Code\s*:?\s*XS\d{10}` (colon-tolerant).
+- Issuer/Guarantor: per-line `Issuer\s+` / `Guarantor\s+` labels, stripped of a trailing `LEI :` continuation.
+- Dates: `Trade Date` / `Issue Date` / `Redemption Date` / `Redemption Observation Date`, all `DD/MM/YYYY`, one clean label per physical line.
+- Barriers: `<pct>% (Interest Barrier)` / `(Early Redemption Barrier)` / `(Final Redemption Barrier)` — label words joined with `\s+` since the parenthetical often wraps mid-label in the real PDF (e.g. `(Early Redemption\nBarrier)`); Final Redemption Barrier only promoted to `high`-confidence knock-in equivalence when the "Performance is higher than or equal to X% on the Redemption Observation Date" payoff sentence confirms the same percentage.
+- Underlyings: `<n|N=n> <NAME> Index <sponsor...> <TICKER> <initial> Not Applicable`, sponsor gap matched with `[\s\S]+?` (crosses the real doc's mid-sponsor line wraps); absolute barrier levels from a second `<n> <NAME> <coupon> <autocall> <finalRedemption> <strike>` table, matched **positionally** by row order (not by name, since the two tables' name strings don't share a substring with the ticker-based `sourceTicker`).
+- Schedule: two tables sharing the row shape `<t> <DD/MM/YYYY> <DD/MM/YYYY> <pct>% <pct>%`, scoped by a `\s+`-tolerant header match (the header itself wraps hard, e.g. "Automatic Early\nRedemption Observation\nDates and Automatic Early\nRedemption Dates").
+
+### BNP Paribas (`bnpParibasParser.ts`)
+- Ordinal dates (`April 09th, 2025`) handled generically by `parseTermSheetDate`'s ordinal-suffix stripping — no BNP-specific date parsing needed.
+- ISIN: `ISIN:\s*XS\d{10}` (colon form).
+- Several labels wrap **mid-phrase** in the real extraction (e.g. "Redemption Valuation" / "Date October 09th, 2026") — looked up via the wrap-tolerant `extractAfterLabel`/`labelDateJoined` helpers, not the per-line `labelValue`/`labelDate`. "Redemption Valuation Date" is looked up before the plain "Redemption Date" label; the two never collide because `\s+` between "Redemption" and "Date" cannot bridge the word "Valuation".
+- Denomination: `1 Certificate = <CCY> <amount>`.
+- Barriers: `Automatic Early i <pct>% x Index` (autocall), `Knock-in Leveli <pct>% x Index` (knock-in), `greater than or equal to <pct>% of IndexiInitial` (coupon) — a single 65% threshold serves both knock-in and coupon in this product.
+- Coupon: `N x <pct>% x (1 + T)`.
+- Underlyings: a single clean physical-line table row `<n> <Name> <TICKER> <initial> <knockIn> <autocall> <couponBarrier> <sponsor...>` gives **absolute levels directly** — no percentage-of-strike computation needed.
+- Schedule: `<t> <ordinal date> <ordinal date> <ordinal date>` rows after the (heavily-wrapped) "Automatic Early Redemption Valuation Daten / Coupon Valuation Daten ..." header.
+
+### Barclays Bank PLC (`barclaysParser.ts`)
+- ISIN: `ISIN:\s*XS\d{10}`.
+- Dates: clean `Trade Date` / `Issue Date` / `Initial Valuation Date` / `Final Valuation Date` / `Redemption Date` labels, plain `D Month YYYY` (day-first, no ordinal) — one clean physical line each.
+- Barriers: `Knock-in Barrier Price (<pct>%...)` / `Interest Barrier (<pct>%...)` / `Autocall Barrier (<pct>%...)`.
+- Underlyings: the ticker cell mixes Bloomberg and Refinitiv codes inline, `Name (Bloomberg Screen: TICKER Index; Refinitiv Screen: .XXX)` — `parseMixedTickerCell` (shared.ts) extracts the Bloomberg ticker as the source of truth; the Refinitiv code is captured loosely (`\.[\s\S]*?` up to the closing paren, since even the Refinitiv code itself gets split mid-token in the real narrow-column cover table, e.g. "Screen: .SP\nX)") and kept only as metadata, never used for pricing. Absolute levels come from a `N/A <CCY> <initial> Intrada[y] Price <strike> <knockIn> <interest> <autocall>` pattern — "Intraday" itself is split mid-word in the real sample ("Intrada\ny Price"). Several multi-digit levels are split mid-decimal across two physical lines (e.g. "5,183.5" then a lone "4"); `reconstructSplitDecimals()` rejoins them, but **only** when the trailing digit fragment is entirely alone on its own line (bounded by newlines both sides) — this is what stops it from misjoining an unrelated row-index digit that starts the next line.
+- Schedule: two tables (`Interest Valuation Date(s)...` and `Autocall Valuation Date(s)...`) with clean single-line rows `<i> <D Month YYYY> <pct>% <D Month YYYY>`.
+
+### BBVA Global Markets, B.V. (`bbvaParser.ts`, most conservative)
+- A full "Part A - Contractual Terms" Pricing Supplement — fields extracted from numbered-clause text, not a compact term-sheet table.
+- Issuer/Guarantor: `<NAME> (a private company` / `guaranteed by <NAME> (incorporated`.
+- Series/currency/issue size: `Issue of Series <n> <CCY> <amount> Index Linked Notes`.
+- Dates: `Trade Date:` / `Issue Date:` / `Maturity Date:` numbered-clause labels, `D Month YYYY`.
+- Barriers: the two clauses use **distinctly-worded** thresholds so they never collide — `is equal to or greater than <pct>%` (coupon) vs `is greater than or equal to <pct>%` (autocall); a single barrier serves both coupon and knock-in ("Digital" payoff).
+- Underlyings: `<n> <Name> <TICKER> INDEX <sponsor...> <level>` (Reference Item(s) basket table) — initial level only, no separate strike/barrier levels in this format (barrier levels computed from strike × pct like the generic parser).
+- Coupon: `"Rate (i)" means <pct>%.` (note: a closing quote character sits between the `)` and `means`).
+- Schedule: two tables with identical `<n> <D Month YYYY> <D Month YYYY>` rows (no percent column) — extraction of the first table naturally stops once the second table's row index resets to 1.
+- **Draft/preliminary conservatism**: if "DRAFT FOR DISCUSSION PURPOSES" / "Subject to completion" is present anywhere in the document, this parser **always** returns `ok:false` regardless of field completeness — the source itself declares every term provisional.
+
+### Original Phase 9C candidate-template review (kept for history)
 
 Four additional real term sheets were reviewed locally (2026-07-07, not committed — same
-no-commit rule as the Citi sample) to scope future parser generalization. All four are
+no-commit rule as the Citi sample) to scope the parser generalization implemented above. All four are
 worst-of autocallable Phoenix/Snowball structures on SPX+RTY, structurally similar to the
-already-supported Citi/HSBC families, but each uses a distinct label vocabulary and table
-layout the current parser does not recognize:
+already-supported Citi/HSBC families, but each used a distinct label vocabulary and table
+layout the `9B.multi.1` parser did not recognize at the time:
 
 - **Crédit Agricole CIB** (`XS3306812929`, "Climber Reload Autocall"): numbered-section
   layout (`3) Underlying(s)`, `4) Indicative Barrier Level(s)`, `6) Dates`). Barriers
   labeled `Interest Barrier` / `Early Redemption Barrier` / `Final Redemption Barrier`
-  (not "Knock-In"/"Coupon"/"Autocall"). Schedule is a single combined table (`Interest
-  Observation Date / Interest Payment Date / IB / Fixed Rate` plus a separate `Automatic
-  Early Redemption Observation Date / ... Date / ERB / Reference Price` table) — two
-  tables like HSBC, but different column headers. Issuer is `Crédit Agricole CIB
+  (not "Knock-In"/"Coupon"/"Autocall"). Issuer is `Crédit Agricole CIB
   Financial Solutions`, Guarantor `Crédit Agricole Corporate and Investment Bank`.
 - **BNP Paribas** (`XS2999188746`, "Phoenix Snowball"): dates written `Month DDth, YYYY`
-  (ordinal suffixes — `April 09th, 2025`, not handled by the current date regexes).
-  Barrier labels: `Knock-in Level` / `Automatic Early Redemption Level` / `Coupon Barrier
-  Level`. Underlying table columns are transposed/compressed with OCR-run-together
-  headers (`Initi Strike Level`, `Knock-in Leveli`) — needs a more tolerant column
-  parser. Issuer `BNP Paribas Issuance B.V.`, Guarantor `BNP Paribas`.
+  (ordinal suffixes). Barrier labels: `Knock-in Level` / `Automatic Early Redemption Level` /
+  `Coupon Barrier Level`. Issuer `BNP Paribas Issuance B.V.`, Guarantor `BNP Paribas`.
 - **Barclays Bank PLC** (`XS2998054097`, "Worst-of European Barrier Autocallable"):
-  clean label/value pairs (`Trade Date`, `Issue Date`, `Initial Valuation Date`, `Final
-  Valuation Date`) with plain `D Month YYYY` dates (day-first, no ordinal). Barrier
-  labels: `Knock-in Barrier Price` / `Interest Barrier` / `Autocall Barrier`, each
-  expressed as "N% of the Initial Price". Underlying table includes Bloomberg *and*
-  Refinitiv tickers inline in the name cell (`(Bloomberg Screen: SPX Index; Refinitiv
-  Screen: .SPX)`) — ticker extraction needs to prefer the Bloomberg one.
+  clean label/value pairs with plain `D Month YYYY` dates (day-first, no ordinal).
+  Underlying table includes Bloomberg *and* Refinitiv tickers inline in the name cell.
 - **BBVA Global Markets, B.V.** (`LA-SN-2025-0193` / series `25561`): a full EU
   "Pricing Supplement" (Part A - Contractual Terms) format, the most verbose/legalistic
-  of the four — fields are buried inside numbered contractual clauses rather than a
-  compact term-sheet table, closer to a prospectus supplement than a one-page term
-  sheet. Issuer `BBVA GLOBAL MARKETS, B.V.`, Guarantor `BANCO BILBAO VIZCAYA
-  ARGENTARIA, S.A.`. Likely the hardest of the four to parse deterministically without
-  a dedicated clause-anchor set.
+  of the four. Issuer `BBVA GLOBAL MARKETS, B.V.`, Guarantor `BANCO BILBAO VIZCAYA
+  ARGENTARIA, S.A.`.
 
-None of these are extractable with the current `PARSER_VERSION 9B.multi.1` anchors —
-uploading them today would correctly **flag for review** with honest per-field gaps
-(the safe, expected behavior), not silently mis-parse. Extending support to any of them
-is a distinct, scoped Phase 9C task per issuer (new date-format handling for BNP's
-ordinal dates, new label aliases per issuer, and — for BBVA specifically — a different
-overall document structure).
+**Remaining gap**: Barclays/BNP/Santander/Crédit Agricole/BBVA appendix layouts *other* than the ones
+validated above (e.g. Santander's own template, and older 2024-vintage Citi single-underlying layouts) are
+still not targeted — they correctly flag for review with honest per-field gaps, never mis-parsed.

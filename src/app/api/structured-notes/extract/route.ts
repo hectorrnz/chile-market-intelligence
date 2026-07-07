@@ -10,7 +10,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createHash } from 'node:crypto'
 import { getSupabaseUserClient } from '@/lib/supabase/server'
 import { extractPdfPages } from '@/lib/structuredNotes/pdf/pdfText'
-import { extractStructuredNoteTerms, PARSER_VERSION } from '@/lib/structuredNotes/pdf/extractStructuredNoteTerms'
+import { extractStructuredNoteTerms } from '@/lib/structuredNotes/pdf/extractStructuredNoteTerms'
+import { classifyReviewState } from '@/lib/structuredNotes/pdf/parsers/shared'
 import { recordExtractionRun } from '@/lib/db/repositories/structuredNotesRepository'
 
 export const dynamic = 'force-dynamic'
@@ -63,12 +64,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const result = extractStructuredNoteTerms(pages, { fileName })
+  const unsupported = result.errors.some((e) => e.includes('unsupported issuer format'))
+  const reviewState = classifyReviewState(result.ok, result.confidenceScore, result.fieldsLowConfidence, unsupported)
 
-  // Audit every extraction attempt (dry-run and successful alike).
+  // Audit every extraction attempt (dry-run and successful alike). parserVersion
+  // is per-extraction (e.g. "9C.creditAgricole.1"), not a single app-wide constant —
+  // it reflects whichever issuer parser the router actually dispatched to.
   const runId = await recordExtractionRun(client, {
     fileName,
     fileHash,
-    parserVersion: PARSER_VERSION,
+    parserVersion: result.parserVersion,
     status: result.ok ? 'extracted' : 'needs_review',
     confidenceScore: result.confidenceScore,
     fieldsSeen: result.fieldsSeen,
@@ -91,6 +96,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     errors: result.errors,
     // Explicit review flag: low overall confidence or any missing critical field.
     needsReview: !result.ok || result.confidenceScore < 0.9,
+    // 'ready' | 'review_recommended' | 'review_required' | 'unsupported' — see classifyReviewState.
+    reviewState,
   })
 }
 

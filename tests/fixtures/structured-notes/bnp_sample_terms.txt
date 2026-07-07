@@ -1,0 +1,32 @@
+Equity Derivatives Solutions / Structured Products - Latam Ex Brazil
+Confidential
+Issuer BNP Paribas Issuance B.V. (S&P's A+)
+Guarantor BNP Paribas (S&P's A+ / Moody's A1 / Fitch A+)
+Issue Type Certificate
+Issue Amount USD 1,000,000
+Number of Certificates 1,000
+Notional Amount per Certificate (N) 1 Certificate = USD 1,000
+Currency USD
+Issue Price per Certificate 100.00%
+Trade Date January 05th, 2026
+Strike Date January 05th, 2026
+Issue Date January 12th, 2026
+Redemption Valuation Date July 05th, 2027
+Redemption Date July 15th, 2027
+18M Phoenix Snowball Worst-of on Russell 2000 Index and S&P 500 in USD Term Sheet
+i Name of Underlying Indexi Bloomberg Code Indexi Initial Knock-in Leveli Automatic Early Redemption Leveli Coupon Barrier Leveli Administrator Register
+1 Russell 2000 RTY 2400.00 1560.00 2400.00 1560.00 FTSE Not included
+2 S&P 500 SPX 6000.00 3900.00 6000.00 3900.00 S&P Dow Jones Not included
+Initial Conditional Coupon (for each Certificate)
+If, on any Coupon Valuation Daten or on the Redemption Valuation Date, the official closing level of each Underlying Index is greater than or equal to 65% of IndexiInitial with i from 1 to 2, then a Coupon calculated as follows will be paid: N x 3.00% x (1 + T)
+Automatic Early Redemption
+If, on any Automatic Early Redemption Valuation Daten, the official closing level of each Underlying Index is greater than or equal to its Automatic Early Redemption Leveli, then the Issuer shall redeem each Certificate.
+Automatic Early Redemption i 100% x Indexi with i from 1 to 2 Redemption Level
+Initial Knock-in Leveli 65% x Indexi with i from 1 to 2
+Automatic Early Redemption Valuation Daten / Coupon Valuation Daten Automatic Early Redemption Daten Coupon Payment Daten
+1 April 05th, 2026 April 12th, 2026 April 12th, 2026
+2 July 05th, 2026 July 12th, 2026 July 12th, 2026
+3 October 05th, 2026 October 12th, 2026 October 12th, 2026
+4 January 05th, 2027 January 12th, 2027 January 12th, 2027
+5 April 05th, 2027 April 12th, 2027 April 12th, 2027
+Form Clearing System Global Certificate Codes - ISIN: XS9999999992 - Common: 999999992

@@ -36,7 +36,7 @@ automation are later phases.
 | Underlying → Yahoo symbol map | `src/lib/structuredNotes/underlyingSymbolMap.ts` |
 | Live prices (Yahoo, no Bloomberg) | `src/lib/structuredNotes/structuredNoteMarketProvider.ts` |
 | PDF text extraction (server-only) | `src/lib/structuredNotes/pdf/pdfText.ts` (`unpdf`) |
-| Deterministic term parser (pure) | `src/lib/structuredNotes/pdf/extractStructuredNoteTerms.ts` |
+| Deterministic term parser (pure, multi-issuer router) | `src/lib/structuredNotes/pdf/extractStructuredNoteTerms.ts` (thin entry point) → `pdf/parsers/index.ts` + per-issuer modules |
 | Repository (user-scoped) | `src/lib/db/repositories/structuredNotesRepository.ts` |
 | API routes | `src/app/api/structured-notes/**` |
 | UI (list + detail) | `src/app/structured-notes/{page,[id]/page}.tsx` |
@@ -108,12 +108,90 @@ aliases, flexible underlying rows (2–5 trailing levels, inline or preceding ti
 two-block and the EU combined schedule tables. Verified over the real book: **27/45 term sheets extract at
 confidence 1.0 — every recent Citi and HSBC.** Unhandled templates flag for review with honest gaps.
 
+## Multi-issuer parser architecture (Phase 9C)
+
+`extractStructuredNoteTerms.ts` is now a thin entry point over an **issuer-parser router**
+(`src/lib/structuredNotes/pdf/parsers/`):
+
+| File | Role |
+|---|---|
+| `types.ts` | Shared contracts: `Line`, `IssuerParseContext`, `IssuerParser`, `DetectedIssuer`, `ReviewState` |
+| `shared.ts` | Pure utilities reused by every parser — date/number/percentage parsing (incl. ordinal-date stripping), label lookup (per-line and wrap-tolerant "joined" variants), issuer-name mapping, mixed-ticker-cell parsing, barrier-role classification, review-state classification, `dedupeObservationsByDate` |
+| `citiHsbcParser.ts` | The original Phase 9B generic parser, unchanged in behavior — also the **router's fallback** for any undetected issuer |
+| `creditAgricoleParser.ts`, `bnpParibasParser.ts`, `barclaysParser.ts`, `bbvaParser.ts` | One module per newly-supported issuer (Phase 9C) |
+| `index.ts` | `detectIssuer()` (keyword-based, never guesses between two issuers) + `extractWithRouter()` dispatch |
+
+**Issuer detection is keyword-based and exclusive**: each issuer's regex is specific enough that two
+issuers' names never collide in the same document. An unrecognized issuer falls through to the generic
+Citi/HSBC parser, which is safe because it already requires every critical field before reporting `ok: true`
+— an unsupported format naturally fails its critical-field checks rather than being mis-parsed with the
+wrong issuer's label aliases. If the generic parser *also* can't identify any issuer display name, the router
+adds an explicit `unsupported issuer format` error so the UI can show a distinct "Unsupported issuer format"
+state rather than a generic "Review required".
+
+### Confidence thresholds and review states (`classifyReviewState` in `shared.ts`)
+
+| State | Condition | UI label |
+|---|---|---|
+| `ready` | `ok:true`, confidence ≥ 0.90, zero low-confidence fields | "Ready to import" |
+| `review_recommended` | `ok:true`, confidence ≥ 0.70 but some field is low-confidence or below 0.90 | "Review recommended" |
+| `review_required` | `ok:false` (any critical field missing) **or** confidence < 0.70 | "Review required" |
+| `unsupported` | Issuer could not be identified at all | "Unsupported issuer format" |
+
+Critical fields (unchanged from Phase 9B): ISIN, issuer, trade date, maturity date, ≥1 underlying with an
+initial/strike level, barriers, coupon rate, ≥1 observation. A missing critical field **always** forces
+`review_required`/`unsupported` regardless of how many other fields extracted cleanly — confidence can never
+promote an incomplete extraction to "ready".
+
+### Per-issuer notes
+
+- **Crédit Agricole** ("Climber Reload Autocall" family): numbered-section layout (`3) Underlying(s)`,
+  `4) Indicative Barrier Level(s)`, …). Barriers are labeled **Interest Barrier → couponBarrierPct**,
+  **Early Redemption Barrier → autocallBarrierPct**, **Final Redemption Barrier → knockInBarrierPct** — but
+  the Final Redemption Barrier is only treated as a true knock-in equivalence at `high` confidence when the
+  payoff wording ("Performance is higher than or equal to X% on the Redemption Observation Date") *confirms*
+  the same percentage; otherwise it's used at `medium` confidence with an explicit review warning, never
+  silently assumed. Two schedule tables share an identical `t <date> <date> <pct>% <pct>%` row shape;
+  underlying/barrier table rows are matched **positionally** (by table order), not by name-string matching,
+  since the underlying's display name ("S&P 500 INDEX") and its Bloomberg-derived ticker ("SPX Index") share
+  no substring.
+- **BNP Paribas** ("Phoenix Snowball" certificates): dates are ordinal (`April 09th, 2025`) — handled
+  generically by `parseTermSheetDate`'s ordinal-suffix stripping (`normalizeOrdinalDate` in `shared.ts`), so
+  no BNP-specific date code is needed. Several labels wrap **mid-phrase** across physical lines in the real
+  PDF text extraction (e.g. "Redemption Valuation" / "Date October 09th, 2026") — every label lookup in this
+  parser goes through the whitespace/newline-tolerant `extractAfterLabel`/`labelDateJoined` helpers rather
+  than the per-line `labelValue`/`labelDate`. The underlying table row is a single clean physical line that
+  directly gives absolute initial/knock-in/autocall/coupon-barrier **levels** (no percentage-of-strike
+  computation needed).
+- **Barclays** (`Worst-of European Barrier Autocallable`): the underlying table's ticker cell mixes Bloomberg
+  and Refinitiv codes inline (`(Bloomberg Screen: SPX Index; Refinitiv Screen: .SPX)`) — Bloomberg is always
+  the source of truth for market-data mapping (`parseMixedTickerCell` in `shared.ts`); the Refinitiv code is
+  kept only as a metadata field, never used for pricing. The real sample's cover-page underlying summary is
+  rendered as an extremely narrow multi-column box — pdf.js's text extraction turns it into ~1 word per line
+  and **splits several multi-digit price levels mid-decimal** across two lines (e.g. "5,183.5" then a lone
+  "4"). `reconstructSplitDecimals()` rejoins these defensively, but only when the digit fragment is **entirely
+  alone on its own line** (bounded by newlines on both sides) — this is what distinguishes a genuine
+  split-decimal continuation from an unrelated row index that merely starts the next line. If a given
+  Barclays layout doesn't fit this pattern, the level simply isn't recovered and the underlying is left with
+  a warning rather than a mis-aligned number.
+- **BBVA** (EU "Pricing Supplement" family): the most conservative of the four, for two reasons. (1) Format —
+  a full legalistic Part A/Part B contractual-terms document (numbered clauses), not a compact one-page term
+  sheet, so fields are extracted from clause text rather than a table; the two barrier clauses use
+  distinctly-worded thresholds ("is **equal to or greater than** 65%" for the coupon condition vs "is
+  **greater than or equal to** 100%" for autocall) which is what lets them be told apart without ambiguity.
+  (2) The real sample is itself explicitly a **draft** ("DRAFT FOR DISCUSSION PURPOSES … Subject to
+  completion") — when that marker is present, this parser **always** returns `ok:false` (forcing
+  `review_required`), regardless of how cleanly the individual fields extracted, because the source document
+  itself declares every term provisional. An ISIN found only inside an unrelated boilerplate clause of a draft
+  document is flagged with an explicit "verify manually" warning rather than trusted at face value.
+
 ## Known limitations
 
-- **Citi CGMFL** and **HSBC (EU)** families are validated at confidence 1.0. **Barclays / BNP Paribas /
-  Santander / Crédit Agricole / BBVA / older-2024 Citi** use distinct appendix-table or single-underlying
-  layouts and currently extract partially — they are flagged for human review (never mis-parsed) and are the
-  next parser targets (Phase 9C).
+- **Citi CGMFL**, **HSBC (EU)**, **Crédit Agricole**, **BNP Paribas**, and **Barclays** extract at confidence
+  1.0 on the real book samples validated this phase. **BBVA** extracts cleanly but is always forced to
+  `review_required` because the only real sample available is itself a draft/preliminary document.
+  **Santander and older-2024 Citi** templates are not yet targeted and still flag for review with honest
+  per-field gaps (never mis-parsed) — they remain the next parser targets.
 - **No OCR** — scanned PDFs without a text layer are rejected (`no_text_layer`), not processed.
 - **No AI extraction** — deterministic regex/keyword anchoring only.
 - **No Bloomberg dependency** — the workbook's `BDP` live-price mechanism is replaced by Yahoo; some

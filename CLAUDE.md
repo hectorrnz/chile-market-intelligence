@@ -390,6 +390,69 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 9C — Structured Notes: multi-issuer parser expansion** ✓ COMPLETE (2026-07-07)
+
+Extended the deterministic PDF parser from 2 issuer families (Citi/HSBC, Phase 9B) to 6, adding **Crédit
+Agricole, BNP Paribas, Barclays, and BBVA** as dedicated parser modules behind a new issuer-detection router.
+Automation-first per the standing product requirement — this expands *deterministic extraction coverage*,
+not a manual-entry screen; manual entry remains the fallback it always was.
+
+**Router architecture** (`src/lib/structuredNotes/pdf/parsers/`): `types.ts` (shared contracts —
+`IssuerParseContext`, `IssuerParser`, `DetectedIssuer`, `ReviewState`), `shared.ts` (pure utilities reused by
+every parser: ordinal-date stripping, wrap-tolerant label lookup for labels that split mid-phrase across
+physical lines in real PDFs, mixed Bloomberg/Refinitiv ticker-cell parsing, barrier-role classification,
+`classifyReviewState`, `dedupeObservationsByDate`), `citiHsbcParser.ts` (the Phase 9B generic logic relocated
+verbatim — unchanged behavior, and also the router's safe fallback for any undetected issuer),
+`creditAgricoleParser.ts` / `bnpParibasParser.ts` / `barclaysParser.ts` / `bbvaParser.ts` (one module per new
+issuer), and `index.ts` (`detectIssuer()` — keyword-based, never guesses between two issuers — + dispatch).
+`extractStructuredNoteTerms.ts` is now a thin entry point over this router; its public API
+(`extractStructuredNoteTerms`, `PARSER_VERSION`, `parseTermSheetDate`, `dedupeObservationsByDate`) is
+unchanged so no call site needed to change.
+
+**Confidence/review-state model** (`classifyReviewState` in `shared.ts`): `ready` (≥0.90 confidence, zero
+low-confidence fields) / `review_recommended` (≥0.70) / `review_required` (any critical field missing, or
+<0.70) / `unsupported` (issuer unidentifiable). A missing critical field always forces review regardless of
+the numeric score — confidence can never promote an incomplete extraction to "ready". Surfaced via a new
+`reviewState` field on `POST /api/structured-notes/extract` (the DB audit row's `parserVersion` now also
+reflects the specific issuer parser that ran, not a single static constant) and a 4-color badge on the
+upload/review UI (`t.sn.reviewState.{ready,review_recommended,review_required,unsupported}`, EN+ES).
+
+**Real-document validation:** all 4 new issuers extract at **confidence 1.0** against their real term sheets
+(Crédit Agricole `XS3306812929`, BNP Paribas `XS2999188746`, Barclays `XS2998054097`). BBVA (`XS2958604485`)
+extracts every field cleanly but is **always** forced to `review_required` because the one real sample
+available is itself an explicit draft ("DRAFT FOR DISCUSSION PURPOSES ... Subject to completion") — the
+parser treats that as a hard gate, never an optimistic pass-through, and flags the ISIN found in a boilerplate
+clause as unverified rather than trusting it at face value. Citi and HSBC continue extracting unchanged at
+confidence 1.0 through the same router (regression-proof — `9B.multi.1` parserVersion unchanged).
+
+**Real-world parsing hazards handled** (see `docs/structured_notes_design.md` and
+`docs/structured_notes_workbook_mapping.md` §7 for full per-issuer detail): BNP's ordinal dates
+(`April 09th, 2025`, handled generically by `parseTermSheetDate`'s ordinal-suffix stripping) and mid-phrase
+label wrapping (e.g. "Redemption Valuation" / "Date October 09th, 2026" split across physical lines — handled
+via wrap-tolerant `extractAfterLabel`/`labelDateJoined` helpers); Barclays' mixed Bloomberg/Refinitiv ticker
+cells (`parseMixedTickerCell`, Bloomberg always the source of truth for pricing) and mid-decimal-split price
+levels in its narrow cover-table layout (`reconstructSplitDecimals` — only fires when the digit fragment is
+entirely alone on its own line, to avoid misjoining an unrelated row-index digit); Crédit Agricole's
+positionally-matched (not name-matched) barrier table and non-assumed knock-in equivalence (only promoted to
+`high` confidence when the payoff wording explicitly confirms the same percentage); BBVA's clause-based (not
+table-based) extraction with two barrier clauses disambiguated purely by wording order ("equal to or greater
+than" vs "greater than or equal to").
+
+**Fixtures:** four new small, sanitized, fictional-value text fixtures
+(`tests/fixtures/structured-notes/{creditagricole,bnp,barclays,bbva}_sample_terms.txt`) reproducing each
+issuer's real field structure — no real PDFs or full extracted text committed, matching the existing
+Citi/HSBC fixture policy. **Tests:** 5 new test files (one per issuer parser + a router test covering issuer
+detection, safe fallback, unsupported-format handling, and Citi/HSBC regression) — 807 tests total (745→807).
+
+Scope limits (explicit): parser expansion only — no dashboard redesign, no scheduled monitoring, no
+price-snapshot cron, auth/watchlist/portfolio/macro/market/financials untouched, no mobile work, no CMF/XBRL
+work this phase. Santander and older-2024 Citi templates remain unimplemented (flag for review, never
+mis-parsed) — the next parser targets if pursued. No new migration, no new routes, no new env vars.
+
+Build 56 routes · lint 0 · tests 807/807.
+
+---
+
 **Phase 9B.2 — Structured Notes: dashboard UX refinements from real use** ✓ COMPLETE (2026-07-07)
 
 Eight small UX fixes requested after using the shared dashboard for real: (1) **allocation-by-entity inputs**

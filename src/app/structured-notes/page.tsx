@@ -15,6 +15,8 @@ import { ARCHIVED_STATUSES } from '@/lib/structuredNotes/types'
 import type { StructuredNote } from '@/lib/structuredNotes/types'
 import type { NoteDashboardMetrics, BookSummary } from '@/lib/structuredNotes/dashboard'
 
+type ReviewState = 'ready' | 'review_recommended' | 'review_required' | 'unsupported'
+
 interface ExtractResponse {
   extractionRunId: string | null
   fileHash: string
@@ -24,6 +26,7 @@ interface ExtractResponse {
   warnings: string[]
   errors: string[]
   needsReview: boolean
+  reviewState: ReviewState
 }
 
 function fmtPct(v: number | null | undefined): string {
@@ -37,6 +40,10 @@ function fmtNum(v: number | null | undefined): string {
 
 const RISK_TONE: Record<string, string> = {
   safe: 'var(--positive)', watch: 'var(--warning)', breached: 'var(--negative)', autocallable: 'var(--accent)', unavailable: 'var(--muted-fg)',
+}
+
+const REVIEW_STATE_TONE: Record<ReviewState, string> = {
+  ready: 'var(--positive)', review_recommended: 'var(--accent)', review_required: 'var(--warning)', unsupported: 'var(--negative)',
 }
 // Severity order used when sorting/filtering by status — most urgent first.
 const STATUS_RANK: Record<string, number> = { breached: 0, autocallable: 1, watch: 2, safe: 3, unavailable: 4 }
@@ -251,9 +258,9 @@ export default function StructuredNotesPage() {
         <div className="mb-6 border border-border rounded-lg bg-surface p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="ui-label text-foreground">{t.sn.review}</h3>
-            <span className={`text-xs px-2 py-0.5 rounded-full ${preview.needsReview ? 'text-warning' : 'text-positive'}`}
-              style={{ backgroundColor: `color-mix(in oklab, ${preview.needsReview ? 'var(--warning)' : 'var(--positive)'} 12%, var(--surface))` }}>
-              {t.sn.confidence}: {Math.round(preview.confidenceScore * 100)}%{preview.needsReview ? ` · ${t.sn.needsReview}` : ''}
+            <span className="text-xs px-2 py-0.5 rounded-full"
+              style={{ color: REVIEW_STATE_TONE[preview.reviewState], backgroundColor: `color-mix(in oklab, ${REVIEW_STATE_TONE[preview.reviewState]} 12%, var(--surface))` }}>
+              {t.sn.confidence}: {Math.round(preview.confidenceScore * 100)}% · {t.sn.reviewState[preview.reviewState]}
             </span>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mb-3">
