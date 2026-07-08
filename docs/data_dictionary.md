@@ -332,6 +332,17 @@ are stored in the existing `metadata` jsonb columns on `company_reporting_period
 `period_nature` ∈ `annual`/`quarterly_discrete`/`year_to_date`/`instant`. See
 `docs/cmf_xbrl_financials_ingestion.md`.
 
+**Phase 8C.3 — issuer coverage expanded from 2 to 5** (SQM-B, COPEC, ENELCHILE, CMPC, CENCOSUD), using CMF's
+own official `sociedad[]` issuer directory to verify each new RUT/legal-name pair (stronger evidence than the
+search-engine snippets used in 8C.1). The concept map grew from ~24 to ~31 `ifrs-full` concepts (added
+`total_debt`/`long_term_debt`/`short_term_debt`, `shares_outstanding`, and higher-confidence real-world capex/
+dividend concept variants) — each addition verified against real filing values (e.g. an additive identity
+`LongtermBorrowings + CurrentBorrowingsAndCurrentPortionOfNoncurrentBorrowings == Borrowings`) before being
+trusted, and concepts that failed cross-year/cross-issuer consistency checks (`NetDebt`, `ShorttermBorrowings`,
+`CurrentPortionOfLongtermBorrowings`) were deliberately left unmapped. Still no new migration. Banks
+(BSANTANDER, CHILE) remain unmapped — confirmed absent from CMF's own issuer directory, not merely
+unresearched. See `docs/cmf_xbrl_financials_ingestion.md` §4a/§11a.
+
 **Provenance/supersession columns — present on all 4 tables below** (added by migration
 `20260705000000_financials_automation_ready.sql`):
 

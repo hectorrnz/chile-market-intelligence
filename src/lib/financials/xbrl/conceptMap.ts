@@ -1,10 +1,11 @@
-// Phase 8C.1 — conservative XBRL concept -> internal line-item mapping.
+// Phase 8C.1/8C.3 — conservative XBRL concept -> internal line-item mapping.
 //
 // Only maps IFRS-full concepts that were actually observed in real CMF
-// filings inspected during discovery (Ripley Chile 2023, Empresas Copec
-// 2023 — see docs/cmf_xbrl_provider_discovery.md). Deliberately does NOT
-// attempt to be an exhaustive IFRS taxonomy dictionary — every entry here
-// was seen in a real filing, not guessed from the taxonomy schema alone.
+// filings inspected during discovery (Ripley Chile 2023, Empresas Copec 2023
+// — see docs/cmf_xbrl_provider_discovery.md) or during Phase 8C.3's issuer
+// expansion (SQM-B, COPEC, ENELCHILE, CMPC, CENCOSUD FY2025). Deliberately
+// does NOT attempt to be an exhaustive IFRS taxonomy dictionary — every entry
+// here was seen in a real filing, not guessed from the taxonomy schema alone.
 //
 // Rules (do not weaken):
 //   - Conservative only: an ambiguous concept is left unmapped rather than
@@ -41,6 +42,10 @@ export type LineItemCode =
   | 'equity_attributable_to_parent'
   | 'minority_interest'
   | 'cash'
+  | 'short_term_debt'
+  | 'long_term_debt'
+  | 'total_debt'
+  | 'shares_outstanding'
   | 'ocf'
   | 'cash_flow_from_investing'
   | 'cash_flow_from_financing'
@@ -203,6 +208,35 @@ export const XBRL_CONCEPT_MAP: Record<string, ConceptMapEntry> = {
     confidence: 'high',
     notes: 'Standard IFRS cash and cash equivalents concept. Observed in the Ripley filing.',
   },
+  // Debt concepts (Phase 8C.3) — verified via an exact additive identity in
+  // real filings: for both CMPC and CENCOSUD's FY2025 current-period instant,
+  // LongtermBorrowings + CurrentBorrowingsAndCurrentPortionOfNoncurrentBorrowings
+  // == Borrowings, to the dollar/peso. This is what makes all three safe to map
+  // — they are consistently additive, not filer-specific coincidences.
+  'ifrs-full:Borrowings': {
+    lineItemCode: 'total_debt',
+    statementType: 'balance',
+    confidence: 'high',
+    notes: 'Standard IFRS total borrowings concept. Observed in real CMPC/CENCOSUD FY2025 filings; verified equal to LongtermBorrowings + CurrentBorrowingsAndCurrentPortionOfNoncurrentBorrowings exactly. Distinct from ifrs-full:NetDebt (debt minus cash — verified NOT equal to Borrowings in a real filing) — never conflate the two.',
+  },
+  'ifrs-full:LongtermBorrowings': {
+    lineItemCode: 'long_term_debt',
+    statementType: 'balance',
+    confidence: 'high',
+    notes: 'Standard IFRS non-current borrowings concept. Observed in real CMPC/CENCOSUD FY2025 filings; see ifrs-full:Borrowings note for the verified additive identity.',
+  },
+  'ifrs-full:CurrentBorrowingsAndCurrentPortionOfNoncurrentBorrowings': {
+    lineItemCode: 'short_term_debt',
+    statementType: 'balance',
+    confidence: 'high',
+    notes: 'Standard IFRS current borrowings concept (includes the current portion of non-current borrowings). Observed in real CMPC/CENCOSUD FY2025 filings; see ifrs-full:Borrowings note for the verified additive identity. Deliberately preferred over the narrower ifrs-full:CurrentPortionOfLongtermBorrowings and the filer-inconsistent ifrs-full:ShorttermBorrowings — see KNOWN_UNMAPPED_CONCEPTS for why those are excluded.',
+  },
+  'ifrs-full:NumberOfSharesOutstanding': {
+    lineItemCode: 'shares_outstanding',
+    statementType: 'balance',
+    confidence: 'high',
+    notes: 'Standard IFRS shares-outstanding count concept (unit: shares, not a monetary value). Observed in real ENELCHILE/CMPC/CENCOSUD FY2025 filings on the current-period instant context.',
+  },
   // ── Cash flow ─────────────────────────────────────────────────────────────
   'ifrs-full:CashFlowsFromUsedInOperatingActivities': {
     lineItemCode: 'ocf',
@@ -232,13 +266,25 @@ export const XBRL_CONCEPT_MAP: Record<string, ConceptMapEntry> = {
     lineItemCode: 'capex',
     statementType: 'cash',
     confidence: 'medium',
-    notes: 'Standard IFRS capex (PP&E purchases) concept. Not directly observed in the two filings inspected this phase — standard IFRS concept for this line item; verify against a real fact before relying on it.',
+    notes: 'Standard IFRS capex (PP&E purchases) concept. Not directly observed in any of the 5 real filings inspected across 8C.1-8C.3 — every real Chilean filer seen so far (ENELCHILE/CMPC/CENCOSUD FY2025) instead tags capex as ifrs-full:PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities (below). Kept as a fallback for a future filer that might use this alternate standard name; verify against a real fact before relying on it.',
+  },
+  'ifrs-full:PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities': {
+    lineItemCode: 'capex',
+    statementType: 'cash',
+    confidence: 'high',
+    notes: 'The capex concept actually used by real Chilean filers observed in Phase 8C.3 (ENELCHILE/CMPC/CENCOSUD FY2025, all present on the correct current-year investing-activities duration context).',
   },
   'ifrs-full:DividendsPaid': {
     lineItemCode: 'dividends_paid',
     statementType: 'cash',
     confidence: 'medium',
-    notes: 'Standard IFRS dividends-paid concept. Not directly observed in the two filings inspected this phase — no dividend fact was seen in either sample, so this stays medium confidence until a real fact is observed.',
+    notes: 'Standard IFRS dividends-paid concept. Not directly observed in any of the 5 real filings inspected across 8C.1-8C.3 — every real Chilean filer seen so far (ENELCHILE/CMPC/CENCOSUD FY2025) instead tags dividends as ifrs-full:DividendsPaidClassifiedAsFinancingActivities (below). Kept as a fallback for a future filer that might use this alternate standard name.',
+  },
+  'ifrs-full:DividendsPaidClassifiedAsFinancingActivities': {
+    lineItemCode: 'dividends_paid',
+    statementType: 'cash',
+    confidence: 'high',
+    notes: 'The dividends-paid concept actually used by real Chilean filers observed in Phase 8C.3 (ENELCHILE/CMPC/CENCOSUD FY2025, all present on the correct current-year financing-activities duration context).',
   },
 }
 
@@ -256,4 +302,10 @@ export const KNOWN_UNMAPPED_CONCEPTS: Record<string, string> = {
     'A tax-reconciliation-note concept (pre-tax profit used in the effective-tax-rate reconciliation table), not the consolidated net income figure.',
   'ifrs-full:AssetsLessCurrentLiabilities':
     'A working-capital subtotal, not total assets — mapping it to "total_assets" would understate the real figure.',
+  'ifrs-full:NetDebt':
+    'Debt net of cash, a distinct metric from gross total_debt — verified in a real CMPC FY2025 filing to NOT equal ifrs-full:Borrowings (NetDebt was ~4.5x the gross borrowings figure, reflecting a different scope/definition). Mapping it to "total_debt" would silently misrepresent net debt as gross debt.',
+  'ifrs-full:ShorttermBorrowings':
+    'A short-term-debt candidate, but observed to be filer-inconsistent: in a real CMPC filing it was present for the prior year but ABSENT from the current-year context entirely, and where present did not always equal ifrs-full:CurrentBorrowingsAndCurrentPortionOfNoncurrentBorrowings (which is mapped instead — the fuller, IFRS-standard-named concept that was verified additive with LongtermBorrowings in every case observed).',
+  'ifrs-full:CurrentPortionOfLongtermBorrowings':
+    'A narrower sub-component of current debt — verified in a real CMPC filing to sometimes equal, and sometimes NOT equal (prior-year: 90,357,000 vs. 392,601,000), ifrs-full:CurrentBorrowingsAndCurrentPortionOfNoncurrentBorrowings (which is mapped instead, since it is the more complete concept and the one verified additive with LongtermBorrowings). Mapping this narrower concept to "short_term_debt" risks understating it.',
 }

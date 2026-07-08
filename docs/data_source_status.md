@@ -1,4 +1,4 @@
-# Data Source Status Matrix — Phase 8A / 8B / 8C / 8C.1 / 8C.2
+# Data Source Status Matrix — Phase 8A / 8B / 8C / 8C.1 / 8C.2 / 8C.3
 
 Audit date: 2026-07-02 (Phase 8A) · updated 2026-07-02 (Phase 8B — Compare
 real-data wiring + no-static-terminal-state policy) · updated 2026-07-03
@@ -11,23 +11,37 @@ CAPTCHA-free public path to real financial-statement XBRL filings) · updated
 LIVE**: the download→unzip→parse→normalize→validate→persist pipeline works end
 to end for SQM-B and COPEC; automated `xbrl` financials supersede manual CSV
 for the same period. Manual CSV is now a genuine fallback, no longer the only
-populated source. See `docs/cmf_xbrl_financials_ingestion.md`). This is the
-canonical truth-layer reference for what each visible module's data source
-actually is, versus what its UI label says.
+populated source.) · updated 2026-07-08 (Phase 8C.3 — **issuer coverage
+expanded from 2 to 5** (added ENELCHILE, CMPC, CENCOSUD) via a conservative,
+verified, issuer-by-issuer process against CMF's own official issuer
+directory; banks (BSANTANDER, CHILE) confirmed structurally unmappable via
+this tool, not merely unresearched. See `docs/cmf_xbrl_financials_ingestion.md`).
+This is the canonical truth-layer reference for what each visible module's
+data source actually is, versus what its UI label says.
 
-## Phase 8C.2 — Financials source is now automated (CMF/XBRL)
+## Phase 8C.2 / 8C.3 — Financials source is now automated (CMF/XBRL), 5 issuers mapped
 
-- **Charting / Compare fundamentals / Earnings** read persisted financials. As of 8C.2, for a mapped issuer
-  with a filed CMF XBRL statement (SQM-B, COPEC), the persisted data is **automated `xbrl`** (priority 210),
-  which **supersedes** any `manual_csv` row (100) for the same period. The Charting badge shows "Persisted
-  financials via CMF XBRL". Non-mapped tickers still use manual CSV / static fallback.
+- **Charting / Compare fundamentals / Earnings** read persisted financials. For a mapped issuer with a filed
+  CMF XBRL statement — **SQM-B, COPEC, ENELCHILE, CMPC, CENCOSUD (5 issuers as of Phase 8C.3)** — the
+  persisted data is **automated `xbrl`** (priority 210), which **supersedes** any `manual_csv` row (100) for
+  the same period. The Charting badge shows "Persisted financials via CMF XBRL". Non-mapped tickers still
+  use manual CSV / static fallback.
 - **Ingestion**: manually-triggered, reviewable cron route `GET /api/cron/financials/cmf-xbrl` (Bearer
-  `CRON_SECRET`) — **not on an unattended schedule** (undocumented HTML surface). Status:
-  `GET /api/financials/cmf-xbrl/status` (public read-only).
-- **Honesty guarantees**: currency read per-fact (SQM-B/COPEC file in USD, not CLP); period nature labeled
-  (annual / year_to_date / instant); missing concepts stay missing (never zero); balance-sheet identity
-  validated; taxonomy-only ZIPs rejected; no raw XBRL ever exposed. **No migration** — reuses the existing
-  `metadata` jsonb columns.
+  `CRON_SECRET`) — **not on an unattended schedule** (undocumented HTML surface; Phase 8C.3 keeps this
+  unscheduled — issuer coverage is still narrow, not yet a stable basis for unattended runs). Status:
+  `GET /api/financials/cmf-xbrl/status` (public read-only) — now reports `enabledIssuers` (with
+  verification status/date) and `notConfiguredIssuers` (with a documented reason) explicitly.
+- **Honesty guarantees**: currency read per-fact (SQM-B/COPEC/CMPC file in USD; CENCOSUD in CLP; ENELCHILE
+  changed CLP→USD between FY2024 and FY2025 — a genuine real-world change, verified via entity-identifier
+  cross-check across both filings, not a bug); period nature labeled (annual / year_to_date / instant);
+  missing concepts stay missing (never zero); balance-sheet identity validated; taxonomy-only ZIPs rejected;
+  no raw XBRL ever exposed. **No migration** in either phase — reuses the existing `metadata` jsonb columns.
+- **Phase 8C.3 issuer verification method**: RUTs verified against CMF's own official `sociedad[]` issuer
+  directory (embedded in its public XBRL search form, `sa_eeff_ifrs_index.php`), a stronger source than
+  search-engine snippets (the method that produced a wrong RUT in Phase 8C.1). CMPC and CENCOSUD required
+  disambiguation from similarly-named but distinct directory entries. **Banks (BSANTANDER, CHILE) are
+  confirmed absent from both CMF registry groups (RVEMI, RGEIN)** this tool exposes — not merely
+  unresearched — and remain on manual CSV / static fallback. See `docs/cmf_xbrl_financials_ingestion.md` §4a.
 Update this file whenever a module's data source changes (new ingestion,
 provider swap, or label fix) — it is the single source of truth other docs
 (`CLAUDE.md`, `README.md`) summarize from.

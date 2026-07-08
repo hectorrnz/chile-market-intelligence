@@ -390,6 +390,89 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 8C.3 — CMF/XBRL Issuer Coverage Expansion** ✓ COMPLETE (2026-07-08)
+
+Expands CMF/XBRL issuer coverage from 2 to 5 issuers using a conservative, verified, issuer-by-issuer
+process — no changes to the 8C.2 pipeline architecture itself.
+
+**Enabled:** ENELCHILE (RUT `76536353`), CMPC (RUT `90222000`), CENCOSUD (RUT `93834000`) — joining SQM-B and
+COPEC (5 total). **Skipped, documented not guessed:** BSANTANDER and CHILE (Banco de Chile) — confirmed
+absent from both CMF registry groups (`RVEMI`, `RGEIN`) this discovery tool exposes; banks are supervised
+under a separate CMF track this public XBRL search surface does not cover.
+
+**Verification method** (`src/lib/financials/cmfIssuerMap.ts`): CMF's own official issuer directory — a
+`sociedad[]` multi-select dropdown embedded in its public XBRL search form (`sa_eeff_ifrs_index.php`) — lists
+every registered entity as `"<RUT with check digit> <LEGAL NAME>"`. This is CMF's own authoritative
+RUT↔legal-name source, stronger evidence than the search-engine snippet that produced a wrong RUT in Phase
+8C.1. CMPC and CENCOSUD each required disambiguation from a similarly-named but distinct directory entry
+(e.g. "Inversiones CMPC S.A." vs. the correct "Empresas CMPC S.A."). Every mapped entry carries
+`verificationStatus: 'verified'` and a `verificationMethod` note; `UNMAPPED_TICKERS` documents BSANTANDER/
+CHILE with the registry-group evidence — **never guess a RUT**.
+
+**Real-world finding — currency changed between fiscal years for the same issuer:** ENELCHILE filed FY2024 in
+CLP but FY2025 entirely in USD. Verified as genuine (all 22 mapped FY2025 facts consistently `USD`; the XBRL
+`entityIdentifier` context confirmed ENELCHILE's own RUT in both filings, ruling out an entidad.php mismatch)
+— not a bug. Confirms the currency-per-fact-never-assumed policy must hold even across a single issuer's own
+filing history, not just across issuers.
+
+**Concept map extended** (~24 → ~31 `ifrs-full` concepts, `src/lib/financials/xbrl/conceptMap.ts`): added
+`total_debt` / `long_term_debt` / `short_term_debt` — but only after verifying the additive identity
+`LongtermBorrowings + CurrentBorrowingsAndCurrentPortionOfNoncurrentBorrowings == Borrowings` held exactly in
+real CMPC/CENCOSUD filings — plus `shares_outstanding` and higher-confidence real-world capex/dividend
+concept variants observed in the new filings. Concepts that FAILED cross-year/cross-issuer consistency
+checks were deliberately left unmapped with the numeric evidence documented in `KNOWN_UNMAPPED_CONCEPTS`:
+`NetDebt` (≈4.5× gross `Borrowings` in a real CMPC filing — a genuinely different metric, not gross debt),
+`ShorttermBorrowings` (present in a prior-year context but entirely absent from the current-year context in a
+real filing), `CurrentPortionOfLongtermBorrowings` (diverged from `CurrentBorrowingsAndCurrentPortionOfNoncurrentBorrowings`
+in a real filing: 90,357,000 vs. 392,601,000 for the same period).
+
+**Status endpoint rewritten** (`GET /api/financials/cmf-xbrl/status`): now reports `enabledIssuers` (ticker,
+legal name, verification status/date, coverage counts) and `notConfiguredIssuers` (ticker + documented
+reason) explicitly, alongside the prior `coverage`/`mappedIssuers`/`unmappedIssuers` shape kept for backward
+compatibility.
+
+**No migration, no new dependency, no new env var** — the same source-agnostic schema, `metadata` jsonb
+provenance columns, and `source_priority`-based supersession from 8C.2 handle the 3 new issuers with zero
+code changes to the provider/orchestrator/repository.
+
+**Production validation:** real writes for ENELCHILE (26 rows, USD), CMPC (31 rows, USD), CENCOSUD (31 rows,
+CLP) — all `sourceType: xbrl`, `valid_with_warnings`. Charting badge verified live in-browser for CMPC (real
+revenue value, EBITDA correctly `—` where not filed). Pre-existing SQM-B/COPEC mapped-field counts also grew
+(23→29 and 23/24→24 respectively) purely from the concept-map expansion — no re-ingestion of those two
+issuers' already-persisted rows was required for this to take effect on the next real run.
+
+**Tests:** `tests/financialsCmfXbrl.test.ts` grew from 41 to 53 — new concept-map verification tests (debt
+trio, shares outstanding, capex/dividend variants, NetDebt/ShorttermBorrowings/CurrentPortionOfLongtermBorrowings
+exclusions) and issuer-map coverage tests (exactly 5 mapped tickers with correct RUTs, BSANTANDER/CHILE
+unmapped with registry-referencing reasons, a never-guesses regression check). Build 0 errors, lint 0, tests
+987/987.
+
+**Cron remains unscheduled** — issuer coverage is still narrow (5 issuers), not yet a stable basis for an
+unattended Vercel cron run against CMF's undocumented HTML surface. Ingestion stays manually-triggered and
+reviewable (`GET /api/cron/financials/cmf-xbrl`, Bearer `CRON_SECRET`).
+
+**Structured Notes / CMF-XBRL module rules — reaffirmed and extended:**
+- **Never guess a RUT or legal entity** — only issuers verified against CMF's own official `sociedad[]`
+  issuer directory (or a direct cmfchile.cl URL, the 8C.1/8C.2 precedent) are enabled.
+- **A candidate concept mapping must be empirically verified** (additive identity, cross-year/cross-issuer
+  consistency) before being trusted — a plausible-sounding concept name is not sufficient evidence.
+- **Currency is always read per-fact, never assumed** — even for the *same issuer* across fiscal years.
+- **Banks sit under a separate CMF registry track** this public XBRL discovery tool does not expose — do not
+  keep re-attempting BSANTANDER/CHILE without a new discovery method; document the gap instead.
+- **CMF ingestion is still not on a schedule** — manual/reviewable runs only, and will stay that way until
+  issuer coverage and surface stability justify otherwise.
+
+Scope limits (explicit): CMF/XBRL issuer coverage expansion only; annual filings only; no interim/YTD
+ingestion or charting support; no new cron schedule; no paid/vendor APIs; no Bloomberg; no CAPTCHA bypass; no
+Hechos Esenciales scraping; no News/FX/rates/calendar work; no Structured Notes/auth/watchlist/portfolio/
+macro/market changes; no mobile work; no new dependency.
+
+Next: continue CMF/XBRL issuer expansion (per-issuer RUT verification against CMF's official directory); or
+**Phase 8D** (FX/rates + economic calendar live source completion); or **Phase 9F** (Santander / older-2024-Citi
+structured-notes parser expansion).
+
+---
+
 **Phase 8C.2 — CMF/XBRL Automated Financials Ingestion (LIVE)** ✓ COMPLETE (2026-07-08)
 
 Automated official **CMF XBRL** financial-statement ingestion for Chile issuers is now working end to end and

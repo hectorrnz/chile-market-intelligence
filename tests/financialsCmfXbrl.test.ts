@@ -22,10 +22,11 @@ import { deflateRawSync } from 'node:zlib'
 
 import { unzip, findXbrlInstance, isTaxonomyOnlyArchive, looksLikeZip, MAX_ZIP_BYTES } from '../src/lib/financials/xbrl/unzip.ts'
 import { buildTargetPeriod, classifyContext, currentPeriodContextIds } from '../src/lib/financials/xbrl/periodClassify.ts'
-import { mapConcept, XBRL_CONCEPT_MAP } from '../src/lib/financials/xbrl/conceptMap.ts'
+import { mapConcept, XBRL_CONCEPT_MAP, KNOWN_UNMAPPED_CONCEPTS } from '../src/lib/financials/xbrl/conceptMap.ts'
 import { validateNormalizedFinancials } from '../src/lib/financials/xbrl/validateFinancials.ts'
 import { parseXbrlInstance } from '../src/lib/financials/xbrl/parseXbrl.ts'
 import { cmfXbrlProvider, buildFilingRefs, candidateAnnualPeriods, countUnmappedPlainConcepts, instanceFromParsed } from '../src/lib/financials/providers/cmfXbrlProvider.ts'
+import { CMF_ISSUER_MAP, UNMAPPED_TICKERS, getCmfIssuer, isCmfIssuerMapped, getMappedTickers } from '../src/lib/financials/cmfIssuerMap.ts'
 import type { FinancialParsedFiling } from '../src/lib/financials/providers/types.ts'
 
 const SAMPLE_XBRL = readFileSync(fileURLToPath(new URL('fixtures/cmf/sample_instance.xbrl', import.meta.url)), 'utf8')
@@ -213,6 +214,37 @@ describe('conceptMap — extended, confidence-tagged, no fabrication', () => {
   })
 })
 
+describe('conceptMap — Phase 8C.3 debt/shares additions (verified via additive identity in real filings)', () => {
+  it('maps the debt trio to distinct line items, all high confidence', () => {
+    assert.equal(mapConcept('ifrs-full:Borrowings')?.lineItemCode, 'total_debt')
+    assert.equal(mapConcept('ifrs-full:LongtermBorrowings')?.lineItemCode, 'long_term_debt')
+    assert.equal(mapConcept('ifrs-full:CurrentBorrowingsAndCurrentPortionOfNoncurrentBorrowings')?.lineItemCode, 'short_term_debt')
+    for (const c of ['ifrs-full:Borrowings', 'ifrs-full:LongtermBorrowings', 'ifrs-full:CurrentBorrowingsAndCurrentPortionOfNoncurrentBorrowings']) {
+      assert.equal(mapConcept(c)?.confidence, 'high')
+    }
+  })
+  it('maps shares outstanding at high confidence', () => {
+    assert.equal(mapConcept('ifrs-full:NumberOfSharesOutstanding')?.lineItemCode, 'shares_outstanding')
+    assert.equal(mapConcept('ifrs-full:NumberOfSharesOutstanding')?.confidence, 'high')
+  })
+  it('maps the capex/dividends concept variants actually used by real Chilean filers, at high confidence', () => {
+    assert.equal(mapConcept('ifrs-full:PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities')?.lineItemCode, 'capex')
+    assert.equal(mapConcept('ifrs-full:PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities')?.confidence, 'high')
+    assert.equal(mapConcept('ifrs-full:DividendsPaidClassifiedAsFinancingActivities')?.lineItemCode, 'dividends_paid')
+    assert.equal(mapConcept('ifrs-full:DividendsPaidClassifiedAsFinancingActivities')?.confidence, 'high')
+  })
+  it('never maps NetDebt to total_debt — a distinct metric, verified NOT equal to gross Borrowings in a real filing', () => {
+    assert.equal(mapConcept('ifrs-full:NetDebt'), null)
+    assert.ok('ifrs-full:NetDebt' in KNOWN_UNMAPPED_CONCEPTS)
+  })
+  it('never maps the narrower/inconsistent current-debt sub-concepts (double-count/understate risk)', () => {
+    assert.equal(mapConcept('ifrs-full:ShorttermBorrowings'), null)
+    assert.equal(mapConcept('ifrs-full:CurrentPortionOfLongtermBorrowings'), null)
+    assert.ok('ifrs-full:ShorttermBorrowings' in KNOWN_UNMAPPED_CONCEPTS)
+    assert.ok('ifrs-full:CurrentPortionOfLongtermBorrowings' in KNOWN_UNMAPPED_CONCEPTS)
+  })
+})
+
 describe('validateFinancials — quality checks', () => {
   const okFacts = [
     { lineItemCode: 'total_assets', statementType: 'balance', value: 100, unit: 'USD', currency: 'USD' },
@@ -330,6 +362,49 @@ describe('candidateAnnualPeriods + buildFilingRefs', () => {
   })
 })
 
+describe('cmfIssuerMap — Phase 8C.3 issuer coverage expansion', () => {
+  it('SQM-B and COPEC remain mapped, unchanged in ticker/RUT', () => {
+    assert.equal(getCmfIssuer('SQM-B')?.rut, '93007000')
+    assert.equal(getCmfIssuer('COPEC')?.rut, '90690000')
+  })
+  it('ENELCHILE, CMPC, CENCOSUD are newly mapped with verified RUTs', () => {
+    assert.equal(getCmfIssuer('ENELCHILE')?.rut, '76536353')
+    assert.equal(getCmfIssuer('CMPC')?.rut, '90222000')
+    assert.equal(getCmfIssuer('CENCOSUD')?.rut, '93834000')
+  })
+  it('getMappedTickers includes all 5 enabled issuers', () => {
+    const mapped = getMappedTickers()
+    for (const t of ['SQM-B', 'COPEC', 'ENELCHILE', 'CMPC', 'CENCOSUD']) assert.ok(mapped.includes(t), `${t} should be mapped`)
+    assert.equal(mapped.length, 5)
+  })
+  it('every mapped entry has an explicit RUT, sourceUrl, verifiedAt, and (Phase 8C.3) verificationStatus/verificationMethod', () => {
+    for (const [ticker, entry] of Object.entries(CMF_ISSUER_MAP)) {
+      assert.ok(entry.rut, `${ticker} missing rut`)
+      assert.ok(entry.sourceUrl, `${ticker} missing sourceUrl`)
+      assert.ok(entry.verifiedAt, `${ticker} missing verifiedAt`)
+      assert.equal(entry.verificationStatus, 'verified')
+      assert.ok(entry.verificationMethod && entry.verificationMethod.length > 0, `${ticker} missing verificationMethod`)
+    }
+  })
+  it('BSANTANDER and CHILE (both banks) remain unmapped, with documented reasons referencing both registry groups checked', () => {
+    assert.equal(isCmfIssuerMapped('BSANTANDER'), false)
+    assert.equal(isCmfIssuerMapped('CHILE'), false)
+    assert.equal(getCmfIssuer('BSANTANDER'), null)
+    assert.equal(getCmfIssuer('CHILE'), null)
+    assert.ok('BSANTANDER' in UNMAPPED_TICKERS)
+    assert.ok('CHILE' in UNMAPPED_TICKERS)
+    assert.match(UNMAPPED_TICKERS.BSANTANDER, /RVEMI/)
+    assert.match(UNMAPPED_TICKERS.BSANTANDER, /RGEIN/)
+    assert.match(UNMAPPED_TICKERS.CHILE, /Banco de Chile/i)
+  })
+  it('never guesses a RUT — an unmapped ticker\'s buildFilingRefs is empty and getCmfIssuer is null', () => {
+    for (const ticker of ['BSANTANDER', 'CHILE']) {
+      assert.equal(getCmfIssuer(ticker), null)
+      assert.deepEqual(buildFilingRefs(ticker, [{ mm: '12', aa: '2025' }]), [])
+    }
+  })
+})
+
 // ── Route + repository hygiene (grep-based, no network) ──────────────────────
 function read(rel: string): string {
   return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
@@ -359,6 +434,11 @@ describe('status route — public read-only diagnostics', () => {
     assert.ok(STATUS_ROUTE.includes('getSourceTypeCoverage'))
     assert.ok(!STATUS_ROUTE.includes('getSupabaseAdminClient'))
     assert.ok(!STATUS_ROUTE.includes('CRON_SECRET'))
+  })
+  it('(Phase 8C.3) surfaces enabledIssuers with verification detail and notConfiguredIssuers', () => {
+    assert.ok(STATUS_ROUTE.includes('enabledIssuers'))
+    assert.ok(STATUS_ROUTE.includes('notConfiguredIssuers'))
+    assert.ok(STATUS_ROUTE.includes('verificationStatus'))
   })
 })
 
