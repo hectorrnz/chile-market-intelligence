@@ -136,7 +136,7 @@ without them** (they never run during build). Full guide:
 - **Desktop-only layout** — minimum comfortable viewport is ~1280px wide; 1440px recommended (mobile-responsive is a planned future phase)
 - **Portfolio average cost is weighted-average only** — no FIFO/LIFO or specific-lot selection
 - **Portfolio has no FX conversion, dividends, or performance attribution** (time/money-weighted returns) — those remain planned
-- **Some data is still static** — macro (BCCh) and market (Yahoo Finance) are live with Supabase persistence; CMF filings, earnings, and news remain static sample data
+- **Some data is still static** — macro (BCCh) and market (Yahoo Finance) are live with Supabase persistence; company financials are automated from **CMF XBRL** filings for mapped issuers (SQM-B, COPEC) with manual CSV as fallback; CMF *Hechos Esenciales* and news remain static/blocked sample data
 
 ---
 
@@ -152,6 +152,7 @@ without them** (they never run during build). Full guide:
 | **Phase 8B** | Compare page real-data wiring + no-static-terminal-state policy | ✓ Complete |
 | **Phase 8C** | Financial-statement ingestion, automation-first architecture with manual CSV as an interim bridge, for Charting, Compare fundamentals, and Earnings | ✓ Complete |
 | **Phase 8C.1** | CMF/XBRL automated-provider discovery + proof of concept — found a real, CAPTCHA-free path to CMF's XBRL filings and built a working provider against the Phase 8C schema | ✓ Complete |
+| **Phase 8C.2** | CMF/XBRL automated financials ingestion — dependency-free ZIP reader, honest period-matching, extended concept map + validation, orchestrator + reviewable cron; automated `xbrl` financials (SQM-B, COPEC) supersede manual CSV. Manual CSV is now a fallback, not the only source | ✓ Complete |
 | **Phase 9A** | Structured Notes module — automation-first term-sheet PDF extraction (Citi CGMFL family), workbook audit, normalized schema, barrier/worst-of/exposure calculations, Yahoo live levels (replacing Bloomberg BDP) | ✓ Complete |
 | **Phase 9B/9B.1/9B.2** | Structured Notes — HSBC parser generalization, shared book-level dashboard, Called/Archived flow, allocation-by-entity grid, issuer/entity charts, dashboard sorting/filtering/legend UX | ✓ Complete |
 | **Phase 9C** | Structured Notes — parser expansion to Crédit Agricole, BNP Paribas, Barclays, and BBVA via a new issuer-detection router; 4-state confidence/review-state model | ✓ Complete |

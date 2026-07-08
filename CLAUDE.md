@@ -390,6 +390,82 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 8C.2 — CMF/XBRL Automated Financials Ingestion (LIVE)** ✓ COMPLETE (2026-07-08)
+
+Automated official **CMF XBRL** financial-statement ingestion for Chile issuers is now working end to end and
+is the **preferred** source for mapped issuers (SQM-B, COPEC); manual CSV is now a genuine fallback, no longer
+the only populated financials source.
+
+**The blocker removed:** Phase 8C.1 verified the whole CMF chain but stopped at the ZIP download (no zip
+dependency). 8C.2 adds a **dependency-free ZIP reader** (`src/lib/financials/xbrl/unzip.ts`) on Node's
+built-in `node:zlib` (`inflateRawSync` — ZIP entries are raw DEFLATE). No new package. Verified against the
+real COPEC archive.
+
+**Pipeline** (`providers/cmfXbrlProvider.ts` + `cmf/runCmfXbrlIngestion.ts`): entidad.php → parse XBRL href →
+download ZIP → unzip (reject taxonomy-only, path-traversal/zip-bomb guards) → parse `.xbrl` → **period-match**
+→ normalize → validate → persist via the **same source-agnostic repository upsert manual CSV uses**. `xbrl`
+(priority 210) supersedes `manual_csv` (100) automatically.
+
+**Honest period handling** (`xbrl/periodClassify.ts`): a CMF instance carries the current period, prior-year
+comparatives, and (interim) both a YTD and a discrete-quarter window. Facts are matched to the CURRENT
+period's contexts only (income/cash on the Jan-1→period-end duration; balance on the period-end instant);
+comparatives excluded. `period_nature` ∈ `annual`/`quarterly_discrete`/`year_to_date`/`instant`; `period_type`
+stays quarterly/annual so supersession still groups an XBRL period with a manual one. **Default ingestion is
+annual (December) filings only** — unambiguous; interim is supported but not the default.
+
+**Concept map** (`xbrl/conceptMap.ts`): ~24 standard `ifrs-full` concepts → normalized line items, each tagged
+`high`/`medium`/`low`/`review_required`. EBITDA is never fabricated (stays a derived metric). Ambiguous
+note-only concepts (AccountingProfit, related-party revenue) are documented as deliberately unmapped.
+
+**Validation** (`xbrl/validateFinancials.ts`): balance-sheet identity (assets ≈ liab+equity, 1% tol.), period
+chronology, non-finite, currency/unit presence, YTD-derived, unmapped — status
+valid/valid_with_warnings/review_required/invalid. The orchestrator refuses to write an `invalid` filing.
+
+**No migration, no new dependency, no new env var.** Honest-period metadata (period_start_date, period_nature,
+filing_period_label) + per-fact provenance (source concept, contextRef, unit, decimals, mapping confidence)
+reuse the EXISTING `metadata` jsonb columns on `company_reporting_periods`/`financial_statement_items` —
+mirroring the 9D/9E "reuse existing metadata jsonb" approach.
+
+**Cron + status:** `GET /api/cron/financials/cmf-xbrl` (Bearer `CRON_SECRET`, service-role admin client,
+records an `ingestion_runs` row, sanitized summary) — **NOT on a Vercel cron schedule** (the entidad.php
+surface is undocumented HTML; ingestion is manually-triggered and reviewable until stability is observed).
+`GET /api/financials/cmf-xbrl/status` — public read-only diagnostics (latest run + per-issuer XBRL coverage +
+mapped/unmapped issuers), consistent with the app's other public ingestion-status endpoints.
+
+**UI:** Charting source badge shows "Persisted financials via CMF XBRL" when the ticker's financials are
+XBRL-sourced (`resolveFinancials` now reports the dominant `sourceType`; a ticker with both surfaces the
+authoritative XBRL label).
+
+**Honesty guarantees:** currency read per-fact (SQM-B/COPEC file in USD, not CLP — never assumed); missing
+concepts stay missing (never zero); taxonomy-only ZIPs rejected as non-filings; no raw XBRL ever returned by a
+route or logged; RUTs never guessed (BSANTANDER stays unmapped — banks use a different CMF registry track).
+
+**Live validation** (real data, production Supabase — no staging DB, same as 9D/9E): COPEC FY2025 written (24
+rows, USD, valid_with_warnings, balance-sheet identity exact); SQM-B + COPEC FY2025/FY2024 dry-run clean;
+**supersession proven live** (synthetic manual_csv FY row correctly demoted by the XBRL row, then cleaned up);
+`/api/financials/COPEC/statements` reports `sourceType: xbrl`; cron auth 401 without bearer.
+
+**Tests:** `tests/financialsCmfXbrl.test.ts` (41 new; in-memory ZIP fixtures, no binaries). 975/975 pass, lint
+0, build 0 errors. Regression: macro/market/compare/earnings/health all 200, auth gating intact.
+
+**Structured Notes / CMF-XBRL module rules (apply going forward):**
+- Automated CMF XBRL is the **preferred** financials source for a mapped issuer; manual CSV is fallback/override.
+- **Never guess a RUT** — only issuers verified against a direct cmfchile.cl URL are enabled.
+- **No new dependency for zip** — the built-in `node:zlib` reader in `unzip.ts` is the approved path.
+- **Taxonomy-only ZIPs are not filings** — reject any archive with no `.xbrl` instance.
+- **Currency per-fact, missing = missing (never zero), YTD labeled** — never silently chart a cumulative YTD
+  figure as a discrete quarter.
+- **CMF ingestion is not on a schedule** — manual/reviewable runs only (undocumented HTML surface).
+
+Scope limits (explicit): CMF/XBRL financials only; 2 issuers mapped; annual default; no CAPTCHA/scraping of
+Hechos Esenciales; no News/FX/rates/calendar work; no Structured Notes/auth/watchlist/portfolio/macro/market
+changes; no mobile work; no vercel.json cron schedule added.
+
+Next: expand the verified issuer map (per-issuer RUT verification); revisit interim-filing ingestion with clear
+YTD handling; or **Phase 8D** (FX/rates + economic calendar live source completion).
+
+---
+
 **Phase 9E — Structured Notes: free market-data architecture + observation QA** ✓ COMPLETE (2026-07-07)
 
 Hardens Structured Notes monitoring's market-data layer with a provider abstraction, a fallback/sanity-check

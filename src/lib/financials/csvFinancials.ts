@@ -178,6 +178,14 @@ export interface ReportingPeriodImportRow extends SourceMetadata {
   reportDate: string | null
   currency: string
   sourceType: string
+  // ── Phase 8C.2 (optional, additive) — honest period metadata for automated
+  //    XBRL ingestion. Manual CSV omits these; the repository writes null when absent.
+  /** Start of the income/cash duration window (ISO date). */
+  periodStartDate?: string | null
+  /** 'annual' | 'quarterly_discrete' | 'year_to_date' | 'instant' | 'unknown' — see periodClassify.ts. */
+  periodNature?: string | null
+  /** Raw filing period label from the source (e.g. "12/2023"). */
+  filingPeriodLabel?: string | null
 }
 
 export function validateReportingPeriodRow(row: ParsedCsvRow): ValidationResult<ReportingPeriodImportRow> {
@@ -231,6 +239,8 @@ export interface StatementItemImportRow extends SourceMetadata {
   unit: string
   scale: string | null
   sourceType: string
+  /** Phase 8C.2 (optional) — raw XBRL fact provenance persisted into the row's metadata jsonb (source concept, contextRef, decimals, period nature, mapping confidence). Manual CSV omits this. */
+  metadata?: Record<string, unknown>
 }
 
 export function validateStatementItemRow(row: ParsedCsvRow): ValidationResult<StatementItemImportRow> {

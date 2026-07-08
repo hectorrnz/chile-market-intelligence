@@ -4,12 +4,15 @@
 import type { FundamentalRecord } from './fundamentals'
 
 export type FinancialsSourceStatus = 'persisted' | 'static_fallback'
+export type FinancialsSourceType = 'xbrl' | 'cmf_fecu' | 'manual_csv' | 'mixed' | 'none'
 
 export interface StatementsResponse {
   ticker: string
   records: FundamentalRecord[]
   status: FinancialsSourceStatus
   source: string
+  /** Dominant persisted source_type (Phase 8C.2) — drives the source badge. Absent on older responses → treat as manual_csv. */
+  sourceType?: FinancialsSourceType
 }
 
 export async function fetchFinancialStatements(ticker: string): Promise<StatementsResponse> {

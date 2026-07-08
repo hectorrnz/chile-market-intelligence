@@ -10,7 +10,8 @@ import { SourceStateBadge } from '@/components/ui/SourceStateBadge'
 import { FundamentalsChart, type FundSeries } from '@/components/charts/FundamentalsChart'
 import { getAllCompanies } from '@/lib/data/companies'
 import { getFundamentals, type FundamentalRecord } from '@/lib/data/fundamentals'
-import { fetchFinancialStatements, type FinancialsSourceStatus } from '@/lib/data/financialsData'
+import { fetchFinancialStatements, type FinancialsSourceStatus, type FinancialsSourceType } from '@/lib/data/financialsData'
+import type { SourceKey } from '@/lib/dataSourceRegistry'
 import { formatCLP } from '@/lib/formatters'
 import { exportCSV } from '@/lib/export'
 
@@ -105,14 +106,14 @@ export default function ChartBuilderPage() {
   // Phase 8C — persisted financials (manual CSV import) take precedence over
   // the static fundamentals.json fallback, per ticker. Falls back silently
   // (and is labeled honestly via the source badge) when nothing is imported.
-  const [persistedA, setPersistedA] = useState<{ records: FundamentalRecord[]; status: FinancialsSourceStatus } | null>(null)
+  const [persistedA, setPersistedA] = useState<{ records: FundamentalRecord[]; status: FinancialsSourceStatus; sourceType?: FinancialsSourceType } | null>(null)
   const [persistedB, setPersistedB] = useState<{ records: FundamentalRecord[]; status: FinancialsSourceStatus } | null>(null)
   const overlay = !!tickerB && !!compMap[tickerB] && tickerB !== ticker
 
   useEffect(() => {
     let mounted = true
     fetchFinancialStatements(ticker).then(res => {
-      if (mounted) setPersistedA({ records: res.records, status: res.status })
+      if (mounted) setPersistedA({ records: res.records, status: res.status, sourceType: res.sourceType })
     }).catch(() => { if (mounted) setPersistedA(null) })
     return () => { mounted = false }
   }, [ticker])
@@ -136,6 +137,15 @@ export default function ChartBuilderPage() {
   }, [tickerB, overlay])
 
   const sourceStatusA: FinancialsSourceStatus = persistedA?.status === 'persisted' && persistedA.records.length > 0 ? 'persisted' : 'static_fallback'
+  // Phase 8C.2 — pick the source badge by the dominant persisted source_type so
+  // automated CMF/XBRL data reads "via CMF XBRL", manual CSV reads "via manual CSV".
+  const financialsBadgeKey: SourceKey = sourceStatusA !== 'persisted'
+    ? 'fundamentalsStatic'
+    : persistedA?.sourceType === 'xbrl'
+      ? 'financialsPersistedXbrl'
+      : persistedA?.sourceType === 'cmf_fecu'
+        ? 'financialsPersistedCmfFecu'
+        : 'financialsPersisted'
   const baseRecordsA = sourceStatusA === 'persisted' ? persistedA!.records : getFundamentals(ticker)
   const recordsA = baseRecordsA.slice().sort((a, b) => qIdx(a.period) - qIdx(b.period))
   const baseRecordsB = overlay
@@ -219,7 +229,7 @@ export default function ChartBuilderPage() {
         <div className="flex items-center gap-1"><Seg active={mode === 'abs'} onClick={() => setMode('abs')}>{t.charting.absolute}</Seg><Seg active={mode === 'idx'} onClick={() => setMode('idx')}>{t.charting.indexed}</Seg></div>
         <span className="w-px h-4 bg-border" />
         <div className="flex items-center gap-1"><Seg active={freq === 'Q'} onClick={() => setFreq('Q')}>{t.charting.quarterly}</Seg><Seg active={freq === 'TTM'} onClick={() => setFreq('TTM')}>{t.charting.ttm}</Seg><Seg active={freq === 'A'} onClick={() => setFreq('A')}>{t.charting.annual}</Seg></div>
-        <SourceStateBadge sourceKey={sourceStatusA === 'persisted' ? 'financialsPersisted' : 'fundamentalsStatic'} className="ml-auto" />
+        <SourceStateBadge sourceKey={financialsBadgeKey} className="ml-auto" />
         <button onClick={() => setSettingsOpen(true)} className="flex items-center gap-1.5 h-6 px-2 rounded border border-border bg-surface-2 text-muted-fg hover:text-foreground hover:border-accent transition-colors"><span>⚙</span><span>{t.charting.settings}</span></button>
       </div>
 

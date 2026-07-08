@@ -13,11 +13,37 @@ import type { FundamentalRecord } from '../data/fundamentals.ts'
 
 export type FinancialsSourceStatus = 'persisted' | 'static_fallback'
 
+/** The dominant source_type behind a persisted result, so the UI can label XBRL vs manual CSV honestly. */
+export type FinancialsSourceType = 'xbrl' | 'cmf_fecu' | 'manual_csv' | 'mixed' | 'none'
+
 export interface FinancialsResolveResult {
   ticker: string
   records: FundamentalRecord[]
   status: FinancialsSourceStatus
   source: string
+  /** Which persisted source_type dominates (drives the source badge). */
+  sourceType: FinancialsSourceType
+}
+
+/**
+ * Human-readable source label + the most-authoritative source_type present,
+ * from the statement items backing a result. When a ticker has more than one
+ * source (e.g. some periods manual CSV, some automated CMF XBRL during a
+ * transition), the label reflects the HIGHEST-priority source present — XBRL is
+ * the preferred/authoritative automated source, so its presence is surfaced
+ * rather than hidden behind a "manual CSV" or vague "mixed" label. `sourceType:
+ * 'mixed'` is still returned when genuinely more than one non-derived source
+ * exists, so a caller can show a "+ manual" nuance if it wants.
+ */
+function summarizeSource(items: StatementItemRecord[]): { source: string; sourceType: FinancialsSourceType } {
+  if (items.length === 0) return { source: 'Static MVP sample', sourceType: 'none' }
+  const present = new Set(items.map((it) => it.sourceType).filter((k) => k !== 'derived'))
+  const hasXbrl = present.has('xbrl')
+  const hasFecu = present.has('cmf_fecu')
+  const multiple = present.size > 1
+  if (hasXbrl) return { source: multiple ? 'Persisted financials via CMF XBRL (+ manual)' : 'Persisted financials via CMF XBRL', sourceType: 'xbrl' }
+  if (hasFecu) return { source: multiple ? 'Persisted financials via CMF/FECU (+ manual)' : 'Persisted financials via CMF/FECU', sourceType: 'cmf_fecu' }
+  return { source: 'Persisted financials via manual CSV', sourceType: 'manual_csv' }
 }
 
 function periodLabel(fiscalPeriod: string, fiscalYear: number): string {
@@ -44,7 +70,7 @@ export async function resolveFinancialStatements(ticker: string): Promise<Financ
   const [items, metrics] = await Promise.all([getStatementItems(upperTicker), getFinancialMetrics(upperTicker)])
 
   if (items.length === 0) {
-    return { ticker: upperTicker, records: [], status: 'static_fallback', source: 'Static MVP sample' }
+    return { ticker: upperTicker, records: [], status: 'static_fallback', source: 'Static MVP sample', sourceType: 'none' }
   }
 
   const periodKey = (r: { fiscalYear: number; fiscalPeriod: string; periodType: string }) =>
@@ -106,5 +132,6 @@ export async function resolveFinancialStatements(ticker: string): Promise<Financ
       }
     })
 
-  return { ticker: upperTicker, records, status: 'persisted', source: 'Persisted financials via manual CSV' }
+  const { source, sourceType } = summarizeSource(items)
+  return { ticker: upperTicker, records, status: 'persisted', source, sourceType }
 }

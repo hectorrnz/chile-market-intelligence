@@ -15,6 +15,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tic
     const result = await resolveFinancialStatements(ticker)
     return NextResponse.json(result)
   } catch {
-    return NextResponse.json({ ticker: ticker.toUpperCase(), records: [], status: 'static_fallback', source: 'Static MVP sample' }, { status: 200 })
+    return NextResponse.json({ ticker: ticker.toUpperCase(), records: [], status: 'static_fallback', source: 'Static MVP sample', sourceType: 'none' }, { status: 200 })
   }
 }

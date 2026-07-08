@@ -140,6 +140,12 @@ export async function upsertReportingPeriods(
     source_as_of: r.sourceAsOf,
     ingestion_run_id: ingestionRunId ?? null,
     source_priority: priorityFor(r.sourceType),
+    // Phase 8C.2 — honest-period metadata into the EXISTING metadata jsonb
+    // column (no migration needed, mirroring the 9D/9E approach). Manual CSV
+    // rows omit these fields, leaving metadata at its default {}.
+    ...((r.periodNature || r.periodStartDate || r.filingPeriodLabel)
+      ? { metadata: { periodStartDate: r.periodStartDate ?? null, periodNature: r.periodNature ?? null, filingPeriodLabel: r.filingPeriodLabel ?? null } }
+      : {}),
   }))
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -198,6 +204,8 @@ export async function upsertStatementItems(
       source_as_of: r.sourceAsOf,
       ingestion_run_id: ingestionRunId ?? null,
       source_priority: priorityFor(r.sourceType),
+      // Phase 8C.2 — raw XBRL fact provenance into the existing metadata jsonb (no new table).
+      ...(r.metadata ? { metadata: r.metadata } : {}),
     })
   }
   if (payload.length === 0) return { inserted: 0, errors }
@@ -591,6 +599,34 @@ export async function getEarningsEvents(ticker?: string): Promise<EarningsEventR
     if (!existing || e.sourcePriority > existing.sourcePriority) byGroup.set(key, e)
   }
   return Array.from(byGroup.values()).sort((a, b) => (b.reportDate ?? '').localeCompare(a.reportDate ?? ''))
+}
+
+/**
+ * Per-ticker coverage for a specific source_type (e.g. 'xbrl') — how many
+ * reporting periods that source has supplied and the latest, and whether each
+ * is currently canonical (non-superseded). Powers the CMF/XBRL ingestion
+ * status endpoint without exposing any raw fact data.
+ */
+export async function getSourceTypeCoverage(sourceType: string): Promise<{ ticker: string; periodCount: number; canonicalCount: number; latestPeriodEnd: string | null; latestPeriodLabel: string | null }[]> {
+  const db = await getReadClient()
+  if (!db) return []
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const res = await (db as any)
+    .from('company_reporting_periods')
+    .select('ticker, period_end_date, fiscal_period, fiscal_year, is_superseded')
+    .eq('source_type', sourceType)
+  if (res.error || !res.data) return []
+  const byTicker = new Map<string, { count: number; canonical: number; latest: string; label: string | null }>()
+  for (const row of res.data as Array<{ ticker: string; period_end_date: string; fiscal_period: string; fiscal_year: number; is_superseded: boolean }>) {
+    const e = byTicker.get(row.ticker) ?? { count: 0, canonical: 0, latest: '', label: null }
+    e.count += 1
+    if (!row.is_superseded) e.canonical += 1
+    if (row.period_end_date > e.latest) { e.latest = row.period_end_date; e.label = `${row.fiscal_period} ${row.fiscal_year}` }
+    byTicker.set(row.ticker, e)
+  }
+  return Array.from(byTicker.entries())
+    .map(([ticker, v]) => ({ ticker, periodCount: v.count, canonicalCount: v.canonical, latestPeriodEnd: v.latest || null, latestPeriodLabel: v.label }))
+    .sort((a, b) => a.ticker.localeCompare(b.ticker))
 }
 
 /** Distinct tickers with at least one canonical (non-superseded) reporting period — drives fallback decisions. */

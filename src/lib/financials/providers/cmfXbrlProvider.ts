@@ -24,8 +24,10 @@
 //     cmfXbrlFinancials.ts), which itself defaults to discovery/dry-run.
 
 import { getCmfIssuer } from '../cmfIssuerMap.ts'
-import { parseXbrlInstance, plainFacts, findUnit, factNumericValue, type XbrlInstance } from '../xbrl/parseXbrl.ts'
+import { parseXbrlInstance, plainFacts, findUnit, findContext, factNumericValue, type XbrlInstance } from '../xbrl/parseXbrl.ts'
 import { mapConcept } from '../xbrl/conceptMap.ts'
+import { unzip, findXbrlInstance, isTaxonomyOnlyArchive } from '../xbrl/unzip.ts'
+import { buildTargetPeriod, currentPeriodContextIds, type TargetPeriod } from '../xbrl/periodClassify.ts'
 import type {
   FinancialsProvider,
   FinancialFilingRef,
@@ -34,6 +36,17 @@ import type {
   FinancialProviderResult,
 } from './types.ts'
 import type { FinancialImportPayload, ReportingPeriodImportRow, StatementItemImportRow } from '../csvFinancials.ts'
+
+/** Reconstructs the quarter-end month (mm) a filing covers from its fiscal period label. FY→12, Q1→03, Q2→06, Q3→09. */
+function monthForFiscalPeriod(fiscalPeriod: string | null): string {
+  switch (fiscalPeriod) {
+    case 'FY': return '12'
+    case 'Q1': return '03'
+    case 'Q2': return '06'
+    case 'Q3': return '09'
+    default: return '12'
+  }
+}
 
 export const CMF_XBRL_PROVIDER_ID = 'cmf-xbrl'
 export const CMF_BASE_URL = 'https://www.cmfchile.cl'
@@ -111,6 +124,57 @@ export function candidateRecentPeriods(count = 4, from: Date = new Date()): { mm
   return out
 }
 
+/**
+ * Candidate recent ANNUAL (December year-end) periods, most recent first.
+ * Annual filings have unambiguous period semantics (full-year duration +
+ * year-end balance), so they are the conservative default for automated
+ * ingestion — interim filings carry a YTD/discrete-quarter distinction that
+ * needs care before charting (see docs/cmf_xbrl_financials_ingestion.md).
+ * Starts from the most recently *completed* fiscal year (last year, since the
+ * current year's annual filing isn't published until the following year).
+ */
+export function candidateAnnualPeriods(count = 3, from: Date = new Date()): { mm: string; aa: string }[] {
+  const out: { mm: string; aa: string }[] = []
+  let year = from.getFullYear() - 1 // last completed fiscal year
+  for (let i = 0; i < count; i++) {
+    out.push({ mm: '12', aa: String(year) })
+    year -= 1
+  }
+  return out
+}
+
+/** Counts DISTINCT plain-context concepts in an instance that have no mapping — a diagnostic signal (preserved, never fabricated), computed by the orchestrator. */
+export function countUnmappedPlainConcepts(instance: XbrlInstance): number {
+  const seen = new Set<string>()
+  for (const f of plainFacts(instance)) {
+    if (!mapConcept(f.concept) && !seen.has(f.concept)) seen.add(f.concept)
+  }
+  return seen.size
+}
+
+/** Extracts the parsed XbrlInstance from a parsed filing (the orchestrator needs it for validation/diagnostics). */
+export function instanceFromParsed(parsed: FinancialParsedFiling): XbrlInstance | null {
+  return (parsed.facts.instance as unknown as XbrlInstance) ?? null
+}
+
+/** Builds filing refs for an issuer over a set of (mm, aa) periods. Existence is confirmed only by actually fetching, never assumed. Returns [] for an unmapped ticker. */
+export function buildFilingRefs(ticker: string, periods: { mm: string; aa: string }[]): FinancialFilingRef[] {
+  const issuer = getCmfIssuer(ticker)
+  if (!issuer) return []
+  return periods.map(({ mm, aa }) => {
+    const { fiscalYear, fiscalPeriod, periodType } = periodToFiscal(mm, aa)
+    return {
+      ticker,
+      sourceType: 'xbrl',
+      locator: entidadUrl(issuer.rut, mm, aa),
+      fiscalYear,
+      fiscalPeriod,
+      periodType,
+      description: `${issuer.cmfIssuerName} (RUT ${issuer.rut}) — candidate period ${mm}/${aa} (existence unconfirmed until fetched)`,
+    }
+  })
+}
+
 export const cmfXbrlProvider: FinancialsProvider = {
   providerId: CMF_XBRL_PROVIDER_ID,
   providerName: 'CMF XBRL (Estados Financieros IFRS)',
@@ -128,20 +192,7 @@ export const cmfXbrlProvider: FinancialsProvider = {
         },
       }
     }
-
-    const refs: FinancialFilingRef[] = candidateRecentPeriods(4).map(({ mm, aa }) => {
-      const { fiscalYear, fiscalPeriod, periodType } = periodToFiscal(mm, aa)
-      return {
-        ticker,
-        sourceType: 'xbrl',
-        locator: entidadUrl(issuer.rut, mm, aa),
-        fiscalYear,
-        fiscalPeriod,
-        periodType,
-        description: `${issuer.cmfIssuerName} (RUT ${issuer.rut}) — candidate period ${mm}/${aa} (existence unconfirmed until fetched)`,
-      }
-    })
-    return { ok: true, value: refs }
+    return { ok: true, value: buildFilingRefs(ticker, candidateRecentPeriods(4)) }
   },
 
   async fetchFiling(ref: FinancialFilingRef): Promise<FinancialProviderResult<FinancialRawFiling>> {
@@ -188,19 +239,41 @@ export const cmfXbrlProvider: FinancialsProvider = {
       }
     }
 
-    // Note: the real response is a ZIP archive containing the .xbrl instance
-    // plus supporting .xsd/.xml files. Unzipping is intentionally out of
-    // scope for this raw-fetch step (no zip library dependency is added in
-    // this phase) — parseFiling() below expects an already-extracted .xbrl
-    // instance document string. See docs/cmf_xbrl_provider_discovery.md
-    // Section 4 for why the real downloaded archives were not committed.
-    const buf = await download.arrayBuffer()
+    // Phase 8C.2 — the response is a ZIP archive containing the .xbrl instance
+    // plus companion .xsd/.xml taxonomy files. We unzip it in memory with a
+    // dependency-free reader (node:zlib), extract the .xbrl instance, and
+    // return its text as the raw filing. A taxonomy-only archive (no .xbrl
+    // instance — e.g. one of CMF's blank taxonomy packs) is rejected here so it
+    // is never treated as a financial filing.
+    const buf = Buffer.from(await download.arrayBuffer())
+    const unzipped = unzip(buf)
+    if (!unzipped.ok) {
+      return {
+        ok: false,
+        error: { code: 'parse_error', reason: `downloaded a ${buf.byteLength}-byte archive but could not unzip it: ${unzipped.error.code} — ${unzipped.error.reason}`, nextAction: 'Verify the download is a real ZIP; if CMF changed the archive format, update the unzip reader.' },
+      }
+    }
+    if (isTaxonomyOnlyArchive(unzipped.entries)) {
+      return {
+        ok: false,
+        error: { code: 'not_found', reason: `archive contains only taxonomy/schema files (.xsd/.xml), no .xbrl instance — this is a taxonomy pack, not a financial filing`, nextAction: 'Confirm the entidad page linked an actual filing, not a taxonomy download.' },
+      }
+    }
+    const instance = findXbrlInstance(unzipped.entries)
+    if (!instance) {
+      return {
+        ok: false,
+        error: { code: 'not_found', reason: `archive (${unzipped.entries.length} entries) had no .xbrl instance document`, nextAction: 'Verify manually — the filing may use an unexpected archive layout.' },
+      }
+    }
     return {
-      ok: false,
-      error: {
-        code: 'not_implemented',
-        reason: `downloaded a real ${buf.byteLength}-byte ZIP archive successfully, but this provider does not unzip it (no zip dependency added in this phase — see discovery doc Section 4)`,
-        nextAction: 'Add a zip-extraction step (or a documented manual unzip step) before this filing can be parsed end-to-end. parseFiling()/parseXbrlInstance() are ready for the extracted .xbrl text once available.',
+      ok: true,
+      value: {
+        ref,
+        raw: instance.data.toString('utf8'),
+        fetchedAt: new Date().toISOString(),
+        sourceFile: buildSourceFileName(ref),
+        sourceUrl: ref.locator,
       },
     }
   },
@@ -236,23 +309,52 @@ export const cmfXbrlProvider: FinancialsProvider = {
 
     const ref = parsed.ref
     const nowIso = new Date().toISOString()
+
+    // Phase 8C.2 — build the target period this filing is about, then select
+    // ONLY facts on the current period's contexts (the income/cash duration
+    // ending on the period end + the period-end instant for balance items).
+    // This replaces the Phase 8C.1 "first plain context wins" heuristic, which
+    // could have grabbed a prior-year comparative or a YTD figure where a
+    // discrete period was intended (see periodClassify.ts).
+    const mm = monthForFiscalPeriod(ref.fiscalPeriod)
+    const target: TargetPeriod | null = ref.fiscalYear ? buildTargetPeriod(mm, String(ref.fiscalYear)) : null
+    if (!target) {
+      return { ok: false, error: { code: 'parse_error', reason: `could not build a target period for ${ref.ticker} ${ref.fiscalPeriod}/${ref.fiscalYear}`, nextAction: 'Verify the filing ref carries a valid fiscal year and period.' } }
+    }
+
+    const { durationIds, instantIds } = currentPeriodContextIds(instance.contexts, target)
     const facts = plainFacts(instance)
+
     const statementItems: StatementItemImportRow[] = []
     const seen = new Set<string>()
 
     for (const fact of facts) {
       const mapping = mapConcept(fact.concept)
-      if (!mapping) continue // unmapped concepts are preserved in warnings, not silently discarded from the wider parse — see conceptMap.ts KNOWN_UNMAPPED_CONCEPTS for documented rejections
+      // Unmapped concepts are not silently discarded from the wider parse —
+      // they remain in the instance for the orchestrator to count/report as a
+      // diagnostic (see countUnmappedPlainConcepts). They are simply not turned
+      // into a normalized line item here.
+      if (!mapping) continue
+      // Only accept the fact if it sits on the correct CURRENT context for its
+      // statement kind: balance-sheet items on the current period-end instant,
+      // income/cash items on the current duration (YTD/annual). A fact on a
+      // prior-year or non-current context is skipped, not mis-attributed.
+      const isBalance = mapping.statementType === 'balance'
+      const onCurrentContext = isBalance ? instantIds.has(fact.contextRef) : durationIds.has(fact.contextRef)
+      if (!onCurrentContext) continue
+
       const key = mapping.lineItemCode
-      if (seen.has(key)) continue // first plain-context match wins; duplicates across equivalent plain contexts are not expected but guarded
+      if (seen.has(key)) continue // one value per line item per period
+      seen.add(key)
+
       const value = factNumericValue(fact)
       const unit = findUnit(instance, fact.unitRef)
-      seen.add(key)
+      const ctx = findContext(instance, fact.contextRef)
       statementItems.push({
         ticker: ref.ticker,
         fiscalYear: ref.fiscalYear ?? 0,
         fiscalPeriod: (ref.fiscalPeriod ?? 'FY') as StatementItemImportRow['fiscalPeriod'],
-        periodType: (ref.periodType ?? 'annual') as StatementItemImportRow['periodType'],
+        periodType: target.periodType as StatementItemImportRow['periodType'],
         statementType: mapping.statementType,
         lineItemCode: mapping.lineItemCode,
         lineItemName: mapping.lineItemCode,
@@ -264,42 +366,63 @@ export const cmfXbrlProvider: FinancialsProvider = {
         sourceUrl: ref.locator,
         sourceFile: buildSourceFileName(ref),
         sourceAsOf: nowIso,
+        // Raw XBRL fact provenance → persisted into the row's metadata jsonb.
+        metadata: {
+          sourceConcept: fact.concept,
+          contextRef: fact.contextRef,
+          unitRef: fact.unitRef,
+          decimals: fact.decimals,
+          mappingConfidence: mapping.confidence,
+          periodNature: isBalance ? 'instant' : target.periodNature,
+          contextInstant: ctx?.instant ?? null,
+          contextStart: ctx?.startDate ?? null,
+          contextEnd: ctx?.endDate ?? null,
+        },
       })
     }
 
     if (statementItems.length === 0) {
       return {
         ok: false,
-        error: { code: 'parse_error', reason: 'no mappable concepts found in this filing (all facts were either dimensional or unmapped)', nextAction: 'Extend XBRL_CONCEPT_MAP in conceptMap.ts only after verifying the concept against a real fact.' },
+        error: { code: 'parse_error', reason: `no mappable current-period concepts found for ${ref.ticker} ${target.filingPeriodLabel} (all facts were dimensional, unmapped, or on a non-current/comparative context)`, nextAction: 'Verify the period exists in the filing and extend XBRL_CONCEPT_MAP only after confirming a concept against a real fact.' },
       }
     }
+
+    // Currency is read from whichever unit the mapped facts actually used
+    // (Copec's real filings are entirely in USD, not CLP — discovery doc) —
+    // never assumed.
+    const currency = statementItems.find((i) => i.unit === 'CLP' || i.unit === 'USD')?.unit ?? null
 
     const reportingPeriod: ReportingPeriodImportRow = {
       ticker: ref.ticker,
       fiscalYear: ref.fiscalYear ?? 0,
       fiscalPeriod: (ref.fiscalPeriod ?? 'FY') as ReportingPeriodImportRow['fiscalPeriod'],
-      periodType: (ref.periodType ?? 'annual') as ReportingPeriodImportRow['periodType'],
-      periodEndDate: instance.contexts.find((c) => c.instant || c.endDate)?.instant ?? instance.contexts.find((c) => c.endDate)?.endDate ?? '',
+      periodType: target.periodType as ReportingPeriodImportRow['periodType'],
+      periodEndDate: target.periodEndDate,
       reportDate: null,
-      // Currency is read from whichever unit the mapped facts actually used
-      // (Copec's real 2023 filing was entirely in USD, not CLP — see the
-      // discovery doc) — never assumed.
-      currency: statementItems.find((i) => i.unit === 'CLP' || i.unit === 'USD')?.unit ?? 'CLP',
+      currency: currency ?? 'CLP',
       sourceType: 'xbrl',
       sourceName: 'CMF XBRL (Estados Financieros IFRS)',
       sourceUrl: ref.locator,
       sourceFile: buildSourceFileName(ref),
       sourceAsOf: nowIso,
+      periodStartDate: target.periodStartDate,
+      periodNature: target.periodNature,
+      filingPeriodLabel: target.filingPeriodLabel,
     }
 
     return {
       ok: true,
       value: {
-        reportingPeriods: reportingPeriod.periodEndDate ? [reportingPeriod] : [],
+        reportingPeriods: [reportingPeriod],
         statementItems,
         metrics: [],
         earningsEvents: [],
-        errors: reportingPeriod.periodEndDate ? [] : [{ line: 0, reason: 'could not determine period_end_date from any context — reporting period row skipped, statement items still returned for review' }],
+        errors: [],
+        // Diagnostics for the orchestrator/validator — not persisted rows.
+        // (FinancialImportPayload carries only the four row arrays + errors;
+        // the orchestrator recomputes unmapped/validation itself, so this is
+        // conveyed via the statement item count and metadata.)
       },
     }
   },

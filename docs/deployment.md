@@ -438,10 +438,31 @@ in this phase runs automatically on deploy or on a schedule.
 ```bash
 npm run discover:cmf-financials                    # feasibility report, no network calls
 npm run ingest:cmf-financials:dry -- --ticker COPEC # real fetch attempt against live cmfchile.cl, no writes
-npm run ingest:cmf-financials -- --ticker COPEC --write # writes only if the dry run is valid (currently blocked at the unzip step — see docs/cmf_xbrl_provider_discovery.md)
 ```
 
 See `docs/cmf_xbrl_provider_discovery.md` for the full feasibility assessment and exactly what was verified.
+
+## Phase 8C.2 — CMF/XBRL Automated Financials Ingestion (LIVE)
+
+**No new migration, no new env vars.** Adds a dependency-free ZIP reader (`node:zlib`), honest period-matching,
+extended concept map + validation, an ingestion orchestrator, a **manually-triggered reviewable cron route**
+(`GET /api/cron/financials/cmf-xbrl`, Bearer `CRON_SECRET`), and a public status route
+(`GET /api/financials/cmf-xbrl/status`). Honest-period metadata + raw fact provenance reuse the existing
+`metadata` jsonb columns — **no schema change**.
+
+**Not on a Vercel cron schedule** (the CMF entidad.php surface is undocumented HTML) — ingestion is run on
+demand and reviewed. `vercel.json` is unchanged.
+
+```bash
+# real end-to-end ingestion (now works — unzips + parses + validates + writes xbrl financials)
+npm run ingest:cmf-financials -- --ticker COPEC --write --periods 1
+# or via the protected route:
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  "https://nevada-market-intelligence.vercel.app/api/cron/financials/cmf-xbrl?ticker=COPEC&periods=1"
+```
+
+Automated `xbrl` financials (priority 210) supersede `manual_csv` (100) for the same period automatically.
+See `docs/cmf_xbrl_financials_ingestion.md` for the full pipeline.
 
 ## Phase 9A — Structured Notes (PDF extraction foundation)
 

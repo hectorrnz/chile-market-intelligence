@@ -321,6 +321,17 @@ against exactly this schema, after verifying via `docs/cmf_xbrl_provider_discove
 statements are downloadable without CAPTCHA. It normalizes into the identical `FinancialImportPayload` shape
 manual CSV produces, so no columns above changed to accommodate it.
 
+**Phase 8C.2 — the `xbrl` source is now LIVE and populated.** The pipeline downloads a mapped issuer's CMF
+filing, unzips it (dependency-free `node:zlib`), parses the `.xbrl` instance, matches facts to the current
+period (excluding prior-year comparatives; honest annual/YTD/instant labeling), and writes `source_type = 'xbrl'`
+rows that **supersede** manual CSV (priority 210 > 100) for the same period — verified live for SQM-B and
+COPEC (both file in USD). **No new migration**: honest-period metadata (`period_start_date`, `period_nature`,
+`filing_period_label`) and per-fact provenance (source concept, contextRef, unit, decimals, mapping confidence)
+are stored in the existing `metadata` jsonb columns on `company_reporting_periods` and
+`financial_statement_items`, mirroring the 9D/9E approach. Missing concepts stay missing (never zero);
+`period_nature` ∈ `annual`/`quarterly_discrete`/`year_to_date`/`instant`. See
+`docs/cmf_xbrl_financials_ingestion.md`.
+
 **Provenance/supersession columns — present on all 4 tables below** (added by migration
 `20260705000000_financials_automation_ready.sql`):
 
