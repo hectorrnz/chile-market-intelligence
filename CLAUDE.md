@@ -390,6 +390,72 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 8C.4 — Full CMF/XBRL Coverage Discovery Sweep + Controlled Issuer Enablement + Bank Registry Track** ✓ COMPLETE (2026-07-08)
+
+Runs a full discovery sweep over the entire 25-stock app universe, expands enabled CMF/XBRL coverage from 5 to
+**15 issuers**, gives every stock an explicit coverage classification, and confirms the separate bank track.
+No new migration, no new dependency, no concept-map change.
+
+**Discovery sweep:** matched all 25 app legal names against CMF's own official RVEMI `sociedad[]` directory
+(483 entries). 19 exact-matched; FALABELLA/MALLPLAZA matched on razón social (legal-name-form difference,
+cross-checked against the entidad.php razón social); all 4 banks matched **nothing** under any registry group
+(`rg_rf=RVEMI/RGEIN/RGB/RB/BANC` all return the identical securities list — zero banks). Each non-bank
+candidate then had its full entidad.php → XBRL ZIP → parse chain exercised live (FY2025). Reproducible via
+`npm run discover:cmf-coverage` (+ `--live`) and the pure classifier `src/lib/financials/cmfCoverage.ts`.
+
+**Enabled batch (+10, now 15 total):** LAS-CONDES (93930000), CAP (91297000), ENELAM (94271000), COLBUN
+(96505760), AGUAS-A (61808000), RIPLEY (99579730), PARAUCO (94627000), ENTEL (92580000), CCU (90413000), LTM
+(89862200) — each RUT-verified against CMF's directory + a clean live FY2025 dry-run. Currency read per fact
+(USD: CAP/ENELAM/COLBUN/LTM; CLP: the rest). **Production write: 15 enabled issuers, 422 rows, 0 failures, all
+`valid_with_warnings`.**
+
+**Deferred (+3 `eligible_verified`):** CONCHATORO (exact match, deferred to keep the batch at 10), FALABELLA
+("FALABELLA S.A." vs app "S.A.C.I. Falabella"), MALLPLAZA ("PLAZA S.A." vs trading name "Mall Plaza") — all
+verified + dry-run clean, deferred one batch for conservatism.
+
+**Critical safety change:** the default ingestion set is now `getEnabledTickers()` (15), NOT
+`getMappedTickers()` (18). `eligible_verified` issuers are **never** written by a default/cron run — only
+reachable via an explicit `?ticker=`/`--ticker` dry-run. This means adding a verified-but-deferred issuer to
+the map can never trigger an unintended production write. Enforced by tests.
+
+**Coverage funnel (all 25 stocks):** 15 `enabled` · 3 `eligible_verified` · 3 `unsupported_page_shape` · 4
+`bank_track_required`. Exposed via `/api/financials/cmf-xbrl/status` (`coverageFunnel`, `eligibleVerifiedIssuers`).
+
+**`unsupported_page_shape` (3):** SONDA, ANDINA-B, VAPORES download a **real** XBRL instance, but in a dialect
+the current `xbrli:`-prefixed regex parser can't extract (SONDA: default/unprefixed XBRL namespace;
+ANDINA-B/VAPORES: "CTI Service" ISO-8859-1 generator) → 0 facts. The RUTs are directory-verified; the filing
+exists — only parser dialect support is missing, deferred to a future phase. Not a coverage gap, not enabled.
+
+**Bank track (`bank_track_required`, 4):** BSANTANDER, CHILE, BCI, ITAUCL are confirmed **absent** from the
+securities-issuer XBRL directory under every registry group. Banks report under CMF's separate "Bancos e
+Instituciones Financieras" track with a **bank-specific taxonomy** (net interest income, loan-loss provisions —
+not revenue/EBITDA/gross profit) that **must never be forced into the industrial concept map**. No programmatic
+bank-XBRL path was verified this phase → `bank_track_required` (not `bank_track_discovered`). Bank RUTs are not
+guessed. A bank-specific ingestion track (its own concept map + fields) is deferred future work.
+
+**No concept-map change:** all 13 verified candidates validated cleanly against the existing ~31-concept map;
+adding mappings without a concrete gap would violate the evidence-only rule.
+
+**New/changed files:** `src/lib/financials/cmfCoverage.ts` (new — pure coverage classifier + funnel);
+`src/lib/financials/cmfIssuerMap.ts` (10 enabled + 3 eligible entries, `coverageStatus`/`registryGroup` fields,
+`getEnabledTickers`/`getEligibleVerifiedTickers`/`isCmfIssuerEnabled`, 4 banks + 3 unsupported documented);
+`scripts/discover/cmfCoverageSweep.ts` (new sweep CLI, `npm run discover:cmf-coverage`);
+`runCmfXbrlIngestion.ts` + cron route (default to enabled-only); status route (`coverageFunnel`);
+`tests/financialsCmfXbrl.test.ts` (53→65). Full suite 999/999, lint 0, build 0 errors.
+
+**Cron remains unscheduled** — 15 issuers is broader but still an undocumented HTML surface.
+
+Scope limits (explicit): CMF/XBRL coverage discovery + controlled non-bank enablement only; annual filings
+only; no interim/YTD; no new cron schedule; no paid/vendor APIs; no Bloomberg; no CAPTCHA bypass; no Hechos
+Esenciales scraping; no News/FX/rates/calendar; Structured Notes/auth/watchlist/portfolio/macro untouched; no
+UI redesign; no new dependency; no bank production ingestion (path + mapping deferred).
+
+Next: promote the 3 `eligible_verified` issuers; add parser support for the 2 extra XBRL dialects (SONDA
+default-namespace; CTI Service ISO-8859-1); build a bank-specific CMF/XBRL track; or **Phase 8D** (FX/rates +
+economic calendar) / **Phase 9F** (Santander + older-2024-Citi parser).
+
+---
+
 **Phase 8C.3 — CMF/XBRL Issuer Coverage Expansion** ✓ COMPLETE (2026-07-08)
 
 Expands CMF/XBRL issuer coverage from 2 to 5 issuers using a conservative, verified, issuer-by-issuer

@@ -1,4 +1,4 @@
-# CMF/XBRL Automated Financials Ingestion (Phase 8C.2 / 8C.3)
+# CMF/XBRL Automated Financials Ingestion (Phase 8C.2 / 8C.3 / 8C.4)
 
 Turns the Phase 8C.1 CMF/XBRL proof-of-concept into a **working, end-to-end automated financials ingestion
 pipeline** for Chile issuers, writing into the same source-agnostic financials tables manual CSV uses. This
@@ -8,6 +8,15 @@ issuer financials where a public CMF filing exists. Manual CSV remains a fallbac
 **Phase 8C.3** expanded issuer coverage from 2 to 5 (SQM-B, COPEC, ENELCHILE, CMPC, CENCOSUD) using a
 conservative, verified, issuer-by-issuer process — see §4 for the verification method and §12 for the
 strengthened bank-registry finding (BSANTANDER, and now also CHILE/Banco de Chile, confirmed unmappable).
+
+**Phase 8C.4** ran a **full coverage discovery sweep** over the entire 25-stock app universe and expanded
+enabled coverage from 5 to **15 issuers** (added LAS-CONDES, CAP, ENELAM, COLBUN, AGUAS-A, RIPLEY, PARAUCO,
+ENTEL, CCU, LTM), with **3 more verified-but-deferred** (CONCHATORO, FALABELLA, MALLPLAZA), **3 real filings
+the current parser can't yet read** (SONDA, ANDINA-B, VAPORES — different XBRL dialects), and **4 banks
+confirmed on a separate CMF track** (BSANTANDER, CHILE, BCI, ITAUCL). Every app stock now has an explicit
+coverage classification (§4c) surfaced through the status endpoint's coverage funnel. A coverage sweep CLI
+(`npm run discover:cmf-coverage`) and a pure classifier (`src/lib/financials/cmfCoverage.ts`) make the funnel
+reproducible.
 
 Companion docs: `docs/cmf_xbrl_provider_discovery.md` (8C.1 discovery — how the CMF surface was verified),
 `docs/data_dictionary.md` (financials schema), `docs/data_source_status.md` (source matrix).
@@ -69,19 +78,49 @@ is why ingestion is **manually triggered and reviewable, not yet on an unattende
 
 ## 4. Supported issuers
 
-Only issuers with a RUT verified against a direct cmfchile.cl source are enabled (`src/lib/financials/cmfIssuerMap.ts`):
+Only issuers with a RUT verified against a direct cmfchile.cl source are enabled (`src/lib/financials/cmfIssuerMap.ts`).
+As of Phase 8C.4, **15 issuers are `enabled`** (production-ingested) and **3 are `eligible_verified`**
+(RUT-verified + dry-run clean, deferred to a later batch — never written by the default run). Currency is
+read per fact, never assumed.
 
-| Ticker | CMF issuer | RUT | Currency | Status |
+**Enabled (15):**
+
+| Ticker | CMF issuer | RUT | Currency | Enabled in |
 |---|---|---|---|---|
-| SQM-B | Sociedad Química y Minera de Chile S.A. | 93007000 | USD | Verified — full XBRL download + parse confirmed live in 8C.2 |
-| COPEC | Empresas Copec S.A. | 90690000 | USD | Verified — full end-to-end ingestion confirmed live |
-| ENELCHILE | Enel Chile S.A. | 76536353 | USD (FY2025) / CLP (FY2024) | Verified (8C.3) — full end-to-end ingestion confirmed live; **currency changed between fiscal years** (see below) |
-| CMPC | Empresas CMPC S.A. | 90222000 | USD | Verified (8C.3) — full end-to-end ingestion confirmed live |
-| CENCOSUD | Cencosud S.A. | 93834000 | CLP | Verified (8C.3) — full end-to-end ingestion confirmed live |
-| BSANTANDER | Banco Santander-Chile | — | — | **Not configured — do not guess.** See §4a. |
-| CHILE | Banco de Chile | — | — | **Not configured — do not guess.** See §4a. |
+| SQM-B | Sociedad Química y Minera de Chile S.A. | 93007000 | USD | 8C.2 |
+| COPEC | Empresas Copec S.A. | 90690000 | USD | 8C.2 |
+| ENELCHILE | Enel Chile S.A. | 76536353 | USD (FY2025) / CLP (FY2024) | 8C.3 |
+| CMPC | Empresas CMPC S.A. | 90222000 | USD | 8C.3 |
+| CENCOSUD | Cencosud S.A. | 93834000 | CLP | 8C.3 |
+| LAS-CONDES | Clínica Las Condes S.A. | 93930000 | CLP | 8C.4 |
+| CAP | CAP S.A. | 91297000 | USD | 8C.4 |
+| ENELAM | Enel Américas S.A. | 94271000 | USD | 8C.4 |
+| COLBUN | Colbún S.A. | 96505760 | USD | 8C.4 |
+| AGUAS-A | Aguas Andinas S.A. | 61808000 | CLP | 8C.4 |
+| RIPLEY | Ripley Corp S.A. | 99579730 | CLP | 8C.4 |
+| PARAUCO | Parque Arauco S.A. | 94627000 | CLP | 8C.4 |
+| ENTEL | Empresa Nacional de Telecomunicaciones S.A. | 92580000 | CLP | 8C.4 |
+| CCU | Compañía Cervecerías Unidas S.A. | 90413000 | CLP | 8C.4 |
+| LTM | LATAM Airlines Group S.A. | 89862200 | USD | 8C.4 |
 
-RUTs are **never guessed**. Adding an issuer requires confirming its RUT against a direct CMF source first.
+**Eligible-verified (3, deferred — dry-run clean, RUT-verified, not yet production-written):**
+
+| Ticker | CMF issuer (razón social) | RUT | Note |
+|---|---|---|---|
+| CONCHATORO | Viña Concha y Toro S.A. | 90227000 | Deferred to keep the 8C.4 batch at 10 |
+| FALABELLA | FALABELLA S.A. | 90749000 | App legalName "S.A.C.I. Falabella" — name-form difference, razón-social-confirmed; deferred one batch |
+| MALLPLAZA | PLAZA S.A. | 76017019 | Trades as "Mall Plaza"; registered "Plaza S.A." — razón-social-confirmed; deferred one batch |
+
+**Not ingestible (documented, not guessed):**
+
+| Ticker | Reason | Coverage status |
+|---|---|---|
+| SONDA | Real XBRL filing, but default-namespace (unprefixed) dialect the current parser can't read | `unsupported_page_shape` |
+| ANDINA-B | Real XBRL filing, but "CTI Service" ISO-8859-1 dialect the current parser can't read | `unsupported_page_shape` |
+| VAPORES | Real XBRL filing, but "CTI Service" ISO-8859-1 dialect the current parser can't read | `unsupported_page_shape` |
+| BSANTANDER, CHILE, BCI, ITAUCL | Banks — absent from the securities-issuer XBRL directory; separate CMF banking track | `bank_track_required` |
+
+RUTs are **never guessed**. Adding an issuer requires confirming its RUT against CMF's own directory first (§4a/§4c).
 
 ### 4a. Verification method (Phase 8C.3)
 
@@ -109,6 +148,49 @@ no USD); its FY2025 filing reports entirely in **USD** (confirmed: unit block co
 `pure`/`shares`/`USD`, zero CLP facts; the entity identifier `76536353-5` matches in both, ruling out a
 wrong-entity mixup). This is exactly why currency is always read per-fact from the XBRL unit block and
 recorded on the reporting period, never assumed or cached from a prior year.
+
+### 4c. Full coverage classification (Phase 8C.4)
+
+Phase 8C.4 classified **every** app stock into a single CMF/XBRL coverage status, so no name is left
+unaccounted for. The pure classifier lives in `src/lib/financials/cmfCoverage.ts` (`classifyTickerCoverage`,
+`buildCmfCoverageReport`); a reproducible sweep CLI is `npm run discover:cmf-coverage` (add `--live` to
+cross-check every stock's legal name against CMF's live directory). The status endpoint
+(`/api/financials/cmf-xbrl/status`) exposes the full funnel.
+
+The 25-stock app universe currently funnels to:
+
+| Coverage status | Count | Tickers |
+|---|---|---|
+| `enabled` | 15 | SQM-B, COPEC, ENELCHILE, CMPC, CENCOSUD, LAS-CONDES, CAP, ENELAM, COLBUN, AGUAS-A, RIPLEY, PARAUCO, ENTEL, CCU, LTM |
+| `eligible_verified` | 3 | CONCHATORO, FALABELLA, MALLPLAZA |
+| `unsupported_page_shape` | 3 | SONDA, ANDINA-B, VAPORES |
+| `bank_track_required` | 4 | BSANTANDER, CHILE, BCI, ITAUCL |
+
+The status type also defines (for a broader future universe) `candidate_needs_review`, `missing_rut`,
+`not_found_in_cmf_directory`, `no_xbrl_filing_found`, `taxonomy_only`, `bank_track_discovered`,
+`bank_xbrl_mapping_required`, `foreign_or_not_cmf_eligible`, `etf_or_index_not_cmf_eligible`,
+`inactive_or_delisted`, `unsupported_security_type`, `review_required`, `not_configured` — none of which the
+current 25-stock universe hits, but which let the same model classify an expanded universe without a reshape.
+
+**Discovery-sweep method (8C.4):** the sweep matched all 25 app legal names against CMF's own RVEMI
+`sociedad[]` directory (483 entries); 19 exact-matched (5 already enabled + 14 candidates), FALABELLA and
+MALLPLAZA matched on razón social with a legal-name-form difference, and the 4 banks matched **nothing** under
+any registry group (`rg_rf=RVEMI/RGEIN/RGB/RB/BANC` all return the identical securities list — zero banks).
+Each of the 16 non-bank candidates then had its full entidad.php → XBRL → parse chain exercised live (FY2025):
+13 parsed clean (→ enabled/eligible), 3 (SONDA/ANDINA-B/VAPORES) downloaded a real instance that the current
+`xbrli:`-prefixed regex parser can't extract (→ `unsupported_page_shape`, deferred — the filing exists, the
+parser dialect support does not).
+
+### 4d. Banking-sector track (Phase 8C.4)
+
+Chilean banks (BSANTANDER, CHILE, BCI, ITAUCL) are **confirmed absent** from CMF's securities-issuer XBRL
+directory under every registry group the tool exposes. They are supervised under CMF's separate "Bancos e
+Instituciones Financieras" track (former SBIF), which uses a **bank-specific accounting taxonomy** — net
+interest income, loan-loss provisions, and regulatory-capital line items, *not* revenue / EBITDA / gross
+profit. That taxonomy **must never be forced into the industrial concept map**. This phase did not verify a
+programmatic bank-XBRL download path, so all 4 banks are classified `bank_track_required` (path exists at CMF
+but not yet verified/mapped here) rather than `bank_track_discovered`. Bank RUTs are **not guessed**. Building
+a bank-specific ingestion path (its own concept map + normalized fields) is deferred future work.
 
 ## 5. Pipeline architecture
 
@@ -231,6 +313,10 @@ reports `sourceType`; a ticker with both manual and XBRL periods surfaces the au
 ## 10. How to run
 
 ```bash
+# full coverage funnel over the app universe (no writes); add --live for a CMF directory cross-check
+npm run discover:cmf-coverage
+npm run discover:cmf-coverage -- --live
+
 # feasibility report (no network, no writes)
 npm run discover:cmf-financials
 
@@ -268,16 +354,34 @@ The concept-map expansion (§ Concept mapping and confidence) also **increased m
 pre-existing SQM-B/COPEC** (23→29 and 23/24→24 fields respectively), since the new debt/shares/capex/dividend
 concepts turned out to be broadly used, not issuer-specific.
 
+## 11b. Phase 8C.4 — coverage sweep + 10-issuer batch, production-validated
+
+Real production write (Supabase, no separate staging environment) of the full **15-issuer enabled set** for
+FY2025 in one run: **422 rows written, 0 issuers failed**, all `valid_with_warnings`. The 10 newly-enabled
+issuers wrote (rows = 1 period + line items): LAS-CONDES 28 (CLP), CAP 30 (USD), ENELAM 26 (USD), COLBUN 26
+(USD), AGUAS-A 25 (CLP), RIPLEY 30 (CLP), PARAUCO 28 (CLP), ENTEL 27 (CLP), CCU 28 (CLP), LTM 31 (USD) — the
+existing 5 re-wrote idempotently. Currency was read per fact in every case (USD vs CLP as filed). No concept
+mappings were added this phase: all 13 verified candidates validated cleanly against the existing ~31-concept
+map (extending it without a concrete gap would violate the evidence-only rule), so §"Concept mapping" is
+unchanged. The default ingestion set is now `getEnabledTickers()` (15) — the 3 `eligible_verified` issuers are
+**never** written by a default/cron run, only by an explicit `?ticker=`/`--ticker` dry-run.
+
 ## 12. Remaining gaps and future work
 
 - **Only annual filings** are ingested by default; interim (YTD) filings are supported by the provider but need
   clear YTD-vs-discrete handling before charting — a documented future enhancement.
-- **5 issuers are mapped** (SQM-B, COPEC, ENELCHILE, CMPC, CENCOSUD as of Phase 8C.3). Expanding further is
-  manual, per-issuer RUT verification against CMF's official directory (§4a) — banks (BSANTANDER, CHILE) are
-  confirmed structurally unmappable via this tool, not merely unresearched.
-- **Not scheduled** — manual/reviewable runs only until the HTML surface's stability is observed.
+- **15 issuers are enabled** (as of Phase 8C.4), **3 more are `eligible_verified`** and can be promoted with a
+  one-line `coverageStatus` flip + a production write. Expanding further is per-issuer RUT verification against
+  CMF's official directory (§4a/§4c).
+- **3 real filings are unreadable by the current parser** (SONDA default-namespace dialect; ANDINA-B/VAPORES
+  CTI-Service ISO-8859-1 dialect) — `unsupported_page_shape`. Supporting these dialects is a bounded future
+  parser enhancement; the RUTs are already directory-verified.
+- **4 banks are `bank_track_required`** — a separate CMF banking track with a bank-specific taxonomy (§4d).
+  Building a bank-XBRL path (its own concept map + normalized fields) is deferred; the industrial concept map
+  must never be forced onto bank filings.
+- **Not scheduled** — manual/reviewable runs only until the HTML surface's stability is observed; 15 issuers is
+  broader but still an undocumented HTML surface.
 - **No unzip of the taxonomy/definition companions** for label resolution — the concept map keys off the
   stable `ifrs-full` concept names instead.
-- Future options: broader issuer coverage; an official CMF API if one is ever published; a licensed vendor
-  feed; document-ingestion for non-XBRL (older/bank) filings. Bank FECU forms (e.g. BSANTANDER) sit on a
-  different registry track and are out of scope here.
+- Future options: promote the eligible_verified batch; add parser support for the two extra XBRL dialects; a
+  bank-specific ingestion track; an official CMF API if one is ever published; a licensed vendor feed.

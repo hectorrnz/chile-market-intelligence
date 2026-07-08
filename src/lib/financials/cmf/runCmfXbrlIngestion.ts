@@ -20,7 +20,7 @@
 // Server-only (the write path imports the admin client lazily). No secrets are
 // ever echoed; errors are sanitized to bounded strings.
 
-import { getMappedTickers, getCmfIssuer } from '../cmfIssuerMap.ts'
+import { getEnabledTickers, getCmfIssuer } from '../cmfIssuerMap.ts'
 import {
   cmfXbrlProvider,
   candidateAnnualPeriods,
@@ -243,7 +243,10 @@ async function ingestIssuer(
  */
 export async function runCmfXbrlIngestion(options: RunCmfXbrlIngestionOptions = {}): Promise<CmfXbrlIngestionSummary> {
   const startedAt = (options.now ?? new Date()).toISOString()
-  const tickers = (options.tickers && options.tickers.length > 0 ? options.tickers : getMappedTickers()).map((t) => t.toUpperCase())
+  // Default ingestion set is ENABLED issuers only. eligible_verified issuers
+  // are never written by a default run — they must be targeted explicitly by
+  // ticker (dry-run) until promoted to 'enabled'.
+  const tickers = (options.tickers && options.tickers.length > 0 ? options.tickers : getEnabledTickers()).map((t) => t.toUpperCase())
   const annualPeriods = candidateAnnualPeriods(options.annualPeriodsPerIssuer ?? 1, options.now ?? new Date())
   const write = options.write ?? false
   const minValidationToWrite = options.minValidationToWrite ?? 'review_required' // by default, write anything that isn't hard-invalid; 'review_required' rows are written but flagged

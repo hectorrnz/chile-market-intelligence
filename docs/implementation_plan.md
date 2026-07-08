@@ -894,6 +894,37 @@ completion) — or **Phase 9F** (Santander / older-2024-Citi structured-notes pa
 
 ---
 
+## Phase 8C.4 — Full CMF/XBRL Coverage Discovery Sweep + Controlled Issuer Enablement + Bank Registry Track ✓ COMPLETE (2026-07-08)
+
+Full discovery sweep over the 25-stock app universe; enabled CMF/XBRL coverage 5 → 15 issuers; every stock
+classified into a coverage funnel; separate bank track confirmed. No new migration, dependency, or concept-map
+change.
+
+- **Sweep:** matched all 25 app legal names against CMF's own RVEMI `sociedad[]` directory (483 entries); each
+  non-bank candidate's full entidad.php→XBRL→parse chain exercised live (FY2025). CLI `npm run
+  discover:cmf-coverage` (+ `--live`) + pure classifier `src/lib/financials/cmfCoverage.ts`.
+- **Enabled (+10):** LAS-CONDES, CAP, ENELAM, COLBUN, AGUAS-A, RIPLEY, PARAUCO, ENTEL, CCU, LTM — RUT-verified
+  + clean live dry-run; currency per fact. **Production write: 15 enabled issuers, 422 rows, 0 failures.**
+- **Deferred (+3 eligible_verified):** CONCHATORO, FALABELLA, MALLPLAZA. Safety: default ingestion set is now
+  `getEnabledTickers()` — deferred issuers never auto-written (explicit `?ticker=` only).
+- **Funnel (25):** 15 enabled · 3 eligible_verified · 3 `unsupported_page_shape` (SONDA/ANDINA-B/VAPORES — real
+  filings in an XBRL dialect the parser can't read) · 4 `bank_track_required`. Exposed via
+  `/api/financials/cmf-xbrl/status` (`coverageFunnel`).
+- **Banks:** confirmed absent from the securities XBRL directory under every registry group; separate CMF
+  banking track (bank-specific taxonomy, never forced into the industrial map); `bank_track_required`; RUTs not
+  guessed; bank ingestion deferred.
+- **Tests:** 53→65 in `tests/financialsCmfXbrl.test.ts`; full suite 999/999, lint 0, build 0 errors.
+- Cron still unscheduled.
+
+Scope limits: coverage discovery + controlled non-bank enablement only; annual only; no interim/YTD; no cron
+schedule; no paid/vendor APIs; no Bloomberg; no CAPTCHA bypass; no Hechos/News/FX/rates/calendar; Structured
+Notes/auth/watchlist/portfolio/macro untouched; no UI redesign; no new dependency; no bank ingestion.
+
+Next: promote the 3 eligible_verified; add parser support for the 2 extra XBRL dialects; build a bank-specific
+track; or **Phase 8D** / **Phase 9F**.
+
+---
+
 ## Phase 9A — Structured Notes Foundation + Excel Workbook Audit + PDF Extraction MVP ✓ COMPLETE (2026-07-06)
 
 New **Structured Notes** module (`/structured-notes`) — automation-first replacement for the legacy

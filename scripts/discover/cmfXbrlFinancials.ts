@@ -73,7 +73,7 @@ async function main() {
   }
 
   const write = args.mode === 'ingest-write'
-  console.log(write ? `[cmf-xbrl] WRITE MODE${args.ticker ? ` for ${args.ticker}` : ' (all mapped issuers)'}` : `[cmf-xbrl] DRY RUN${args.ticker ? ` for ${args.ticker}` : ' (all mapped issuers)'} — no writes`)
+  console.log(write ? `[cmf-xbrl] WRITE MODE${args.ticker ? ` for ${args.ticker}` : ' (all enabled issuers)'}` : `[cmf-xbrl] DRY RUN${args.ticker ? ` for ${args.ticker}` : ' (all enabled issuers)'} — no writes`)
 
   // Create an ingestion_runs row up front when writing (mirrors the cron route).
   let ingestionRunId: string | null = null
@@ -89,7 +89,7 @@ async function main() {
     }
     const created = await adminDb
       .from('ingestion_runs')
-      .insert({ provider: PROVIDER, job_type: JOB_TYPE, status: 'running', started_at: new Date().toISOString(), metadata: { phase: '8C.2', sourceType: 'xbrl', cli: true, ticker: args.ticker ?? null } })
+      .insert({ provider: PROVIDER, job_type: JOB_TYPE, status: 'running', started_at: new Date().toISOString(), metadata: { phase: '8C.4', sourceType: 'xbrl', cli: true, ticker: args.ticker ?? null } })
       .select('id')
       .single()
     ingestionRunId = created.error ? null : (created.data?.id ?? null)
@@ -118,7 +118,7 @@ async function main() {
       rows_inserted: summary.normalizedFactsPersisted,
       rows_failed: summary.issuersFailed,
       error_message: summary.errors.length > 0 ? summary.errors.slice(0, 5).join('; ') : null,
-      metadata: { phase: '8C.2', sourceType: 'xbrl', status: summary.status },
+      metadata: { phase: '8C.4', sourceType: 'xbrl', status: summary.status },
     }).eq('id', ingestionRunId)
   }
 

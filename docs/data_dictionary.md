@@ -332,6 +332,17 @@ are stored in the existing `metadata` jsonb columns on `company_reporting_period
 `period_nature` ∈ `annual`/`quarterly_discrete`/`year_to_date`/`instant`. See
 `docs/cmf_xbrl_financials_ingestion.md`.
 
+**Phase 8C.4 — full coverage sweep + issuer coverage expanded from 5 to 15 enabled** (added LAS-CONDES, CAP,
+ENELAM, COLBUN, AGUAS-A, RIPLEY, PARAUCO, ENTEL, CCU, LTM; 3 more `eligible_verified`: CONCHATORO, FALABELLA,
+MALLPLAZA). A pure coverage classifier (`src/lib/financials/cmfCoverage.ts`) assigns every app stock a single
+CMF/XBRL coverage status (enabled / eligible_verified / unsupported_page_shape / bank_track_required / …),
+surfaced through the status endpoint's `coverageFunnel` and the `npm run discover:cmf-coverage` sweep. The
+default ingestion set is now enabled-only (`getEnabledTickers()`); eligible_verified issuers are never
+auto-written. 3 issuers (SONDA/ANDINA-B/VAPORES) have real filings in an XBRL dialect the current parser can't
+read (deferred); 4 banks sit on a separate CMF track (never forced into the industrial concept map). No new
+migration, no concept-map change (all new issuers validated against the existing map). See
+`docs/cmf_xbrl_financials_ingestion.md` §4c/§4d/§11b.
+
 **Phase 8C.3 — issuer coverage expanded from 2 to 5** (SQM-B, COPEC, ENELCHILE, CMPC, CENCOSUD), using CMF's
 own official `sociedad[]` issuer directory to verify each new RUT/legal-name pair (stronger evidence than the
 search-engine snippets used in 8C.1). The concept map grew from ~24 to ~31 `ifrs-full` concepts (added

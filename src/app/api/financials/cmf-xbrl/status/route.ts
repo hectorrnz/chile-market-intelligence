@@ -16,7 +16,15 @@
 import { NextResponse } from 'next/server'
 import { getIngestionRuns } from '@/lib/db/repositories/ingestionRunsRepository'
 import { getSourceTypeCoverage } from '@/lib/db/repositories/financialsRepository'
-import { CMF_ISSUER_MAP, UNMAPPED_TICKERS, getMappedTickers } from '@/lib/financials/cmfIssuerMap'
+import {
+  CMF_ISSUER_MAP,
+  UNMAPPED_TICKERS,
+  getMappedTickers,
+  getEnabledTickers,
+  getEligibleVerifiedTickers,
+} from '@/lib/financials/cmfIssuerMap'
+import { buildCmfCoverageReport } from '@/lib/financials/cmfCoverage'
+import { getAllCompanies } from '@/lib/data/companies'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -30,12 +38,15 @@ export async function GET(): Promise<NextResponse> {
   const latestRun = runs[0] ?? null
   const coverageByTicker = new Map(coverage.map((c) => [c.ticker, c]))
 
-  const enabledIssuers = Object.values(CMF_ISSUER_MAP).map((issuer) => {
+  // Per-issuer detail for every mapped issuer (enabled + eligible_verified).
+  const mappedIssuerDetail = Object.values(CMF_ISSUER_MAP).map((issuer) => {
     const cov = coverageByTicker.get(issuer.ticker)
     return {
       ticker: issuer.ticker,
       companyName: issuer.companyName,
       cmfIssuerName: issuer.cmfIssuerName,
+      registryGroup: issuer.registryGroup,
+      coverageStatus: issuer.coverageStatus, // 'enabled' | 'eligible_verified'
       verificationStatus: issuer.verificationStatus ?? 'verified',
       verifiedAt: issuer.verifiedAt,
       // Coverage is absent (all null/0) until at least one ingestion run has written data for this issuer — never fabricated as "covered".
@@ -45,6 +56,15 @@ export async function GET(): Promise<NextResponse> {
       lastFilingPeriodEnd: cov?.latestPeriodEnd ?? null,
     }
   })
+  // `enabledIssuers` (production-write set) kept as the primary list for
+  // backward compatibility with the Phase 8C.3 response shape.
+  const enabledIssuers = mappedIssuerDetail.filter((i) => i.coverageStatus === 'enabled')
+  const eligibleVerifiedIssuers = mappedIssuerDetail.filter((i) => i.coverageStatus === 'eligible_verified')
+
+  // Full coverage funnel over the entire app stock universe (Phase 8C.4).
+  const coverageReport = buildCmfCoverageReport(
+    getAllCompanies().map((c) => ({ ticker: c.ticker, sector: c.sector })),
+  )
 
   return NextResponse.json({
     source: 'CMF XBRL (Estados Financieros IFRS)',
@@ -62,12 +82,29 @@ export async function GET(): Promise<NextResponse> {
         }
       : null,
     recentRuns: runs.map((r) => ({ status: r.status, jobType: r.jobType, startedAt: r.startedAt, rowsInserted: r.rowsInserted })),
-    enabledIssuers,
-    notConfiguredIssuers: Object.entries(UNMAPPED_TICKERS).map(([ticker, reason]) => ({ ticker, reason })),
-    // Kept for backward compatibility with the Phase 8C.2 response shape.
+    // ── Coverage summary (Phase 8C.4) ──
+    enabledIssuers, // production-write set (coverageStatus === 'enabled')
+    eligibleVerifiedIssuers, // verified + dry-run clean, deferred (not production-written)
+    notConfiguredIssuers: Object.entries(UNMAPPED_TICKERS).map(([ticker, reason]) => ({ ticker, reason })), // banks (bank_track_required)
+    coverageFunnel: {
+      totalStocksScanned: coverageReport.totalScanned,
+      enabledCount: getEnabledTickers().length,
+      eligibleVerifiedCount: getEligibleVerifiedTickers().length,
+      counts: coverageReport.counts,
+      byStatus: coverageReport.byStatus,
+      classifications: coverageReport.classifications.map((c) => ({
+        ticker: c.ticker,
+        status: c.status,
+        rut: c.rut,
+        registryGroup: c.registryGroup,
+        cmfIssuerName: c.cmfIssuerName,
+        reason: c.reason,
+      })),
+    },
+    // Kept for backward compatibility with the Phase 8C.2/8C.3 response shape.
     coverage,
     mappedIssuers: getMappedTickers(),
     unmappedIssuers: Object.entries(UNMAPPED_TICKERS).map(([ticker, reason]) => ({ ticker, reason })),
-    note: 'Official CMF XBRL filing data. Automated ingestion runs are reviewable and manually triggered; not yet on an unattended cron schedule (issuer coverage is still narrow — see docs/cmf_xbrl_financials_ingestion.md). Manual CSV remains a fallback/override source.',
+    note: 'Official CMF XBRL filing data. Automated ingestion runs are reviewable and manually triggered; not on an unattended cron schedule (coverage is still expanding — see docs/cmf_xbrl_financials_ingestion.md). Banks (bank_track_required) report under CMF\'s separate banking track and are not ingestible here. Manual CSV remains a fallback/override source.',
   })
 }

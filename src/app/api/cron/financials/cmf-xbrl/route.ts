@@ -23,7 +23,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdminClient } from '@/lib/supabase/admin'
 import { runCmfXbrlIngestion } from '@/lib/financials/cmf/runCmfXbrlIngestion'
-import { getMappedTickers } from '@/lib/financials/cmfIssuerMap'
+import { getMappedTickers, getEnabledTickers } from '@/lib/financials/cmfIssuerMap'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -46,8 +46,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // ── Safe params ─────────────────────────────────────────────────────────────
   const url = req.nextUrl
   const tickerParam = (url.searchParams.get('ticker') ?? '').trim().toUpperCase()
+  // An explicit ?ticker= may target ANY mapped issuer (including an
+  // eligible_verified one, for a manual dry-run). With no ticker, the default
+  // set is ENABLED issuers only — never the deferred eligible_verified ones.
   const mapped = getMappedTickers()
-  const tickers = tickerParam && mapped.includes(tickerParam) ? [tickerParam] : mapped
+  const tickers = tickerParam && mapped.includes(tickerParam) ? [tickerParam] : getEnabledTickers()
   const periodsRaw = Number(url.searchParams.get('periods') ?? '1')
   const annualPeriodsPerIssuer = Number.isFinite(periodsRaw) ? Math.min(5, Math.max(1, Math.trunc(periodsRaw))) : 1
   const dryRun = url.searchParams.get('dryRun') === '1' || url.searchParams.get('dryRun') === 'true'

@@ -26,7 +26,18 @@ import { mapConcept, XBRL_CONCEPT_MAP, KNOWN_UNMAPPED_CONCEPTS } from '../src/li
 import { validateNormalizedFinancials } from '../src/lib/financials/xbrl/validateFinancials.ts'
 import { parseXbrlInstance } from '../src/lib/financials/xbrl/parseXbrl.ts'
 import { cmfXbrlProvider, buildFilingRefs, candidateAnnualPeriods, countUnmappedPlainConcepts, instanceFromParsed } from '../src/lib/financials/providers/cmfXbrlProvider.ts'
-import { CMF_ISSUER_MAP, UNMAPPED_TICKERS, getCmfIssuer, isCmfIssuerMapped, getMappedTickers } from '../src/lib/financials/cmfIssuerMap.ts'
+import {
+  CMF_ISSUER_MAP,
+  UNMAPPED_TICKERS,
+  UNSUPPORTED_XBRL_TICKERS,
+  getCmfIssuer,
+  isCmfIssuerMapped,
+  getMappedTickers,
+  getEnabledTickers,
+  getEligibleVerifiedTickers,
+  isCmfIssuerEnabled,
+} from '../src/lib/financials/cmfIssuerMap.ts'
+import { classifyTickerCoverage, buildCmfCoverageReport } from '../src/lib/financials/cmfCoverage.ts'
 import type { FinancialParsedFiling } from '../src/lib/financials/providers/types.ts'
 
 const SAMPLE_XBRL = readFileSync(fileURLToPath(new URL('fixtures/cmf/sample_instance.xbrl', import.meta.url)), 'utf8')
@@ -372,10 +383,12 @@ describe('cmfIssuerMap — Phase 8C.3 issuer coverage expansion', () => {
     assert.equal(getCmfIssuer('CMPC')?.rut, '90222000')
     assert.equal(getCmfIssuer('CENCOSUD')?.rut, '93834000')
   })
-  it('getMappedTickers includes all 5 enabled issuers', () => {
+  it('the original 5 issuers remain mapped (regression) and are all enabled', () => {
     const mapped = getMappedTickers()
-    for (const t of ['SQM-B', 'COPEC', 'ENELCHILE', 'CMPC', 'CENCOSUD']) assert.ok(mapped.includes(t), `${t} should be mapped`)
-    assert.equal(mapped.length, 5)
+    for (const t of ['SQM-B', 'COPEC', 'ENELCHILE', 'CMPC', 'CENCOSUD']) {
+      assert.ok(mapped.includes(t), `${t} should be mapped`)
+      assert.ok(isCmfIssuerEnabled(t), `${t} should be enabled`)
+    }
   })
   it('every mapped entry has an explicit RUT, sourceUrl, verifiedAt, and (Phase 8C.3) verificationStatus/verificationMethod', () => {
     for (const [ticker, entry] of Object.entries(CMF_ISSUER_MAP)) {
@@ -402,6 +415,92 @@ describe('cmfIssuerMap — Phase 8C.3 issuer coverage expansion', () => {
       assert.equal(getCmfIssuer(ticker), null)
       assert.deepEqual(buildFilingRefs(ticker, [{ mm: '12', aa: '2025' }]), [])
     }
+  })
+})
+
+describe('cmfIssuerMap — Phase 8C.4 coverage expansion (enabled vs eligible_verified)', () => {
+  it('expands to 15 enabled issuers (original 5 + 10 new) with directory-verified RUTs', () => {
+    const enabled = getEnabledTickers()
+    assert.equal(enabled.length, 15)
+    for (const t of ['SQM-B', 'COPEC', 'ENELCHILE', 'CMPC', 'CENCOSUD', 'LAS-CONDES', 'CAP', 'ENELAM', 'COLBUN', 'AGUAS-A', 'RIPLEY', 'PARAUCO', 'ENTEL', 'CCU', 'LTM']) {
+      assert.ok(enabled.includes(t), `${t} should be enabled`)
+      assert.ok(getCmfIssuer(t)?.rut, `${t} must carry a RUT`)
+    }
+  })
+  it('the 3 eligible_verified issuers are mapped but NOT in the enabled (production-write) set', () => {
+    const eligible = getEligibleVerifiedTickers()
+    assert.deepEqual([...eligible].sort(), ['CONCHATORO', 'FALABELLA', 'MALLPLAZA'])
+    const enabled = getEnabledTickers()
+    for (const t of eligible) {
+      assert.ok(isCmfIssuerMapped(t), `${t} should be mapped`)
+      assert.equal(isCmfIssuerEnabled(t), false, `${t} must NOT be enabled`)
+      assert.ok(!enabled.includes(t), `${t} must be excluded from the default ingestion set`)
+      assert.equal(getCmfIssuer(t)?.coverageStatus, 'eligible_verified')
+    }
+  })
+  it('getMappedTickers = enabled + eligible_verified (18), each carrying a RUT and RVEMI registry group', () => {
+    const mapped = getMappedTickers()
+    assert.equal(mapped.length, 18)
+    assert.equal(mapped.length, getEnabledTickers().length + getEligibleVerifiedTickers().length)
+    for (const [ticker, entry] of Object.entries(CMF_ISSUER_MAP)) {
+      assert.ok(entry.rut, `${ticker} missing rut`)
+      assert.equal(entry.registryGroup, 'RVEMI')
+      assert.ok(['enabled', 'eligible_verified'].includes(entry.coverageStatus))
+    }
+  })
+  it('all 4 banks are bank_track_required (not guessed, not forced into the industrial path)', () => {
+    for (const t of ['BSANTANDER', 'CHILE', 'BCI', 'ITAUCL']) {
+      assert.ok(t in UNMAPPED_TICKERS, `${t} should be documented as unmapped`)
+      assert.equal(getCmfIssuer(t), null)
+      assert.deepEqual(buildFilingRefs(t, [{ mm: '12', aa: '2025' }]), [])
+      assert.match(UNMAPPED_TICKERS[t], /bank/i)
+    }
+  })
+  it('the 3 unsupported-dialect issuers are documented (real filing, parser limitation) and not mapped for ingestion', () => {
+    for (const t of ['SONDA', 'ANDINA-B', 'VAPORES']) {
+      assert.ok(t in UNSUPPORTED_XBRL_TICKERS, `${t} should be documented as unsupported dialect`)
+      assert.equal(getCmfIssuer(t), null)
+      assert.match(UNSUPPORTED_XBRL_TICKERS[t], /deferred|dialect|parser/i)
+    }
+  })
+})
+
+describe('cmfCoverage — full coverage funnel over the app universe', () => {
+  it('classifies enabled, eligible_verified, bank, and unsupported tickers correctly', () => {
+    assert.equal(classifyTickerCoverage('SQM-B').status, 'enabled')
+    assert.equal(classifyTickerCoverage('LTM').status, 'enabled')
+    assert.equal(classifyTickerCoverage('CONCHATORO').status, 'eligible_verified')
+    assert.equal(classifyTickerCoverage('BSANTANDER', 'Banking').status, 'bank_track_required')
+    assert.equal(classifyTickerCoverage('SONDA').status, 'unsupported_page_shape')
+  })
+  it('an unresearched bank-sector ticker defaults to bank_track_required (never silently not_configured)', () => {
+    assert.equal(classifyTickerCoverage('SOMEBANK', 'Banking').status, 'bank_track_required')
+    assert.equal(classifyTickerCoverage('SOMEINDUSTRIAL', 'Mining').status, 'not_configured')
+  })
+  it('an enabled classification carries the verified RUT + RVEMI registry group; a bank carries neither', () => {
+    const enel = classifyTickerCoverage('ENELCHILE')
+    assert.equal(enel.rut, '76536353')
+    assert.equal(enel.registryGroup, 'RVEMI')
+    const bank = classifyTickerCoverage('CHILE', 'Banking')
+    assert.equal(bank.rut, null)
+    assert.equal(bank.registryGroup, null)
+  })
+  it('buildCmfCoverageReport funnels the 25-stock universe into 15/3/3/4', () => {
+    const universe = [
+      ...['SQM-B', 'COPEC', 'ENELCHILE', 'CMPC', 'CENCOSUD', 'LAS-CONDES', 'CAP', 'ENELAM', 'COLBUN', 'AGUAS-A', 'RIPLEY', 'PARAUCO', 'ENTEL', 'CCU', 'LTM'].map((t) => ({ ticker: t, sector: 'Industrials' })),
+      ...['CONCHATORO', 'FALABELLA', 'MALLPLAZA'].map((t) => ({ ticker: t, sector: 'Retail' })),
+      ...['SONDA', 'ANDINA-B', 'VAPORES'].map((t) => ({ ticker: t, sector: 'Industrials' })),
+      ...['BSANTANDER', 'CHILE', 'BCI', 'ITAUCL'].map((t) => ({ ticker: t, sector: 'Banking' })),
+    ]
+    const report = buildCmfCoverageReport(universe)
+    assert.equal(report.totalScanned, 25)
+    assert.equal(report.counts.enabled, 15)
+    assert.equal(report.counts.eligible_verified, 3)
+    assert.equal(report.counts.unsupported_page_shape, 3)
+    assert.equal(report.counts.bank_track_required, 4)
+    // the funnel accounts for every scanned stock
+    const summed = Object.values(report.counts).reduce((a, b) => a + b, 0)
+    assert.equal(summed, 25)
   })
 })
 
@@ -439,6 +538,23 @@ describe('status route — public read-only diagnostics', () => {
     assert.ok(STATUS_ROUTE.includes('enabledIssuers'))
     assert.ok(STATUS_ROUTE.includes('notConfiguredIssuers'))
     assert.ok(STATUS_ROUTE.includes('verificationStatus'))
+  })
+  it('(Phase 8C.4) surfaces the full coverage funnel + eligible_verified issuers', () => {
+    assert.ok(STATUS_ROUTE.includes('coverageFunnel'))
+    assert.ok(STATUS_ROUTE.includes('eligibleVerifiedIssuers'))
+    assert.ok(STATUS_ROUTE.includes('buildCmfCoverageReport'))
+  })
+})
+
+describe('ingestion default set — Phase 8C.4 safety (deferred issuers never auto-written)', () => {
+  const RUNNER = read('../src/lib/financials/cmf/runCmfXbrlIngestion.ts')
+  it('the runner defaults to getEnabledTickers(), not getMappedTickers()', () => {
+    assert.ok(RUNNER.includes('getEnabledTickers'))
+    assert.ok(!/:\s*getMappedTickers\(\)/.test(RUNNER))
+  })
+  it('the cron route defaults the no-ticker set to getEnabledTickers()', () => {
+    assert.ok(CRON_ROUTE.includes('getEnabledTickers'))
+    assert.ok(/:\s*getEnabledTickers\(\)/.test(CRON_ROUTE))
   })
 })
 

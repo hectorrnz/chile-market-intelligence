@@ -19,13 +19,18 @@ this tool, not merely unresearched. See `docs/cmf_xbrl_financials_ingestion.md`)
 This is the canonical truth-layer reference for what each visible module's
 data source actually is, versus what its UI label says.
 
-## Phase 8C.2 / 8C.3 — Financials source is now automated (CMF/XBRL), 5 issuers mapped
+## Phase 8C.2 / 8C.3 / 8C.4 — Financials source is now automated (CMF/XBRL), 15 issuers enabled
 
-- **Charting / Compare fundamentals / Earnings** read persisted financials. For a mapped issuer with a filed
-  CMF XBRL statement — **SQM-B, COPEC, ENELCHILE, CMPC, CENCOSUD (5 issuers as of Phase 8C.3)** — the
-  persisted data is **automated `xbrl`** (priority 210), which **supersedes** any `manual_csv` row (100) for
-  the same period. The Charting badge shows "Persisted financials via CMF XBRL". Non-mapped tickers still
-  use manual CSV / static fallback.
+- **Charting / Compare fundamentals / Earnings** read persisted financials. For an enabled issuer with a filed
+  CMF XBRL statement — **15 issuers as of Phase 8C.4** (SQM-B, COPEC, ENELCHILE, CMPC, CENCOSUD, LAS-CONDES,
+  CAP, ENELAM, COLBUN, AGUAS-A, RIPLEY, PARAUCO, ENTEL, CCU, LTM) — the persisted data is **automated `xbrl`**
+  (priority 210), which **supersedes** any `manual_csv` row (100) for the same period. The Charting badge shows
+  "Persisted financials via CMF XBRL". Non-enabled tickers still use manual CSV / static fallback.
+- **Full coverage funnel (Phase 8C.4):** every app stock is classified — 15 `enabled`, 3 `eligible_verified`
+  (CONCHATORO, FALABELLA, MALLPLAZA — verified + dry-run clean, deferred, never auto-written), 3
+  `unsupported_page_shape` (SONDA, ANDINA-B, VAPORES — real filings in an XBRL dialect the current parser can't
+  read), 4 `bank_track_required` (BSANTANDER, CHILE, BCI, ITAUCL — separate CMF banking track). Surfaced via
+  `/api/financials/cmf-xbrl/status` (`coverageFunnel`) and `npm run discover:cmf-coverage`.
 - **Ingestion**: manually-triggered, reviewable cron route `GET /api/cron/financials/cmf-xbrl` (Bearer
   `CRON_SECRET`) — **not on an unattended schedule** (undocumented HTML surface; Phase 8C.3 keeps this
   unscheduled — issuer coverage is still narrow, not yet a stable basis for unattended runs). Status:
