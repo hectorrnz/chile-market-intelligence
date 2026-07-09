@@ -4,7 +4,7 @@
 import type { FundamentalRecord } from './fundamentals'
 
 export type FinancialsSourceStatus = 'persisted' | 'static_fallback'
-export type FinancialsSourceType = 'xbrl' | 'cmf_fecu' | 'manual_csv' | 'yahoo_finance' | 'mixed' | 'none'
+export type FinancialsSourceType = 'xbrl' | 'cmf_fecu' | 'cmf_bank' | 'manual_csv' | 'yahoo_finance' | 'mixed' | 'none'
 
 export interface StatementsResponse {
   ticker: string

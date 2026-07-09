@@ -31,13 +31,20 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export async function GET(): Promise<NextResponse> {
-  const [runsResult, coverage] = await Promise.all([
+  const [runsResult, coverage, bankRunsResult, bankCoverage] = await Promise.all([
     getIngestionRuns({ provider: 'CMF XBRL', limit: 5 }).catch(() => ({ data: [] as Awaited<ReturnType<typeof getIngestionRuns>>['data'] })),
     getSourceTypeCoverage('xbrl').catch(() => []),
+    getIngestionRuns({ provider: 'CMF Bank Financials', limit: 5 }).catch(() => ({ data: [] as Awaited<ReturnType<typeof getIngestionRuns>>['data'] })),
+    getSourceTypeCoverage('cmf_bank').catch(() => []),
   ])
   const runs = runsResult.data
   const latestRun = runs[0] ?? null
   const coverageByTicker = new Map(coverage.map((c) => [c.ticker, c]))
+  const bankRuns = bankRunsResult.data
+  const latestBankRun = bankRuns[0] ?? null
+  const bankLiveCoverage = Object.fromEntries(
+    bankCoverage.map((c) => [c.ticker, { periodCount: c.periodCount, canonicalCount: c.canonicalCount, latestPeriodLabel: c.latestPeriodLabel, latestPeriodEnd: c.latestPeriodEnd }]),
+  )
 
   // Per-issuer detail for every mapped issuer (enabled + eligible_verified).
   const mappedIssuerDetail = Object.values(CMF_ISSUER_MAP).map((issuer) => {
@@ -106,13 +113,19 @@ export async function GET(): Promise<NextResponse> {
     coverage,
     mappedIssuers: getMappedTickers(),
     unmappedIssuers: Object.entries(UNMAPPED_TICKERS).map(([ticker, reason]) => ({ ticker, reason })),
-    // ── Bank track diagnostics (Phase 8C.7) ──
-    // A real, official, non-XBRL structured filing path was discovered for the
-    // 4 bank tickers this phase (CMF's monthly "Balance y Estado de Situación
-    // Bancos" regulatory release) with a conservative account-code map and a
-    // dry-run-only prototype — never production-ingested, never mixed into the
-    // industrial coverageFunnel above (banks stay bank_track_required there).
-    bankTrack: buildBankCoverageSummary(),
+    // ── Bank track diagnostics (Phase 8C.7 discovery, Phase 8C.8 controlled
+    // production ingestion) ── A real, official, non-XBRL structured filing
+    // path was discovered for the 4 bank tickers (CMF's monthly "Balance y
+    // Estado de Situación Bancos" regulatory release) with a conservative
+    // 14-field account-code map. Never mixed into the industrial
+    // coverageFunnel above (banks stay bank_track_required there — this is a
+    // separate source_type, cmf_bank, not xbrl).
+    bankTrack: {
+      ...buildBankCoverageSummary(bankLiveCoverage),
+      latestIngestionRun: latestBankRun
+        ? { status: latestBankRun.status, jobType: latestBankRun.jobType, startedAt: latestBankRun.startedAt, finishedAt: latestBankRun.finishedAt, rowsInserted: latestBankRun.rowsInserted, rowsFailed: latestBankRun.rowsFailed }
+        : null,
+    },
     note: 'Official CMF XBRL filing data. Automated ingestion runs are reviewable and manually triggered; not on an unattended cron schedule (coverage is still expanding — see docs/cmf_xbrl_financials_ingestion.md). Banks (bank_track_required) report under CMF\'s separate banking track and are not ingestible through this securities-issuer pipeline; see bankTrack for the separate bank discovery/mapping status (docs/bank_financials_ingestion.md). Manual CSV remains a fallback/override source.',
   })
 }

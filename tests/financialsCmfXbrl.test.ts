@@ -633,8 +633,11 @@ describe('status route — public read-only diagnostics', () => {
     assert.ok(STATUS_ROUTE.includes('eligibleVerifiedIssuers'))
     assert.ok(STATUS_ROUTE.includes('buildCmfCoverageReport'))
   })
-  it('(Phase 8C.7) surfaces bankTrack diagnostics as its own field, backed by the pure bank coverage summary', () => {
-    assert.ok(STATUS_ROUTE.includes('bankTrack: buildBankCoverageSummary()'))
+  it('(Phase 8C.7/8C.8) surfaces bankTrack diagnostics as its own field, backed by the pure bank coverage summary + live cmf_bank coverage', () => {
+    assert.ok(STATUS_ROUTE.includes('bankTrack:'))
+    assert.ok(STATUS_ROUTE.includes('buildBankCoverageSummary(bankLiveCoverage)'))
+    assert.ok(STATUS_ROUTE.includes("getSourceTypeCoverage('cmf_bank')"))
+    assert.ok(STATUS_ROUTE.includes('latestIngestionRun'))
   })
 })
 

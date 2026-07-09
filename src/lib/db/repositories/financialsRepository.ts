@@ -55,6 +55,17 @@ const DEFAULT_SOURCE_PRIORITY: Record<string, number> = {
   document_ingestion: 120,
   broker_feed: 140,
   vendor_feed: 150,
+  // Phase 8C.8 — cmf_bank is CMF's OFFICIAL bank regulatory feed ("Balance y
+  // Estado de Situación Bancos", Phase 8C.7 discovery) for the 4 bank tickers
+  // non-bank xbrl structurally cannot reach. It outranks yahoo_finance (an
+  // unofficial aggregator) and manual_csv/vendor_feed/broker_feed (third-party
+  // or human-curated), because it comes directly from the regulator — but it
+  // sits below cmf_fecu/xbrl (200/210) because it is a lower-detail regulatory
+  // report (14 mapped fields) than a full audited annual IFRS statement. This
+  // makes cmf_bank annual supersede Yahoo's matching annual period for the 14
+  // mapped fields only; Yahoo remains active for bank quarterly/TTM/earlier
+  // years/unmapped fields (a different logical period or field, never wiped).
+  cmf_bank: 180,
   cmf_fecu: 200,
   xbrl: 210,
 }

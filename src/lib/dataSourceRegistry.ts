@@ -120,6 +120,12 @@ export const SOURCE_REGISTRY = {
     labelEn: 'Fundamentals via Yahoo Finance (unofficial)',
     labelEs: 'Fundamentales vía Yahoo Finance (no oficial)',
   },
+  financialsPersistedCmfBank: {
+    id: 'financials-persisted-cmf-bank',
+    state: 'persisted',
+    labelEn: 'Official CMF bank regulatory filing',
+    labelEs: 'Registro regulatorio bancario oficial de la CMF',
+  },
   automatedFinancialsBlocked: {
     id: 'automated-financials-blocked',
     state: 'blocked',

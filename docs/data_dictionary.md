@@ -332,14 +332,25 @@ are stored in the existing `metadata` jsonb columns on `company_reporting_period
 `period_nature` ∈ `annual`/`quarterly_discrete`/`year_to_date`/`instant`. See
 `docs/cmf_xbrl_financials_ingestion.md`.
 
+**Phase 8C.8 — official CMF bank financials persistence + Pillar 3 discovery.** `cmf_bank` is now a live
+persisted `source_type` (migration `20260712000000_financials_cmf_bank_source_type.sql`, priority 180 — above
+`yahoo_finance` (80), below `cmf_fecu`/`xbrl` (200/210)). `src/lib/financials/banks/runCmfBankFinancialsIngestion.ts`
+orchestrates all 4 banks (BSANTANDER/CHILE/BCI/ITAUCL), writing only payloads clearing both a minimum-field and
+minimum-validation guard. Production result: all 4 succeeded, 60 rows written, 56 fields mapped, 0 failures,
+all `valid` — verified live that each bank's FY2025 annual `cmf_bank` period now supersedes the prior
+`yahoo_finance` FY2025 annual period (Yahoo's quarterly/other-year data untouched). `resolveFinancials.ts`
+labels `cmf_bank` results "Official CMF bank regulatory filing" (never conflated with "CMF XBRL"). Cron:
+`GET /api/cron/financials/cmf-bank` (unscheduled, same policy as the non-bank cron). **Pillar 3 (CET1/Tier1/
+RWA/NPL/coverage) investigated and classified `deferred`** — CMF's own disclosure page is a PDF link directory
+to each bank's self-hosted investor-relations site, not a structured file; no ingestion prototype was built
+for a non-viable source (`src/lib/financials/banks/pillar3Discovery.ts`). See `docs/bank_financials_ingestion.md`.
+
 **Phase 8C.7 — bank-specific CMF discovery (dry-run only).** A real, official, non-XBRL bank filing path was
 found (CMF's monthly "Balance y Estado de Situación Bancos" TXT release — not XBRL, a separate proprietary
 chart of accounts) and a conservative 14-field account-code map + dry-run prototype were built and verified
-against real data for all 4 banks. Nothing is production-ingested — no `writeImport`, no migration, Yahoo
-Finance remains the active fallback for all 4 banks unchanged. New modules under
-`src/lib/financials/banks/` (`bankRegistry.ts`, `bankConceptMap.ts`, `bankStatementTypes.ts`,
-`validateBankFinancials.ts`, `parseBankAccountFile.ts`, `bankCoverageStatus.ts`) +
-`src/lib/financials/providers/cmfBankProvider.ts`. See `docs/bank_financials_ingestion.md`.
+against real data for all 4 banks. New modules under `src/lib/financials/banks/` (`bankRegistry.ts`,
+`bankConceptMap.ts`, `bankStatementTypes.ts`, `validateBankFinancials.ts`, `parseBankAccountFile.ts`,
+`bankCoverageStatus.ts`) + `src/lib/financials/providers/cmfBankProvider.ts`. See `docs/bank_financials_ingestion.md`.
 
 **Phase 8C.6 — non-bank CMF/XBRL completion.** The 3 `eligible_verified` issuers (CONCHATORO, FALABELLA,
 MALLPLAZA) were promoted to `enabled`, and the XBRL parser gained support for two real instance dialects

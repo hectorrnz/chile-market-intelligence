@@ -1,4 +1,4 @@
-# Data Source Status Matrix — Phase 8A / 8B / 8C / 8C.1 / 8C.2 / 8C.3 / 8C.4 / 8C.5 / 8C.6 / 8C.7
+# Data Source Status Matrix — Phase 8A / 8B / 8C / 8C.1 / 8C.2 / 8C.3 / 8C.4 / 8C.5 / 8C.6 / 8C.7 / 8C.8
 
 Audit date: 2026-07-02 (Phase 8A) · updated 2026-07-02 (Phase 8B — Compare
 real-data wiring + no-static-terminal-state policy) · updated 2026-07-03
@@ -26,11 +26,44 @@ still supersedes Yahoo annual for the 15 filed issuers. See
 non-bank CMF/XBRL coverage completed: 21/25 stocks enabled, 3 eligible issuers
 promoted, 2 new XBRL parser dialects) · updated 2026-07-09 (Phase 8C.7 — a
 real, official, non-XBRL bank filing path discovered and a dry-run-only
-concept map/prototype built for the 4 remaining banks; production ingestion
-still not enabled, Yahoo Finance remains the active fallback — see
-`docs/bank_financials_ingestion.md`). This is the canonical truth-layer
-reference for what each visible module's data source actually is, versus what
-its UI label says.
+concept map/prototype built for the 4 remaining banks) · updated 2026-07-09
+(Phase 8C.8 — **official CMF bank financials now live for all 4 banks**:
+`cmf_bank` (priority 180) persisted for BSANTANDER/CHILE/BCI/ITAUCL FY2025
+annual, superseding Yahoo's matching annual period; Yahoo remains active for
+quarterly/TTM/earlier years/unmapped fields. Pillar 3 (capital/risk ratios)
+investigated and correctly classified `deferred` — a per-bank PDF link
+directory, not a structured file. See `docs/bank_financials_ingestion.md`).
+This is the canonical truth-layer reference for what each visible module's
+data source actually is, versus what its UI label says.
+
+## Phase 8C.8 — Official CMF bank financials persistence + Pillar 3 discovery
+
+- **`cmf_bank` is now a live, persisted source_type** (migration
+  `20260712000000_financials_cmf_bank_source_type.sql`, priority 180 — above `yahoo_finance` (80), below
+  `cmf_fecu`/`xbrl` (200/210)). `src/lib/financials/banks/runCmfBankFinancialsIngestion.ts` orchestrates all 4
+  banks, writing only payloads that clear both a minimum-mapped-field guard and a minimum-validation guard —
+  never a silently-degraded partial parse.
+- **Production result: all 4 banks succeeded** — 60 rows written (15/bank: 1 reporting period + 14 statement
+  items), 56 fields mapped, 0 failures, all `valid`. Verified live: BSANTANDER/CHILE/BCI/ITAUCL's FY2025 annual
+  `cmf_bank` reporting period now supersedes the prior `yahoo_finance` FY2025 annual period; Yahoo's
+  quarterly/other-year data is untouched. BCI's two independently-sourced `net_income` figures cross-validate
+  within ~0.02%.
+- **A real bug was caught and fixed during production validation**: the ingestion CLI was missing the
+  `@next/env` env-loading call every other ingestion script in this project has, so `--write` silently ran
+  with no Supabase credentials and both upserts failed closed — surfaced only as a generic row-count error.
+  Fixed, verified with a single-bank write before the full run, and guarded by a new regression test.
+- **`resolveFinancials.ts`'s `summarizeSource()`** now recognizes `cmf_bank` and labels it "Official CMF bank
+  regulatory filing" — deliberately distinct from "Persisted financials via CMF XBRL" so a bank's official
+  fields are never mistaken for the industrial pipeline.
+- **Pillar 3 (capital/risk ratios) investigated, correctly classified `deferred`.** CMF's own "Divulgación de
+  Pilar 3 de Basilea" page is not a structured file — each quarterly release is a PDF whose entire content is
+  a link directory to each bank's own investor-relations website (self-hosted, per-bank format, mostly PDF).
+  None of the 4 app banks link to a direct structured file. No ingestion prototype was built for a
+  confirmed-non-viable source — documented in `src/lib/financials/banks/pillar3Discovery.ts` and surfaced via
+  `bankTrack.pillar3` on the status endpoint. CET1/RWA/NPL/coverage remain structurally unavailable, never
+  fabricated.
+- Bank cron (`/api/cron/financials/cmf-bank`) stays unscheduled — manually-triggered and reviewable, same
+  policy as the non-bank CMF/XBRL cron.
 
 ## Phase 8C.7 — Bank-specific CMF discovery (dry-run only, not enabled)
 

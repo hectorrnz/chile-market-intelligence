@@ -166,9 +166,11 @@ export default function ChartBuilderPage() {
       ? 'financialsPersistedXbrl'
       : persistedA?.sourceType === 'cmf_fecu'
         ? 'financialsPersistedCmfFecu'
-        : persistedA?.sourceType === 'yahoo_finance'
-          ? 'financialsPersistedYahoo'
-          : 'financialsPersisted'
+        : persistedA?.sourceType === 'cmf_bank'
+          ? 'financialsPersistedCmfBank'
+          : persistedA?.sourceType === 'yahoo_finance'
+            ? 'financialsPersistedYahoo'
+            : 'financialsPersisted'
   const baseRecordsA = sourceStatusA === 'persisted' ? persistedA!.records : getFundamentals(ticker)
   const recordsA = baseRecordsA.slice().sort((a, b) => qIdx(a.period) - qIdx(b.period))
   const baseRecordsB = overlay

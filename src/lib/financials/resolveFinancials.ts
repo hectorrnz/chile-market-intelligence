@@ -14,7 +14,7 @@ import type { FundamentalRecord } from '../data/fundamentals.ts'
 export type FinancialsSourceStatus = 'persisted' | 'static_fallback'
 
 /** The dominant source_type behind a persisted result, so the UI can label XBRL vs manual CSV vs Yahoo honestly. */
-export type FinancialsSourceType = 'xbrl' | 'cmf_fecu' | 'manual_csv' | 'yahoo_finance' | 'mixed' | 'none'
+export type FinancialsSourceType = 'xbrl' | 'cmf_fecu' | 'cmf_bank' | 'manual_csv' | 'yahoo_finance' | 'mixed' | 'none'
 
 export interface FinancialsResolveResult {
   ticker: string
@@ -35,11 +35,12 @@ export interface FinancialsResolveResult {
  * 'mixed'` is still returned when genuinely more than one non-derived source
  * exists, so a caller can show a "+ manual" nuance if it wants.
  */
-function summarizeSource(items: StatementItemRecord[]): { source: string; sourceType: FinancialsSourceType } {
+export function summarizeSource(items: StatementItemRecord[]): { source: string; sourceType: FinancialsSourceType } {
   if (items.length === 0) return { source: 'Static MVP sample', sourceType: 'none' }
   const present = new Set(items.map((it) => it.sourceType).filter((k) => k !== 'derived'))
   const hasXbrl = present.has('xbrl')
   const hasFecu = present.has('cmf_fecu')
+  const hasCmfBank = present.has('cmf_bank')
   const hasYahoo = present.has('yahoo_finance')
   const hasManual = present.has('manual_csv')
   // Phase 8C.5 — most common real case: CMF/XBRL official annual + Yahoo
@@ -49,6 +50,11 @@ function summarizeSource(items: StatementItemRecord[]): { source: string; source
   const suffix = extras ? ` (+ ${extras})` : ''
   if (hasXbrl) return { source: `Persisted financials via CMF XBRL${suffix}`, sourceType: 'xbrl' }
   if (hasFecu) return { source: `Persisted financials via CMF/FECU${suffix}`, sourceType: 'cmf_fecu' }
+  // Phase 8C.8 — official CMF bank regulatory data (NOT XBRL, a distinct
+  // source/track — see docs/bank_financials_ingestion.md). Labeled separately
+  // from the non-bank "CMF XBRL" badge so a bank ticker's official annual
+  // fields are never mistaken for the industrial XBRL pipeline.
+  if (hasCmfBank) return { source: `Official CMF bank regulatory filing${suffix}`, sourceType: 'cmf_bank' }
   if (hasManual) return { source: `Persisted financials via manual CSV${hasYahoo ? ' (+ Yahoo)' : ''}`, sourceType: 'manual_csv' }
   if (hasYahoo) return { source: 'Fundamentals via Yahoo Finance (unofficial)', sourceType: 'yahoo_finance' }
   return { source: 'Persisted financials', sourceType: 'manual_csv' }

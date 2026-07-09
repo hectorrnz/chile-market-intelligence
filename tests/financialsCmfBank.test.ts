@@ -1,6 +1,11 @@
-// Phase 8C.7 — bank-specific CMF financials discovery + mapping tests.
-// NO live network calls — the HTML-matching and file-parsing logic are pure
-// functions tested against small, sanitized, fictional-value fixtures.
+// Phase 8C.7/8C.8 — bank-specific CMF financials discovery + mapping +
+// persistence tests. NO live network calls — the HTML-matching and
+// file-parsing logic are pure functions tested against small, sanitized,
+// fictional-value fixtures; orchestrator/cron/migration behavior that would
+// otherwise require a live network call or a real Supabase connection is
+// covered by grep-based hygiene checks against the source text, mirroring
+// the established pattern for runCmfXbrlIngestion.ts in
+// tests/financialsCmfXbrl.test.ts.
 
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
@@ -13,7 +18,11 @@ import { BANK_LINE_ITEM_MODEL, CAPITAL_RATIO_FIELDS } from '../src/lib/financial
 import { BANK_REGISTRY, getBankRegistryEntry, isBankTicker, getAllBankTickers } from '../src/lib/financials/banks/bankRegistry.ts'
 import { validateBankFinancials } from '../src/lib/financials/banks/validateBankFinancials.ts'
 import { buildBankCoverageSummary } from '../src/lib/financials/banks/bankCoverageStatus.ts'
+import { PILLAR3_DISCOVERY } from '../src/lib/financials/banks/pillar3Discovery.ts'
 import { findBankZipLinkInHtml, buildAnnualBankFilingRef, mapFileRows, SPANISH_MONTH_NAMES } from '../src/lib/financials/providers/cmfBankProvider.ts'
+import { VALID_SOURCE_TYPES } from '../src/lib/financials/csvFinancials.ts'
+import { summarizeSource, type FinancialsSourceType } from '../src/lib/financials/resolveFinancials.ts'
+import type { StatementItemRecord } from '../src/lib/db/repositories/financialsRepository.ts'
 
 const SAMPLE_B1 = readFileSync(fileURLToPath(new URL('fixtures/cmf/sample_bank_b1.txt', import.meta.url)), 'utf8')
 const SAMPLE_R1 = readFileSync(fileURLToPath(new URL('fixtures/cmf/sample_bank_r1.txt', import.meta.url)), 'utf8')
@@ -375,5 +384,211 @@ describe('bankCoverageStatus — status endpoint diagnostics', () => {
   it('lists every capital-ratio field as deferred, never fabricated', () => {
     const summary = buildBankCoverageSummary()
     assert.equal(summary.capitalRatioFieldsDeferred.length, CAPITAL_RATIO_FIELDS.length)
+  })
+
+  it('(Phase 8C.8) reports productionIngestion: enabled only when live coverage shows a canonical row for that ticker', () => {
+    const summary = buildBankCoverageSummary({ BCI: { periodCount: 1, canonicalCount: 1, latestPeriodLabel: 'FY 2025', latestPeriodEnd: '2025-12-31' } })
+    const bci = summary.entries.find((e) => e.ticker === 'BCI')!
+    const chile = summary.entries.find((e) => e.ticker === 'CHILE')!
+    assert.equal(bci.productionIngestion, 'enabled')
+    assert.equal(bci.periodCount, 1)
+    assert.equal(bci.latestIngestedRelease, 'FY 2025')
+    assert.equal(chile.productionIngestion, 'not_enabled')
+    assert.equal(chile.periodCount, 0)
+  })
+
+  it('(Phase 8C.8) never reports productionIngestion: enabled from a superseded-only row (canonicalCount 0)', () => {
+    const summary = buildBankCoverageSummary({ CHILE: { periodCount: 1, canonicalCount: 0, latestPeriodLabel: 'FY 2025', latestPeriodEnd: '2025-12-31' } })
+    const chile = summary.entries.find((e) => e.ticker === 'CHILE')!
+    assert.equal(chile.productionIngestion, 'not_enabled')
+  })
+
+  it('(Phase 8C.8) includes the Pillar 3 discovery result, correctly classified deferred (per-bank PDF link directory, not a structured file)', () => {
+    const summary = buildBankCoverageSummary()
+    assert.equal(summary.pillar3.status, 'deferred')
+    assert.ok(summary.pillar3.blockingReason.length > 20)
+    for (const ticker of getAllBankTickers()) {
+      assert.ok(summary.pillar3.perBankLinks[ticker], `pillar3 discovery should document a link entry for ${ticker}`)
+      assert.equal(summary.pillar3.perBankLinks[ticker].isDirectStructuredFile, false)
+    }
+  })
+})
+
+describe('pillar3Discovery — regulatory-metrics source investigation', () => {
+  it('is classified deferred, not a fabricated success', () => {
+    assert.equal(PILLAR3_DISCOVERY.status, 'deferred')
+  })
+
+  it('never claims a structured file for any of the 4 app bank tickers', () => {
+    for (const ticker of ['BSANTANDER', 'CHILE', 'BCI', 'ITAUCL']) {
+      assert.equal(PILLAR3_DISCOVERY.perBankLinks[ticker].isDirectStructuredFile, false)
+    }
+  })
+
+  it('lists the full target regulatory-metric field set (CET1, RWA, ratios) as the metrics it could not reach', () => {
+    for (const field of ['cet1_capital', 'tier1_capital', 'total_capital', 'risk_weighted_assets', 'cet1_ratio', 'tier1_ratio', 'total_capital_ratio', 'npl_ratio', 'coverage_ratio']) {
+      assert.ok(PILLAR3_DISCOVERY.targetMetrics.includes(field), `${field} should be listed as an unreached target metric`)
+    }
+  })
+
+  it('sourceUrl points at the real official CMF Pillar 3 statistics page, not a guessed URL', () => {
+    assert.equal(PILLAR3_DISCOVERY.sourceUrl, 'https://www.cmfchile.cl/portal/estadisticas/626/w4-propertyvalue-46323.html')
+  })
+})
+
+describe('cmf_bank source_type — schema + priority (Phase 8C.8)', () => {
+  it('cmf_bank is a valid source type', () => {
+    assert.ok((VALID_SOURCE_TYPES as readonly string[]).includes('cmf_bank'))
+  })
+
+  it('cmf_bank priority (180) sits above yahoo_finance (80) and manual_csv (100), below cmf_fecu (200) and xbrl (210)', () => {
+    const REPO = readFileSync(fileURLToPath(new URL('../src/lib/db/repositories/financialsRepository.ts', import.meta.url)), 'utf8')
+    const m = /cmf_bank:\s*(\d+)/.exec(REPO)
+    assert.ok(m, 'DEFAULT_SOURCE_PRIORITY should define an explicit cmf_bank entry')
+    const cmfBankPriority = Number(m![1])
+    assert.equal(cmfBankPriority, 180)
+    assert.ok(cmfBankPriority > 80, 'must outrank yahoo_finance (unofficial aggregator)')
+    assert.ok(cmfBankPriority > 100, 'must outrank manual_csv')
+    assert.ok(cmfBankPriority < 200, 'must stay below cmf_fecu (a full FECU statement)')
+    assert.ok(cmfBankPriority < 210, 'must stay below xbrl (a full audited IFRS statement)')
+  })
+
+  it('the migration widens the CHECK constraint to include cmf_bank (idempotent, additive)', () => {
+    const MIGRATION = readFileSync(fileURLToPath(new URL('../supabase/migrations/20260712000000_financials_cmf_bank_source_type.sql', import.meta.url)), 'utf8')
+    assert.ok(MIGRATION.includes("'cmf_bank'"))
+    assert.ok(MIGRATION.includes('drop constraint if exists'))
+    assert.ok(MIGRATION.includes("'yahoo_finance'"), 'must preserve every prior source_type, purely additive')
+    assert.ok(MIGRATION.includes("'xbrl'"))
+    assert.ok(MIGRATION.includes("'manual_csv'"))
+  })
+})
+
+describe('resolveFinancials.summarizeSource — cmf_bank labeling (Phase 8C.8)', () => {
+  function fakeItem(sourceType: string, lineItemCode = 'total_assets'): StatementItemRecord {
+    return {
+      ticker: 'BCI', reportingPeriodId: 'x', fiscalYear: 2025, fiscalPeriod: 'FY', periodType: 'annual',
+      periodEndDate: '2025-12-31', statementType: 'balance', lineItemCode, lineItemName: lineItemCode,
+      value: 100, unit: 'CLP', sourceType,
+    }
+  }
+
+  it('labels a cmf_bank-only result as an official CMF bank regulatory filing, never as "CMF XBRL"', () => {
+    const result = summarizeSource([fakeItem('cmf_bank')])
+    assert.equal(result.sourceType, 'cmf_bank' satisfies FinancialsSourceType)
+    assert.match(result.source, /Official CMF bank regulatory filing/)
+    assert.doesNotMatch(result.source, /XBRL/)
+  })
+
+  it('surfaces a "+ Yahoo" nuance when both cmf_bank and yahoo_finance are present for the same ticker', () => {
+    const result = summarizeSource([fakeItem('cmf_bank', 'net_income'), fakeItem('yahoo_finance', 'revenue')])
+    assert.equal(result.sourceType, 'cmf_bank')
+    assert.match(result.source, /\+ Yahoo/)
+  })
+
+  it('xbrl still outranks cmf_bank if both were somehow present (never expected in practice, but priority order must hold)', () => {
+    const result = summarizeSource([fakeItem('cmf_bank'), fakeItem('xbrl', 'revenue')])
+    assert.equal(result.sourceType, 'xbrl')
+  })
+
+  it('cmf_bank outranks manual_csv and yahoo_finance in the label priority chain', () => {
+    const result = summarizeSource([fakeItem('manual_csv'), fakeItem('yahoo_finance', 'revenue'), fakeItem('cmf_bank', 'net_income')])
+    assert.equal(result.sourceType, 'cmf_bank')
+  })
+
+  it('a Yahoo-only bank result stays labeled unofficial (no regression for banks not yet ingested)', () => {
+    const result = summarizeSource([fakeItem('yahoo_finance')])
+    assert.equal(result.sourceType, 'yahoo_finance')
+    assert.match(result.source, /unofficial/)
+  })
+})
+
+describe('runCmfBankFinancialsIngestion — orchestrator hygiene (no live network in tests)', () => {
+  const ORCHESTRATOR = readFileSync(fileURLToPath(new URL('../src/lib/financials/banks/runCmfBankFinancialsIngestion.ts', import.meta.url)), 'utf8')
+
+  it('defaults to all 4 registered bank tickers, not a hardcoded subset', () => {
+    assert.ok(ORCHESTRATOR.includes('getAllBankTickers()'))
+  })
+
+  it('defaults write to false (dry-run by default, same convention as the non-bank orchestrator)', () => {
+    assert.ok(ORCHESTRATOR.includes('options.write ?? false'))
+  })
+
+  it('never writes a bank payload below the configured validation floor', () => {
+    assert.ok(ORCHESTRATOR.includes('meetsMinValidation'))
+    assert.ok(ORCHESTRATOR.includes("minValidationToWrite ?? 'valid_with_warnings'"))
+  })
+
+  it('defers (never force-writes) a payload with fewer than the minimum mapped fields, rather than persisting a silently-degraded partial parse', () => {
+    assert.ok(ORCHESTRATOR.includes('deferred_unmapped'))
+    assert.ok(ORCHESTRATOR.includes('minFieldsToWrite'))
+  })
+
+  it('isolates one bank\'s failure from the batch (try/catch per bank, matches the non-bank orchestrator pattern)', () => {
+    assert.ok(ORCHESTRATOR.includes('try {') && ORCHESTRATOR.includes('catch (e)'))
+  })
+
+  it('every declared BankIngestStatus value actually appears in the status-derivation logic', () => {
+    for (const status of ['success', 'partial_success', 'source_unavailable', 'parse_failed', 'mapping_failed', 'validation_failed', 'persistence_failed', 'deferred_unmapped']) {
+      assert.ok(ORCHESTRATOR.includes(`'${status}'`), `status "${status}" should be referenced in the orchestrator`)
+    }
+  })
+})
+
+describe('cmf-bank cron route — auth + safety (Phase 8C.8)', () => {
+  const CRON_ROUTE = readFileSync(fileURLToPath(new URL('../src/app/api/cron/financials/cmf-bank/route.ts', import.meta.url)), 'utf8')
+
+  it('requires a Bearer CRON_SECRET and 401s on mismatch', () => {
+    assert.ok(CRON_ROUTE.includes('CRON_SECRET'))
+    assert.ok(CRON_ROUTE.includes('Bearer ${secret}'))
+    assert.ok(CRON_ROUTE.includes('status: 401'))
+  })
+
+  it('uses the service-role admin client and sanitizes errors before returning them', () => {
+    assert.ok(CRON_ROUTE.includes('getSupabaseAdminClient'))
+    assert.ok(CRON_ROUTE.includes('***JWT***'))
+  })
+
+  it('defaults dryRun off (real ?dryRun= must be explicit) and defaults to all 4 banks when no ?ticker= is given', () => {
+    assert.ok(CRON_ROUTE.includes('getAllBankTickers()'))
+    assert.ok(CRON_ROUTE.includes("dryRun ="))
+  })
+
+  it('labels the response data policy as official CMF bank regulatory data, distinct from XBRL, with Yahoo fallback named', () => {
+    assert.match(CRON_ROUTE, /Official CMF bank regulatory data/)
+    assert.match(CRON_ROUTE, /Not XBRL/)
+    assert.match(CRON_ROUTE, /Yahoo Finance remains the fallback/)
+  })
+
+  it('never echoes raw bank file contents in the response', () => {
+    assert.ok(!/payload\.statementItems\.map\(.*raw/.test(CRON_ROUTE))
+  })
+})
+
+describe('vercel.json — bank cron stays unscheduled (Phase 8C.8)', () => {
+  it('no cron entry references the cmf-bank route', () => {
+    const VERCEL_JSON = readFileSync(fileURLToPath(new URL('../vercel.json', import.meta.url)), 'utf8')
+    assert.ok(!VERCEL_JSON.includes('cmf-bank'), 'bank ingestion must stay manually-triggered, never on a Vercel cron schedule')
+  })
+})
+
+describe('discover/cmfBankFinancials.ts CLI — loads env vars before --write (regression, Phase 8C.8)', () => {
+  // A real bug caught during Phase 8C.8 production validation: this script
+  // was missing the @next/env loadEnvConfig() call every other ingestion CLI
+  // in this project has. Without it, --write silently ran with no Supabase
+  // credentials in the environment — both repository upserts failed closed
+  // with "Admin Supabase client not configured", surfaced only as a generic
+  // "2 row(s) failed to write" count. Guards against this ever regressing.
+  const CLI = readFileSync(fileURLToPath(new URL('../scripts/discover/cmfBankFinancials.ts', import.meta.url)), 'utf8')
+
+  it('imports @next/env and calls loadEnvConfig(process.cwd()) before doing anything else', () => {
+    assert.ok(CLI.includes("from '@next/env'"))
+    assert.ok(CLI.includes('loadEnvConfig(process.cwd())'))
+  })
+
+  it('every other ingestion/discovery CLI in this project also loads env the same way (consistency check)', () => {
+    for (const rel of ['../scripts/ingest/yahooFinancials.ts', '../scripts/discover/cmfXbrlFinancials.ts', '../scripts/ingest/financialsCsv.ts']) {
+      const other = readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
+      assert.ok(other.includes('loadEnvConfig(process.cwd())'), `${rel} should also call loadEnvConfig`)
+    }
   })
 })

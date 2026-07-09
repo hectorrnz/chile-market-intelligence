@@ -390,6 +390,56 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 8C.8 — Official CMF Bank Financials Persistence + Pillar 3 Discovery** ✓ COMPLETE (2026-07-09)
+
+Enables official CMF bank regulatory data as a controlled production annual source for the 4 bank tickers
+(BSANTANDER, CHILE, BCI, ITAUCL) discovered in Phase 8C.7, and investigates an official CMF/SBIF source for
+bank capital/risk metrics (CET1, RWA, NPL, coverage).
+
+**`cmf_bank` source type + priority**: migration `20260712000000_financials_cmf_bank_source_type.sql`
+(additive/idempotent, mirrors the Phase 8C.5 `yahoo_finance` migration) widens the `source_type` CHECK on all
+4 financials tables. `VALID_SOURCE_TYPES`/`DEFAULT_SOURCE_PRIORITY` gained `cmf_bank` at **priority 180** —
+full ordering: `xbrl (210) > cmf_fecu (200) > cmf_bank (180) > vendor_feed (150) > broker_feed (140) >
+document_ingestion (120) > manual_csv (100) > yahoo_finance (80) > derived (50) > static_seed (10)`.
+
+**Ingestion orchestrator** (`runCmfBankFinancialsIngestion.ts`) drives all 4 banks over the latest annual
+release, writing only payloads clearing both a minimum-mapped-field guard and a minimum-validation guard —
+never a silently-degraded partial parse. `cmfBankProvider.ts` gained a real `writeImport()`. Cron:
+`GET /api/cron/financials/cmf-bank` — **not on a Vercel cron schedule**, same policy as the non-bank cron.
+
+**Production result: all 4 banks succeeded** — 60 rows written (15/bank), 56 fields mapped, 0 failures, all
+`valid`. Verified live: each bank's FY2025 `cmf_bank` annual period now supersedes the prior `yahoo_finance`
+FY2025 annual period; Yahoo's quarterly/other-year data untouched. BCI's two independently-sourced
+`net_income` figures cross-validate within ~0.02%.
+
+**A real bug was caught and fixed during production validation**: the ingestion CLI was missing the
+`@next/env` env-loading call every other ingestion script in this project has — `--write` silently ran with
+no Supabase credentials, both upserts failed closed, surfaced only as a generic row-count error. Fixed,
+verified with a single-bank write before the full run, guarded by a new regression test.
+
+**Labeling**: `resolveFinancials.ts` now labels `cmf_bank` "Official CMF bank regulatory filing" — distinct
+from "Persisted financials via CMF XBRL." Status endpoint's `bankTrack` overlays live per-bank coverage
+(`productionIngestion: 'enabled'`, period count, latest release) + a `pillar3` field.
+
+**Pillar 3 discovery: `deferred` — not a viable structured source.** CMF's own disclosure page is a PDF whose
+entire content is a link directory to each bank's own investor-relations website (self-hosted, per-bank
+format, mostly PDF). None of the 4 app banks link to a direct structured file. No ingestion prototype was
+built for a non-viable source (`pillar3Discovery.ts`) — per the "document the blocker, don't build
+speculative ingestion" policy. CET1/RWA/NPL/coverage remain structurally unavailable, never fabricated.
+
+**Tests:** 8C.8 additions to `tests/financialsCmfBank.test.ts` — source-type/priority/migration checks,
+summarizeSource labeling, orchestrator/cron hygiene, pillar3Discovery coverage, live-coverage overlay, and an
+env-loading regression test. Full suite 1072→1101, lint 0, build 0 errors.
+
+Scope limits: bank official-source persistence + Pillar 3 discovery only; annual (December) only; no non-bank
+refactor; no paid/vendor API; no OCR; Pillar 3 writes out of scope (non-viable source); Structured Notes/auth/
+watchlist/portfolio/macro untouched; no UI redesign; bank cron stays unscheduled.
+
+Next: resolve the deposits/borrowings ambiguity; periodically re-check Pillar 3; or **Phase 8D** (FX/rates +
+economic calendar), or **Phase 9F** (Santander/older-2024-Citi structured-notes parser).
+
+---
+
 **Phase 8C.7 — Bank-Specific CMF Discovery + Banking Financials Architecture** ✓ COMPLETE (2026-07-09)
 
 Investigates a bank-specific CMF ingestion path for the 4 `bank_track_required` tickers (BSANTANDER, CHILE,

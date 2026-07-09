@@ -1,18 +1,18 @@
-// Phase 8C.7 — CMF bank financials provider (discovery/dry-run only).
+// Phase 8C.7/8C.8 — CMF bank financials provider.
 //
 // Fetches CMF's official monthly "Balance y Estado de Situación Bancos" ZIP
 // (see docs/bank_financials_ingestion.md), extracts one bank's b1
 // (consolidated balance sheet) and r1 (consolidated income statement) files,
 // parses them with the dependency-free parseBankAccountFile parser, maps the
 // verified account codes in bankConceptMap.ts, and normalizes to the SAME
-// FinancialImportPayload shape every other financials source uses — so if
-// this is ever promoted to a production source, it calls the identical
-// financialsRepository.ts upsert functions with source_type: 'cmf_bank'.
+// FinancialImportPayload shape every other financials source uses — calling
+// the identical financialsRepository.ts upsert functions with
+// source_type: 'cmf_bank' (priority 180 — see financialsRepository.ts).
 //
-// NOT wired to any cron or default ingestion set. `writeImport` is
-// intentionally NOT implemented — this module is discovery/dry-run only
-// until a human reviews the mapping coverage and decides to promote it (see
-// scripts/discover/bankFinancialsDiscovery.ts, which never writes).
+// Phase 8C.8: `writeImport` is now implemented (mirrors cmfXbrlProvider's
+// writeImport exactly). Still NOT wired to any cron schedule — the
+// orchestrator (runCmfBankFinancialsIngestion.ts) and its cron route default
+// to a reviewable, manually-triggered run, same as the non-bank CMF/XBRL cron.
 //
 // The monthly ZIP's page path is stable and official but this exact CSS/HTML
 // article-listing structure (used to find the current month's download link)
@@ -162,9 +162,9 @@ export function mapFileRows(parsed: ParsedBankAccountFile, statementType: 'balan
 
 /**
  * Runs the full discover -> fetch -> parse -> map -> validate chain for one
- * bank ticker and produces a dry-run diagnostic result. NEVER writes to the
- * database — there is no writeImport path in this module. Mirrors the shape
- * of cmfXbrlProvider's dryRunImport but bank-specific.
+ * bank ticker and produces a diagnostic result + a ready-to-write payload.
+ * This function itself never writes — the caller (the orchestrator) decides
+ * whether to call writeImport() based on the validation outcome.
  */
 export async function dryRunBankFinancials(ticker: string, fromYear?: number): Promise<BankProviderResult<BankDryRunResult>> {
   const refResult = buildAnnualBankFilingRef(ticker, fromYear)
@@ -231,6 +231,33 @@ export async function dryRunBankFinancials(ticker: string, fromYear?: number): P
       payload,
     },
   }
+}
+
+export interface BankWriteResult {
+  rowsInserted: number
+  rowsFailed: number
+}
+
+/**
+ * Persists a validated bank FinancialImportPayload via the exact same
+ * source-agnostic repository upsert functions the non-bank CMF/XBRL provider
+ * uses — no bank-specific table, no duplicated repository logic. Rows carry
+ * source_type: 'cmf_bank' (set by mapFileRows/dryRunBankFinancials above), so
+ * source_priority (180) and supersession are applied automatically by the
+ * repository exactly as they are for every other source.
+ */
+export async function writeImport(payload: FinancialImportPayload, ingestionRunId?: string | null): Promise<BankProviderResult<BankWriteResult>> {
+  const { upsertReportingPeriods, upsertStatementItems } = await import('../../db/repositories/financialsRepository.ts')
+  const periodsResult = await upsertReportingPeriods(payload.reportingPeriods, ingestionRunId)
+  const itemsResult = await upsertStatementItems(payload.statementItems, periodsResult.idsByKey, ingestionRunId)
+  const rowsFailed = periodsResult.errors.length + itemsResult.errors.length
+  if (rowsFailed > 0) {
+    return {
+      ok: false,
+      error: { code: 'network_error', reason: `${rowsFailed} row(s) failed to write`, nextAction: 'Check Supabase admin credentials and table constraints.' },
+    }
+  }
+  return { ok: true, value: { rowsInserted: periodsResult.inserted + itemsResult.inserted, rowsFailed } }
 }
 
 export { mapBankConcept }
