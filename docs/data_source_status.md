@@ -43,18 +43,22 @@ versus what its UI label says.
   the original silent `.catch(() => [])` would have persisted an honestly-empty-looking but actually-wrong
   partial history. Fixed with retries + loud failure on exhaustion (never silently degrades).
 
-## Phase 8C.2 / 8C.3 / 8C.4 — Financials source is now automated (CMF/XBRL), 15 issuers enabled
+## Phase 8C.2 / 8C.3 / 8C.4 / 8C.6 — Financials source is now automated (CMF/XBRL), 21 non-bank issuers enabled
 
 - **Charting / Compare fundamentals / Earnings** read persisted financials. For an enabled issuer with a filed
-  CMF XBRL statement — **15 issuers as of Phase 8C.4** (SQM-B, COPEC, ENELCHILE, CMPC, CENCOSUD, LAS-CONDES,
-  CAP, ENELAM, COLBUN, AGUAS-A, RIPLEY, PARAUCO, ENTEL, CCU, LTM) — the persisted data is **automated `xbrl`**
-  (priority 210), which **supersedes** any `manual_csv` row (100) for the same period. The Charting badge shows
-  "Persisted financials via CMF XBRL". Non-enabled tickers still use manual CSV / static fallback.
-- **Full coverage funnel (Phase 8C.4):** every app stock is classified — 15 `enabled`, 3 `eligible_verified`
-  (CONCHATORO, FALABELLA, MALLPLAZA — verified + dry-run clean, deferred, never auto-written), 3
-  `unsupported_page_shape` (SONDA, ANDINA-B, VAPORES — real filings in an XBRL dialect the current parser can't
-  read), 4 `bank_track_required` (BSANTANDER, CHILE, BCI, ITAUCL — separate CMF banking track). Surfaced via
-  `/api/financials/cmf-xbrl/status` (`coverageFunnel`) and `npm run discover:cmf-coverage`.
+  CMF XBRL statement — **21 issuers as of Phase 8C.6 (every non-bank app stock)** — the persisted data is
+  **automated `xbrl`** (priority 210), which **supersedes** both `manual_csv` (100) and `yahoo_finance` (80)
+  for the same period. The Charting badge shows "Persisted financials via CMF XBRL". Banks + earlier years +
+  all quarters use the Yahoo fallback.
+- **Full coverage funnel (Phase 8C.6):** every app stock is classified — **21 `enabled`** (all 15 from 8C.4 +
+  the 3 promoted CONCHATORO/FALABELLA/MALLPLAZA + the 3 dialect issuers SONDA/ANDINA-B/VAPORES), **0
+  `eligible_verified`, 0 `unsupported_page_shape`**, 4 `bank_track_required` (BSANTANDER, CHILE, BCI, ITAUCL —
+  separate CMF banking track). Surfaced via `/api/financials/cmf-xbrl/status` (`coverageFunnel`) and
+  `npm run discover:cmf-coverage`.
+- **XBRL parser now reads three dialects (Phase 8C.6):** standard `xbrli:`-prefixed; default/unprefixed
+  namespace (SONDA); CTI-Service single-quoted ISO-8859-1 (ANDINA-B, VAPORES) — verified byte-identical for the
+  15 pre-existing issuers. VAPORES legitimately files no revenue line; it stays honestly missing (Yahoo fills
+  it), never fabricated.
 - **Ingestion**: manually-triggered, reviewable cron route `GET /api/cron/financials/cmf-xbrl` (Bearer
   `CRON_SECRET`) — **not on an unattended schedule** (undocumented HTML surface; Phase 8C.3 keeps this
   unscheduled — issuer coverage is still narrow, not yet a stable basis for unattended runs). Status:

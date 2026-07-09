@@ -320,10 +320,10 @@ export const CMF_ISSUER_MAP: Record<string, CmfIssuerEntry> = {
     verificationMethod: 'Official CMF RVEMI sociedad[] directory (exact match) + live FY2025 entidad.php/XBRL dry-run.',
   },
 
-  // ── Phase 8C.4 — eligible_verified (deferred to a later batch) ──────────────
-  // RUT + legal identity verified and live dry-run clean, but intentionally NOT
-  // production-ingested this phase (batch-size limit + name-form conservatism).
-  // Never written by the default run — getEnabledTickers() excludes these.
+  // ── Phase 8C.6 — promoted from eligible_verified to enabled ─────────────────
+  // Re-validated with a fresh live FY2025 dry-run (still clean) and
+  // production-written. The name-form/trading-name notes are retained as
+  // permanent provenance.
   CONCHATORO: {
     ticker: 'CONCHATORO',
     companyName: 'Viña Concha y Toro',
@@ -332,14 +332,14 @@ export const CMF_ISSUER_MAP: Record<string, CmfIssuerEntry> = {
     cmfEntityId: null,
     cmfMarket: 'V',
     registryGroup: 'RVEMI',
-    coverageStatus: 'eligible_verified',
+    coverageStatus: 'enabled',
     notes:
-      'Exact RVEMI directory match "90.227.000-0 VIÑA CONCHA Y TORO S.A.". Live FY2025 dry-run clean: 5407 facts, 29 mapped, currency CLP, valid_with_warnings. Deferred from the Phase 8C.4 production batch purely to keep the batch at 10 — enable in the next batch.',
+      'Exact RVEMI directory match "90.227.000-0 VIÑA CONCHA Y TORO S.A.". Enabled in Phase 8C.6 after a re-confirmed clean FY2025 dry-run (29 mapped, CLP, valid_with_warnings); had been deferred in 8C.4 purely for batch-size discipline.',
     sourceUrl:
       'https://www.cmfchile.cl/institucional/mercados/entidad.php?mercado=V&control=svs&tipoentidad=RVEMI&vig=VI&grupo=0&rut=90227000&mm=12&aa=2025&tipo=C&tipo_norma=IFRS&pestania=3',
-    verifiedAt: '2026-07-08',
+    verifiedAt: '2026-07-09',
     verificationStatus: 'verified',
-    verificationMethod: 'Official CMF RVEMI sociedad[] directory (exact match) + live FY2025 entidad.php/XBRL dry-run.',
+    verificationMethod: 'Official CMF RVEMI sociedad[] directory (exact match) + live FY2025 entidad.php/XBRL dry-run (re-confirmed 8C.6).',
   },
   FALABELLA: {
     ticker: 'FALABELLA',
@@ -349,14 +349,14 @@ export const CMF_ISSUER_MAP: Record<string, CmfIssuerEntry> = {
     cmfEntityId: null,
     cmfMarket: 'V',
     registryGroup: 'RVEMI',
-    coverageStatus: 'eligible_verified',
+    coverageStatus: 'enabled',
     notes:
-      'RVEMI directory + entidad.php razón social both "FALABELLA S.A." at RUT 90.749.000-9 — the app\'s legalName "S.A.C.I. Falabella" is the older name form for the same issuer (RUT-confirmed, not a guess). Live FY2025 dry-run clean: 16742 facts, 29 mapped, currency CLP, valid_with_warnings. Deferred one batch for conservative extra confidence on the name-form difference.',
+      'RVEMI directory + entidad.php razón social both "FALABELLA S.A." at RUT 90.749.000-9 — the app\'s legalName "S.A.C.I. Falabella" is the older name form for the same issuer (RUT-confirmed, not a guess). Enabled in Phase 8C.6 after a re-confirmed clean FY2025 dry-run (29 mapped, CLP, valid_with_warnings).',
     sourceUrl:
       'https://www.cmfchile.cl/institucional/mercados/entidad.php?mercado=V&control=svs&tipoentidad=RVEMI&vig=VI&grupo=0&rut=90749000&mm=12&aa=2025&tipo=C&tipo_norma=IFRS&pestania=3',
-    verifiedAt: '2026-07-08',
+    verifiedAt: '2026-07-09',
     verificationStatus: 'verified',
-    verificationMethod: 'Official CMF RVEMI directory + entidad.php razón social cross-check (name-form difference resolved) + live FY2025 XBRL dry-run.',
+    verificationMethod: 'Official CMF RVEMI directory + entidad.php razón social cross-check (name-form difference resolved) + live FY2025 XBRL dry-run (re-confirmed 8C.6).',
   },
   MALLPLAZA: {
     ticker: 'MALLPLAZA',
@@ -366,14 +366,72 @@ export const CMF_ISSUER_MAP: Record<string, CmfIssuerEntry> = {
     cmfEntityId: null,
     cmfMarket: 'V',
     registryGroup: 'RVEMI',
-    coverageStatus: 'eligible_verified',
+    coverageStatus: 'enabled',
     notes:
-      'RVEMI directory + entidad.php razón social both "PLAZA S.A." at RUT 76.017.019-4 — the issuer trades as "Mall Plaza" (app legalName "Mall Plaza S.A."); "Plaza S.A." is its registered legal name (RUT-confirmed, not a guess). Live FY2025 dry-run clean: 6557 facts, 27 mapped, currency CLP, valid_with_warnings. Deferred one batch for conservative extra confidence on the trading-name/legal-name difference.',
+      'RVEMI directory + entidad.php razón social both "PLAZA S.A." at RUT 76.017.019-4 — the issuer trades as "Mall Plaza" (app legalName "Mall Plaza S.A."); "Plaza S.A." is its registered legal name (RUT-confirmed, not a guess). Enabled in Phase 8C.6 after a re-confirmed clean FY2025 dry-run (27 mapped, CLP, valid_with_warnings).',
     sourceUrl:
       'https://www.cmfchile.cl/institucional/mercados/entidad.php?mercado=V&control=svs&tipoentidad=RVEMI&vig=VI&grupo=0&rut=76017019&mm=12&aa=2025&tipo=C&tipo_norma=IFRS&pestania=3',
-    verifiedAt: '2026-07-08',
+    verifiedAt: '2026-07-09',
     verificationStatus: 'verified',
-    verificationMethod: 'Official CMF RVEMI directory + entidad.php razón social cross-check (trading-name difference resolved) + live FY2025 XBRL dry-run.',
+    verificationMethod: 'Official CMF RVEMI directory + entidad.php razón social cross-check (trading-name difference resolved) + live FY2025 XBRL dry-run (re-confirmed 8C.6).',
+  },
+
+  // ── Phase 8C.6 — dialect issuers, enabled after XBRL parser dialect support ──
+  // Real annual XBRL filings that the pre-8C.6 xbrli:-prefixed/double-quoted/
+  // UTF-8-only parser could not read. The parser now also handles the
+  // default/unprefixed-namespace dialect (SONDA) and the CTI-Service
+  // single-quoted ISO-8859-1 dialect (ANDINA-B, VAPORES). RUTs are
+  // directory-verified (Phase 8C.4); each parses + validates cleanly live.
+  SONDA: {
+    ticker: 'SONDA',
+    companyName: 'SONDA',
+    cmfIssuerName: 'SONDA S.A.',
+    rut: '83628100',
+    cmfEntityId: null,
+    cmfMarket: 'V',
+    registryGroup: 'RVEMI',
+    coverageStatus: 'enabled',
+    notes:
+      'Exact RVEMI directory match "83.628.100-4 SONDA S.A." (Phase 8C.4). Instance uses the DEFAULT/unprefixed xbrli namespace (<context>/<unit>) with prefixed cl-ci:/ifrs-full: facts — unreadable by the pre-8C.6 parser (0 contexts). With 8C.6 default-namespace support: live FY2025 clean — 2044 contexts, 11756 facts, 30 mapped line items, CLP, valid_with_warnings.',
+    sourceUrl:
+      'https://www.cmfchile.cl/institucional/mercados/entidad.php?mercado=V&control=svs&tipoentidad=RVEMI&vig=VI&grupo=0&rut=83628100&mm=12&aa=2025&tipo=C&tipo_norma=IFRS&pestania=3',
+    verifiedAt: '2026-07-09',
+    verificationStatus: 'verified',
+    verificationMethod: 'Official CMF RVEMI directory (exact match, 8C.4) + live FY2025 XBRL dry-run under 8C.6 default-namespace parser support.',
+  },
+  'ANDINA-B': {
+    ticker: 'ANDINA-B',
+    companyName: 'Embotelladora Andina',
+    cmfIssuerName: 'EMBOTELLADORA ANDINA S.A.',
+    rut: '91144000',
+    cmfEntityId: null,
+    cmfMarket: 'V',
+    registryGroup: 'RVEMI',
+    coverageStatus: 'enabled',
+    notes:
+      'Exact RVEMI directory match "91.144.000-8 EMBOTELLADORA ANDINA S.A." (Phase 8C.4). "CTI Service" ISO-8859-1 filing with single-quoted attributes — unreadable by the pre-8C.6 parser (0 contexts). With 8C.6 single-quote + ISO-8859-1 support: live FY2025 clean — 818 contexts, 4402 facts, 30 mapped, CLP, valid_with_warnings.',
+    sourceUrl:
+      'https://www.cmfchile.cl/institucional/mercados/entidad.php?mercado=V&control=svs&tipoentidad=RVEMI&vig=VI&grupo=0&rut=91144000&mm=12&aa=2025&tipo=C&tipo_norma=IFRS&pestania=3',
+    verifiedAt: '2026-07-09',
+    verificationStatus: 'verified',
+    verificationMethod: 'Official CMF RVEMI directory (exact match, 8C.4) + live FY2025 XBRL dry-run under 8C.6 CTI-Service (single-quote/ISO-8859-1) parser support.',
+  },
+  VAPORES: {
+    ticker: 'VAPORES',
+    companyName: 'Compañía Sud Americana de Vapores',
+    cmfIssuerName: 'COMPAÑIA SUD AMERICANA DE VAPORES S.A.',
+    rut: '90160000',
+    cmfEntityId: null,
+    cmfMarket: 'V',
+    registryGroup: 'RVEMI',
+    coverageStatus: 'enabled',
+    notes:
+      'Exact RVEMI directory match "90.160.000-7 COMPAÑIA SUD AMERICANA DE VAPORES S.A." (Phase 8C.4). "CTI Service" ISO-8859-1 single-quoted filing — unreadable by the pre-8C.6 parser. With 8C.6 support: live FY2025 clean — 200 contexts, 1024 facts, 23 mapped, USD, valid_with_warnings. Note: this shipping holdco (CSAV) reports NO ifrs-full:Revenue line at all (0 occurrences — dominated by its Hapag-Lloyd equity stake); that field stays legitimately missing, never fabricated (Yahoo fallback fills revenue/quarterly).',
+    sourceUrl:
+      'https://www.cmfchile.cl/institucional/mercados/entidad.php?mercado=V&control=svs&tipoentidad=RVEMI&vig=VI&grupo=0&rut=90160000&mm=12&aa=2025&tipo=C&tipo_norma=IFRS&pestania=3',
+    verifiedAt: '2026-07-09',
+    verificationStatus: 'verified',
+    verificationMethod: 'Official CMF RVEMI directory (exact match, 8C.4) + live FY2025 XBRL dry-run under 8C.6 CTI-Service parser support.',
   },
 }
 
@@ -401,21 +459,14 @@ export const UNMAPPED_TICKERS: Record<string, string> = {
 }
 
 /**
- * App tickers that ARE registered securities issuers with a real annual XBRL
- * filing (verified live in Phase 8C.4), but whose filing uses a different XBRL
- * instance dialect than the current `xbrli:`-prefixed regex parser supports, so
- * it parses to zero contexts/facts. NOT enabled — extending the parser to these
- * dialects is deferred to a future phase. The RUT is directory-verified; the
- * reason is a parser limitation, not a missing filing.
+ * App tickers with a real annual XBRL filing in an instance dialect the parser
+ * could not read. As of Phase 8C.6 this set is EMPTY — the previously-listed
+ * SONDA (default-namespace), ANDINA-B and VAPORES (CTI-Service ISO-8859-1) are
+ * now parsed and are `enabled` in CMF_ISSUER_MAP above. Kept as an exported
+ * (empty) map so the coverage classifier and any future unreadable dialect
+ * have a documented home rather than a silent gap.
  */
-export const UNSUPPORTED_XBRL_TICKERS: Record<string, string> = {
-  SONDA:
-    'RVEMI-verified (83.628.100-4 SONDA S.A.). Real FY2025/FY2024 XBRL instances download fine, but they use the default XBRL namespace (unprefixed <context>/<unit> elements) rather than the xbrli:-prefixed dialect the current regex parser targets, so they parse to 0 facts. Parser support for the default-namespace dialect is deferred — filing exists, not a coverage gap.',
-  'ANDINA-B':
-    'RVEMI-verified (91.144.000-8 EMBOTELLADORA ANDINA S.A.). Real FY2025/FY2024 XBRL instances are generated by "CTI Service" in ISO-8859-1 with a different element structure the current parser does not extract (0 facts). Parser support for this dialect is deferred — filing exists, not a coverage gap.',
-  VAPORES:
-    'RVEMI-verified (90.160.000-7 COMPAÑIA SUD AMERICANA DE VAPORES S.A.). Real FY2025/FY2024 XBRL instances are generated by "CTI Service" in ISO-8859-1 with a different element structure the current parser does not extract (0 facts). Parser support for this dialect is deferred — filing exists, not a coverage gap.',
-}
+export const UNSUPPORTED_XBRL_TICKERS: Record<string, string> = {}
 
 export function getCmfIssuer(ticker: string): CmfIssuerEntry | null {
   return CMF_ISSUER_MAP[ticker] ?? null

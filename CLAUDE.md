@@ -390,6 +390,53 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 8C.6 — CMF/XBRL Non-Bank Completion: Eligible Promotion + XBRL Dialect Support** ✓ COMPLETE (2026-07-09)
+
+Finishes the official CMF/XBRL non-bank layer: **all 21 non-bank app stocks** now have authoritative annual
+CMF/XBRL data. The 4 banks stay `bank_track_required` (bank-specific taxonomy, deferred). Coverage funnel
+15/3/3/4 → **21/0/0/4**.
+
+**Promoted 3 eligible_verified → enabled** (CONCHATORO, FALABELLA, MALLPLAZA) after a re-confirmed clean live
+FY2025 dry-run (29/29/27 mapped, CLP). RUT/legal-identity notes retained.
+
+**XBRL parser dialect support** (`src/lib/financials/xbrl/parseXbrl.ts`) — verified byte-identical for the 15
+already-working issuers (CCU regression-checked):
+- **Default/unprefixed-namespace (SONDA):** the xbrli instance namespace is the XML default, so
+  `<context>`/`<unit>`/`<identifier>`/period elements are unprefixed (facts stay `cl-ci:`/`ifrs-full:`
+  prefixed). Structural regexes now accept an **optional `xbrli:` prefix**. SONDA: 0 contexts before → 2044
+  contexts / 11756 facts / 30 mapped.
+- **CTI-Service ISO-8859-1 (ANDINA-B, VAPORES):** `xbrli:`-prefixed but **single-quoted attributes** + an
+  ISO-8859-1 encoding declaration. All attribute regexes now accept both quote styles; new `decodeXbrlBytes()`
+  decodes per the `<?xml encoding=?>` declaration (ISO-8859-1 → latin1, else UTF-8, unknown → UTF-8 fail-safe);
+  the provider's `fetchFiling` uses it instead of hardcoded `toString('utf8')`. ANDINA-B 818/4402/30;
+  VAPORES 200/1024/23.
+- Namespace URIs parsed into `XbrlInstance.namespaces` (never dropped). Taxonomy-only ZIP rejection unchanged
+  (provider-level, pre-parse; parser still yields 0 facts for schema-only docs).
+
+**No concept-map change** — both dialects use standard `ifrs-full:` for every mapped concept (`cl-ci:` is only
+for CMF-extension items we don't map). **VAPORES legitimately files zero `ifrs-full:Revenue`** (a shipping
+holdco dominated by its Hapag-Lloyd equity stake) — that field stays honestly missing, never fabricated (Yahoo
+fills it).
+
+**Production write:** 6 newly-enabled issuers, **174 rows, 0 failures**, all `valid_with_warnings`.
+
+**Precedence/fallback verified live in the DB:** for the new issuers, XBRL FY2025 (priority 210) **supersedes**
+the Yahoo annual (80) for that year (`is_superseded=true` on the Yahoo row), while all Yahoo quarterly periods
++ pre-2025 annuals stay active as the fallback. No migration, no source-priority change.
+
+**Tests:** `tests/financialsCmfXbrl.test.ts` 65→72 (default-namespace + CTI-Service parsing, `decodeXbrlBytes`
+incl. unknown-encoding fail-safe, namespace-URI preservation, facts-free/taxonomy rejection, funnel 21/0/0/4,
+banks still bank_track_required). Full suite 1017→1024/1024, lint 0, build 0 errors. Cron still unscheduled.
+
+Scope limits: non-bank CMF/XBRL completion only; annual only; no interim/YTD; no bank ingestion; no new cron
+schedule; no paid/vendor APIs; no dependency; Yahoo-priority unchanged; Structured Notes/auth/watchlist/
+portfolio/macro untouched; no UI redesign.
+
+Next: bank-specific CMF/XBRL track (separate taxonomy, deferred); or **Phase 8D** (FX/rates + economic
+calendar); or **Phase 9F** (Santander + older-2024-Citi structured-notes parser).
+
+---
+
 **Phase 8C.5 — Universal Fundamentals Coverage via Yahoo Finance** ✓ COMPLETE (2026-07-09)
 
 Fixes a real gap found using Charting live: CMF/XBRL issuers had only **one annual data point**, so

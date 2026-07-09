@@ -332,6 +332,15 @@ are stored in the existing `metadata` jsonb columns on `company_reporting_period
 `period_nature` ∈ `annual`/`quarterly_discrete`/`year_to_date`/`instant`. See
 `docs/cmf_xbrl_financials_ingestion.md`.
 
+**Phase 8C.6 — non-bank CMF/XBRL completion.** The 3 `eligible_verified` issuers (CONCHATORO, FALABELLA,
+MALLPLAZA) were promoted to `enabled`, and the XBRL parser gained support for two real instance dialects
+(default/unprefixed namespace — SONDA; CTI-Service single-quoted ISO-8859-1 — ANDINA-B, VAPORES via a new
+`decodeXbrlBytes` decoder), enabling those 3 too. The coverage funnel is now **21 enabled + 4
+bank_track_required** (0 eligible/unsupported). Authoritative XBRL annual supersedes the Yahoo annual for the
+filed year; Yahoo remains the quarterly/TTM/other-year fallback. No migration, no concept-map change (both
+dialects use standard `ifrs-full:` concepts; VAPORES honestly files no revenue line). See
+`docs/cmf_xbrl_financials_ingestion.md` §14.
+
 **Phase 8C.5 — universal fundamentals via Yahoo Finance, every one of the 25 stocks now has real quarterly +
 annual data.** New `source_type = 'yahoo_finance'` (priority 80, below `manual_csv`) covers the 4 banks and
 other tickers CMF/XBRL structurally cannot reach — migration `20260711000000_financials_yahoo_source_type.sql`

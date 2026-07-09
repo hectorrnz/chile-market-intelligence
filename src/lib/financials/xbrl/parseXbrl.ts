@@ -1,14 +1,27 @@
-// Phase 8C.1 — minimal, dependency-free XBRL instance-document parser.
+// Phase 8C.1 / 8C.6 — minimal, dependency-free XBRL instance-document parser.
 //
 // Scope is deliberately narrow: this is NOT a general-purpose XBRL/XML
 // validator. It targets the specific, simple, flat structure observed in
 // real CMF-filed instance documents during discovery (see
-// docs/cmf_xbrl_provider_discovery.md): a single <xbrli:xbrl> root with
-// <xbrli:context>, <xbrli:unit>, and fact elements carrying a `contextRef`
-// attribute. No external XML library is used (mirrors this project's
-// "no dependency unless it solves a documented problem" convention, and the
-// structure is simple enough that a careful regex-based extractor is
-// sufficient and independently testable without a DOM).
+// docs/cmf_xbrl_provider_discovery.md): a single <xbrl> root with <context>,
+// <unit>, and fact elements carrying a `contextRef` attribute. No external XML
+// library is used (mirrors this project's "no dependency unless it solves a
+// documented problem" convention, and the structure is simple enough that a
+// careful regex-based extractor is sufficient and independently testable
+// without a DOM).
+//
+// Phase 8C.6 — three real CMF instance DIALECTS are now supported (verified
+// against real SONDA / ANDINA-B / VAPORES filings, kept unchanged for the 15
+// already-working issuers):
+//   1. The default/standard dialect: `xbrli:`-prefixed structural elements,
+//      double-quoted attributes, UTF-8 (SQM-B, COPEC, etc.).
+//   2. Default-namespace dialect (SONDA): the xbrli instance namespace is the
+//      XML default, so structural elements are UNPREFIXED (`<context>`,
+//      `<unit>`, `<instant>` …). Facts are still prefixed (cl-ci:/ifrs-full:).
+//   3. "CTI Service" dialect (ANDINA-B, VAPORES): `xbrli:`-prefixed but with
+//      SINGLE-quoted attributes and an ISO-8859-1 encoding declaration.
+// The structural regexes therefore accept an OPTIONAL `xbrli:` prefix and BOTH
+// quote styles; `decodeXbrlBytes` decodes ISO-8859-1 when the XML declares it.
 //
 // Rules enforced by design (do not weaken these):
 //   - Never invents a fact that isn't in the source (no EBITDA, no derived
@@ -19,6 +32,9 @@
 //     reports entirely in USD — see the discovery doc).
 //   - Preserves the raw concept name (e.g. "ifrs-full:Revenue") so an
 //     unmapped concept is never silently dropped — see conceptMap.ts.
+//   - Taxonomy schema (.xsd) / label (.xml) files are never fed here — the
+//     provider extracts only the .xbrl instance and rejects taxonomy-only
+//     archives before parsing.
 
 export interface XbrlContext {
   id: string
@@ -51,12 +67,53 @@ export interface XbrlInstance {
   contexts: XbrlContext[]
   units: XbrlUnit[]
   facts: XbrlFact[]
+  /** prefix → namespace URI, parsed from the root element's xmlns declarations. Preserved so a concept's namespace is never silently dropped (Phase 8C.6). */
+  namespaces: Record<string, string>
   /** Non-fatal issues encountered while parsing (never thrown away silently). */
   warnings: string[]
 }
 
+/**
+ * Decodes raw XBRL instance bytes to a string, honoring the `<?xml
+ * encoding="…"?>` declaration. CMF's "CTI Service" filings (ANDINA-B, VAPORES)
+ * declare ISO-8859-1; everything else is UTF-8 (or undeclared → UTF-8).
+ * Decoding ISO-8859-1 as UTF-8 corrupts accented text (á/ñ) into replacement
+ * characters — harmless for numeric facts but wrong for text values/labels, so
+ * we decode it correctly. Only latin1/ISO-8859-1 is special-cased; any other
+ * declared encoding falls back to UTF-8 (Node has no built-in decoder for
+ * exotic encodings and adding one is out of scope).
+ */
+export function decodeXbrlBytes(bytes: Buffer): string {
+  // Sniff the declaration from the first ~200 ASCII-safe bytes.
+  const head = bytes.subarray(0, 200).toString('latin1')
+  const enc = /<\?xml[^>]*\bencoding=["']([^"']+)["']/i.exec(head)?.[1]?.toLowerCase().trim()
+  if (enc === 'iso-8859-1' || enc === 'latin1' || enc === 'iso8859-1') return bytes.toString('latin1')
+  return bytes.toString('utf8')
+}
+
+// Matches a single- OR double-quoted attribute value for a given attribute
+// name, e.g. attr('contextRef') → capture group 1 = the value regardless of
+// quote style (CTI-Service filings use single quotes).
+function attrValue(attrs: string, name: string): string | null {
+  const m = new RegExp(`\\b${name}=(?:"([^"]*)"|'([^']*)')`).exec(attrs)
+  return m ? (m[1] ?? m[2]) : null
+}
+
 function stripCdata(text: string): string {
   return text.replace(/^<!\[CDATA\[/, '').replace(/\]\]>$/, '')
+}
+
+/** Parses the root <xbrl> element's xmlns:prefix="uri" declarations into a prefix→URI map. The default xmlns (no prefix) is stored under the empty-string key. */
+function parseNamespaces(xml: string): Record<string, string> {
+  const ns: Record<string, string> = {}
+  const rootMatch = /<(?:xbrli:)?xbrl\b([^>]*)>/i.exec(xml)
+  if (!rootMatch) return ns
+  const declRe = /xmlns(?::([\w-]+))?=(?:"([^"]*)"|'([^']*)')/g
+  let m: RegExpExecArray | null
+  while ((m = declRe.exec(rootMatch[1]))) {
+    ns[m[1] ?? ''] = m[2] ?? m[3] ?? ''
+  }
+  return ns
 }
 
 function decodeXmlEntities(text: string): string {
@@ -70,20 +127,23 @@ function decodeXmlEntities(text: string): string {
 
 function parseContexts(xml: string, warnings: string[]): XbrlContext[] {
   const contexts: XbrlContext[] = []
-  const contextRe = /<xbrli:context\s+id="([^"]+)">([\s\S]*?)<\/xbrli:context>/g
+  // Optional `xbrli:` prefix (SONDA uses the default namespace → unprefixed
+  // <context>) and single- OR double-quoted id (CTI-Service uses single quotes).
+  const contextRe = /<(?:xbrli:)?context\s+id=(?:"([^"]+)"|'([^']+)')[^>]*>([\s\S]*?)<\/(?:xbrli:)?context>/g
   let m: RegExpExecArray | null
   while ((m = contextRe.exec(xml))) {
-    const [, id, body] = m
-    const identMatch = /<xbrli:identifier[^>]*>([^<]*)<\/xbrli:identifier>/.exec(body)
-    const instantMatch = /<xbrli:instant>([^<]*)<\/xbrli:instant>/.exec(body)
-    const startMatch = /<xbrli:startDate>([^<]*)<\/xbrli:startDate>/.exec(body)
-    const endMatch = /<xbrli:endDate>([^<]*)<\/xbrli:endDate>/.exec(body)
+    const id = m[1] ?? m[2]
+    const body = m[3]
+    const identMatch = /<(?:xbrli:)?identifier[^>]*>([^<]*)<\/(?:xbrli:)?identifier>/.exec(body)
+    const instantMatch = /<(?:xbrli:)?instant>([^<]*)<\/(?:xbrli:)?instant>/.exec(body)
+    const startMatch = /<(?:xbrli:)?startDate>([^<]*)<\/(?:xbrli:)?startDate>/.exec(body)
+    const endMatch = /<(?:xbrli:)?endDate>([^<]*)<\/(?:xbrli:)?endDate>/.exec(body)
 
     const dimensions: { dimension: string; member: string }[] = []
-    const dimRe = /<xbrldi:explicitMember\s+dimension="([^"]+)">([^<]*)<\/xbrldi:explicitMember>/g
+    const dimRe = /<xbrldi:explicitMember\s+dimension=(?:"([^"]+)"|'([^']+)')>([^<]*)<\/xbrldi:explicitMember>/g
     let dm: RegExpExecArray | null
     while ((dm = dimRe.exec(body))) {
-      dimensions.push({ dimension: dm[1], member: dm[2].trim() })
+      dimensions.push({ dimension: dm[1] ?? dm[2], member: dm[3].trim() })
     }
 
     if (!identMatch && !instantMatch && !startMatch) {
@@ -117,11 +177,13 @@ const KNOWN_MEASURES: Record<string, string> = {
 
 function parseUnits(xml: string): XbrlUnit[] {
   const units: XbrlUnit[] = []
-  const unitRe = /<xbrli:unit\s+id="([^"]+)">([\s\S]*?)<\/xbrli:unit>/g
+  // Optional `xbrli:` prefix (SONDA) + single/double-quoted id (CTI-Service).
+  const unitRe = /<(?:xbrli:)?unit\s+id=(?:"([^"]+)"|'([^']+)')[^>]*>([\s\S]*?)<\/(?:xbrli:)?unit>/g
   let m: RegExpExecArray | null
   while ((m = unitRe.exec(xml))) {
-    const [, id, body] = m
-    const measureMatch = /<xbrli:measure>([^<]*)<\/xbrli:measure>/.exec(body)
+    const id = m[1] ?? m[2]
+    const body = m[3]
+    const measureMatch = /<(?:xbrli:)?measure>([^<]*)<\/(?:xbrli:)?measure>/.exec(body)
     const raw = measureMatch ? measureMatch[1].trim() : id
     const measure = KNOWN_MEASURES[raw.toLowerCase()] ?? KNOWN_MEASURES[id.toLowerCase()] ?? null
     units.push({ id, measure })
@@ -146,28 +208,26 @@ function parseFacts(xml: string, warnings: string[]): XbrlFact[] {
   // top-level <xbrli:xbrl> root as one giant single "fact" spanning the
   // entire file) — this was a real bug caught by this file's own test suite
   // against a realistic fixture, not by inspection.
-  const factRe = /<([A-Za-z][\w-]*):([\w-]+)((?:\s+[\w:-]+="[^"]*")*)\s*(?:\/>|>([^<]*)<\/\1:\2>)/g
+  // Attributes may be single- or double-quoted (CTI-Service uses single quotes).
+  const factRe = /<([A-Za-z][\w-]*):([\w-]+)((?:\s+[\w:-]+=(?:"[^"]*"|'[^']*'))*)\s*(?:\/>|>([^<]*)<\/\1:\2>)/g
   let m: RegExpExecArray | null
   while ((m = factRe.exec(xml))) {
     const [, prefix, localName, attrsRaw, content] = m
     if (STRUCTURAL_PREFIXES.has(prefix)) continue
 
-    const contextRefMatch = /contextRef="([^"]*)"/.exec(attrsRaw)
-    if (!contextRefMatch) continue // not a fact (e.g. a schemaRef or link element with an odd prefix)
+    const contextRef = attrValue(attrsRaw, 'contextRef')
+    if (contextRef === null) continue // not a fact (e.g. a schemaRef or link element with an odd prefix)
 
     if (content === undefined) {
-      warnings.push(`fact ${prefix}:${localName} (context ${contextRefMatch[1]}) is self-closing — no value, skipped`)
+      warnings.push(`fact ${prefix}:${localName} (context ${contextRef}) is self-closing — no value, skipped`)
       continue
     }
 
-    const unitRefMatch = /unitRef="([^"]*)"/.exec(attrsRaw)
-    const decimalsMatch = /decimals="([^"]*)"/.exec(attrsRaw)
-
     facts.push({
       concept: `${prefix}:${localName}`,
-      contextRef: contextRefMatch[1],
-      unitRef: unitRefMatch ? unitRefMatch[1] : null,
-      decimals: decimalsMatch ? decimalsMatch[1] : null,
+      contextRef,
+      unitRef: attrValue(attrsRaw, 'unitRef'),
+      decimals: attrValue(attrsRaw, 'decimals'),
       rawValue: decodeXmlEntities(stripCdata(content.trim())),
     })
   }
@@ -177,10 +237,11 @@ function parseFacts(xml: string, warnings: string[]): XbrlFact[] {
 /** Parses a raw XBRL instance document string into contexts, units, and facts. */
 export function parseXbrlInstance(xml: string): XbrlInstance {
   const warnings: string[] = []
+  const namespaces = parseNamespaces(xml)
   const contexts = parseContexts(xml, warnings)
   const units = parseUnits(xml)
   const facts = parseFacts(xml, warnings)
-  return { contexts, units, facts, warnings }
+  return { contexts, units, facts, namespaces, warnings }
 }
 
 /** True if a context has no dimensional breakdown — i.e. it represents the plain consolidated figure. */

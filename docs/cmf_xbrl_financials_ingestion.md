@@ -1,4 +1,4 @@
-# CMF/XBRL Automated Financials Ingestion (Phase 8C.2 / 8C.3 / 8C.4)
+# CMF/XBRL Automated Financials Ingestion (Phase 8C.2 / 8C.3 / 8C.4 / 8C.6)
 
 Turns the Phase 8C.1 CMF/XBRL proof-of-concept into a **working, end-to-end automated financials ingestion
 pipeline** for Chile issuers, writing into the same source-agnostic financials tables manual CSV uses. This
@@ -83,7 +83,7 @@ As of Phase 8C.4, **15 issuers are `enabled`** (production-ingested) and **3 are
 (RUT-verified + dry-run clean, deferred to a later batch — never written by the default run). Currency is
 read per fact, never assumed.
 
-**Enabled (15):**
+**Enabled (21 as of Phase 8C.6 — every non-bank app stock):**
 
 | Ticker | CMF issuer | RUT | Currency | Enabled in |
 |---|---|---|---|---|
@@ -102,23 +102,21 @@ read per fact, never assumed.
 | ENTEL | Empresa Nacional de Telecomunicaciones S.A. | 92580000 | CLP | 8C.4 |
 | CCU | Compañía Cervecerías Unidas S.A. | 90413000 | CLP | 8C.4 |
 | LTM | LATAM Airlines Group S.A. | 89862200 | USD | 8C.4 |
+| CONCHATORO | Viña Concha y Toro S.A. | 90227000 | CLP | 8C.6 (promoted) |
+| FALABELLA | FALABELLA S.A. (app "S.A.C.I. Falabella") | 90749000 | CLP | 8C.6 (promoted) |
+| MALLPLAZA | PLAZA S.A. (trades as "Mall Plaza") | 76017019 | CLP | 8C.6 (promoted) |
+| SONDA | SONDA S.A. | 83628100 | CLP | 8C.6 (default-namespace dialect) |
+| ANDINA-B | Embotelladora Andina S.A. | 91144000 | CLP | 8C.6 (CTI-Service ISO-8859-1 dialect) |
+| VAPORES | Compañía Sud Americana de Vapores S.A. | 90160000 | USD | 8C.6 (CTI-Service dialect; no ifrs-full:Revenue line — honest gap, Yahoo fills it) |
 
-**Eligible-verified (3, deferred — dry-run clean, RUT-verified, not yet production-written):**
-
-| Ticker | CMF issuer (razón social) | RUT | Note |
-|---|---|---|---|
-| CONCHATORO | Viña Concha y Toro S.A. | 90227000 | Deferred to keep the 8C.4 batch at 10 |
-| FALABELLA | FALABELLA S.A. | 90749000 | App legalName "S.A.C.I. Falabella" — name-form difference, razón-social-confirmed; deferred one batch |
-| MALLPLAZA | PLAZA S.A. | 76017019 | Trades as "Mall Plaza"; registered "Plaza S.A." — razón-social-confirmed; deferred one batch |
-
-**Not ingestible (documented, not guessed):**
+**Not ingestible via this securities-issuer pipeline (documented, not guessed):**
 
 | Ticker | Reason | Coverage status |
 |---|---|---|
-| SONDA | Real XBRL filing, but default-namespace (unprefixed) dialect the current parser can't read | `unsupported_page_shape` |
-| ANDINA-B | Real XBRL filing, but "CTI Service" ISO-8859-1 dialect the current parser can't read | `unsupported_page_shape` |
-| VAPORES | Real XBRL filing, but "CTI Service" ISO-8859-1 dialect the current parser can't read | `unsupported_page_shape` |
-| BSANTANDER, CHILE, BCI, ITAUCL | Banks — absent from the securities-issuer XBRL directory; separate CMF banking track | `bank_track_required` |
+| BSANTANDER, CHILE, BCI, ITAUCL | Banks — absent from the securities-issuer XBRL directory under every registry group; separate CMF banking track with a bank-specific taxonomy | `bank_track_required` |
+
+As of Phase 8C.6 there are **no** `eligible_verified` or `unsupported_page_shape` issuers remaining — the
+coverage funnel is **21 enabled + 4 bank_track_required = 25**.
 
 RUTs are **never guessed**. Adding an issuer requires confirming its RUT against CMF's own directory first (§4a/§4c).
 
@@ -412,3 +410,37 @@ Ingestion: `npm run ingest:yahoo-financials[:dry]` (`--ticker`, `--write`) + cro
 0 failures — every stock now has 7-10 real reporting periods. The 3 tickers (SQM-B, COPEC, BSANTANDER)
 carrying stale synthetic `manual_csv` sample data from the original Phase 8C CSV templates had that data
 deleted. Tests: `tests/yahooFundamentals.test.ts` (18 new).
+
+## 14. Phase 8C.6 — non-bank CMF/XBRL completion (promotion + dialect support)
+
+The three `eligible_verified` issuers were **promoted to enabled** (CONCHATORO, FALABELLA, MALLPLAZA) after a
+re-confirmed clean live FY2025 dry-run, and the three `unsupported_page_shape` issuers are now **readable and
+enabled** after two XBRL parser dialects were added — bringing every non-bank app stock (21 of 25) onto
+authoritative CMF/XBRL. The 4 banks stay `bank_track_required`.
+
+**Two dialects added to `src/lib/financials/xbrl/parseXbrl.ts`** (verified byte-identical output for the 15
+already-working issuers — CCU regression-checked):
+
+- **Default/unprefixed-namespace (SONDA):** the xbrli instance namespace is the XML *default*, so
+  `<context>`/`<unit>`/`<identifier>`/`<period>` are unprefixed (facts stay `cl-ci:`/`ifrs-full:`-prefixed).
+  The context/unit/period regexes now accept an **optional `xbrli:` prefix**. SONDA parsed 0 contexts before →
+  2044 contexts / 11756 facts / 30 mapped now.
+- **CTI-Service ISO-8859-1 (ANDINA-B, VAPORES):** `xbrli:`-prefixed but with **single-quoted attributes** and
+  an ISO-8859-1 encoding declaration. All attribute regexes now accept both quote styles, and a new
+  `decodeXbrlBytes(buf)` decodes per the `<?xml encoding=?>` declaration (ISO-8859-1 → `latin1`, UTF-8/absent →
+  `utf8`, any other declared encoding → `utf8` fail-safe). The provider's `fetchFiling` uses it instead of a
+  hardcoded `toString('utf8')`. ANDINA-B 818/4402/30; VAPORES 200/1024/23.
+
+Namespace URIs are parsed into `XbrlInstance.namespaces` (prefix → URI) so a concept's namespace is never
+dropped. Taxonomy-only ZIP rejection is unchanged (provider-level, before parsing) — the parser still yields 0
+facts for a schema-only document.
+
+**No concept-map change** — both dialects use standard `ifrs-full:` for every mapped concept (verified live).
+VAPORES (CSAV, a shipping holdco dominated by its Hapag-Lloyd equity stake) reports **zero** `ifrs-full:Revenue`
+facts; that line stays honestly missing (never fabricated; Yahoo fills revenue/quarterly).
+
+**Precedence/fallback (verified live in the DB):** for the 6 newly-enabled issuers, the XBRL FY2025 annual
+(priority 210) **supersedes** the Yahoo annual (80) for that year (`is_superseded=true` on the Yahoo row),
+while all Yahoo quarterly periods and pre-2025 annual periods stay active as the fallback. Production write:
+**174 rows, 0 failures**, all `valid_with_warnings`. No migration, no source-priority change, cron still
+unscheduled.

@@ -24,7 +24,7 @@ import { unzip, findXbrlInstance, isTaxonomyOnlyArchive, looksLikeZip, MAX_ZIP_B
 import { buildTargetPeriod, classifyContext, currentPeriodContextIds } from '../src/lib/financials/xbrl/periodClassify.ts'
 import { mapConcept, XBRL_CONCEPT_MAP, KNOWN_UNMAPPED_CONCEPTS } from '../src/lib/financials/xbrl/conceptMap.ts'
 import { validateNormalizedFinancials } from '../src/lib/financials/xbrl/validateFinancials.ts'
-import { parseXbrlInstance } from '../src/lib/financials/xbrl/parseXbrl.ts'
+import { parseXbrlInstance, decodeXbrlBytes, plainFacts } from '../src/lib/financials/xbrl/parseXbrl.ts'
 import { cmfXbrlProvider, buildFilingRefs, candidateAnnualPeriods, countUnmappedPlainConcepts, instanceFromParsed } from '../src/lib/financials/providers/cmfXbrlProvider.ts'
 import {
   CMF_ISSUER_MAP,
@@ -418,29 +418,126 @@ describe('cmfIssuerMap — Phase 8C.3 issuer coverage expansion', () => {
   })
 })
 
-describe('cmfIssuerMap — Phase 8C.4 coverage expansion (enabled vs eligible_verified)', () => {
-  it('expands to 15 enabled issuers (original 5 + 10 new) with directory-verified RUTs', () => {
+describe('parseXbrl — Phase 8C.6 dialect support (default-namespace + CTI-Service ISO-8859-1)', () => {
+  // Sanitized, tiny, synthetic instances modeled on the real dialect shapes —
+  // no real filing bytes committed.
+  const STANDARD = [
+    `<?xml version="1.0" encoding="utf-8"?>`,
+    `<xbrli:xbrl xmlns:xbrli="http://www.xbrl.org/2003/instance" xmlns:ifrs-full="https://xbrl.ifrs.org/x" xmlns:iso4217="http://www.xbrl.org/2003/iso4217">`,
+    `<xbrli:context id="D"><xbrli:entity><xbrli:identifier scheme="s">99-9</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period></xbrli:context>`,
+    `<xbrli:unit id="CLP"><xbrli:measure>iso4217:CLP</xbrli:measure></xbrli:unit>`,
+    `<ifrs-full:Revenue contextRef="D" unitRef="CLP" decimals="-3">1000</ifrs-full:Revenue>`,
+    `</xbrli:xbrl>`,
+  ].join('\n')
+
+  // SONDA-style: xbrli instance namespace is the XML DEFAULT → unprefixed
+  // <context>/<unit>/<identifier>/<period>; facts stay prefixed.
+  const DEFAULT_NS = [
+    `<?xml version="1.0" encoding="utf-8"?>`,
+    `<xbrl xmlns="http://www.xbrl.org/2003/instance" xmlns:ifrs-full="https://xbrl.ifrs.org/x" xmlns:iso4217="http://www.xbrl.org/2003/iso4217">`,
+    `<context id="Dur"><entity><identifier scheme="s">83628100-4</identifier></entity><period><startDate>2025-01-01</startDate><endDate>2025-12-31</endDate></period></context>`,
+    `<context id="Inst"><entity><identifier scheme="s">83628100-4</identifier></entity><period><instant>2025-12-31</instant></period></context>`,
+    `<unit id="CLP"><measure>iso4217:CLP</measure></unit>`,
+    `<ifrs-full:Revenue contextRef="Dur" unitRef="CLP" decimals="-3">2000</ifrs-full:Revenue>`,
+    `<ifrs-full:Assets contextRef="Inst" unitRef="CLP" decimals="-3">9000</ifrs-full:Assets>`,
+    `</xbrl>`,
+  ].join('\n')
+
+  // CTI-Service-style: xbrli-prefixed but SINGLE-quoted attributes + ISO-8859-1.
+  // Includes an accented text value to exercise the latin1 decode.
+  const CTI_SERVICE = [
+    `<?xml version='1.0' encoding='ISO-8859-1'?>`,
+    `<xbrli:xbrl xmlns:xbrli="http://www.xbrl.org/2003/instance" xmlns:ifrs-full="https://xbrl.ifrs.org/x" xmlns:iso4217="http://www.xbrl.org/2003/iso4217" xmlns:cl-ci="https://cmf">`,
+    `<xbrli:context id='AcumuladoActual'><xbrli:entity><xbrli:identifier scheme='s'>91144000-8</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period></xbrli:context>`,
+    `<xbrli:unit id='CLP'><xbrli:measure>iso4217:CLP</xbrli:measure></xbrli:unit>`,
+    `<ifrs-full:Revenue unitRef='CLP' contextRef='AcumuladoActual' decimals='-3'>3000</ifrs-full:Revenue>`,
+    `<cl-ci:NombreEntidad contextRef='AcumuladoActual'>Compañía Andina</cl-ci:NombreEntidad>`,
+    `</xbrli:xbrl>`,
+  ].join('\n')
+
+  it('decodeXbrlBytes honors the encoding declaration (ISO-8859-1 → latin1, else UTF-8)', () => {
+    // latin1-encoded accented content decoded correctly (not mojibake).
+    const latin1Buf = Buffer.from(CTI_SERVICE, 'latin1')
+    assert.match(decodeXbrlBytes(latin1Buf), /Compañía Andina/)
+    // a UTF-8 declaration → UTF-8 decode; an undeclared file → UTF-8.
+    assert.match(decodeXbrlBytes(Buffer.from(STANDARD, 'utf8')), /ifrs-full:Revenue/)
+    assert.match(decodeXbrlBytes(Buffer.from('<xbrl><ifrs-full:Revenue contextRef="D">1</ifrs-full:Revenue></xbrl>', 'utf8')), /Revenue/)
+  })
+  it('an unknown/exotic declared encoding falls back to UTF-8 (fails safe, never throws)', () => {
+    const buf = Buffer.from(`<?xml version="1.0" encoding="Shift_JIS"?><xbrl></xbrl>`, 'utf8')
+    assert.doesNotThrow(() => decodeXbrlBytes(buf))
+    assert.match(decodeXbrlBytes(buf), /xbrl/)
+  })
+  it('parses the standard xbrli:-prefixed dialect unchanged (regression)', () => {
+    const inst = parseXbrlInstance(STANDARD)
+    assert.equal(inst.contexts.length, 1)
+    assert.equal(inst.units.length, 1)
+    assert.equal(inst.facts.length, 1)
+    assert.equal(inst.facts[0].concept, 'ifrs-full:Revenue')
+    assert.equal(inst.units[0].measure, 'CLP')
+  })
+  it('parses the default/unprefixed-namespace dialect (SONDA): unprefixed contexts/units, prefixed facts', () => {
+    const inst = parseXbrlInstance(DEFAULT_NS)
+    assert.equal(inst.contexts.length, 2)
+    assert.equal(inst.units.length, 1)
+    assert.equal(inst.facts.length, 2)
+    const dur = inst.contexts.find((c) => c.id === 'Dur')!
+    assert.equal(dur.startDate, '2025-01-01')
+    assert.equal(dur.endDate, '2025-12-31')
+    const inst2 = inst.contexts.find((c) => c.id === 'Inst')!
+    assert.equal(inst2.instant, '2025-12-31')
+    assert.equal(inst.units[0].measure, 'CLP')
+    const rev = plainFacts(inst).find((f) => f.concept === 'ifrs-full:Revenue')!
+    assert.equal(rev.rawValue, '2000')
+    assert.equal(rev.unitRef, 'CLP')
+  })
+  it('parses the CTI-Service dialect (single-quoted attrs, ISO-8859-1)', () => {
+    const decoded = decodeXbrlBytes(Buffer.from(CTI_SERVICE, 'latin1'))
+    const inst = parseXbrlInstance(decoded)
+    assert.equal(inst.contexts.length, 1)
+    assert.equal(inst.units.length, 1)
+    const rev = inst.facts.find((f) => f.concept === 'ifrs-full:Revenue')!
+    assert.equal(rev.contextRef, 'AcumuladoActual')
+    assert.equal(rev.unitRef, 'CLP')
+    assert.equal(rev.decimals, '-3')
+    assert.equal(rev.rawValue, '3000')
+  })
+  it('preserves the root namespace URIs (never silently dropped)', () => {
+    const inst = parseXbrlInstance(DEFAULT_NS)
+    assert.equal(inst.namespaces[''], 'http://www.xbrl.org/2003/instance') // default xmlns
+    assert.equal(inst.namespaces['ifrs-full'], 'https://xbrl.ifrs.org/x')
+  })
+  it('a facts-free instance (e.g. an accidental taxonomy fragment) yields 0 facts, so it is rejected downstream', () => {
+    const inst = parseXbrlInstance(`<?xml version="1.0"?><xsd:schema xmlns:xsd="x"><xsd:element name="Revenue"/></xsd:schema>`)
+    assert.equal(inst.facts.length, 0)
+    assert.equal(inst.contexts.length, 0)
+  })
+})
+
+describe('cmfIssuerMap — Phase 8C.6 non-bank completion (all non-bank issuers enabled)', () => {
+  it('expands to 21 enabled issuers (the whole non-bank universe) with directory-verified RUTs', () => {
     const enabled = getEnabledTickers()
-    assert.equal(enabled.length, 15)
-    for (const t of ['SQM-B', 'COPEC', 'ENELCHILE', 'CMPC', 'CENCOSUD', 'LAS-CONDES', 'CAP', 'ENELAM', 'COLBUN', 'AGUAS-A', 'RIPLEY', 'PARAUCO', 'ENTEL', 'CCU', 'LTM']) {
+    assert.equal(enabled.length, 21)
+    // original 15 + 3 promoted (CONCHATORO/FALABELLA/MALLPLAZA) + 3 dialect (SONDA/ANDINA-B/VAPORES)
+    for (const t of ['SQM-B', 'COPEC', 'ENELCHILE', 'CMPC', 'CENCOSUD', 'LAS-CONDES', 'CAP', 'ENELAM', 'COLBUN', 'AGUAS-A', 'RIPLEY', 'PARAUCO', 'ENTEL', 'CCU', 'LTM', 'CONCHATORO', 'FALABELLA', 'MALLPLAZA', 'SONDA', 'ANDINA-B', 'VAPORES']) {
       assert.ok(enabled.includes(t), `${t} should be enabled`)
       assert.ok(getCmfIssuer(t)?.rut, `${t} must carry a RUT`)
     }
   })
-  it('the 3 eligible_verified issuers are mapped but NOT in the enabled (production-write) set', () => {
-    const eligible = getEligibleVerifiedTickers()
-    assert.deepEqual([...eligible].sort(), ['CONCHATORO', 'FALABELLA', 'MALLPLAZA'])
-    const enabled = getEnabledTickers()
-    for (const t of eligible) {
-      assert.ok(isCmfIssuerMapped(t), `${t} should be mapped`)
-      assert.equal(isCmfIssuerEnabled(t), false, `${t} must NOT be enabled`)
-      assert.ok(!enabled.includes(t), `${t} must be excluded from the default ingestion set`)
-      assert.equal(getCmfIssuer(t)?.coverageStatus, 'eligible_verified')
-    }
+  it('there are no eligible_verified issuers left after 8C.6 (all promoted)', () => {
+    assert.equal(getEligibleVerifiedTickers().length, 0)
   })
-  it('getMappedTickers = enabled + eligible_verified (18), each carrying a RUT and RVEMI registry group', () => {
+  it('the 3 dialect issuers are enabled (not deferred) and carry evidence-backed notes', () => {
+    for (const t of ['SONDA', 'ANDINA-B', 'VAPORES']) {
+      assert.equal(isCmfIssuerEnabled(t), true, `${t} should be enabled`)
+      assert.match(getCmfIssuer(t)!.notes, /dialect|default-namespace|CTI Service|ISO-8859-1|single-quot/i)
+    }
+    // UNSUPPORTED_XBRL_TICKERS is now empty — nothing left unreadable.
+    assert.equal(Object.keys(UNSUPPORTED_XBRL_TICKERS).length, 0)
+  })
+  it('getMappedTickers = enabled (21), each carrying a RUT and RVEMI registry group', () => {
     const mapped = getMappedTickers()
-    assert.equal(mapped.length, 18)
+    assert.equal(mapped.length, 21)
     assert.equal(mapped.length, getEnabledTickers().length + getEligibleVerifiedTickers().length)
     for (const [ticker, entry] of Object.entries(CMF_ISSUER_MAP)) {
       assert.ok(entry.rut, `${ticker} missing rut`)
@@ -448,7 +545,7 @@ describe('cmfIssuerMap — Phase 8C.4 coverage expansion (enabled vs eligible_ve
       assert.ok(['enabled', 'eligible_verified'].includes(entry.coverageStatus))
     }
   })
-  it('all 4 banks are bank_track_required (not guessed, not forced into the industrial path)', () => {
+  it('all 4 banks remain bank_track_required (not guessed, not forced into the industrial path)', () => {
     for (const t of ['BSANTANDER', 'CHILE', 'BCI', 'ITAUCL']) {
       assert.ok(t in UNMAPPED_TICKERS, `${t} should be documented as unmapped`)
       assert.equal(getCmfIssuer(t), null)
@@ -456,22 +553,15 @@ describe('cmfIssuerMap — Phase 8C.4 coverage expansion (enabled vs eligible_ve
       assert.match(UNMAPPED_TICKERS[t], /bank/i)
     }
   })
-  it('the 3 unsupported-dialect issuers are documented (real filing, parser limitation) and not mapped for ingestion', () => {
-    for (const t of ['SONDA', 'ANDINA-B', 'VAPORES']) {
-      assert.ok(t in UNSUPPORTED_XBRL_TICKERS, `${t} should be documented as unsupported dialect`)
-      assert.equal(getCmfIssuer(t), null)
-      assert.match(UNSUPPORTED_XBRL_TICKERS[t], /deferred|dialect|parser/i)
-    }
-  })
 })
 
-describe('cmfCoverage — full coverage funnel over the app universe', () => {
-  it('classifies enabled, eligible_verified, bank, and unsupported tickers correctly', () => {
+describe('cmfCoverage — full coverage funnel over the app universe (8C.6)', () => {
+  it('classifies enabled and bank tickers correctly; former dialect issuers are now enabled', () => {
     assert.equal(classifyTickerCoverage('SQM-B').status, 'enabled')
-    assert.equal(classifyTickerCoverage('LTM').status, 'enabled')
-    assert.equal(classifyTickerCoverage('CONCHATORO').status, 'eligible_verified')
+    assert.equal(classifyTickerCoverage('CONCHATORO').status, 'enabled')
+    assert.equal(classifyTickerCoverage('SONDA').status, 'enabled')
+    assert.equal(classifyTickerCoverage('VAPORES').status, 'enabled')
     assert.equal(classifyTickerCoverage('BSANTANDER', 'Banking').status, 'bank_track_required')
-    assert.equal(classifyTickerCoverage('SONDA').status, 'unsupported_page_shape')
   })
   it('an unresearched bank-sector ticker defaults to bank_track_required (never silently not_configured)', () => {
     assert.equal(classifyTickerCoverage('SOMEBANK', 'Banking').status, 'bank_track_required')
@@ -485,7 +575,7 @@ describe('cmfCoverage — full coverage funnel over the app universe', () => {
     assert.equal(bank.rut, null)
     assert.equal(bank.registryGroup, null)
   })
-  it('buildCmfCoverageReport funnels the 25-stock universe into 15/3/3/4', () => {
+  it('buildCmfCoverageReport funnels the 25-stock universe into 21 enabled + 4 bank_track_required', () => {
     const universe = [
       ...['SQM-B', 'COPEC', 'ENELCHILE', 'CMPC', 'CENCOSUD', 'LAS-CONDES', 'CAP', 'ENELAM', 'COLBUN', 'AGUAS-A', 'RIPLEY', 'PARAUCO', 'ENTEL', 'CCU', 'LTM'].map((t) => ({ ticker: t, sector: 'Industrials' })),
       ...['CONCHATORO', 'FALABELLA', 'MALLPLAZA'].map((t) => ({ ticker: t, sector: 'Retail' })),
@@ -494,11 +584,10 @@ describe('cmfCoverage — full coverage funnel over the app universe', () => {
     ]
     const report = buildCmfCoverageReport(universe)
     assert.equal(report.totalScanned, 25)
-    assert.equal(report.counts.enabled, 15)
-    assert.equal(report.counts.eligible_verified, 3)
-    assert.equal(report.counts.unsupported_page_shape, 3)
+    assert.equal(report.counts.enabled, 21)
+    assert.equal(report.counts.eligible_verified, 0)
+    assert.equal(report.counts.unsupported_page_shape, 0)
     assert.equal(report.counts.bank_track_required, 4)
-    // the funnel accounts for every scanned stock
     const summed = Object.values(report.counts).reduce((a, b) => a + b, 0)
     assert.equal(summed, 25)
   })

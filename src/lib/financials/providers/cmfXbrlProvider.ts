@@ -24,7 +24,7 @@
 //     cmfXbrlFinancials.ts), which itself defaults to discovery/dry-run.
 
 import { getCmfIssuer } from '../cmfIssuerMap.ts'
-import { parseXbrlInstance, plainFacts, findUnit, findContext, factNumericValue, type XbrlInstance } from '../xbrl/parseXbrl.ts'
+import { parseXbrlInstance, plainFacts, findUnit, findContext, factNumericValue, decodeXbrlBytes, type XbrlInstance } from '../xbrl/parseXbrl.ts'
 import { mapConcept } from '../xbrl/conceptMap.ts'
 import { unzip, findXbrlInstance, isTaxonomyOnlyArchive } from '../xbrl/unzip.ts'
 import { buildTargetPeriod, currentPeriodContextIds, type TargetPeriod } from '../xbrl/periodClassify.ts'
@@ -270,7 +270,10 @@ export const cmfXbrlProvider: FinancialsProvider = {
       ok: true,
       value: {
         ref,
-        raw: instance.data.toString('utf8'),
+        // Phase 8C.6 — decode per the instance's own XML encoding declaration
+        // (CTI-Service filings declare ISO-8859-1); UTF-8 otherwise (unchanged
+        // for the standard-dialect issuers).
+        raw: decodeXbrlBytes(instance.data),
         fetchedAt: new Date().toISOString(),
         sourceFile: buildSourceFileName(ref),
         sourceUrl: ref.locator,
