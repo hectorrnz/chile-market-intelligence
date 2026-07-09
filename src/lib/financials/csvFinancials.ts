@@ -26,7 +26,7 @@ export const VALID_PERIOD_TYPES = ['quarterly', 'annual', 'ttm'] as const
 export const VALID_STATEMENT_TYPES = ['income', 'cash', 'balance', 'returns'] as const
 export const VALID_EARNINGS_STATUS = ['expected', 'reported', 'preliminary', 'missing'] as const
 /** Full set of source_type values the schema accepts (see migration header comment). manual_csv is one of these, never the architecture. */
-export const VALID_SOURCE_TYPES = ['manual_csv', 'cmf_fecu', 'xbrl', 'vendor_feed', 'broker_feed', 'document_ingestion', 'static_seed', 'derived'] as const
+export const VALID_SOURCE_TYPES = ['manual_csv', 'cmf_fecu', 'xbrl', 'vendor_feed', 'broker_feed', 'document_ingestion', 'static_seed', 'derived', 'yahoo_finance'] as const
 
 export type FiscalPeriod = (typeof VALID_FISCAL_PERIODS)[number]
 export type PeriodType = (typeof VALID_PERIOD_TYPES)[number]

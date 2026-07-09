@@ -114,6 +114,12 @@ export const SOURCE_REGISTRY = {
     labelEn: 'Persisted financials via CMF XBRL',
     labelEs: 'Financials persistidos vía XBRL de la CMF',
   },
+  financialsPersistedYahoo: {
+    id: 'financials-persisted-yahoo',
+    state: 'persisted',
+    labelEn: 'Fundamentals via Yahoo Finance (unofficial)',
+    labelEs: 'Fundamentales vía Yahoo Finance (no oficial)',
+  },
   automatedFinancialsBlocked: {
     id: 'automated-financials-blocked',
     state: 'blocked',

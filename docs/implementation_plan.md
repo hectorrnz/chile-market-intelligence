@@ -925,6 +925,59 @@ track; or **Phase 8D** / **Phase 9F**.
 
 ---
 
+## Phase 8C.5 — Universal Fundamentals Coverage via Yahoo Finance (Quarterly + Annual for All 25 Stocks) ✓ COMPLETE (2026-07-09)
+
+Fixes a real usability gap surfaced by using Charting on the live app: CMF/XBRL issuers only had **one annual
+data point**, so the Quarterly/TTM/Annual toggle had nothing to aggregate for 15 stocks, and 10 stocks (the 4
+banks + 3 unsupported-XBRL-dialect tickers + 3 synthetic-only tickers) had **no persisted fundamentals at
+all**. CMF/XBRL structurally cannot reach the banks (Phase 8C.4 confirmed this), so no amount of CMF work
+alone could make every stock's tabs work.
+
+- **Yahoo Finance is the universal fundamentals source** (`src/lib/financials/providers/yahooFundamentalsProvider.ts`):
+  fetches real quarterly (discrete, not YTD) + ~4-5 years annual income/balance/cash-flow for all 25 app
+  tickers via `fundamentalsTimeSeries`, reading `financialCurrency` per ticker. Missing fields stay missing
+  (never coerced to 0); capex/dividends stored as positive magnitudes (Yahoo reports them as negative
+  outflows); values stored raw in the native currency, matching how XBRL facts are stored.
+- **New source_type `yahoo_finance` at priority 80** — deliberately **below** `manual_csv` (100) and every
+  official/vendor source, above `derived`/`static_seed`. This makes CMF/XBRL annual (210) supersede Yahoo
+  annual automatically for the same fiscal year (verified live: CCU/SQM-B/CMPC etc. show `sourceType: xbrl`
+  for their filed year), while Yahoo quarterly — a different logical period — always shows. Migration
+  `20260711000000_financials_yahoo_source_type.sql` widens the `source_type` CHECK (idempotent, additive).
+- **Retry-hardened fetch**: `yahoo-finance2`'s `fundamentalsTimeSeries(..., module: 'all')` intermittently
+  fails with a "Failed to generate key" error non-deterministically (same ticker succeeds on one call, fails
+  on the next — a real library quirk, not "this ticker has no data"). Found live during validation (SQM-B's
+  quarterly data was silently empty on the first ingestion run). Fixed with a 3-attempt retry per fetch; a
+  fetch that still fails after retries fails the whole ticker loudly (never silently persists a partial/empty
+  history) — this is exactly the kind of gap the project's no-silent-fabrication doctrine exists to catch.
+- **Ingestion**: `npm run ingest:yahoo-financials[:dry]` (`--ticker` for one, `--write` for real) + cron route
+  `GET /api/cron/financials/yahoo` (Bearer `CRON_SECRET`, unscheduled — manual/reviewable like the CMF cron).
+- **Honest labeling**: badge reads "Fundamentals via Yahoo Finance (unofficial)" — never claims Yahoo is
+  official; `resolveFinancials.ts`'s `summarizeSource` surfaces the authoritative source present (XBRL, if
+  any) with a `(+ Yahoo)`/`(+ manual)` nuance rather than a blanket label.
+- **Production result**: all 25 tickers ingested, **2,921 rows written, 0 failures**. Every stock now has
+  7–10 real reporting periods (1 XBRL-authoritative annual + Yahoo quarterly/annual for the 15 XBRL issuers;
+  9-10 pure-Yahoo periods for the other 10). The 3 tickers (SQM-B, COPEC, BSANTANDER) carrying stale synthetic
+  `manual_csv` sample rows from the original Phase 8C CSV templates had those rows deleted — no fabricated
+  data remains in the database.
+- **Charting fix verified live** (dev server, Phase 8C.4's Quarterly/Annual/TTM toggle logic from the prior
+  session): BSANTANDER (bank, previously zero data) now renders all 3 frequency modes with real numbers —
+  Quarterly shows 9 correctly-sorted periods, Annual correctly groups into 4 real year bars, TTM is enabled
+  (≥4 quarters) and renders real rolling-window revenue values, no `—` placeholders.
+- **Tests**: 18 new (`tests/yahooFundamentals.test.ts` — period derivation, field mapping incl. sign
+  conventions and missing-field skipping, metrics, source registration/priority, migration, cron route
+  hygiene) + 1 existing hygiene test corrected (a `/official/` regex false-positive that also matched the
+  honest "unofficial" disclaimer — fixed to use a word boundary and assert the disclaimer is present). Full
+  suite 999 → 1017/1017, lint 0, build 0 errors.
+
+Scope limits: universal fundamentals coverage only; no new charting features beyond making the existing
+toggle work; no paid/vendor API; no changes to CMF/XBRL priority/logic; Structured Notes/auth/watchlist/
+portfolio/macro untouched; no UI redesign beyond the existing badge wiring; no mobile work.
+
+Next: **Phase 8D** (FX/rates + economic calendar) — or continue CMF/XBRL issuer expansion (promote the 3
+eligible_verified, add the 2 extra XBRL dialects) now that Yahoo backstops every stock regardless.
+
+---
+
 ## Phase 9A — Structured Notes Foundation + Excel Workbook Audit + PDF Extraction MVP ✓ COMPLETE (2026-07-06)
 
 New **Structured Notes** module (`/structured-notes`) — automation-first replacement for the legacy

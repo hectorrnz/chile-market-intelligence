@@ -1,4 +1,4 @@
-# Data Source Status Matrix — Phase 8A / 8B / 8C / 8C.1 / 8C.2 / 8C.3
+# Data Source Status Matrix — Phase 8A / 8B / 8C / 8C.1 / 8C.2 / 8C.3 / 8C.4 / 8C.5
 
 Audit date: 2026-07-02 (Phase 8A) · updated 2026-07-02 (Phase 8B — Compare
 real-data wiring + no-static-terminal-state policy) · updated 2026-07-03
@@ -15,9 +15,33 @@ populated source.) · updated 2026-07-08 (Phase 8C.3 — **issuer coverage
 expanded from 2 to 5** (added ENELCHILE, CMPC, CENCOSUD) via a conservative,
 verified, issuer-by-issuer process against CMF's own official issuer
 directory; banks (BSANTANDER, CHILE) confirmed structurally unmappable via
-this tool, not merely unresearched. See `docs/cmf_xbrl_financials_ingestion.md`).
-This is the canonical truth-layer reference for what each visible module's
-data source actually is, versus what its UI label says.
+this tool, not merely unresearched) · updated 2026-07-08 (Phase 8C.4 — full
+coverage sweep, enabled issuers 5→15, coverage funnel classifies every stock)
+· updated 2026-07-09 (Phase 8C.5 — **every one of the 25 app stocks now has
+real quarterly + annual fundamentals**: Yahoo Finance added as a universal,
+honestly-labeled `yahoo_finance` (priority 80) fallback source, covering the
+4 banks and other tickers CMF/XBRL structurally cannot reach; CMF/XBRL annual
+still supersedes Yahoo annual for the 15 filed issuers. See
+`docs/cmf_xbrl_financials_ingestion.md` §13). This is the canonical
+truth-layer reference for what each visible module's data source actually is,
+versus what its UI label says.
+
+## Phase 8C.5 — Universal fundamentals: every stock has quarterly + annual data
+
+- **All 25 app stocks** (including the 4 banks CMF/XBRL cannot reach) now have persisted quarterly + annual
+  fundamentals, so Charting's Quarterly/TTM/Annual toggle works for every ticker. Source: Yahoo Finance
+  (`source_type: 'yahoo_finance'`, priority 80 — below `manual_csv` and every official/vendor source, above
+  `derived`/`static_seed`). Badge: "Fundamentals via Yahoo Finance (unofficial)" — never claims official status.
+- **CMF/XBRL remains authoritative where it exists**: for the 15 XBRL-enabled issuers, the filed annual period
+  still shows `sourceType: xbrl` (Yahoo's matching annual row is automatically superseded); Yahoo fills the
+  quarterly/other-year gaps around it. Verified live for CCU, SQM-B, and others.
+- **Production state**: 2,921 rows written across all 25 tickers, 0 failures. The 3 tickers that previously
+  carried stale synthetic `manual_csv` sample data (SQM-B, COPEC, BSANTANDER, from the original Phase 8C CSV
+  templates) had that fabricated data deleted — nothing fake remains persisted.
+- **A real library bug was caught and fixed during validation**: `yahoo-finance2`'s `fundamentalsTimeSeries`
+  intermittently fails non-deterministically (same ticker, same call, sometimes succeeds/sometimes fails) —
+  the original silent `.catch(() => [])` would have persisted an honestly-empty-looking but actually-wrong
+  partial history. Fixed with retries + loud failure on exhaustion (never silently degrades).
 
 ## Phase 8C.2 / 8C.3 / 8C.4 — Financials source is now automated (CMF/XBRL), 15 issuers enabled
 

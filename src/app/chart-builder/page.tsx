@@ -51,9 +51,27 @@ const PALETTE = ['#004A64', '#B07A12', '#0E7FB8', '#1A6630', '#8B0E04', '#5B6770
 
 const companies = getAllCompanies()
 const compMap = Object.fromEntries(companies.map(c => [c.ticker, c]))
-const qIdx = (p: string) => { const m = p.match(/Q(\d)\s+(\d{4})/); return m ? +m[2] * 4 + +m[1] : 0 }
-const qShort = (p: string) => { const m = p.match(/Q(\d)\s+(\d{4})/); return m ? `Q${m[1]}'${m[2].slice(2)}` : p }
-const yearOf = (p: string) => { const m = p.match(/Q\d\s+(\d{4})/); return m ? m[1] : '' }
+// Periods come as either "Q# YYYY" (quarterly) or "FY YYYY" (annual — e.g.
+// CMF/XBRL, which ingests annual filings only). All three helpers must
+// recognize both shapes, or an annual-only ticker's records silently sort to
+// index 0 / lose their year (see the CMF/XBRL Charting single-point issue).
+const qIdx = (p: string) => {
+  const q = p.match(/Q(\d)\s+(\d{4})/); if (q) return +q[2] * 4 + +q[1]
+  const fy = p.match(/FY\s+(\d{4})/i); if (fy) return +fy[1] * 4 + 4 // sorts at year-end
+  return 0
+}
+const qShort = (p: string) => {
+  const q = p.match(/Q(\d)\s+(\d{4})/); if (q) return `Q${q[1]}'${q[2].slice(2)}`
+  const fy = p.match(/FY\s+(\d{4})/i); if (fy) return `FY'${fy[1].slice(2)}`
+  return p
+}
+const yearOf = (p: string) => {
+  const q = p.match(/Q\d\s+(\d{4})/); if (q) return q[1]
+  const fy = p.match(/FY\s+(\d{4})/i); if (fy) return fy[1]
+  return ''
+}
+const isQuarterlyPeriod = (p: string) => /^Q\d/.test(p)
+const isAnnualPeriod = (p: string) => /^FY/i.test(p)
 
 const sumOrNull = (w: FundamentalRecord[], k: keyof FundamentalRecord) => {
   const xs = w.map(r => r[k]).filter((v): v is number => typeof v === 'number')
@@ -67,9 +85,12 @@ function aggVal(w: FundamentalRecord[], m: Metric): number | null {
 }
 
 /** Segmented toggle button (module-scope so its identity is stable across renders). */
-function Seg({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+function Seg({ active, onClick, disabled, title, children }: { active: boolean; onClick: () => void; disabled?: boolean; title?: string; children: ReactNode }) {
   return (
-    <button onClick={onClick} className={`px-2.5 py-0.5 text-xs rounded transition-colors ${active ? 'bg-surface-2 text-foreground border border-border' : 'text-muted-fg hover:text-foreground'}`}>{children}</button>
+    <button onClick={onClick} disabled={disabled} title={title}
+      className={`px-2.5 py-0.5 text-xs rounded transition-colors ${disabled ? 'text-muted-fg opacity-40 cursor-not-allowed' : active ? 'bg-surface-2 text-foreground border border-border' : 'text-muted-fg hover:text-foreground'}`}>
+      {children}
+    </button>
   )
 }
 
@@ -145,7 +166,9 @@ export default function ChartBuilderPage() {
       ? 'financialsPersistedXbrl'
       : persistedA?.sourceType === 'cmf_fecu'
         ? 'financialsPersistedCmfFecu'
-        : 'financialsPersisted'
+        : persistedA?.sourceType === 'yahoo_finance'
+          ? 'financialsPersistedYahoo'
+          : 'financialsPersisted'
   const baseRecordsA = sourceStatusA === 'persisted' ? persistedA!.records : getFundamentals(ticker)
   const recordsA = baseRecordsA.slice().sort((a, b) => qIdx(a.period) - qIdx(b.period))
   const baseRecordsB = overlay
@@ -153,17 +176,38 @@ export default function ChartBuilderPage() {
     : []
   const recordsB = overlay ? baseRecordsB.slice().sort((a, b) => qIdx(a.period) - qIdx(b.period)) : []
 
+  // TTM needs 4+ consecutive quarterly points — an annual-only ticker (CMF/XBRL,
+  // one FY row per year) can never build a rolling window, so the toggle is
+  // disabled rather than silently rendering an empty chart.
+  const canTTM = recordsA.filter(r => isQuarterlyPeriod(r.period)).length >= 4
+  // If the ticker changes to one without quarterly history while TTM is
+  // selected, fall back to Quarterly (render-time previous-value pattern —
+  // matches the ticker-mirroring adjustment above, not an effect).
+  const [prevCanTTM, setPrevCanTTM] = useState(canTTM)
+  if (canTTM !== prevCanTTM) { setPrevCanTTM(canTTM); if (!canTTM && freq === 'TTM') setFreq('Q') }
+
   type Period = { label: string; rec?: FundamentalRecord; window?: FundamentalRecord[] }
   const buildPeriods = (recs: FundamentalRecord[]): Period[] => {
     if (freq === 'Q') return recs.map(r => ({ label: qShort(r.period), rec: r }))
     if (freq === 'TTM') {
+      // Needs 4 consecutive quarterly points to build a rolling window — an
+      // annual-only (CMF/XBRL) ticker never satisfies this; see canTTM below.
       const out: Period[] = []
       for (let i = 3; i < recs.length; i++) out.push({ label: `${qShort(recs[i].period)} TTM`, window: recs.slice(i - 3, i + 1) })
       return out
     }
+    // Annual: a year that already has a native FY (annual) filing is used
+    // directly — CMF/XBRL ingests one FY row per year, so there's nothing to
+    // sum. A year with only quarterly data still needs all 4 quarters summed.
     const byYear = new Map<string, FundamentalRecord[]>()
-    for (const r of recs) { const y = yearOf(r.period); if (!byYear.has(y)) byYear.set(y, []); byYear.get(y)!.push(r) }
-    return [...byYear.entries()].filter(([, w]) => w.length >= 4).sort((a, b) => a[0].localeCompare(b[0])).map(([y, w]) => ({ label: y, window: w.slice(-4) }))
+    for (const r of recs) { const y = yearOf(r.period); if (!y) continue; if (!byYear.has(y)) byYear.set(y, []); byYear.get(y)!.push(r) }
+    const out: Period[] = []
+    for (const [y, group] of [...byYear.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      const fyRecord = group.find(r => isAnnualPeriod(r.period))
+      if (fyRecord) { out.push({ label: y, rec: fyRecord }); continue }
+      if (group.length >= 4) out.push({ label: y, window: group.slice(-4) })
+    }
+    return out
   }
 
   const valueOf = (m: Metric, p: Period): number | null => {
@@ -228,7 +272,11 @@ export default function ChartBuilderPage() {
         <span className="w-px h-4 bg-border" />
         <div className="flex items-center gap-1"><Seg active={mode === 'abs'} onClick={() => setMode('abs')}>{t.charting.absolute}</Seg><Seg active={mode === 'idx'} onClick={() => setMode('idx')}>{t.charting.indexed}</Seg></div>
         <span className="w-px h-4 bg-border" />
-        <div className="flex items-center gap-1"><Seg active={freq === 'Q'} onClick={() => setFreq('Q')}>{t.charting.quarterly}</Seg><Seg active={freq === 'TTM'} onClick={() => setFreq('TTM')}>{t.charting.ttm}</Seg><Seg active={freq === 'A'} onClick={() => setFreq('A')}>{t.charting.annual}</Seg></div>
+        <div className="flex items-center gap-1">
+          <Seg active={freq === 'Q'} onClick={() => setFreq('Q')}>{t.charting.quarterly}</Seg>
+          <Seg active={freq === 'TTM'} onClick={() => setFreq('TTM')} disabled={!canTTM} title={canTTM ? undefined : t.charting.ttmUnavailable}>{t.charting.ttm}</Seg>
+          <Seg active={freq === 'A'} onClick={() => setFreq('A')}>{t.charting.annual}</Seg>
+        </div>
         <SourceStateBadge sourceKey={financialsBadgeKey} className="ml-auto" />
         <button onClick={() => setSettingsOpen(true)} className="flex items-center gap-1.5 h-6 px-2 rounded border border-border bg-surface-2 text-muted-fg hover:text-foreground hover:border-accent transition-colors"><span>⚙</span><span>{t.charting.settings}</span></button>
       </div>

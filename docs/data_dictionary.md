@@ -332,6 +332,16 @@ are stored in the existing `metadata` jsonb columns on `company_reporting_period
 `period_nature` ∈ `annual`/`quarterly_discrete`/`year_to_date`/`instant`. See
 `docs/cmf_xbrl_financials_ingestion.md`.
 
+**Phase 8C.5 — universal fundamentals via Yahoo Finance, every one of the 25 stocks now has real quarterly +
+annual data.** New `source_type = 'yahoo_finance'` (priority 80, below `manual_csv`) covers the 4 banks and
+other tickers CMF/XBRL structurally cannot reach — migration `20260711000000_financials_yahoo_source_type.sql`
+widens the CHECK constraint (idempotent). CMF/XBRL annual (210) still supersedes Yahoo annual for the 15 filed
+issuers; Yahoo quarterly (a different logical period) always shows. Provider:
+`src/lib/financials/providers/yahooFundamentalsProvider.ts`. A real `yahoo-finance2` library flakiness bug
+(non-deterministic fetch failures silently swallowed by the original `.catch(() => [])`) was caught and fixed
+with retries + loud failure on exhaustion. Production: all 25 tickers, 2,921 rows, 0 failures. See
+`docs/cmf_xbrl_financials_ingestion.md` §13.
+
 **Phase 8C.4 — full coverage sweep + issuer coverage expanded from 5 to 15 enabled** (added LAS-CONDES, CAP,
 ENELAM, COLBUN, AGUAS-A, RIPLEY, PARAUCO, ENTEL, CCU, LTM; 3 more `eligible_verified`: CONCHATORO, FALABELLA,
 MALLPLAZA). A pure coverage classifier (`src/lib/financials/cmfCoverage.ts`) assigns every app stock a single
@@ -359,13 +369,13 @@ unresearched. See `docs/cmf_xbrl_financials_ingestion.md` §4a/§11a.
 
 | Field | Type | Description | Source |
 |---|---|---|---|
-| `source_type` | string | One of `manual_csv`, `cmf_fecu`, `xbrl`, `vendor_feed`, `broker_feed`, `document_ingestion`, `static_seed`, `derived` (CHECK-constrained) | System |
+| `source_type` | string | One of `manual_csv`, `cmf_fecu`, `xbrl`, `vendor_feed`, `broker_feed`, `document_ingestion`, `static_seed`, `derived`, `yahoo_finance` (CHECK-constrained) | System |
 | `source_name` | string | Human-readable provenance label, e.g. `'Company filing (synthetic sample)'` | Manual CSV |
 | `source_url` | string | Nullable — link to the originating document, if any | Manual CSV |
 | `source_file` | string | Bare filename only (never a path) — rejected by the parser if it contains `/`, `\`, or a Windows drive letter | Manual CSV |
 | `source_as_of` | timestamptz | When the source data was as-of, distinct from when it was ingested | Manual CSV |
 | `ingestion_run_id` | uuid | FK → `ingestion_runs(id)` — links every row to the exact ingestion run that wrote it | System |
-| `source_priority` | integer | Auto-derived from `source_type` (never hand-set) — higher wins on supersession. Convention: `static_seed`(10) < `derived`(50) < `manual_csv`(100) < `document_ingestion`(120) < `broker_feed`(140) < `vendor_feed`(150) < `cmf_fecu`(200) < `xbrl`(210) | System |
+| `source_priority` | integer | Auto-derived from `source_type` (never hand-set) — higher wins on supersession. Convention: `static_seed`(10) < `derived`(50) < `yahoo_finance`(80) < `manual_csv`(100) < `document_ingestion`(120) < `broker_feed`(140) < `vendor_feed`(150) < `cmf_fecu`(200) < `xbrl`(210) | System |
 | `is_superseded` | boolean | `true` once a higher-priority row exists for the same logical period | System |
 | `superseded_by` | uuid | Points at the winning row's `id` when `is_superseded = true` | System |
 

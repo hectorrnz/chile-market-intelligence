@@ -385,3 +385,30 @@ unchanged. The default ingestion set is now `getEnabledTickers()` (15) — the 3
   stable `ifrs-full` concept names instead.
 - Future options: promote the eligible_verified batch; add parser support for the two extra XBRL dialects; a
   bank-specific ingestion track; an official CMF API if one is ever published; a licensed vendor feed.
+
+## 13. Phase 8C.5 — Yahoo Finance universal fundamentals fills every remaining gap
+
+CMF/XBRL structurally cannot reach 10 of the 25 app stocks (4 banks + 3 unsupported-dialect + 3 unresearched),
+and even the 15 enabled issuers only carry **one annual data point** each — not enough for the Charting page's
+Quarterly/TTM/Annual toggle to do anything useful. Phase 8C.5 added **Yahoo Finance** as a universal
+fundamentals fallback (`src/lib/financials/providers/yahooFundamentalsProvider.ts`,
+`src/lib/financials/yahoo/runYahooFinancialsIngestion.ts`) covering all 25 tickers with real quarterly +
+annual income/balance/cash-flow data — including the 4 banks. New `source_type = 'yahoo_finance'` at
+**priority 80** (below `manual_csv`=100, above `derived`=50) — migration
+`20260711000000_financials_yahoo_source_type.sql` widens the `source_type` CHECK (idempotent, additive). CMF/
+XBRL annual (210) automatically supersedes Yahoo annual for the same fiscal year; Yahoo quarterly (a distinct
+logical period) always coexists. Badge: "Fundamentals via Yahoo Finance (unofficial)" — never claims official
+status.
+
+**Real bug found and fixed during validation**: `yahoo-finance2`'s `fundamentalsTimeSeries(..., {module:
+'all'})` intermittently throws a "Failed to generate key" error non-deterministically — the same ticker can
+succeed on one call and fail on the next. SQM-B's first production ingestion silently wrote 0 quarterly
+periods (vs. 5-6 for every peer) because the original code swallowed the error into an empty array via
+`.catch(() => [])`. Fixed with a 3-attempt retry per fetch; a fetch that still fails after retries now fails
+the whole ticker loudly rather than silently persisting a partial/degraded history.
+
+Ingestion: `npm run ingest:yahoo-financials[:dry]` (`--ticker`, `--write`) + cron route
+`GET /api/cron/financials/yahoo` (Bearer `CRON_SECRET`, unscheduled). Production: all 25 tickers, 2,921 rows,
+0 failures — every stock now has 7-10 real reporting periods. The 3 tickers (SQM-B, COPEC, BSANTANDER)
+carrying stale synthetic `manual_csv` sample data from the original Phase 8C CSV templates had that data
+deleted. Tests: `tests/yahooFundamentals.test.ts` (18 new).

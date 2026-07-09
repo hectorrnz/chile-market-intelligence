@@ -53,10 +53,15 @@ describe('Phase 8A dataSourceRegistry', () => {
     assert.equal(getSourceState('providerBlocked'), 'blocked')
   })
 
-  it('never calls Yahoo Finance "official"', () => {
+  it('never calls Yahoo Finance "official" (but may explicitly call it "unofficial")', () => {
     for (const entry of Object.values(SOURCE_REGISTRY)) {
-      assert.ok(!/official.*yahoo|yahoo.*official/i.test(entry.labelEn))
+      // Word-boundary \bofficial\b so the honest "unofficial" disclaimer is allowed
+      // (there is no word boundary inside "unofficial"), while a real "official Yahoo" claim is still caught.
+      assert.ok(!/\bofficial\b.*yahoo|yahoo.*\bofficial\b/i.test(entry.labelEn), `label must not call Yahoo official: "${entry.labelEn}"`)
     }
+    // The Yahoo fundamentals label must carry the "unofficial" disclaimer.
+    assert.match(SOURCE_REGISTRY.financialsPersistedYahoo.labelEn, /unofficial/i)
+    assert.match(SOURCE_REGISTRY.financialsPersistedYahoo.labelEs, /no oficial/i)
   })
 
   it('the CMF entry does not claim CMF ingestion is live', () => {

@@ -27,7 +27,9 @@
         "discover:cmf-financials": "node scripts/discover/cmfXbrlFinancials.ts",
         "ingest:cmf-financials:dry": "node scripts/discover/cmfXbrlFinancials.ts",
         "ingest:cmf-financials": "node scripts/discover/cmfXbrlFinancials.ts --write",
-        "discover:cmf-coverage": "node scripts/discover/cmfCoverageSweep.ts"
+        "discover:cmf-coverage": "node scripts/discover/cmfCoverageSweep.ts",
+        "ingest:yahoo-financials:dry": "node scripts/ingest/yahooFinancials.ts",
+        "ingest:yahoo-financials": "node scripts/ingest/yahooFinancials.ts --write"
     },
     "dependencies": {
         "@supabase/ssr": "^0.12.0",

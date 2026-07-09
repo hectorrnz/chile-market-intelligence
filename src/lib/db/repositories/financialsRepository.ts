@@ -45,6 +45,12 @@ function periodKey(ticker: string, fiscalYear: number, fiscalPeriod: string, per
 const DEFAULT_SOURCE_PRIORITY: Record<string, number> = {
   static_seed: 10,
   derived: 50,
+  // Phase 8C.5 — Yahoo Finance is an UNOFFICIAL free aggregator (same status as
+  // the app's Yahoo prices), so it sits deliberately below manual curation and
+  // every official/vendor source, but above derived/static. This makes CMF/XBRL
+  // annual (210) supersede Yahoo annual for the same FY, while Yahoo quarterly
+  // (a different logical period) always shows.
+  yahoo_finance: 80,
   manual_csv: 100,
   document_ingestion: 120,
   broker_feed: 140,

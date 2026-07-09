@@ -13,8 +13,8 @@ import type { FundamentalRecord } from '../data/fundamentals.ts'
 
 export type FinancialsSourceStatus = 'persisted' | 'static_fallback'
 
-/** The dominant source_type behind a persisted result, so the UI can label XBRL vs manual CSV honestly. */
-export type FinancialsSourceType = 'xbrl' | 'cmf_fecu' | 'manual_csv' | 'mixed' | 'none'
+/** The dominant source_type behind a persisted result, so the UI can label XBRL vs manual CSV vs Yahoo honestly. */
+export type FinancialsSourceType = 'xbrl' | 'cmf_fecu' | 'manual_csv' | 'yahoo_finance' | 'mixed' | 'none'
 
 export interface FinancialsResolveResult {
   ticker: string
@@ -40,10 +40,18 @@ function summarizeSource(items: StatementItemRecord[]): { source: string; source
   const present = new Set(items.map((it) => it.sourceType).filter((k) => k !== 'derived'))
   const hasXbrl = present.has('xbrl')
   const hasFecu = present.has('cmf_fecu')
-  const multiple = present.size > 1
-  if (hasXbrl) return { source: multiple ? 'Persisted financials via CMF XBRL (+ manual)' : 'Persisted financials via CMF XBRL', sourceType: 'xbrl' }
-  if (hasFecu) return { source: multiple ? 'Persisted financials via CMF/FECU (+ manual)' : 'Persisted financials via CMF/FECU', sourceType: 'cmf_fecu' }
-  return { source: 'Persisted financials via manual CSV', sourceType: 'manual_csv' }
+  const hasYahoo = present.has('yahoo_finance')
+  const hasManual = present.has('manual_csv')
+  // Phase 8C.5 — most common real case: CMF/XBRL official annual + Yahoo
+  // quarterly for the same ticker. Surface the authoritative source, with a
+  // nuance for the others actually present (never a blanket "manual").
+  const extras = [hasYahoo && 'Yahoo', hasManual && 'manual'].filter(Boolean).join(' + ')
+  const suffix = extras ? ` (+ ${extras})` : ''
+  if (hasXbrl) return { source: `Persisted financials via CMF XBRL${suffix}`, sourceType: 'xbrl' }
+  if (hasFecu) return { source: `Persisted financials via CMF/FECU${suffix}`, sourceType: 'cmf_fecu' }
+  if (hasManual) return { source: `Persisted financials via manual CSV${hasYahoo ? ' (+ Yahoo)' : ''}`, sourceType: 'manual_csv' }
+  if (hasYahoo) return { source: 'Fundamentals via Yahoo Finance (unofficial)', sourceType: 'yahoo_finance' }
+  return { source: 'Persisted financials', sourceType: 'manual_csv' }
 }
 
 function periodLabel(fiscalPeriod: string, fiscalYear: number): string {
