@@ -633,6 +633,9 @@ describe('status route — public read-only diagnostics', () => {
     assert.ok(STATUS_ROUTE.includes('eligibleVerifiedIssuers'))
     assert.ok(STATUS_ROUTE.includes('buildCmfCoverageReport'))
   })
+  it('(Phase 8C.7) surfaces bankTrack diagnostics as its own field, backed by the pure bank coverage summary', () => {
+    assert.ok(STATUS_ROUTE.includes('bankTrack: buildBankCoverageSummary()'))
+  })
 })
 
 describe('ingestion default set — Phase 8C.4 safety (deferred issuers never auto-written)', () => {

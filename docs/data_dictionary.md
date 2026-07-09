@@ -332,6 +332,15 @@ are stored in the existing `metadata` jsonb columns on `company_reporting_period
 `period_nature` ∈ `annual`/`quarterly_discrete`/`year_to_date`/`instant`. See
 `docs/cmf_xbrl_financials_ingestion.md`.
 
+**Phase 8C.7 — bank-specific CMF discovery (dry-run only).** A real, official, non-XBRL bank filing path was
+found (CMF's monthly "Balance y Estado de Situación Bancos" TXT release — not XBRL, a separate proprietary
+chart of accounts) and a conservative 14-field account-code map + dry-run prototype were built and verified
+against real data for all 4 banks. Nothing is production-ingested — no `writeImport`, no migration, Yahoo
+Finance remains the active fallback for all 4 banks unchanged. New modules under
+`src/lib/financials/banks/` (`bankRegistry.ts`, `bankConceptMap.ts`, `bankStatementTypes.ts`,
+`validateBankFinancials.ts`, `parseBankAccountFile.ts`, `bankCoverageStatus.ts`) +
+`src/lib/financials/providers/cmfBankProvider.ts`. See `docs/bank_financials_ingestion.md`.
+
 **Phase 8C.6 — non-bank CMF/XBRL completion.** The 3 `eligible_verified` issuers (CONCHATORO, FALABELLA,
 MALLPLAZA) were promoted to `enabled`, and the XBRL parser gained support for two real instance dialects
 (default/unprefixed namespace — SONDA; CTI-Service single-quoted ISO-8859-1 — ANDINA-B, VAPORES via a new

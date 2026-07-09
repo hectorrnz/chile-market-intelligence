@@ -179,16 +179,20 @@ Each of the 16 non-bank candidates then had its full entidad.php → XBRL → pa
 `xbrli:`-prefixed regex parser can't extract (→ `unsupported_page_shape`, deferred — the filing exists, the
 parser dialect support does not).
 
-### 4d. Banking-sector track (Phase 8C.4)
+### 4d. Banking-sector track (Phase 8C.4; discovery completed Phase 8C.7)
 
 Chilean banks (BSANTANDER, CHILE, BCI, ITAUCL) are **confirmed absent** from CMF's securities-issuer XBRL
 directory under every registry group the tool exposes. They are supervised under CMF's separate "Bancos e
 Instituciones Financieras" track (former SBIF), which uses a **bank-specific accounting taxonomy** — net
 interest income, loan-loss provisions, and regulatory-capital line items, *not* revenue / EBITDA / gross
-profit. That taxonomy **must never be forced into the industrial concept map**. This phase did not verify a
-programmatic bank-XBRL download path, so all 4 banks are classified `bank_track_required` (path exists at CMF
-but not yet verified/mapped here) rather than `bank_track_discovered`. Bank RUTs are **not guessed**. Building
-a bank-specific ingestion path (its own concept map + normalized fields) is deferred future work.
+profit. That taxonomy **must never be forced into the industrial concept map**. Bank RUTs are **not guessed**.
+
+**Phase 8C.7 discovery result:** no XBRL path exists for banks (none was expected — banks are not part of the
+XBRL-tagged regime at all). A real, official, non-XBRL, public, no-CAPTCHA monthly regulatory data feed was
+found instead ("Balance y Estado de Situación Bancos"), and a conservative 14-field account-code map + a
+dry-run-only ingestion prototype were built and verified against real data for all 4 banks. Production
+ingestion is **not enabled** — Yahoo Finance remains the active unofficial fallback. Full detail, the verified
+account-code table, and scope limits: **[docs/bank_financials_ingestion.md](bank_financials_ingestion.md)**.
 
 ## 5. Pipeline architecture
 

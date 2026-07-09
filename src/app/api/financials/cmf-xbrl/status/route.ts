@@ -25,6 +25,7 @@ import {
 } from '@/lib/financials/cmfIssuerMap'
 import { buildCmfCoverageReport } from '@/lib/financials/cmfCoverage'
 import { getAllCompanies } from '@/lib/data/companies'
+import { buildBankCoverageSummary } from '@/lib/financials/banks/bankCoverageStatus'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -105,6 +106,13 @@ export async function GET(): Promise<NextResponse> {
     coverage,
     mappedIssuers: getMappedTickers(),
     unmappedIssuers: Object.entries(UNMAPPED_TICKERS).map(([ticker, reason]) => ({ ticker, reason })),
-    note: 'Official CMF XBRL filing data. Automated ingestion runs are reviewable and manually triggered; not on an unattended cron schedule (coverage is still expanding — see docs/cmf_xbrl_financials_ingestion.md). Banks (bank_track_required) report under CMF\'s separate banking track and are not ingestible here. Manual CSV remains a fallback/override source.',
+    // ── Bank track diagnostics (Phase 8C.7) ──
+    // A real, official, non-XBRL structured filing path was discovered for the
+    // 4 bank tickers this phase (CMF's monthly "Balance y Estado de Situación
+    // Bancos" regulatory release) with a conservative account-code map and a
+    // dry-run-only prototype — never production-ingested, never mixed into the
+    // industrial coverageFunnel above (banks stay bank_track_required there).
+    bankTrack: buildBankCoverageSummary(),
+    note: 'Official CMF XBRL filing data. Automated ingestion runs are reviewable and manually triggered; not on an unattended cron schedule (coverage is still expanding — see docs/cmf_xbrl_financials_ingestion.md). Banks (bank_track_required) report under CMF\'s separate banking track and are not ingestible through this securities-issuer pipeline; see bankTrack for the separate bank discovery/mapping status (docs/bank_financials_ingestion.md). Manual CSV remains a fallback/override source.',
   })
 }

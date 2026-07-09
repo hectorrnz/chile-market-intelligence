@@ -1,4 +1,4 @@
-# Data Source Status Matrix — Phase 8A / 8B / 8C / 8C.1 / 8C.2 / 8C.3 / 8C.4 / 8C.5
+# Data Source Status Matrix — Phase 8A / 8B / 8C / 8C.1 / 8C.2 / 8C.3 / 8C.4 / 8C.5 / 8C.6 / 8C.7
 
 Audit date: 2026-07-02 (Phase 8A) · updated 2026-07-02 (Phase 8B — Compare
 real-data wiring + no-static-terminal-state policy) · updated 2026-07-03
@@ -22,9 +22,39 @@ real quarterly + annual fundamentals**: Yahoo Finance added as a universal,
 honestly-labeled `yahoo_finance` (priority 80) fallback source, covering the
 4 banks and other tickers CMF/XBRL structurally cannot reach; CMF/XBRL annual
 still supersedes Yahoo annual for the 15 filed issuers. See
-`docs/cmf_xbrl_financials_ingestion.md` §13). This is the canonical
-truth-layer reference for what each visible module's data source actually is,
-versus what its UI label says.
+`docs/cmf_xbrl_financials_ingestion.md` §13) · updated 2026-07-09 (Phase 8C.6 —
+non-bank CMF/XBRL coverage completed: 21/25 stocks enabled, 3 eligible issuers
+promoted, 2 new XBRL parser dialects) · updated 2026-07-09 (Phase 8C.7 — a
+real, official, non-XBRL bank filing path discovered and a dry-run-only
+concept map/prototype built for the 4 remaining banks; production ingestion
+still not enabled, Yahoo Finance remains the active fallback — see
+`docs/bank_financials_ingestion.md`). This is the canonical truth-layer
+reference for what each visible module's data source actually is, versus what
+its UI label says.
+
+## Phase 8C.7 — Bank-specific CMF discovery (dry-run only, not enabled)
+
+- **No XBRL path exists for banks** (confirmed absent from the securities-issuer directory under every
+  registry group — none was expected, since banks are not part of the XBRL-tagged regime). A **separate,
+  official, non-XBRL, public, no-CAPTCHA monthly regulatory data feed** was discovered instead: CMF's "Balance
+  y Estado de Situación Bancos" — plain tab-delimited TXT files (not XBRL) with a stable per-bank 3-digit CMF
+  code (BSANTANDER=037, CHILE=001, BCI=016, ITAUCL=039), documented in the release's own bundled
+  `plan_de_cuentas.txt`/`documentacion.pdf`.
+- A conservative **14-field account-code map** (`src/lib/financials/banks/bankConceptMap.ts`) was built and
+  verified: `total_assets == total_liabilities + total_equity` and
+  `profit_before_tax + tax_expense == net_income` both hold **exactly** for all 4 banks, confirmed against two
+  separate real monthly releases (May 2026 and the actual target December 2025 annual release — 14/14 fields,
+  0 validation warnings both times).
+- **Nothing is production-ingested.** `src/lib/financials/providers/cmfBankProvider.ts` has no `writeImport` —
+  it is discovery/dry-run only (`npm run discover:cmf-bank -- --live`). Yahoo Finance remains the sole active
+  fundamentals source for all 4 banks, unchanged. A future migration would be needed to add `cmf_bank` as a
+  `source_type` before any real write.
+- Capital/regulatory ratios (CET1, RWA, NPL, coverage) do not exist anywhere in this feed — confirmed by
+  exhaustive search of the account-code dictionary; they live in a separate, not-yet-investigated quarterly
+  Pillar 3 disclosure. Deposits/borrowings also stay unmapped (ambiguous sub-code split, no single top-level
+  total). Both documented in `docs/bank_financials_ingestion.md`, never fabricated.
+- Status surfaced via a new `bankTrack` field on `GET /api/financials/cmf-xbrl/status`, separate from the
+  existing `coverageFunnel` (banks stay `bank_track_required` there, unchanged).
 
 ## Phase 8C.5 — Universal fundamentals: every stock has quarterly + annual data
 

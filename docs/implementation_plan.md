@@ -925,6 +925,71 @@ track; or **Phase 8D** / **Phase 9F**.
 
 ---
 
+## Phase 8C.7 — Bank-Specific CMF Discovery + Banking Financials Architecture ✓ COMPLETE (2026-07-09)
+
+Investigates and designs a bank-specific CMF ingestion path for BSANTANDER, CHILE, BCI, ITAUCL — the 4
+`bank_track_required` tickers Phase 8C.4/8C.6 confirmed structurally unreachable via the non-bank
+securities-issuer XBRL directory. Discovery only + dry-run prototype; **no production write**.
+
+**Discovery result: no bank XBRL path exists (none was expected)** — banks are not part of CMF's XBRL-tagged
+securities-issuer regime at all, confirmed again live this phase (RVEMI/RGFEN/RGB/RB/BANC all return the
+identical non-bank list; RGEIN returns an unrelated fund-manager list). Instead, a **real, official, non-XBRL,
+public, no-CAPTCHA monthly regulatory feed** was found: CMF's "Balance y Estado de Situación Bancos" —
+tab-delimited TXT files (`b1`=balance consolidated, `r1`=income statement consolidated, etc.), one ZIP per
+month back to 2001, each bundling its own official bank-code↔legal-name registry
+(`metadata/listado_instituciones.txt`) and a 2,397-entry account-code dictionary
+(`metadata/plan_de_cuentas.txt`) under the "Compendio de Normas Contables para Bancos" (Circular N°2.243).
+Bank codes verified directly from this official documentation: CHILE=001, BCI=016, BSANTANDER=037, ITAUCL=039.
+No RUT is asserted (not independently re-verified this phase — the bank code, not RUT, is this pipeline's
+identifier).
+
+**Bank-specific normalized field model** (`src/lib/financials/banks/bankStatementTypes.ts`) — deliberately
+separate from the industrial `LineItemCode` union: net interest income, loans/deposits, capital ratios, never
+conflated with revenue/current-assets/current-liabilities.
+
+**Conservative 14-field account-code map** (`src/lib/financials/banks/bankConceptMap.ts`) — every entry
+verified `high` confidence against two real monthly releases (May 2026 and the target December 2025 annual)
+for **all 4 target banks**, via exact additive identities: `total_assets == total_liabilities + total_equity`
+and `profit_before_tax + tax_expense == net_income`, both held to the peso for every bank. Deposits, borrowings,
+debt securities issued, and all capital/regulatory ratios (CET1, RWA, NPL, coverage) stay deliberately
+unmapped — no single unambiguous top-level account exists for the former; the latter don't exist anywhere in
+this feed at all (a separate, not-yet-investigated quarterly Pillar 3 disclosure) and are never inferred from
+balance-sheet data.
+
+**Dry-run ingestion prototype** (`src/lib/financials/providers/cmfBankProvider.ts`,
+`scripts/discover/cmfBankFinancials.ts`, `npm run discover:cmf-bank -- --live`) — discovers the monthly ZIP
+link, fetches, unzips (reusing the existing dependency-free `xbrl/unzip.ts` unchanged), parses
+(`parseBankAccountFile.ts`), maps, and validates (`validateBankFinancials.ts`, mirroring
+`xbrl/validateFinancials.ts`'s severity model). **No `writeImport` exists in this module** — verified live
+against the real December-2025 annual release: **all 4 banks, 14/14 fields mapped, validation status `valid`,
+0 warnings.** Yahoo Finance remains the sole active fundamentals source for all 4 banks.
+
+**Status endpoint**: `GET /api/financials/cmf-xbrl/status` gained a `bankTrack` field
+(`src/lib/financials/banks/bankCoverageStatus.ts`) — a separate field from `coverageFunnel`, which keeps
+classifying banks `bank_track_required` unchanged.
+
+**Persistence not enabled**: the existing `financial_statement_items` schema is source-agnostic
+(`line_item_code`/`statement_type` are free-text) and needs no migration to *store* bank fields, but
+`source_type`'s CHECK constraint has no `cmf_bank` entry and `DEFAULT_SOURCE_PRIORITY` has no priority for it —
+both would need a migration before any real write, deliberately deferred.
+
+**Tests:** `tests/financialsCmfBank.test.ts` — 48 new tests (parser, concept map, statement-type model,
+registry, validator, provider pure-helpers incl. the HTML zip-link matcher, coverage-status summary) using
+small sanitized fictional-value fixtures — no live network in any unit test. Full suite 1024→1072, lint 0,
+build 0 errors.
+
+Scope limits: bank-specific discovery + architecture only; annual (December) only; no non-bank refactor; no
+production write, no migration, no new cron; no paid/vendor API; no CAPTCHA bypass; Structured Notes/auth/
+watchlist/portfolio/macro untouched; no UI redesign.
+
+Next: a dedicated pass on the deposits/borrowings ambiguity; investigate the quarterly Pillar 3 disclosure for
+capital ratios; or if mapping/stability confidence grows, add `cmf_bank` to `VALID_SOURCE_TYPES` +
+`DEFAULT_SOURCE_PRIORITY` via a migration and wire a real, still-unscheduled, reviewable ingestion — or
+**Phase 8D** (FX/rates + economic calendar), or **Phase 9F** (Santander/older-2024-Citi structured-notes
+parser).
+
+---
+
 ## Phase 8C.6 — CMF/XBRL Non-Bank Completion: Eligible Promotion + XBRL Dialect Support ✓ COMPLETE (2026-07-09)
 
 Finishes the official CMF/XBRL non-bank layer: every non-bank app stock (21 of 25) now has authoritative
