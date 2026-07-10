@@ -1,31 +1,33 @@
-// Phase 5D — Shared BCCh macro ingestion logic.
+// Phase 8D — Shared FRED (US macro) ingestion logic.
 // SERVER-ONLY — never import from 'use client' files.
 //
-// Used by:
-//   - src/app/api/cron/ingest-bcch-macro/route.ts (Vercel Cron)
-//   - (future) manual-trigger API routes
+// Mirrors bcchMacroIngestion.ts's shape exactly. FRED requires no credentials —
+// its public CSV "graph" endpoint is unauthenticated — only Supabase admin
+// credentials are needed to persist.
 //
-// The CLI script (scripts/ingest/bcchMacro.ts) remains separate to avoid pulling
+// Used by:
+//   - src/app/api/cron/ingest-fred-macro/route.ts (manual/reviewable — NOT on a
+//     Vercel cron schedule per the Phase 8D "no new cron unless justified" rule)
+//
+// The CLI script (scripts/ingest/fredMacro.ts) remains separate to avoid pulling
 // Next.js env/module machinery into the CLI context.
 
 import { transformSeries } from '../providers/transforms.ts'
-import { fetchBcchSeries, isBcchConfigured } from '../providers/bcchClient.ts'
-import { getEnabledBcchSeries } from '../../config/macroSeries.ts'
-import { bcchSeriesManualMap } from '../../config/bcchSeriesManualMap.ts'
+import { fetchFredSeries, isFredConfigured } from '../providers/fredClient.ts'
+import { getEnabledFredSeries } from '../../config/macroSeries.ts'
+import { usFredSeriesManualMap } from '../../config/usFredSeriesManualMap.ts'
 import { upsertMacroObservations, type MacroObservationInsert } from '../db/repositories/macroRepository.ts'
 
-export const SOURCE_PROVIDER = 'BCCh BDE'
-export const INGESTION_VERSION = '5D.0'
+export const SOURCE_PROVIDER = 'FRED (St. Louis Fed)'
+export const INGESTION_VERSION = '8D.0'
 
 const BATCH_SIZE = 500
 const INTER_REQUEST_DELAY_MS = 150
-// Extra history fetched before rangeFrom so yoy transforms have a year-ago base.
-const EXTRA_YEARS_CONTEXT = 1
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
 export interface IngestionOptions {
-  /** 'all' fetches every verified BCCh series. Pass string[] of manualKey/fallbackStaticId to narrow. */
+  /** 'all' fetches every verified FRED series. Pass string[] of manualKey/fallbackStaticId to narrow. */
   indicators: 'all' | string[]
   mode: 'incremental' | 'backfill'
   /** Incremental: how many calendar days back to store. Default 14. */
@@ -57,10 +59,6 @@ export interface IngestionResult {
 
 // ─── Private helpers ──────────────────────────────────────────────────────────
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10)
-}
-
 function daysAgoIso(days: number): string {
   const d = new Date()
   d.setUTCDate(d.getUTCDate() - days)
@@ -76,8 +74,6 @@ function yearsAgoIso(years: number): string {
 export function sanitizeError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e)
   return msg
-    .replace(/user=[^&\s]+/gi, 'user=***')
-    .replace(/pass(word)?=[^&\s]+/gi, '$1=***')
     .replace(/key=[A-Za-z0-9_.\\-]{20,}/gi, 'key=***')
     .replace(/eyJ[A-Za-z0-9_.\\-]{40,}/g, '***JWT***')
     .slice(0, 500)
@@ -129,11 +125,11 @@ async function recordIngestionRun(
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
-export async function runBcchMacroIngestion(opts: IngestionOptions): Promise<IngestionResult> {
+export async function runFredMacroIngestion(opts: IngestionOptions): Promise<IngestionResult> {
   const startedAt = new Date().toISOString()
   const dryRun = opts.dryRun ?? false
 
-  if (!isBcchConfigured()) {
+  if (!isFredConfigured()) {
     return {
       success: false,
       status: 'not_configured',
@@ -148,29 +144,24 @@ export async function runBcchMacroIngestion(opts: IngestionOptions): Promise<Ing
       startedAt,
       finishedAt: new Date().toISOString(),
       durationMs: 0,
-      errorSummary: 'BCCh credentials not configured',
+      errorSummary: 'FRED not available',
     }
   }
 
   // ── Date range ───────────────────────────────────────────────────────────────
-  const today = todayIso()
-  const rangeTo = today
   let rangeFrom: string
-  let fetchFrom: string
+  const rangeTo = new Date().toISOString().slice(0, 10)
 
   if (opts.mode === 'incremental') {
     const days = opts.daysBack ?? 14
     rangeFrom = daysAgoIso(days)
-    // Fetch 1 extra year so yoy-transform indicators have a year-ago base.
-    fetchFrom = yearsAgoIso(EXTRA_YEARS_CONTEXT)
   } else {
     const years = opts.yearsBack ?? 10
     rangeFrom = yearsAgoIso(years)
-    fetchFrom = yearsAgoIso(years + EXTRA_YEARS_CONTEXT)
   }
 
   // ── Indicator selection ──────────────────────────────────────────────────────
-  const allEnabled = getEnabledBcchSeries()
+  const allEnabled = getEnabledFredSeries()
   let targets = allEnabled
 
   if (opts.indicators !== 'all') {
@@ -210,11 +201,12 @@ export async function runBcchMacroIngestion(opts: IngestionOptions): Promise<Ing
 
   // ── Fetch + upsert loop ──────────────────────────────────────────────────────
   for (const def of targets) {
-    const manualEntry = bcchSeriesManualMap[def.manualKey]
+    const manualEntry = usFredSeriesManualMap[def.manualKey]
     const sourceName  = manualEntry?.sourceName ?? null
     const seriesCode  = def.providerSeriesCode!
 
-    const res = await fetchBcchSeries(seriesCode, { firstDate: fetchFrom, lastDate: rangeTo })
+    // FRED's CSV endpoint has no from/to param — fetch the full series, filter client-side.
+    const res = await fetchFredSeries(seriesCode)
     if (!res.ok) {
       indicatorsFailed.push(def.manualKey)
       errorMessages.push(`${def.manualKey}: ${res.reason}`)
@@ -239,11 +231,11 @@ export async function runBcchMacroIngestion(opts: IngestionOptions): Promise<Ing
         fetched_at:         fetchedAt,
         metadata: {
           transformation:   def.transformation,
-          provider:         'bcch',
+          provider:         'fred',
           sourceName,
           ingestionVersion: INGESTION_VERSION,
           isDerived,
-          rowSource:        'live_bcch',
+          rowSource:        'live_fred',
         },
       }))
 
@@ -251,13 +243,11 @@ export async function runBcchMacroIngestion(opts: IngestionOptions): Promise<Ing
       indicatorsSucceeded.push(def.manualKey)
       rowsInserted += insertRows.length
     } else if (insertRows.length === 0) {
-      // No new observations in this window — still a success
       indicatorsSucceeded.push(def.manualKey)
     } else {
       const { written, errors } = await upsertMacroObservations(insertRows, BATCH_SIZE)
       if (errors.length > 0) {
         if (written > 0) {
-          // Partial: some batches succeeded
           indicatorsSucceeded.push(def.manualKey)
           rowsInserted += written
           rowsFailed   += insertRows.length - written

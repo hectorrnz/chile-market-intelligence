@@ -516,3 +516,49 @@ introduces are written into the `metadata jsonb` column that `structured_note_pr
 `structured_note_observations`, and `structured_note_monitoring_runs` already had from earlier phases — the
 five migrations listed above (ending in `20260709000000_*`) remain the complete migration set for this
 module. See `docs/structured_notes_market_data_sources.md` for the free-provider discovery findings.
+
+## Phase 8D — Dual-Provider Macro: FRED (US) + Copper via BCCh
+
+Adds **FRED (Federal Reserve Bank of St. Louis)** as a second live macro provider (US region, 9 series:
+Fed Funds, US 3M/2Y/10Y/20Y/30Y Treasury yields, US Unemployment, US CPI m/m and y/y) and enables **copper**
+as a live BCCh series (`F019.PPB.PRE.40.M`, monthly, USD/lb). See `docs/macro_market_source_coverage.md`
+for the full discovery record (candidates investigated, decisions, and rejections).
+
+**No new env vars, no new migration, no new dependency.** FRED's public CSV endpoint requires no API key
+or credentials — `isFredConfigured()` is unconditionally `true`. The existing `macro_observations` /
+`macro_indicators` Supabase schema already supports an arbitrary `source_provider` string and per-row
+`metadata jsonb`, so FRED rows write through the exact same `upsertMacroObservations()` repository function
+BCCh rows use.
+
+**New manually-triggered, reviewable cron route** (same policy as the BCCh/CMF-XBRL/Yahoo-financials
+crons): `GET /api/cron/ingest-fred-macro` — Bearer `CRON_SECRET` (reuses the existing secret, no new
+env var). **Not added to `vercel.json`** — per the explicit instruction not to schedule a new cron job
+without justification, this stays a manual/reviewable trigger only, exactly like
+`/api/cron/financials/cmf-xbrl` and `/api/cron/financials/cmf-bank`.
+
+```bash
+# Dry-run all 9 FRED series (no writes) — safe to run anytime, no credentials needed
+npm run ingest:fred-macro:dry
+
+# Write mode (persists to Supabase — requires Supabase admin credentials in .env.local)
+npm run ingest:fred-macro -- --all --write
+
+# Single indicator
+npm run ingest:fred-macro -- --indicator us10y --years 1 --write
+
+# Via the protected cron route:
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  "https://nevada-market-intelligence.vercel.app/api/cron/ingest-fred-macro"
+```
+
+Copper's BCCh dry-run works exactly like any other verified BCCh series:
+
+```bash
+npm run ingest:bcch-macro:dry               # includes copper alongside the 11 pre-existing series
+npm run ingest:bcch-macro -- --indicator copper --write
+```
+
+The macro orchestrator (`src/lib/providers/macroProvider.ts`) now queries BCCh and FRED in parallel for
+the indicators list, and dispatches per-indicator to the correct provider for history — the Supabase-
+persisted read layer and static-fallback layer needed **no changes**, since both already key purely off
+`indicator_id`.

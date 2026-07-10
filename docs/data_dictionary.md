@@ -582,6 +582,80 @@ parentheses, no bp/pp suffixes.
 
 ---
 
+## Phase 8D — Dual-Provider Macro (BCCh + FRED), Copper Enablement
+
+Expands the live macro layer from single-provider (BCCh, Chile-only) to dual-provider: BCCh for Chile
+series, **FRED (Federal Reserve Bank of St. Louis)** for 9 US series, both dispatched through the same
+`MacroSeriesDef` registry and orchestrator. See `docs/macro_market_source_coverage.md` for the full
+discovery record.
+
+### FRED client (`src/lib/providers/fredClient.ts`)
+
+Server-only. Uses FRED's public CSV "graph" endpoint
+(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=<SERIES_ID>`) — genuinely free, official, **no API
+key required**. `isFredConfigured()` is always `true`. `parseFredCsv()` is a pure parser: FRED's `.`
+missing-observation marker becomes `null`, never `0` or `NaN`. `fetchFredSeries()` returns the same
+`ProviderResult<T>` shape as `bcchClient.ts`'s `fetchBcchSeries`, so the same `transforms.ts` /
+macro-history plumbing works unchanged for both providers.
+
+### US series manual map (`src/config/usFredSeriesManualMap.ts`)
+
+Mirrors `bcchSeriesManualMap.ts`'s human-verification discipline exactly — one entry per US indicator,
+keyed by `manualKey`, with `seriesId` (official FRED id, e.g. `DGS10`), `verified`, `frequency`
+(`DAILY`/`MONTHLY`), `transformation` (`none`/`mom`/`yoy`), `confidence`, `verificationDate`, `notes`. No
+code is ever guessed — every entry was confirmed live against the real FRED CSV endpoint. `us-cpi-mensual`
+and `us-cpi-anual` intentionally share the same underlying series (`CPIAUCSL`, the CPI index level) with
+different `transformation` values — mirroring how Chile's `ipc-mensual`/`ipc-anual` both derive from one
+BCCh level series.
+
+### Registry dispatch (`src/config/macroSeries.ts`)
+
+`MacroSeriesDef.sourceProvider` is now `'BCCh' | 'INE' | 'LME' | 'FRED' | 'external'`. `BaseDef.region` is
+`'CL' | 'US'`. The registry's `merge()` function dispatches each `BASE` entry to `bcchSeriesManualMap` or
+`usFredSeriesManualMap` depending on `sourceProvider` — no series definition ever reads the wrong map.
+`getEnabledSeries(region?)` returns both providers' enabled series; `getEnabledBcchSeries(region?)` /
+`getEnabledFredSeries(region?)` filter to one provider only — used by each provider's own `getIndicators`/
+`getHistory` and by each ingestion script, so a FRED-sourced series can never accidentally be sent to the
+BCCh client or vice versa.
+
+### FRED macro provider (`src/lib/providers/fredMacroProvider.ts`)
+
+Implements the same `MacroProvider` contract as `bcchMacroProvider.ts` (`getIndicators`, `getHistory`).
+`getHistory` fetches the FULL series (FRED's CSV has no from/to query param) then filters client-side to
+the requested `years` window before calling the shared `transformSeries()`.
+
+### Orchestrator (`src/lib/providers/macroProvider.ts`)
+
+`resolveMacroIndicators(region?)` now queries **both** providers in parallel (`Promise.all`) and merges
+their results — a provider with nothing enabled for the requested region simply contributes nothing (never
+a hard error); `liveAvailable` is true if *either* provider succeeds. `resolveMacroHistory(indicatorId,
+years)` looks up the indicator's `sourceProvider` via `getSeriesByStaticId()` and dispatches Layer 2 (live)
+to the single correct provider. **Layers 1 (Supabase-persisted) and 3 (static fallback) needed no changes**
+— they already key purely off `indicator_id`, so FRED history persists and reads back identically to BCCh
+history through the exact same `macro_observations` table and `upsertMacroObservations()` repository
+function.
+
+### Copper (BCCh, now live)
+
+`bcchSeriesManualMap.ts`'s `copper` entry is now verified: `F019.PPB.PRE.40.M` ("Precio del cobre
+refinado BML, dólares/libra"), monthly, USD/lb — the exact unit the UI expects (the original Phase 4B
+deferral was a different, daily, USD/oz series). Cross-checked against Yahoo Finance `HG=F` futures as a
+sanity check only, not as the source of truth.
+
+### Ingestion (Phase 8D)
+
+`src/lib/ingestion/fredMacroIngestion.ts` + `scripts/ingest/fredMacro.ts` + `scripts/ingest/fredMacroCore.ts`
+mirror the BCCh ingestion trio exactly. `GET /api/cron/ingest-fred-macro` (Bearer `CRON_SECRET`) — **not**
+added to `vercel.json`; manual/reviewable trigger only, same policy as the BCCh/CMF-XBRL/Yahoo-financials
+cron routes.
+
+### Plausibility bands (Phase 8D additions)
+
+`src/lib/providers/plausibility.ts` gained 9 new bands: `fed-funds`, `us3m`, `us2y`, `us10y`, `us20y`,
+`us30y`, `us-unemployment`, `us-cpi-mensual`, `us-cpi-anual` — same guardrail role as the Chile bands.
+
+---
+
 ## Entity: Structured Notes (Phase 9A–9E)
 
 Internal, shared-book structured-note tracking — replaces the legacy `NUEVA BASE - Notas Estructuradas.xlsx`.

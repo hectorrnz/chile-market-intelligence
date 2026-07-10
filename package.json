@@ -32,7 +32,9 @@
         "ingest:yahoo-financials": "node scripts/ingest/yahooFinancials.ts --write",
         "discover:cmf-bank": "node scripts/discover/cmfBankFinancials.ts",
         "ingest:cmf-bank:dry": "node scripts/discover/cmfBankFinancials.ts --live",
-        "ingest:cmf-bank": "node scripts/discover/cmfBankFinancials.ts --live --write"
+        "ingest:cmf-bank": "node scripts/discover/cmfBankFinancials.ts --live --write",
+        "ingest:fred-macro": "node scripts/ingest/fredMacro.ts",
+        "ingest:fred-macro:dry": "node scripts/ingest/fredMacro.ts --all"
     },
     "dependencies": {
         "@supabase/ssr": "^0.12.0",

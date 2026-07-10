@@ -2,7 +2,7 @@
 
 An internal buyside web terminal for Nevada Inversiones, a Chilean family office. Tracks Chilean listed equities, macroeconomic indicators, CMF filings (Hechos Esenciales), and earnings releases.
 
-**Current phase:** Phase 8C.8 complete — official CMF bank financials are now **live for all 4 banks** (BSANTANDER, CHILE, BCI, ITAUCL): `cmf_bank` (priority 180, above Yahoo's 80, below XBRL/FECU's 200/210) was persisted for the FY2025 annual release, superseding Yahoo's matching annual period while Yahoo stays fully active for quarterly/TTM/earlier years/unmapped fields. Production result: 60 rows written, 56 fields mapped, 0 failures, all `valid` (see [`docs/bank_financials_ingestion.md`](docs/bank_financials_ingestion.md)). Pillar 3 (capital/risk ratios — CET1, RWA, NPL, coverage) was investigated and correctly classified `deferred`: CMF's own disclosure page is a PDF link directory to each bank's self-hosted investor-relations site, not a structured file — no ingestion prototype was built for a non-viable source. Phase 8C.6 (all 21 non-bank app stocks on authoritative annual CMF/XBRL) remains unchanged. Charting, Compare's Fundamentals table, and Earnings read persisted (automated `xbrl`/`cmf_bank`, or `yahoo_finance`/`derived`/manual-CSV) financial data wherever a ticker has been imported or filed, falling back to the static sample otherwise. Phase 8B (Compare market-data wiring + the **no-static-terminal-state policy**) and Phase 8A (data-source audit) remain in place; every remaining static module (FX/rates, US macro, economic calendar, Hechos Relevantes, News) still has a documented target source, conversion path, and next phase in [`docs/data_source_status.md`](docs/data_source_status.md) — no module is left as an open-ended "Static MVP" with no plan. All prior phases (auth, watchlist, portfolio, transactions/cash ledger, live macro/market stack, Structured Notes monitoring) remain live in production, unchanged.
+**Current phase:** Phase 8D complete — macro live-source coverage expanded beyond Chile-only BCCh. **Copper is now live via BCCh** (`F019.PPB.PRE.40.M`, monthly, USD/lb — the original Phase 4B unit-mismatch deferral is resolved). **9 US macro indicators are now live via FRED** (Federal Reserve Bank of St. Louis public CSV endpoint, no API key: Fed Funds, US 3M/2Y/10Y/20Y/30Y Treasury yields, US Unemployment, US CPI m/m and y/y). The macro provider architecture is now dual-provider (BCCh for Chile, FRED for US) behind the same orchestrator, with no schema migration and no new dependency. BTP-10/BCU-5/PDBC-90d/TPM-TNA (no live series exists), EUR/CLP (verified but not yet wired — needs a new UI slot), and the economic calendar (no stable free structured source found) were all re-investigated and documented as deferred rather than silently left open-ended — see [`docs/macro_market_source_coverage.md`](docs/macro_market_source_coverage.md). Phase 8C.8 (official CMF bank financials, all 4 banks) and every prior phase (auth, watchlist, portfolio, transactions/cash ledger, live macro/market stack, Structured Notes monitoring) remain live in production, unchanged. Every remaining static module still has a documented target source, conversion path, and next phase in [`docs/data_source_status.md`](docs/data_source_status.md) — no module is left as an open-ended "Static MVP" with no plan.
 
 ---
 
@@ -69,7 +69,8 @@ naming its actual status. **Full page-by-page detail:**
 | Data | Source | Status |
 |---|---|---|
 | Macro indicators (Chile) | Banco Central de Chile (BDE API) | **Live/persisted** — falls back to static if BCCh is unreachable |
-| Macro indicators (US) | — | **Static sample** — no live source exists yet; conversion path is a FRED API integration (Phase 8D) |
+| Macro indicators (US) | FRED (Federal Reserve Bank of St. Louis, public CSV, no API key) | **Live/persisted** (Phase 8D) — 9 series (Fed Funds, US 3M/2Y/10Y/20Y/30Y Treasury yields, US Unemployment, US CPI m/m and y/y); falls back to static if FRED is unreachable |
+| Copper | Banco Central de Chile (`F019.PPB.PRE.40.M`, monthly, USD/lb) | **Live/persisted** (Phase 8D) |
 | Stock prices | Yahoo Finance (unofficial) + Supabase persistence | **Live/persisted** — static baseline, Supabase auto-load, live overlay on refresh |
 | Compare — market data (price, day change, market cap, sector, currency, short-term performance) | Same Supabase/Yahoo Finance chain as Stocks/Home/Company (Phase 8B) | **Live/persisted** where sufficient history exists — static fallback otherwise, with an explicit reason (`insufficient_supabase_history`) |
 | Compare — historical returns chart/table | `stockHistory.json` | **Temporary static** — needs years of daily Supabase history (Phase 8B), not yet accumulated |
@@ -77,28 +78,31 @@ naming its actual status. **Full page-by-page detail:**
 | Charting (`/chart-builder`) | **Phase 8C (automation-first, manual CSV interim bridge):** persisted `financial_statement_items`/`financial_metrics` where imported | **Persisted** per ticker where imported — static `fundamentals.json` fallback otherwise |
 | Earnings | **Phase 8C (automation-first, manual CSV interim bridge):** persisted `earnings_events` where imported | **Persisted** per ticker where imported (no fabricated consensus/surprise) — static `earnings.json` fallback otherwise |
 | CMF filings (Hechos Esenciales) | CMF public portal | **Blocked** — the portal requires a CAPTCHA; confirmed via a real discovery run, not merely unimplemented. See `docs/cmf_provider_discovery.md` |
-| FX rates / Chilean rates | — | **Temporary static** — conversion path via extended BCCh series mapping (Phase 8D) |
+| FX rates / Chilean rates | Copper live via BCCh (Phase 8D); EUR/CLP verified but not yet wired; BTP-10/BCU-5/PDBC-90d/TPM-TNA re-confirmed no live series exists | **Mostly temporary static** — see `docs/macro_market_source_coverage.md` |
 | News | — | **Temporary static** — candidate sources named in-app (Phase 8E) |
-| Economic calendar | — | **Temporary static** (schedule-driven, synthetic values) — conversion path via BCCh/INE release calendars (Phase 8D) |
+| Economic calendar | — (re-investigated Phase 8D — no stable free structured source found, deferred) | **Temporary static** (schedule-driven, synthetic values) |
 | Watchlist / Portfolio / Transactions / Cash | Supabase, user-scoped | **Persisted** (auth required) |
 
-### Live macro architecture (Phase 4A)
+### Live macro architecture (Phase 4A; dual-provider since Phase 8D)
 
 Macro data flows through a provider abstraction so components never call APIs
-directly:
+directly. Since Phase 8D, the orchestrator queries **two** providers — BCCh
+for Chile series, FRED for US series — and merges/dispatches between them:
 
 ```
 DATA_MODE = static | live | hybrid   (default: hybrid if BCCh creds exist, else static)
 
 page  →  src/lib/data (static, instant)         ← initial render
       →  fetchMacroIndicators / fetchMacroHistory → /api/macro* (server)
-            → macroProvider → bcchMacroProvider → BCCh (server-only credentials)
+            → macroProvider → bcchMacroProvider  → BCCh (server-only credentials, Chile series)
+                             → fredMacroProvider  → FRED (no credentials needed, US series)
             → staticMacroProvider (fallback)     ← always available
 ```
 
 - **Static fallback is mandatory** — with no env vars the app runs entirely on JSON.
-- BCCh credentials are **server-only** (read in `/api/macro*` route handlers).
-- A subtle `DataSourceBadge` shows: Static MVP · Live BCCh · Hybrid fallback · Live unavailable.
+- BCCh credentials are **server-only** (read in `/api/macro*` route handlers); FRED needs no credentials at all.
+- Each series' `sourceProvider` field (`'BCCh' | 'FRED'`) determines which provider's manual map and client it uses — a series can never be routed to the wrong provider.
+- A subtle `DataSourceBadge` shows: Static MVP · Live BCCh/FRED · Hybrid fallback · Live unavailable.
 
 ### Environment setup
 
@@ -136,7 +140,7 @@ without them** (they never run during build). Full guide:
 - **Desktop-only layout** — minimum comfortable viewport is ~1280px wide; 1440px recommended (mobile-responsive is a planned future phase)
 - **Portfolio average cost is weighted-average only** — no FIFO/LIFO or specific-lot selection
 - **Portfolio has no FX conversion, dividends, or performance attribution** (time/money-weighted returns) — those remain planned
-- **Some data is still static** — macro (BCCh) and market (Yahoo Finance) are live with Supabase persistence; company financials are automated from **CMF XBRL** filings for mapped issuers (SQM-B, COPEC) with manual CSV as fallback; CMF *Hechos Esenciales* and news remain static/blocked sample data
+- **Some data is still static** — macro (BCCh for Chile, FRED for US) and market (Yahoo Finance) are live with Supabase persistence; company financials are automated from **CMF XBRL**/`cmf_bank` filings for mapped issuers with Yahoo Finance/manual CSV as fallback; CMF *Hechos Esenciales*, news, most FX/Chilean-rates rows, and the economic calendar remain static/blocked sample data
 
 ---
 
@@ -164,7 +168,7 @@ without them** (they never run during build). Full guide:
 | **Phase 9C** | Structured Notes — parser expansion to Crédit Agricole, BNP Paribas, Barclays, and BBVA via a new issuer-detection router; 4-state confidence/review-state model | ✓ Complete |
 | **Phase 9D** | Structured Notes — scheduled price-snapshot persistence + observation-event automation (daily cron, conservative autocall status transition, monitoring-status endpoint) | ✓ Complete |
 | **Phase 9E** | Structured Notes — free market-data provider abstraction + fallback/sanity-check orchestrator + quote-quality rules (staleness, large-move, cross-provider disagreement); Yahoo remains the sole active provider after a documented free-provider discovery pass | ✓ Complete |
-| **Phase 8D** | FX/rates + US macro + economic calendar live source completion | Planned |
+| **Phase 8D** | FX/rates + US macro + economic calendar live source completion — copper live via BCCh, 9 US macro series live via FRED (no API key), dual-provider macro orchestrator; economic calendar/EUR-CLP/BTP-10/BCU-5/PDBC-90d/TPM-TNA all re-investigated and documented as deferred | ✓ Complete |
 | **Phase 8E** | Hechos Relevantes + News ingestion workaround | Planned |
 | **Phase 6E** | Portfolio analytics / performance attribution | Planned |
 | **Phase 7A** | Mobile-responsive foundation — intentionally after data-credibility phases (8B–8E) unless a UX emergency arises | Planned |

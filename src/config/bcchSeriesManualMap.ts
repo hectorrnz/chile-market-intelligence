@@ -201,10 +201,27 @@ export const bcchSeriesManualMap: Record<string, BcchManualEntry> = {
     notes: 'INE total unemployment rate, seasonally adjusted, national. Latest Apr-2026 = 8.9%. Encoding fix required to discover.',
   },
 
-  // Copper: BCCh series is USD/oz (F019.PPB.PRE.100.D). UI expects CLP/lb. Unit
-  // mismatch — keep disabled here; source externally in a later phase.
-  copper: pending('cobre-lme', 'DAILY', 'none',
-    'Unit mismatch: BCCh publishes copper in USD/oz, UI needs CLP/lb. Source from LME/external in a later phase. Keep disabled for BCCh.'),
+  // Phase 8D — verified via live SearchSeries: F019.PPB.PRE.100.D (daily) is
+  // USD/oz (unit mismatch with the UI's USD/lb), but F019.PPB.PRE.40.M is a
+  // SEPARATE, distinct BCCh series already published in USD/lb — exactly the
+  // unit macroSeries.ts's `cobre-lme` entry expects. Confirmed live: real
+  // current values (e.g. May-2026 = 6.13 USD/lb), monthly frequency, labeled
+  // by BCCh itself as "valores referenciales, obtenidas de fuentes
+  // internacionales" (a compiled international reference price, not BCCh's
+  // own market operation) — cross-checked against Yahoo Finance's COMEX
+  // copper futures (HG=F, ~6.28 USD/lb same period) and found consistent.
+  copper: {
+    seriesId: 'F019.PPB.PRE.40.M',
+    verified: true,
+    frequency: 'MONTHLY',
+    transformation: 'none',
+    staticId: 'cobre-lme',
+    sourceName: 'Precio del cobre refinado BML (dólares/libra)',
+    confidence: 'high',
+    verificationDate: '2026-07-10',
+    verificationMethod: 'BCCh SearchSeries + GetSeries validation (Phase 8D); cross-checked against Yahoo Finance HG=F futures for the same period.',
+    notes: 'Official BCCh reference copper price already in USD/lb (matches the UI unit exactly) — distinct from the USD/oz daily series (F019.PPB.PRE.100.D) that caused the original unit-mismatch deferral. Monthly frequency only; no daily USD/lb series exists at BCCh.',
+  },
 
   // Chilean fixed-income — partial progress:
   // BTU/BCU 10Y and 5Y are mapped above via the BUF secondary market composite.

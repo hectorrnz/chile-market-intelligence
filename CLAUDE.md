@@ -390,6 +390,86 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 8D — FX, Rates, Copper, US Macro, and Economic Calendar Live-Source Completion** ✓ COMPLETE (2026-07-10)
+
+Expands live macro/market-source coverage beyond the existing Chile-only BCCh integration, using only
+official or stable free sources. Full discovery record (every source investigated, implemented, or
+rejected, with reasons) in `docs/macro_market_source_coverage.md`.
+
+**Copper — implemented via BCCh.** The Phase 4B deferral was a genuine unit mismatch (BCCh's daily
+`F019.PPB.PRE.100.D` publishes USD/oz; the UI expects USD/lb). Re-running BCCh's official SearchSeries
+catalog this phase surfaced `F019.PPB.PRE.40.M` — monthly, already in USD/lb, the exact unit the UI
+expects. No unit conversion, no guessing — verified directly against the official catalog. Cross-checked
+against Yahoo Finance `HG=F` futures as a sanity check only, never as the source of truth.
+
+**BTP-10, BCU-5, PDBC-90d, TPM-TNA — re-verified, still deferred.** No new live series exists for any of
+the four (same conclusion as Phase 4B, confirmed again against the live catalog).
+
+**EUR/CLP — verified but deliberately not wired.** `F072.CLP.EUR.N.O.D` is confirmed live and correct, but
+wiring it in requires a new `macro_indicators` row + UI card + static fallback (UI/data-model scope beyond
+this phase's source-discovery scope). Documented for a future phase.
+
+**US macro — implemented via FRED (Federal Reserve Bank of St. Louis).** FRED's public CSV "graph" endpoint
+(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=<SERIES_ID>`) requires **no API key** — genuinely free,
+official, verified live. 9 series mapped: Fed Funds (`FEDFUNDS`), US 3M/2Y/10Y/20Y/30Y Treasury yields
+(`DGS3MO`/`DGS2`/`DGS10`/`DGS20`/`DGS30`), US Unemployment (`UNRATE`), US CPI m/m and y/y (both derived
+from the same `CPIAUCSL` index-level series with different transforms — mirroring how Chile's IPC
+mensual/anual both derive from one BCCh level series). Nonfarm payrolls, ISM/PMI, and a recession-indicator
+series were considered and deliberately **not** added — no UI slot, no free reliable source, or doesn't fit
+the existing indicator value/change model, respectively.
+
+**Dual-provider architecture**: `src/config/usFredSeriesManualMap.ts` mirrors `bcchSeriesManualMap.ts`'s
+human-verification discipline exactly (`seriesId`/`verified`/`frequency`/`transformation`/`confidence`/
+`verificationDate`/`notes` — no code ever guessed). `src/config/macroSeries.ts`'s registry `merge()`
+dispatches each series definition to the correct manual map based on `sourceProvider`
+(`'BCCh' | 'INE' | 'LME' | 'FRED' | 'external'`); `getEnabledBcchSeries()` / `getEnabledFredSeries()` scope
+each provider (and each ingestion script) to only its own series, so a FRED series can never accidentally
+reach the BCCh client or vice versa. `src/lib/providers/fredClient.ts` (pure `parseFredCsv`,
+`isFredConfigured()` always `true`) + `fredMacroProvider.ts` implement the same `MacroProvider` contract as
+the BCCh equivalents. The orchestrator (`macroProvider.ts`) now queries both providers in parallel for the
+indicators list (`resolveMacroIndicators`) and dispatches per-indicator to the correct provider for history
+(`resolveMacroHistory`, via each indicator's `sourceProvider`) — the Supabase-persisted read layer and
+static-fallback layer needed **no changes**, since both already key purely off `indicator_id`.
+
+**A real bug was caught and fixed while auditing the existing BCCh scripts during this phase**:
+`getEnabledSeries()` (now returning both providers' series after the registry merge) was being called
+unscoped in `scripts/ingest/bcchMacro.ts` and `src/lib/ingestion/bcchMacroIngestion.ts` — fixed to call
+`getEnabledBcchSeries()` so the BCCh-only ingestion path can never accidentally attempt to fetch a FRED
+series code via the BCCh client.
+
+**Ingestion**: `scripts/ingest/fredMacroCore.ts` (pure) + `scripts/ingest/fredMacro.ts` (CLI,
+`npm run ingest:fred-macro:dry` / `ingest:fred-macro -- --all --write`) + `src/lib/ingestion/fredMacroIngestion.ts`
+(shared logic, mirrors `bcchMacroIngestion.ts`) + `GET /api/cron/ingest-fred-macro` (Bearer `CRON_SECRET`)
+— **not added to `vercel.json`**, manual/reviewable trigger only, same policy as the BCCh/CMF-XBRL/
+Yahoo-financials crons. No new schema migration, no new dependency, no new cron schedule.
+
+**Economic calendar — deferred, unchanged.** Re-investigated; no free, structured (non-scraped), stable
+calendar source was found (government sites publish only rendered HTML; commercial calendar vendors require
+a paid API key). The existing schedule-driven synthetic calendar (`src/lib/data/calendar.ts`) continues
+unchanged, honestly labeled as such.
+
+**Plausibility bands**: 9 new bands added to `src/lib/providers/plausibility.ts` for the FRED series.
+
+**Tests**: 5 new test files (`fredMacroIngest.test.ts`, `fredClient.test.ts`, `macroSeriesDualProvider.test.ts`,
+`fredCronIngestion.test.ts`, plus additions to `transforms.test.ts` and a correction to `bcchMapping.test.ts`
+— copper was hardcoded there as the "known unverified" example, updated to use `btp-10`, still genuinely
+unverified). Full suite 1102 → 1156/1156, lint 0, build 0 errors.
+
+**Local validation**: live dry-run of all 9 FRED series — 12,961 rows across 9 indicators, all succeeded;
+live dry-run of all 12 enabled BCCh series including copper — 18,512 rows, copper returned 118 real monthly
+USD/lb observations (2016–2026).
+
+Scope limits: macro/market source-discovery expansion only; no financials refactor; no Structured Notes/
+auth/watchlist/portfolio changes; no UI redesign; no paid/vendor APIs; no Bloomberg; no CAPTCHA bypass; no
+fragile scraping; no new cron schedule; EUR/CLP and Nonfarm Payrolls documented as ready-to-wire but out of
+scope (UI-slot work, not source-discovery work).
+
+Next: wire EUR/CLP (new `macro_indicators` row + UI card); add a Nonfarm Payrolls UI slot if desired;
+periodically re-check the economic-calendar source landscape — or return to Structured Notes (Santander/
+older-2024-Citi parser templates) or continue CMF/XBRL issuer work.
+
+---
+
 **Phase 8C.8 — Official CMF Bank Financials Persistence + Pillar 3 Discovery** ✓ COMPLETE (2026-07-09)
 
 Enables official CMF bank regulatory data as a controlled production annual source for the 4 bank tickers

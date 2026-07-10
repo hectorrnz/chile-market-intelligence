@@ -6,9 +6,11 @@
 // short `reason` strings reach the client.
 
 import type { MacroIndicatorsResponse, MacroHistoryResponse, MacroChartPoint } from './types'
+import type { MacroIndicator } from '@/types'
 import { getDataMode, decideSource } from './dataMode'
 import { staticMacroProvider } from './staticMacroProvider'
 import { bcchMacroProvider } from './bcchMacroProvider'
+import { fredMacroProvider } from './fredMacroProvider'
 import { getSeriesByStaticId } from '@/config/macroSeries'
 import { getDbMode, decideDbSource } from '@/lib/db/dbMode'
 import {
@@ -17,32 +19,57 @@ import {
 } from '@/lib/db/repositories/macroRepository'
 
 const BCCH_PROVIDER = 'BCCh BDE'
+const FRED_PROVIDER = 'FRED (St. Louis Fed)'
 
+/**
+ * Combines both providers' live indicators. A ticker's region determines which
+ * provider actually has data for it (BCCh for CL, FRED for US) — calling both
+ * unconditionally is safe: the provider with no enabled series for that region
+ * cleanly returns `{ ok: false, reason: 'No live ... series code mapped yet' }`
+ * and is simply excluded from the merge, never a hard error.
+ */
 export async function resolveMacroIndicators(region?: 'CL' | 'US'): Promise<MacroIndicatorsResponse> {
   const requested = getDataMode()
 
   let liveOk = false
   let liveReason: string | undefined
-  let liveData = null as Awaited<ReturnType<typeof bcchMacroProvider.getIndicators>> | null
+  const sources: string[] = []
+  let combinedData: MacroIndicator[] = []
+  let lastUpdated = ''
+
   if (requested !== 'static') {
-    liveData = await bcchMacroProvider.getIndicators(region)
-    if (liveData.ok) liveOk = true
-    else liveReason = liveData.reason
+    const [bcchRes, fredRes] = await Promise.all([
+      bcchMacroProvider.getIndicators(region),
+      fredMacroProvider.getIndicators(region),
+    ])
+    if (bcchRes.ok) {
+      liveOk = true
+      combinedData = [...combinedData, ...bcchRes.data]
+      sources.push(bcchRes.source)
+      if (bcchRes.lastUpdated > lastUpdated) lastUpdated = bcchRes.lastUpdated
+    }
+    if (fredRes.ok) {
+      liveOk = true
+      combinedData = [...combinedData, ...fredRes.data]
+      sources.push(fredRes.source)
+      if (fredRes.lastUpdated > lastUpdated) lastUpdated = fredRes.lastUpdated
+    }
+    if (!bcchRes.ok && !fredRes.ok) liveReason = bcchRes.reason || fredRes.reason
   }
 
   const decision = decideSource(requested, liveOk, liveReason)
 
-  if (decision.liveAvailable && liveData && liveData.ok) {
+  if (decision.liveAvailable && combinedData.length > 0) {
     return {
-      data: liveData.data,
+      data: combinedData,
       metadata: {
         dataModeRequested: requested,
         dataModeUsed: decision.dataModeUsed,
         liveAvailable: true,
         status: decision.status,
-        source: liveData.source,
-        lastUpdated: liveData.lastUpdated,
-        provider: BCCH_PROVIDER,
+        source: sources.join(' + '),
+        lastUpdated,
+        provider: sources.length > 1 ? `${BCCH_PROVIDER} + ${FRED_PROVIDER}` : (sources[0] ?? BCCH_PROVIDER),
       },
     }
   }
@@ -72,6 +99,8 @@ export async function resolveMacroHistory(
   const dbSource = decideDbSource(dbMode)
 
   // ─── Layer 1: Supabase persisted observations ────────────────────────────
+  const persistedDef = getSeriesByStaticId(indicatorId)
+  const persistedProviderLabel = persistedDef?.sourceProvider === 'FRED' ? FRED_PROVIDER : BCCH_PROVIDER
   if (dbSource === 'supabase') {
     const persisted = await getMacroObservationsForTimeframe(indicatorId, years)
     if (persisted.source === 'supabase' && isSufficientHistory(persisted.data, years)) {
@@ -83,9 +112,9 @@ export async function resolveMacroHistory(
           dataModeUsed: dataMode,
           liveAvailable: false,
           status: 'persisted',
-          source: 'Persisted BCCh via Supabase',
+          source: `Persisted via Supabase (${persistedProviderLabel})`,
           lastUpdated: latest?.date ?? '',
-          provider: BCCH_PROVIDER,
+          provider: persistedProviderLabel,
           persistedAvailable: true,
           observationCount: persisted.data.length,
           latestObservationDate: latest?.date,
@@ -116,12 +145,16 @@ export async function resolveMacroHistory(
     // DB_MODE=hybrid: fall through to BCCh live or static
   }
 
-  // ─── Layer 2: BCCh live ──────────────────────────────────────────────────
+  // ─── Layer 2: live (BCCh for CL series, FRED for US series) ─────────────
+  const def = getSeriesByStaticId(indicatorId)
+  const provider = def?.sourceProvider === 'FRED' ? fredMacroProvider : bcchMacroProvider
+  const providerLabel = def?.sourceProvider === 'FRED' ? FRED_PROVIDER : BCCH_PROVIDER
+
   let liveOk = false
   let liveReason: string | undefined
-  let liveData = null as Awaited<ReturnType<typeof bcchMacroProvider.getHistory>> | null
+  let liveData = null as Awaited<ReturnType<typeof provider.getHistory>> | null
   if (dataMode !== 'static') {
-    liveData = await bcchMacroProvider.getHistory(indicatorId, years)
+    liveData = await provider.getHistory(indicatorId, years)
     if (liveData.ok) liveOk = true
     else liveReason = liveData.reason
   }
@@ -130,7 +163,7 @@ export async function resolveMacroHistory(
 
   if (decision.liveAvailable && liveData && liveData.ok) {
     const points: MacroChartPoint[] = liveData.data.map(p => ({ date: p.date, value: p.value }))
-    const seriesId = getSeriesByStaticId(indicatorId)?.providerSeriesCode ?? undefined
+    const seriesId = def?.providerSeriesCode ?? undefined
     return {
       data: points,
       metadata: {
@@ -140,7 +173,7 @@ export async function resolveMacroHistory(
         status: decision.status,
         source: liveData.source,
         lastUpdated: liveData.lastUpdated,
-        provider: BCCH_PROVIDER,
+        provider: providerLabel,
         seriesId: seriesId ?? undefined,
         persistedAvailable: false,
         dbModeRequested: dbMode,

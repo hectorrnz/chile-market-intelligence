@@ -15,8 +15,16 @@ test('manual map: unverified entries have null seriesId; verified entries have a
       assert.equal(e.seriesId, null, `unverified entry "${key}" must keep seriesId=null (no guessing)`)
     }
   }
-  // Phase 4B.1 mapped 6, Phase 4B.2 added 5 more = 11 total
-  assert.ok(verifiedCount() >= 11, `expected at least 11 verified entries, got ${verifiedCount()}`)
+  // Phase 4B.1 mapped 6, Phase 4B.2 added 5 more = 11; Phase 8D verified copper = 12 total
+  assert.ok(verifiedCount() >= 12, `expected at least 12 verified entries, got ${verifiedCount()}`)
+})
+
+test('manual map: copper is verified in Phase 8D (BCCh monthly USD/lb series)', () => {
+  const copper = bcchSeriesManualMap['copper']
+  assert.equal(copper.verified, true)
+  assert.equal(copper.seriesId, 'F019.PPB.PRE.40.M')
+  assert.equal(copper.frequency, 'MONTHLY')
+  assert.equal(isManualSeriesLive(copper), true)
 })
 
 test('manual map: includes the required indicator keys', () => {
@@ -29,8 +37,8 @@ test('manual map: includes the required indicator keys', () => {
 })
 
 test('isManualSeriesLive: only verified + seriesId counts as live', () => {
-  // Use a known-unverified entry (copper remains pending — unit mismatch)
-  const unverified = bcchSeriesManualMap['copper']
+  // Use a known-unverified entry (btp-10 remains pending — no continuous secondary-market rate)
+  const unverified = bcchSeriesManualMap['btp-10']
   assert.equal(isManualSeriesLive(undefined), false)
   assert.equal(isManualSeriesLive({ ...unverified }), false)                    // verified=false, seriesId=null
   assert.equal(isManualSeriesLive({ ...unverified, verified: true }), false)    // verified but no seriesId

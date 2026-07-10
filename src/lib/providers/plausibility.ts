@@ -25,6 +25,16 @@ export const PLAUSIBILITY: Record<string, Band> = {
   'camara-swap-1y': { min: -5, max: 30 },
   'pdbc-90d': { min: -5, max: 30 },
   'tpm-tna': { min: 0, max: 20 },
+  // ── US (FRED, Phase 8D) ───────────────────────────────────────────────────
+  'fed-funds': { min: 0, max: 20 },
+  us3m: { min: -1, max: 20 },
+  us2y: { min: -1, max: 20 },
+  us10y: { min: -1, max: 20 },
+  us20y: { min: -1, max: 20 },
+  us30y: { min: -1, max: 20 },
+  'us-unemployment': { min: 0, max: 30 },
+  'us-cpi-mensual': { min: -5, max: 10 },
+  'us-cpi-anual': { min: -5, max: 30 },
 }
 
 /** True when `value` is finite and within the band for `key` (or no band defined). */

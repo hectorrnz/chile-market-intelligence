@@ -10,7 +10,7 @@
 import type { MacroProvider, ProviderResult } from './types'
 import type { MacroIndicator, MacroHistoryPoint } from '@/types'
 import { isBcchConfigured, fetchBcchSeries, type BcchSeriesPoint } from './bcchClient'
-import { getEnabledSeries, getSeriesByStaticId, type MacroSeriesDef } from '@/config/macroSeries'
+import { getEnabledBcchSeries, getSeriesByStaticId, type MacroSeriesDef } from '@/config/macroSeries'
 import { deriveValueChange, transformSeries } from './transforms'
 import { isPlausible } from './plausibility'
 
@@ -52,7 +52,7 @@ export const bcchMacroProvider: MacroProvider = {
 
   async getIndicators(region): Promise<ProviderResult<MacroIndicator[]>> {
     if (!isBcchConfigured()) return { ok: false, reason: 'BCCh credentials not configured' }
-    const series = getEnabledSeries(region)
+    const series = getEnabledBcchSeries(region)
     if (series.length === 0) return { ok: false, reason: NO_CODE }
 
     const out: MacroIndicator[] = []
@@ -70,7 +70,7 @@ export const bcchMacroProvider: MacroProvider = {
   async getHistory(indicatorId, years): Promise<ProviderResult<MacroHistoryPoint[]>> {
     if (!isBcchConfigured()) return { ok: false, reason: 'BCCh credentials not configured' }
     const def = getSeriesByStaticId(indicatorId)
-    if (!def || !def.enabled || !def.providerSeriesCode) return { ok: false, reason: NO_CODE }
+    if (!def || def.sourceProvider !== 'BCCh' || !def.enabled || !def.providerSeriesCode) return { ok: false, reason: NO_CODE }
 
     const res = await fetchBcchSeries(def.providerSeriesCode, { firstDate: firstDateFor(years) })
     if (!res.ok) return res

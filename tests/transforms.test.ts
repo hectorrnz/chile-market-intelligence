@@ -82,3 +82,20 @@ test('plausibilityReason explains the failure', () => {
   assert.equal(plausibilityReason('tpm', 5), null)
   assert.match(plausibilityReason('tpm', 25) ?? '', /outside plausible band/)
 })
+
+test('plausibility (Phase 8D): copper band accepts the real BCCh USD/lb value', () => {
+  // Real dry-run copper value from BCCh F019.PPB.PRE.40.M is well within [0.5, 15] USD/lb.
+  assert.equal(isPlausible('copper', 4.2), true)
+  assert.equal(isPlausible('copper', 9000), false) // would indicate a USD/oz mismap, not USD/lb
+})
+
+test('plausibility (Phase 8D): US FRED bands accept realistic rates/CPI/unemployment', () => {
+  assert.equal(isPlausible('fed-funds', 3.63), true)
+  assert.equal(isPlausible('us10y', 4.56), true)
+  assert.equal(isPlausible('us-unemployment', 4.2), true)
+  assert.equal(isPlausible('us-cpi-mensual', 0.3), true)
+  assert.equal(isPlausible('us-cpi-anual', 2.9), true)
+  // Rejects an obviously wrong mapping (e.g. an index level mistaken for a rate).
+  assert.equal(isPlausible('us10y', 300), false)
+  assert.equal(isPlausible('us-unemployment', 300), false)
+})
