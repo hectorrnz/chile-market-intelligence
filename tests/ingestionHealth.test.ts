@@ -182,6 +182,22 @@ describe('evaluateMacroIngestionHealth — monthly indicators not wrongly stale'
     assert.ok(r.staleIndicators.includes('desempleo'),   'desempleo at 150 days should be stale')
   })
 
+  test('Phase 8D: copper + FRED monthly series are not wrongly stale from last month', () => {
+    const input: MacroHealthInput = {
+      today: '2026-07-01',
+      latestRun: { status: 'success', startedAt: '2026-07-01T12:00:00Z', rowsFailed: 0 },
+      observations: [
+        { indicatorId: 'cobre-lme',        maxDate: '2026-06-01' },
+        { indicatorId: 'fed-funds',        maxDate: '2026-06-01' },
+        { indicatorId: 'us-cpi-mensual',   maxDate: '2026-06-01' },
+        { indicatorId: 'us-cpi-anual',     maxDate: '2026-06-01' },
+        { indicatorId: 'us-unemployment',  maxDate: '2026-06-01' },
+      ],
+    }
+    const r = evaluateMacroIngestionHealth(input)
+    assert.deepEqual(r.staleIndicators, [], `Phase 8D monthly indicators from Jun should not be stale, got: ${r.staleIndicators}`)
+  })
+
   test('indicatorsHealthy counts correctly', () => {
     const input: MacroHealthInput = {
       today: '2026-07-01',

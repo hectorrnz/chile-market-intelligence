@@ -76,6 +76,9 @@ export interface OverallHealthResult {
 // just because the latest observation is from last month.
 const MONTHLY_INDICATORS = new Set([
   'ipc-mensual', 'ipc-anual', 'imacec-anual', 'desempleo',
+  // Phase 8D: copper (BCCh, monthly) + 3 monthly FRED series (Fed Funds is a
+  // monthly average; CPI m/m and y/y derive from the same monthly index level).
+  'cobre-lme', 'fed-funds', 'us-cpi-mensual', 'us-cpi-anual', 'us-unemployment',
 ])
 const MONTHLY_STALE_DAYS = 100  // ~3.5 months: IPC lags 1m, IMACEC/Desempleo 2m — alert only if genuinely missing
 
