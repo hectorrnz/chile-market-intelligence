@@ -45,19 +45,40 @@ export function parseFredCsv(csvText: string): FredSeriesPoint[] {
   return points
 }
 
+export interface FredFetchOptions {
+  /** Chart observation start date (FRED's `cosd` param), YYYY-MM-DD. Omit for full history. */
+  startDate?: string
+  /** Chart observation end date (FRED's `coed` param), YYYY-MM-DD. Omit for "today". */
+  endDate?: string
+}
+
 /**
  * Fetches one FRED series via the public CSV endpoint. Never throws; a
  * network failure, timeout, or empty/malformed response returns a structured
  * `{ ok: false, reason }` — the caller falls back to static data exactly like
  * a BCCh failure does.
+ *
+ * Always passes `cosd`/`coed` (verified live, Phase 8D — the same "chart
+ * observation start/end date" params fredgraph.stlouisfed.org's own chart
+ * embed uses) so a request for a daily series that has decades of history
+ * (e.g. DGS10 since 1962) doesn't download the entire series just to read
+ * the latest value — the full-history default caused real production
+ * timeouts before this fix (verified live: /api/macro?region=US exceeded
+ * 60s; per-request latency, not payload size alone, was the dominant cost).
  */
-export async function fetchFredSeries(seriesId: string): Promise<ProviderResult<FredSeriesPoint[]>> {
+export async function fetchFredSeries(
+  seriesId: string,
+  options: FredFetchOptions = {},
+): Promise<ProviderResult<FredSeriesPoint[]>> {
   if (!seriesId) return { ok: false, reason: 'No FRED series id provided' }
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
   try {
-    const url = `${BASE_URL}?id=${encodeURIComponent(seriesId)}`
+    const params = new URLSearchParams({ id: seriesId })
+    if (options.startDate) params.set('cosd', options.startDate)
+    if (options.endDate) params.set('coed', options.endDate)
+    const url = `${BASE_URL}?${params.toString()}`
     const res = await fetch(url, { signal: controller.signal, headers: { Accept: 'text/csv' }, cache: 'no-store' })
     if (!res.ok) return { ok: false, reason: `FRED request failed (HTTP ${res.status})` }
     const text = await res.text()

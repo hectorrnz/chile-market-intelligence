@@ -58,3 +58,13 @@ describe('parseFredCsv', () => {
     assert.equal(points[0].value, null)
   })
 })
+
+describe('fetchFredSeries date-range params (Phase 8D perf fix)', () => {
+  it('accepts an options object with startDate/endDate without throwing (network call itself not exercised here)', async () => {
+    // No live network in unit tests — just confirm the function signature accepts
+    // the options bag. A bad/empty seriesId short-circuits before any fetch.
+    const { fetchFredSeries } = await import('../src/lib/providers/fredClient.ts')
+    const res = await fetchFredSeries('', { startDate: '2024-01-01', endDate: '2026-01-01' })
+    assert.equal(res.ok, false)
+  })
+})

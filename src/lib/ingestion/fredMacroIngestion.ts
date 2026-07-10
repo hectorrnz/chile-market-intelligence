@@ -23,6 +23,8 @@ export const INGESTION_VERSION = '8D.0'
 
 const BATCH_SIZE = 500
 const INTER_REQUEST_DELAY_MS = 150
+// Extra history fetched before rangeFrom so yoy/mom transforms have a year-ago base.
+const EXTRA_YEARS_CONTEXT = 1
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -150,14 +152,18 @@ export async function runFredMacroIngestion(opts: IngestionOptions): Promise<Ing
 
   // ── Date range ───────────────────────────────────────────────────────────────
   let rangeFrom: string
+  let fetchFrom: string
   const rangeTo = new Date().toISOString().slice(0, 10)
 
   if (opts.mode === 'incremental') {
     const days = opts.daysBack ?? 14
     rangeFrom = daysAgoIso(days)
+    // Fetch 1 extra year so yoy/mom-transform indicators have a year-ago base.
+    fetchFrom = yearsAgoIso(EXTRA_YEARS_CONTEXT)
   } else {
     const years = opts.yearsBack ?? 10
     rangeFrom = yearsAgoIso(years)
+    fetchFrom = yearsAgoIso(years + EXTRA_YEARS_CONTEXT)
   }
 
   // ── Indicator selection ──────────────────────────────────────────────────────
@@ -205,8 +211,9 @@ export async function runFredMacroIngestion(opts: IngestionOptions): Promise<Ing
     const sourceName  = manualEntry?.sourceName ?? null
     const seriesCode  = def.providerSeriesCode!
 
-    // FRED's CSV endpoint has no from/to param — fetch the full series, filter client-side.
-    const res = await fetchFredSeries(seriesCode)
+    // Bounded via cosd so this never downloads a series' full multi-decade
+    // history — a real production timeout this caused before being fixed.
+    const res = await fetchFredSeries(seriesCode, { startDate: fetchFrom })
     if (!res.ok) {
       indicatorsFailed.push(def.manualKey)
       errorMessages.push(`${def.manualKey}: ${res.reason}`)

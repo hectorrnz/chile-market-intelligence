@@ -140,8 +140,14 @@ async function main() {
   const today = todayIso()
   const rangeTo   = args.to   ?? today
   const rangeFrom = args.from ?? firstDateFor(args.years)
+  // 1 extra year of fetch context so yoy/mom transforms have a year-ago base;
+  // bounded via cosd so a daily series' full multi-decade history is never downloaded.
+  const fetchFrom = args.from ? firstDateFor(0, 1) < args.from
+    ? new Date(new Date(args.from).setFullYear(new Date(args.from).getFullYear() - 1)).toISOString().slice(0, 10)
+    : args.from
+    : firstDateFor(args.years, 1)
 
-  console.log(`[fred-ingest] Date range: ${rangeFrom} → ${rangeTo}`)
+  console.log(`[fred-ingest] Date range: ${rangeFrom} → ${rangeTo} (fetch context from ${fetchFrom})`)
 
   const allEnabled = getEnabledFredSeries()
   let targets = allEnabled
@@ -171,8 +177,7 @@ async function main() {
 
     process.stdout.write(`[fred-ingest] ${def.manualKey} (${seriesCode}): fetching... `)
 
-    // FRED's CSV endpoint has no from/to param — fetch the full series, filter client-side.
-    const res = await fetchFredSeries(seriesCode)
+    const res = await fetchFredSeries(seriesCode, { startDate: fetchFrom })
     if (!res.ok) {
       console.log(`SKIP — ${res.reason}`)
       results.push({ manualKey: def.manualKey, fallbackStaticId: def.fallbackStaticId, seriesCode, rawCount: 0, storedCount: 0, skipped: true, reason: res.reason, rows: [] })

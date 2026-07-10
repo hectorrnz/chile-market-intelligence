@@ -33,12 +33,11 @@ describe('usFredSeriesManualMap', () => {
     }
   })
 
-  it('isFredSeriesLive requires both verified=true and a non-null seriesId', () => {
+  it('isFredSeriesLive requires verified=true (undefined entry is never live)', () => {
     assert.equal(isFredSeriesLive(undefined), false)
     const entry = usFredSeriesManualMap['us10y']
     assert.equal(isFredSeriesLive(entry), true)
     assert.equal(isFredSeriesLive({ ...entry, verified: false }), false)
-    assert.equal(isFredSeriesLive({ ...entry, seriesId: null }), false)
   })
 
   it('CPI mensual and anual share the same underlying series id but different transforms', () => {

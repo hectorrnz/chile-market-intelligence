@@ -11,6 +11,12 @@ import { isPlausible } from './plausibility'
 
 const NO_CODE = 'No live FRED series code mapped yet'
 
+function firstDateFor(years: number): string {
+  const d = new Date()
+  d.setFullYear(d.getFullYear() - years)
+  return d.toISOString().slice(0, 10)
+}
+
 /** Build a MacroIndicator from a fetched series, applying transform + plausibility. */
 function toIndicator(def: MacroSeriesDef, points: FredSeriesPoint[]): MacroIndicator | null {
   const derived = deriveValueChange(points, def.transformation)
@@ -46,8 +52,12 @@ export const fredMacroProvider: MacroProvider = {
 
     const out: MacroIndicator[] = []
     let lastUpdated = ''
+    // Bound to a short recent window (mirrors bcchMacroProvider's firstDateFor(2))
+    // — a listing only needs the latest value + prior for change, never the
+    // full multi-decade history a daily Treasury-yield series like DGS10 has.
+    const startDate = firstDateFor(2)
     for (const def of series) {
-      const res = await fetchFredSeries(def.providerSeriesCode as string)
+      const res = await fetchFredSeries(def.providerSeriesCode as string, { startDate })
       if (!res.ok) continue
       const ind = toIndicator(def, res.data)
       if (ind) { out.push(ind); if (ind.lastUpdated > lastUpdated) lastUpdated = ind.lastUpdated }
@@ -63,12 +73,14 @@ export const fredMacroProvider: MacroProvider = {
       return { ok: false, reason: NO_CODE }
     }
 
-    const res = await fetchFredSeries(def.providerSeriesCode)
+    // Request 1 extra year of context so yoy/mom transforms have a base point,
+    // matching bcchMacroProvider's EXTRA_YEARS_CONTEXT pattern. cosd/coed keep
+    // the request bounded instead of downloading a series' full multi-decade
+    // history just to chart a 1-10Y window.
+    const startDate = firstDateFor(years + 1)
+    const res = await fetchFredSeries(def.providerSeriesCode, { startDate })
     if (!res.ok) return res
-    // FRED's CSV endpoint has no from/to param — filter client-side to the requested window.
-    const cutoff = new Date()
-    cutoff.setFullYear(cutoff.getFullYear() - years)
-    const cutoffIso = cutoff.toISOString().slice(0, 10)
+    const cutoffIso = firstDateFor(years)
     const windowed = res.data.filter((p) => p.date >= cutoffIso)
     const data: MacroHistoryPoint[] = transformSeries(windowed, def.transformation)
       .map((p) => ({ indicatorId, date: p.date, value: p.value }))
