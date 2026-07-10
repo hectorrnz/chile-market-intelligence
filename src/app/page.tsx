@@ -23,7 +23,7 @@ import { formatMarketLastUpdated } from '@/lib/data/marketMeta'
 import { fetchLiveSnapshot, formatLiveTimestamp, type LiveSnapshot } from '@/lib/data/marketLiveData'
 import { fetchStockSnapshots, fetchSectorPerformance, fetchIndexPerformance } from '@/lib/data/marketData'
 import type { StockSnapshot, SectorSnapshot, IndexSnapshot } from '@/lib/providers/market/types'
-import { MarketRefreshButton } from '@/components/ui/MarketRefreshButton'
+import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
 import { formatCLP, formatPct, formatMacroValue, formatMacroChange, changeColor } from '@/lib/formatters'
 import type { MacroIndicator, ChileanRate } from '@/types'
 
@@ -190,10 +190,14 @@ export default function HomePage() {
           <p className="text-xs text-muted mt-0.5">{t.home.subtitle}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0 ml-4">
+          <UpdateDataButton onRefresh={doRefresh} />
           <AsOfBadge />
           <StatusPill label={t.topbar.mvp} variant="warning" />
         </div>
       </div>
+      {liveTimestamp && (
+        <p className="text-xs text-muted-fg ui-number -mt-2">{liveTimestamp}</p>
+      )}
 
       {/* ── Top region: Macro · (Tracked stocks + FX) · (Earnings + Hechos) ── */}
       {/* Macro card (natural height) drives the region; the other columns match it and scroll. */}
@@ -230,10 +234,6 @@ export default function HomePage() {
             <div className="px-4 py-2.5 border-b border-border flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
                 <span className="ui-label text-muted-fg">{t.home.trackedStocks}</span>
-                <MarketRefreshButton onRefresh={doRefresh} />
-                {liveTimestamp && (
-                  <span className="text-xs text-muted-fg ui-number whitespace-nowrap">{liveTimestamp}</span>
-                )}
               </div>
               <Link href="/stocks" className="text-xs text-primary hover:underline">{t.stocks.title} →</Link>
             </div>
@@ -369,7 +369,6 @@ export default function HomePage() {
             <span className="ui-label text-muted-fg">{t.home.sectorHeatMap}</span>
             <div className="flex items-center gap-2">
               <MarketDataSourceBadge status={sectorStatus} />
-              <MarketRefreshButton onRefresh={doRefresh} />
             </div>
           </div>
           <div className="p-3">

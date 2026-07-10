@@ -22,7 +22,7 @@ import type { EarningsRelease, StockPriceSnapshot } from '@/types'
 import { fetchLiveSnapshot, formatLiveTimestamp, type LiveSnapshot } from '@/lib/data/marketLiveData'
 import { fetchStockSnapshot } from '@/lib/data/marketData'
 import type { StockSnapshot } from '@/lib/providers/market/types'
-import { MarketRefreshButton } from '@/components/ui/MarketRefreshButton'
+import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
 import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
 import type { DataSourceStatus } from '@/lib/providers/types'
 
@@ -179,8 +179,8 @@ export default function CompanyDetailPage() {
         asOf
         actions={
           <>
+            <UpdateDataButton onRefresh={doRefresh} />
             <div className="flex items-center gap-1.5">
-              <MarketRefreshButton onRefresh={doRefresh} />
               <MarketDataSourceBadge status={priceStatus} />
               {liveTimestamp && (
                 <span className="text-xs text-muted-fg ui-number whitespace-nowrap">{liveTimestamp}</span>

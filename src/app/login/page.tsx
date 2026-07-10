@@ -143,7 +143,14 @@ function LoginForm() {
 
           {/* Password */}
           <div className="space-y-1.5">
-            <label htmlFor="password" className="ui-label text-muted-fg">{t.auth.passwordLabel}</label>
+            <div className="flex items-center justify-between">
+              <label htmlFor="password" className="ui-label text-muted-fg">{t.auth.passwordLabel}</label>
+              {!isCreate && (
+                <Link href="/forgot-password" className="text-xs text-primary hover:underline">
+                  {t.auth.forgotPassword}
+                </Link>
+              )}
+            </div>
             <input
               id="password"
               type="password"

@@ -14,7 +14,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { useLang } from '@/components/providers/LangProvider'
 import { SectionHeader } from '@/components/ui/SectionHeader'
-import { MarketRefreshButton } from '@/components/ui/MarketRefreshButton'
+import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
 import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
 import { getAllCompanies } from '@/lib/data/companies'
 import { formatCLP, formatPct, changeColor } from '@/lib/formatters'
@@ -1039,11 +1039,11 @@ export default function PortfolioPage() {
         tag={t.portfolio.tag}
         title={t.portfolio.title}
         subtitle={t.portfolio.subtitle}
+        actions={!loading && detail ? <UpdateDataButton onRefresh={doRefresh} /> : undefined}
       />
 
       {!loading && detail && (
         <div className="flex items-center gap-1.5">
-          <MarketRefreshButton onRefresh={doRefresh} />
           <MarketDataSourceBadge status={priceStatus} />
           {liveTimestamp && (
             <span className="text-xs text-muted-fg ui-number whitespace-nowrap">

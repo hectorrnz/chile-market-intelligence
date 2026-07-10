@@ -13,7 +13,7 @@ import { formatMarketLastUpdated } from '@/lib/data/marketMeta'
 import { fetchLiveSnapshot, formatLiveTimestamp, type LiveSnapshot } from '@/lib/data/marketLiveData'
 import { fetchStockSnapshots } from '@/lib/data/marketData'
 import type { StockSnapshot } from '@/lib/providers/market/types'
-import { MarketRefreshButton } from '@/components/ui/MarketRefreshButton'
+import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
 import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
 import type { DataSourceStatus } from '@/lib/providers/types'
 
@@ -127,6 +127,7 @@ export default function StocksPage() {
         title={t.stocks.title}
         subtitle={t.stocks.subtitle}
         asOf
+        actions={<UpdateDataButton onRefresh={doRefresh} />}
       />
 
       <div className="flex items-center gap-2.5 mb-4 flex-wrap">
@@ -140,7 +141,6 @@ export default function StocksPage() {
           {sectors.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <div className="flex items-center gap-1.5">
-          <MarketRefreshButton onRefresh={doRefresh} />
           <MarketDataSourceBadge status={priceStatus} />
           {liveTimestamp && (
             <span className="text-xs text-muted-fg ui-number whitespace-nowrap">
