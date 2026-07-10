@@ -11,11 +11,9 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useLang } from '@/components/providers/LangProvider'
 import { SectionHeader } from '@/components/ui/SectionHeader'
-import { usePersistentState } from '@/lib/usePersistentState'
 import { ARCHIVED_STATUSES } from '@/lib/structuredNotes/types'
 import type { StructuredNote } from '@/lib/structuredNotes/types'
 import type { NoteDashboardMetrics, BookSummary } from '@/lib/structuredNotes/dashboard'
-import { findNewlyCalledNotes, archivedNoteIds, markNotesSeen } from '@/lib/structuredNotes/calledNotice'
 
 interface MonitoringStatus {
   latestRun: { status: string; startedAt: string; completedAt: string | null; pricesSucceeded: number | null; pricesFailed: number | null } | null
@@ -83,14 +81,6 @@ export default function StructuredNotesPage() {
   const [monitoring, setMonitoring] = useState<MonitoringStatus | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  // "Called" notice — surfaces notes the scheduled monitoring cron moved to an
-  // archived status automatically, in case the user hasn't noticed. Seen-list
-  // is per-browser (localStorage), so no schema change; seenCalledIds===null
-  // means "never initialized" — first load seeds it silently, no banner flood.
-  const [seenCalledIds, setSeenCalledIds] = usePersistentState<string[] | null>('cmi.sn.seenCalledNoteIds', null)
-  const [calledNotice, setCalledNotice] = useState<StructuredNote[]>([])
-  const [calledNoticeSig, setCalledNoticeSig] = useState<string | null>(null)
-
   const ingest = useCallback((json: { notes?: StructuredNote[]; metrics?: NoteDashboardMetrics[]; summary?: BookSummary }) => {
     setNotes(Array.isArray(json.notes) ? json.notes : [])
     const byId: Record<string, NoteDashboardMetrics> = {}
@@ -134,50 +124,20 @@ export default function StructuredNotesPage() {
     return () => { cancelled.value = true }
   }, [ingest, loadMonitoring])
 
-  // Detect notes that moved to a Called/archived status since this browser
-  // last looked (typically the scheduled monitoring cron auto-calling a note
-  // after market close on its observation date). First-ever load seeds the
-  // seen-list from the current book with no banner; later loads diff against
-  // it. Uses the render-time previous-value pattern (not an effect) — this is
-  // derived state reacting to `notes` changing, the pattern this codebase
-  // already uses for CommandPalette/Sidebar/chart-builder (see CLAUDE.md).
-  if (!loading) {
-    const sig = notes.map((n) => `${n.id}:${n.status}`).join('|')
-    if (sig !== calledNoticeSig) {
-      setCalledNoticeSig(sig)
-      if (seenCalledIds === null) {
-        setSeenCalledIds(archivedNoteIds(notes))
-      } else {
-        const newlyCalled = findNewlyCalledNotes(notes, seenCalledIds)
-        if (newlyCalled.length > 0) {
-          setCalledNotice((prev) => {
-            const merged = [...prev]
-            for (const n of newlyCalled) if (!merged.some((m) => m.id === n.id)) merged.push(n)
-            return merged
-          })
-        }
-      }
-    }
-  }
-
-  function dismissCalledNotice() {
-    setSeenCalledIds((prev) => markNotesSeen(prev, calledNotice.map((n) => n.id).filter((x): x is string => !!x)))
-    setCalledNotice([])
-  }
-
   async function refresh() {
     setRefreshing(true)
     try { await load() } finally { setRefreshing(false) }
   }
 
+  // The "note was called" notice is now the platform notification bell (see
+  // NotificationBell in TopBar) — the scheduled monitoring cron creates a
+  // shared notification + emails the configured recipient list directly, so
+  // this page no longer needs its own per-browser banner/seen-list.
   async function setCalled(noteId: string, called: boolean) {
     await fetch(`/api/structured-notes/${noteId}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: called ? 'autocalled' : 'active' }),
     })
-    // Mark self-actioned calls as already seen — the user just did this
-    // themselves, so it should never trigger the "note was called" banner.
-    if (called) setSeenCalledIds((prev) => markNotesSeen(prev, [noteId]))
     await load()
   }
 
@@ -256,34 +216,6 @@ export default function StructuredNotesPage() {
   return (
     <div className="w-full">
       <SectionHeader tag={t.sn.tag} title={t.sn.tag} subtitle={t.sn.subtitle} />
-
-      {/* Called notice — a note the scheduled monitoring cron auto-called
-          since this browser last checked. Dismissible; never reappears for
-          the same note once acknowledged (or once the user calls it themselves). */}
-      {calledNotice.length > 0 && (
-        <div
-          role="alert"
-          className="mb-5 border rounded-lg p-4"
-          style={{ borderColor: 'var(--accent)', backgroundColor: 'color-mix(in oklab, var(--accent) 8%, var(--surface))' }}
-        >
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium text-foreground mb-1">
-                🔔 {calledNotice.length === 1 ? t.sn.calledNotice.headingOne : `${calledNotice.length} ${t.sn.calledNotice.headingMany}`}
-              </p>
-              <ul className="text-xs text-muted-fg space-y-0.5">
-                {calledNotice.map((n) => (
-                  <li key={n.id}>
-                    <Link href={`/structured-notes/${n.id}`} className="font-mono text-accent hover:underline">{n.isin ?? n.id}</Link>
-                    {' '}({n.issuerDisplayName ?? '—'}) — {t.sn.calledNotice.detail} {n.archivedAt ? new Date(n.archivedAt).toLocaleDateString() : '—'}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <button onClick={dismissCalledNotice} className="shrink-0 px-3 py-1.5 rounded-md border border-border text-xs hover:bg-surface-2">{t.sn.calledNotice.dismiss}</button>
-          </div>
-        </div>
-      )}
 
       {/* Dashboard summary — click a status card to jump to Live filtered to it */}
       {summary && summary.totalNotes > 0 && (
