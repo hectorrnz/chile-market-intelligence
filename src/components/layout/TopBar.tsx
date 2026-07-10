@@ -6,6 +6,7 @@ import { useLang } from '@/components/providers/LangProvider'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { LangToggle } from '@/components/ui/LangToggle'
 import { BrandLogo } from '@/components/ui/BrandLogo'
+import { NotificationBell } from '@/components/ui/NotificationBell'
 import { useSidebar } from '@/components/providers/SidebarProvider'
 
 export function TopBar() {
@@ -63,6 +64,7 @@ export function TopBar() {
 
       {/* Right: toggles + date + status */}
       <div className="flex items-center gap-3 shrink-0">
+        <NotificationBell />
         <LangToggle />
         <ThemeToggle />
         <span className="text-sm text-muted-fg font-mono tabular-nums">{today}</span>

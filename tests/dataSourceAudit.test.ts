@@ -230,9 +230,12 @@ describe('Phase 8A regression — no changes to auth, portfolio math, or ingesti
     // The pre-9A routes must still be protected (no removal / no regression).
     assert.ok(pages.includes('/portfolio') && pages.includes('/watchlist'))
     assert.ok(apis.includes('/api/portfolios') && apis.includes('/api/watchlists'))
-    // Phase 9A adds structured-notes; assert it's present and nothing else crept in.
-    assert.deepEqual(pages.sort(), ['/portfolio', '/structured-notes', '/watchlist'])
-    assert.deepEqual(apis.sort(), ['/api/portfolios', '/api/structured-notes', '/api/watchlists'])
+    // Phase 9A adds structured-notes; notifications adds /settings; assert nothing else crept in.
+    assert.deepEqual(pages.sort(), ['/portfolio', '/settings', '/structured-notes', '/watchlist'])
+    assert.deepEqual(
+      apis.sort(),
+      ['/api/notification-recipients', '/api/notifications', '/api/portfolios', '/api/structured-notes', '/api/watchlists'],
+    )
   })
 
   it('macro/market provider orchestrators are untouched by this phase', () => {

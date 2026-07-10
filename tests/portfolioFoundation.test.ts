@@ -362,7 +362,7 @@ describe('Phase 6C middleware protection', () => {
     assert.ok(match, 'PROTECTED_PAGES declaration not found')
     const arr = JSON.parse(match![1].replace(/'/g, '"'))
     assert.ok(arr.includes('/portfolio') && arr.includes('/watchlist'))
-    assert.deepEqual(arr.sort(), ['/portfolio', '/structured-notes', '/watchlist'])
+    assert.deepEqual(arr.sort(), ['/portfolio', '/settings', '/structured-notes', '/watchlist'])
   })
 
   it('PROTECTED_API contains watchlists + portfolios (structured-notes added in Phase 9A)', () => {
@@ -371,7 +371,10 @@ describe('Phase 6C middleware protection', () => {
     assert.ok(match, 'PROTECTED_API declaration not found')
     const arr = JSON.parse(match![1].replace(/'/g, '"'))
     assert.ok(arr.includes('/api/portfolios') && arr.includes('/api/watchlists'))
-    assert.deepEqual(arr.sort(), ['/api/portfolios', '/api/structured-notes', '/api/watchlists'])
+    assert.deepEqual(
+      arr.sort(),
+      ['/api/notification-recipients', '/api/notifications', '/api/portfolios', '/api/structured-notes', '/api/watchlists'],
+    )
   })
 
   it('cron routes remain unblocked', () => {

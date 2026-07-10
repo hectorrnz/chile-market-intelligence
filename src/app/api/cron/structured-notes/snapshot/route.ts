@@ -45,6 +45,46 @@ import {
   deriveObservationStatus,
   shouldUpdateNoteStatus,
 } from '@/lib/structuredNotes/monitoring'
+import { createNotification, getActiveNotificationRecipientEmails } from '@/lib/db/repositories/notificationsRepository'
+import { sendNotificationEmail } from '@/lib/notifications/emailProvider'
+import type { StructuredNote } from '@/lib/structuredNotes/types'
+
+/**
+ * A note this cron just auto-called gets a shared in-app notification (bell
+ * icon, unread badge) plus an email to every active recipient in
+ * notification_recipients — see /settings/notifications. Never throws: email
+ * delivery failures are swallowed here so a degraded mail provider can never
+ * fail the whole monitoring run (the price-snapshot/observation work above is
+ * the load-bearing part of this cron).
+ */
+async function notifyStructuredNoteCalled(
+  client: ReturnType<typeof getSupabaseAdminClient>,
+  note: StructuredNote,
+  origin: string,
+): Promise<void> {
+  if (!client || !note.id) return
+  const linkUrl = `${origin}/structured-notes/${note.id}`
+  const label = note.isin ?? note.issuerDisplayName ?? note.id
+  const title = `Structured note called: ${label}`
+  const body = `${note.issuerDisplayName ?? 'Issuer'} note ${note.isin ?? note.id} was automatically called on today's scheduled autocall observation (monitoring estimate).`
+  await createNotification(client, {
+    notificationType: 'structured_note_called',
+    title,
+    body,
+    linkUrl,
+    relatedEntityType: 'structured_note',
+    relatedEntityId: note.id,
+  })
+  try {
+    const recipients = await getActiveNotificationRecipientEmails(client)
+    if (recipients.length > 0) {
+      const html = `<p>${body}</p><p><a href="${linkUrl}">View the note →</a></p>`
+      await sendNotificationEmail(recipients, title, html)
+    }
+  } catch {
+    // Email is best-effort — the in-app notification above already succeeded.
+  }
+}
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -117,8 +157,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         const statusUpdate = shouldUpdateNoteStatus(note, evalResult)
         if (statusUpdate && note.id) {
           const noteOk = await updateNoteStatusFromObservation(client, note.id, statusUpdate.newStatus)
-          if (noteOk) notesUpdated += 1
-          else errors.push(`failed to update note ${note.id} status to ${statusUpdate.newStatus}`)
+          if (noteOk) {
+            notesUpdated += 1
+            if (statusUpdate.newStatus === 'autocalled') await notifyStructuredNoteCalled(client, note, req.nextUrl.origin)
+          } else {
+            errors.push(`failed to update note ${note.id} status to ${statusUpdate.newStatus}`)
+          }
         }
       }
     }

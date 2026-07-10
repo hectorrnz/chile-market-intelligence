@@ -30,6 +30,8 @@ const PRODUCTION_VARS: { key: string; sensitive: boolean }[] = [
   { key: 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', sensitive: false },
   { key: 'SUPABASE_SERVICE_ROLE_KEY',            sensitive: true  },
   { key: 'CRON_SECRET',                          sensitive: true  },
+  { key: 'RESEND_API_KEY',                       sensitive: true  },
+  { key: 'NOTIFICATION_EMAIL_FROM',              sensitive: false },
 ]
 
 const token = process.env.VERCEL_TOKEN?.trim()

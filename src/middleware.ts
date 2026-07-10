@@ -7,8 +7,9 @@
 //   3. Return 401 JSON from protected API routes when unauthenticated.
 //
 // Protected routes (require auth):
-//   /watchlist, /portfolio         → redirect to /login?next=<path>
-//   /api/watchlists/*, /api/portfolios/* → 401 JSON
+//   /watchlist, /portfolio, /structured-notes, /settings → redirect to /login?next=<path>
+//   /api/watchlists/*, /api/portfolios/*, /api/structured-notes/*,
+//   /api/notifications/*, /api/notification-recipients/* → 401 JSON
 //
 // Public routes (no auth required):
 //   /, /stocks, /macro, /companies/*, /earnings, /hechos-esenciales,
@@ -22,8 +23,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { getSupabasePublicConfig } from '@/lib/supabase/env'
 
-const PROTECTED_PAGES  = ['/watchlist', '/portfolio', '/structured-notes']
-const PROTECTED_API    = ['/api/watchlists', '/api/portfolios', '/api/structured-notes']
+const PROTECTED_PAGES  = ['/watchlist', '/portfolio', '/structured-notes', '/settings']
+const PROTECTED_API    = ['/api/watchlists', '/api/portfolios', '/api/structured-notes', '/api/notifications', '/api/notification-recipients']
 
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl

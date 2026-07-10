@@ -1209,6 +1209,42 @@ export interface Database {
         Insert: Record<string, unknown>
         Update: Record<string, unknown>
       }
+      notifications: {
+        Row: {
+          id: string
+          notification_type: string
+          title: string
+          body: string | null
+          link_url: string | null
+          related_entity_type: string | null
+          related_entity_id: string | null
+          metadata: Record<string, unknown>
+          created_at: string
+        }
+        Insert: Record<string, unknown>
+        Update: Record<string, unknown>
+      }
+      notification_reads: {
+        Row: {
+          notification_id: string
+          user_id: string
+          read_at: string
+        }
+        Insert: Record<string, unknown>
+        Update: Record<string, unknown>
+      }
+      notification_recipients: {
+        Row: {
+          id: string
+          email: string
+          label: string | null
+          active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: Record<string, unknown>
+        Update: Record<string, unknown>
+      }
     }
     Views: Record<string, never>
     Functions: Record<string, never>
@@ -1251,3 +1287,8 @@ export type StructuredNotePriceSnapshotRow = Database['public']['Tables']['struc
 export type StructuredNoteMonitoringRunRow = Database['public']['Tables']['structured_note_monitoring_runs']['Row']
 export type StructuredNoteExtractionRunRow = Database['public']['Tables']['structured_note_extraction_runs']['Row']
 export type StructuredNoteExtractedFieldRow = Database['public']['Tables']['structured_note_extracted_fields']['Row']
+
+// ─── Platform notifications aliases ───────────────────────────────────────────
+export type NotificationRow = Database['public']['Tables']['notifications']['Row']
+export type NotificationReadRow = Database['public']['Tables']['notification_reads']['Row']
+export type NotificationRecipientRow = Database['public']['Tables']['notification_recipients']['Row']
