@@ -79,7 +79,19 @@ export async function fetchFredSeries(
     if (options.startDate) params.set('cosd', options.startDate)
     if (options.endDate) params.set('coed', options.endDate)
     const url = `${BASE_URL}?${params.toString()}`
-    const res = await fetch(url, { signal: controller.signal, headers: { Accept: 'text/csv' }, cache: 'no-store' })
+    // A real User-Agent is required — verified live: Vercel's serverless
+    // functions (Node's default fetch UA) hung indefinitely against FRED
+    // while the identical request worked instantly from a normal machine and
+    // from this same deployment against Yahoo Finance, pointing at basic bot
+    // protection on FRED's edge rather than a payload/latency problem.
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        Accept: 'text/csv',
+        'User-Agent': 'Mozilla/5.0 (compatible; NevadaMarketIntelligence/1.0; +https://nevada-market-intelligence.vercel.app)',
+      },
+      cache: 'no-store',
+    })
     if (!res.ok) return { ok: false, reason: `FRED request failed (HTTP ${res.status})` }
     const text = await res.text()
     const points = parseFredCsv(text)
