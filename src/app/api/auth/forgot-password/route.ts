@@ -3,20 +3,29 @@
 // account exists for that email (avoids user enumeration).
 //
 // SECURITY:
-//   • Uses the public anon client (no session, no admin key needed).
 //   • redirectTo is built from the request's own origin — no env var required.
 //   • The recovery link lands on /auth/callback (existing PKCE code-exchange
 //     route), which then forwards to /auth/reset-password once a session
 //     (with type=recovery) is established.
+//
+// IMPORTANT: resetPasswordForEmail() generates a PKCE code verifier that
+// Supabase needs written to a cookie in the caller's browser — otherwise the
+// later exchangeCodeForSession() call in /auth/callback has nothing to match
+// the emailed code against and fails ("Authentication failed. Please sign in
+// again."), which is exactly the bug this fix addresses. getSupabaseServerClient()
+// stubs cookie writes to a no-op (fine for anonymous public-data reads, but it
+// silently dropped this verifier). createSessionWriterClient() — the same
+// client used by login/register — captures the write and applies it as a real
+// Set-Cookie header on this route's HTTP response, so the browser persists it.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { getSupabaseServerClient } from '@/lib/supabase/server'
+import { createSessionWriterClient } from '@/lib/auth/sessionCookies'
 import { isValidEmail } from '@/lib/auth/credentials'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const supabase = getSupabaseServerClient()
+  const { supabase, applyCookies } = createSessionWriterClient(request)
   if (!supabase) {
     return NextResponse.json({ error: 'not_configured' }, { status: 503 })
   }
@@ -40,5 +49,5 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // the send failed, to avoid leaking account existence.
   await supabase.auth.resetPasswordForEmail(email, { redirectTo }).catch(() => {})
 
-  return NextResponse.json({ ok: true })
+  return applyCookies(NextResponse.json({ ok: true }))
 }

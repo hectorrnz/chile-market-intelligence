@@ -100,9 +100,19 @@ describe('Forgot password flow', () => {
     assert.ok(src.includes('.catch(() => {})'))
   })
 
-  it('forgot-password route uses the anon/public client, never the admin client', () => {
+  it('forgot-password route uses the cookie-capturing session-writer client (never the admin client) so the PKCE code verifier reaches the browser', () => {
     const src = readFileSync(FORGOT_ROUTE, 'utf8')
-    assert.ok(src.includes('getSupabaseServerClient'))
+    // Regression guard: getSupabaseServerClient() stubs cookie writes to a
+    // no-op, which silently drops the PKCE verifier resetPasswordForEmail()
+    // needs written to the browser — causing /auth/callback's later
+    // exchangeCodeForSession() to fail. createSessionWriterClient() (same
+    // client login/register use) captures the write and applies it as a real
+    // Set-Cookie header via applyCookies().
+    assert.ok(src.includes('createSessionWriterClient'))
+    assert.ok(src.includes('applyCookies'))
+    // Not imported/called as the actual client (a code comment may still
+    // reference the old function name to document the bug it fixed).
+    assert.ok(!src.includes("from '@/lib/supabase/server'"))
     assert.ok(!src.includes('getSupabaseAdminClient'))
   })
 
