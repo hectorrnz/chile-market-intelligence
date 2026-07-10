@@ -106,6 +106,25 @@ describe('FX panel — BCCh-only cleanup (Phase 8D.1)', () => {
     assert.ok(!/fxSource.*Static MVP/i.test(src), 'page.tsx must not hardcode a Static MVP FX label')
   })
 
+  it('Home page merges fetched live macro data into the rendered rows, not just the status badge (regression: badge said Live BCCh while the value stayed frozen on the static fallback)', async () => {
+    const fs = await import('node:fs')
+    const src = fs.readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8')
+    // fxRows/macroChile/macroUs must read through liveIndicatorMap (populated
+    // from the live /api/macro fetch), not directly off the static
+    // getAllIndicators()/getByCategory() baseline alone.
+    assert.ok(src.includes('liveIndicatorMap[fx.id]'), 'FX rows must prefer the live-fetched value per id')
+    assert.ok(src.includes('liveIndicatorMap[id] ?? allIndicators.find'), 'Chile/US macro rows must prefer the live-fetched value per id')
+    assert.ok(src.includes("setLiveIndicatorMap"), 'the live fetch effect must actually populate the merged-value map, not only setMacroStatus/setUsMacroStatus')
+  })
+
+  it('the Update Data button (doRefresh) also refreshes macro, not just market data', async () => {
+    const fs = await import('node:fs')
+    const src = fs.readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8')
+    const doRefreshBody = src.slice(src.indexOf('const doRefresh = useCallback'), src.indexOf('const doRefresh = useCallback') + 800)
+    assert.ok(doRefreshBody.includes("fetchMacroIndicators('CL')"), 'doRefresh must also re-fetch CL macro indicators')
+    assert.ok(doRefreshBody.includes("fetchMacroIndicators('US')"), 'doRefresh must also re-fetch US macro indicators')
+  })
+
   it('i18n no longer defines the removed FX section-grouping labels', async () => {
     const fs = await import('node:fs')
     const src = fs.readFileSync(new URL('../src/lib/i18n.ts', import.meta.url), 'utf8')

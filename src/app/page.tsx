@@ -64,13 +64,42 @@ export default function HomePage() {
   const companies = getAllCompanies()
   const snapshots = getAllSnapshots()
   const allIndicators = getAllIndicators()
-  const byId = (id: string) => allIndicators.find(i => i.id === id)
+
+  // Live macro overlay: fetched (CL/US separately, since BCCh only ever covers
+  // Chile — a shared status would misstate US freshness) and merged by id over
+  // the static baseline. Previously this only updated the status badge while
+  // the displayed numbers stayed frozen on the static fallback — a real bug
+  // (a "Live BCCh" badge could sit next to a stale value). Now the merged
+  // live values are what's actually rendered below.
+  const [liveIndicatorMap, setLiveIndicatorMap] = useState<Record<string, MacroIndicator>>({})
+  const [macroStatus, setMacroStatus] = useState<DataSourceStatus>('static')
+  const [usMacroStatus, setUsMacroStatus] = useState<DataSourceStatus>('static')
+
+  useEffect(() => {
+    const ac = new AbortController()
+    Promise.all([
+      fetchMacroIndicators('CL', ac.signal),
+      fetchMacroIndicators('US', ac.signal),
+    ]).then(([clRes, usRes]) => {
+      if (clRes) {
+        setMacroStatus(clRes.metadata.status)
+        setLiveIndicatorMap(prev => ({ ...prev, ...Object.fromEntries(clRes.data.map(i => [i.id, i])) }))
+      }
+      if (usRes) {
+        setUsMacroStatus(usRes.metadata.status)
+        setLiveIndicatorMap(prev => ({ ...prev, ...Object.fromEntries(usRes.data.map(i => [i.id, i])) }))
+      }
+    })
+    return () => ac.abort()
+  }, [])
+
+  const byId = (id: string) => liveIndicatorMap[id] ?? allIndicators.find(i => i.id === id)
   const macroChile = CHILE_MACRO_IDS.map(byId).filter(Boolean) as MacroIndicator[]
   const macroUs = US_MACRO_IDS.map(byId).filter(Boolean) as MacroIndicator[]
   // Phase 8D.1: FX panel is BCCh-only — every row here is a verified live BCCh
   // series (same 'FX' category the Macro page's live indicators use), never a
   // fabricated/unverified pair. Currently: USD/CLP, EUR/CLP.
-  const fxRows = getByCategory('FX')
+  const fxRows = getByCategory('FX').map(fx => liveIndicatorMap[fx.id] ?? fx)
   const recentHechos = getRecentHechos(8)
   const upcoming = getUpcomingEarnings().slice(0, 2)
   const recent = getRecentResults().slice(0, 2)
@@ -102,7 +131,19 @@ export default function HomePage() {
   }, [])
 
   const doRefresh = useCallback(async () => {
-    const data = await fetchLiveSnapshot()
+    const [data, clRes, usRes] = await Promise.all([
+      fetchLiveSnapshot(),
+      fetchMacroIndicators('CL'),
+      fetchMacroIndicators('US'),
+    ])
+    if (clRes) {
+      setMacroStatus(clRes.metadata.status)
+      setLiveIndicatorMap(prev => ({ ...prev, ...Object.fromEntries(clRes.data.map(i => [i.id, i])) }))
+    }
+    if (usRes) {
+      setUsMacroStatus(usRes.metadata.status)
+      setLiveIndicatorMap(prev => ({ ...prev, ...Object.fromEntries(usRes.data.map(i => [i.id, i])) }))
+    }
     if (!data) throw new Error('unavailable')
     setLive(data)
   }, [])
@@ -156,15 +197,6 @@ export default function HomePage() {
     return () => ro.disconnect()
   }, [])
 
-  // Phase 4A: subtle macro source/status badge. Status-only fetch (the Home
-  // macro panel stays static for stability; the Macro page does the live swap).
-  const [macroStatus, setMacroStatus] = useState<DataSourceStatus>('static')
-  useEffect(() => {
-    const ac = new AbortController()
-    fetchMacroIndicators(undefined, ac.signal).then(res => { if (res) setMacroStatus(res.metadata.status) })
-    return () => ac.abort()
-  }, [])
-
   // Heat map drives the second region's height; rates & markets match it exactly.
   const heatRef = useRef<HTMLDivElement>(null)
   const [heatH, setHeatH] = useState(0)
@@ -204,9 +236,9 @@ export default function HomePage() {
       <div className="grid grid-cols-3 gap-4 items-start">
 
         {/* Column 1 — Macro Chile + US (one card, highlighted region bands) */}
-        {/* Chile and US carry separate badges: BCCh only ever covers Chilean
-            series, so US rows are always static even when Chile is live/persisted —
-            one shared badge here would overstate freshness for the US half. */}
+        {/* Chile and US are fetched (and badged) separately — Chile via BCCh,
+            US via FRED (Phase 8D) — since one shared badge could overstate or
+            understate freshness for whichever half didn't actually refresh. */}
         <div ref={macroRef} className="bg-surface border border-border rounded flex flex-col overflow-hidden">
           <div className="px-4 py-2.5 border-b border-border shrink-0 flex items-center justify-between">
             <span className="ui-label text-muted-fg">{t.home.macroTitle.split('·')[0].trim()}</span>
@@ -219,7 +251,7 @@ export default function HomePage() {
             <div className="px-4">{macroChile.map(ind => <MacroRow key={ind.id} ind={ind} />)}</div>
             <div className="px-4 py-1.5 bg-surface-2 border-y border-border flex items-center justify-between" style={{ borderLeft: '2px solid var(--primary)' }}>
               <span className="ui-label text-foreground">{t.home.macroUsTitle.split('·')[1]?.trim() ?? 'US'}</span>
-              <DataSourceBadge status="static" />
+              <DataSourceBadge status={usMacroStatus} />
             </div>
             <div className="px-4">{macroUs.map(ind => <MacroRow key={ind.id} ind={ind} />)}</div>
           </div>

@@ -144,9 +144,13 @@ describe('Phase 8A — CMF blocked wording is precise everywhere it appears', ()
 describe('Phase 8A — Home page macro card badge split', () => {
   const src = readFileSync(HOME_PAGE, 'utf8')
 
-  it('renders a DataSourceBadge for the Chile band and a separate static badge for the US band', () => {
+  it('renders a DataSourceBadge for the Chile band and a separate DataSourceBadge for the US band', () => {
+    // Chile (BCCh) and US (FRED, Phase 8D) are fetched and badged independently
+    // — each band's badge must reflect that region's own fetch result, not a
+    // hardcoded "static" (a real bug fixed post-Phase 8D: the US band could
+    // show "Static MVP" even once FRED-backed indicators were genuinely live).
     assert.ok(src.includes('DataSourceBadge status={macroStatus}'), 'Chile band must show the live/persisted macro status')
-    assert.ok(src.includes('DataSourceBadge status="static"'), 'US band must always show static (BCCh has no US series)')
+    assert.ok(src.includes('DataSourceBadge status={usMacroStatus}'), 'US band must show its own live/persisted FRED status, not a hardcoded static')
   })
 
   it('sector heat map and markets badges use MarketDataSourceBadge, not the BCCh-flavored DataSourceBadge', () => {
