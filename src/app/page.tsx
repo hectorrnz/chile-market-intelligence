@@ -11,9 +11,8 @@ import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
 import type { DataSourceStatus } from '@/lib/providers/types'
 import { getAllCompanies } from '@/lib/data/companies'
 import { getAllSnapshots } from '@/lib/data/stocks'
-import { getAllIndicators, fetchMacroIndicators } from '@/lib/data/macro'
+import { getAllIndicators, getByCategory, fetchMacroIndicators } from '@/lib/data/macro'
 import { getChileanRates } from '@/lib/data/chileanRates'
-import { getFxBySection } from '@/lib/data/fxRates'
 import { getRecentHechos } from '@/lib/data/hechos'
 import { getUpcomingEarnings, getRecentResults } from '@/lib/data/earnings'
 import { getAllNews } from '@/lib/data/news'
@@ -25,19 +24,12 @@ import { fetchLiveSnapshot, formatLiveTimestamp, type LiveSnapshot } from '@/lib
 import { fetchStockSnapshots, fetchSectorPerformance, fetchIndexPerformance } from '@/lib/data/marketData'
 import type { StockSnapshot, SectorSnapshot, IndexSnapshot } from '@/lib/providers/market/types'
 import { MarketRefreshButton } from '@/components/ui/MarketRefreshButton'
-import { formatCLP, formatPct, formatMacroValue, formatMacroChange, formatFx, changeColor } from '@/lib/formatters'
-import type { MacroIndicator, FxRate, ChileanRate } from '@/types'
+import { formatCLP, formatPct, formatMacroValue, formatMacroChange, changeColor } from '@/lib/formatters'
+import type { MacroIndicator, ChileanRate } from '@/types'
 
 const qualityVariant = {
   Clean: 'positive', Mixed: 'warning', Weak: 'negative', Pending: 'neutral',
 } as const
-
-const FX_SECTION_LABEL: Record<FxRate['section'], 'fxKeyFx' | 'fxUsdPer' | 'fxPerUsd' | 'fxYenPer'> = {
-  'Key FX': 'fxKeyFx',
-  '# USD per': 'fxUsdPer',
-  '# of currency per USD': 'fxPerUsd',
-  '# of Yen per': 'fxYenPer',
-}
 
 const CHILE_MACRO_IDS = ['tpm', 'ipc-anual', 'usdclp', 'imacec-anual', 'pib', 'desempleo']
 const US_MACRO_IDS = ['fed-funds', 'us10y', 'us-cpi-anual', 'us-gdp', 'us-unemployment', 'dxy']
@@ -75,7 +67,10 @@ export default function HomePage() {
   const byId = (id: string) => allIndicators.find(i => i.id === id)
   const macroChile = CHILE_MACRO_IDS.map(byId).filter(Boolean) as MacroIndicator[]
   const macroUs = US_MACRO_IDS.map(byId).filter(Boolean) as MacroIndicator[]
-  const fxGroups = getFxBySection()
+  // Phase 8D.1: FX panel is BCCh-only — every row here is a verified live BCCh
+  // series (same 'FX' category the Macro page's live indicators use), never a
+  // fabricated/unverified pair. Currently: USD/CLP, EUR/CLP.
+  const fxRows = getByCategory('FX')
   const recentHechos = getRecentHechos(8)
   const upcoming = getUpcomingEarnings().slice(0, 2)
   const recent = getRecentResults().slice(0, 2)
@@ -275,31 +270,25 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* FX table */}
+          {/* FX table — BCCh-only, flat list, no subgroups (Phase 8D.1) */}
           <div className="bg-surface border border-border rounded overflow-hidden flex flex-col flex-1 min-h-0">
-            <div className="px-4 py-2.5 border-b border-border shrink-0">
+            <div className="px-4 py-2.5 border-b border-border shrink-0 flex items-center justify-between">
               <span className="ui-label text-muted-fg">{t.home.fxTitle}</span>
+              <DataSourceBadge status={macroStatus} />
             </div>
-            <div className="grid grid-cols-[1fr_72px_64px_64px] gap-x-2 px-4 py-1.5 border-b border-border bg-surface-2 shrink-0">
+            <div className="grid grid-cols-[1fr_88px_72px] gap-x-2 px-4 py-1.5 border-b border-border bg-surface-2 shrink-0">
               <span className="ui-table-header text-muted-fg" />
               <span className="ui-table-header text-muted-fg text-right">{t.home.last}</span>
               <span className="ui-table-header text-muted-fg text-right">{t.home.dayChg}</span>
-              <span className="ui-table-header text-muted-fg text-right">{t.home.ytd}</span>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto">
-              {fxGroups.map(({ section, items }) => (
-                <div key={section}>
-                  <div className="px-4 py-1 bg-surface-2/60 border-b border-border">
-                    <span className="ui-label text-muted-fg">{t.home[FX_SECTION_LABEL[section]]}</span>
-                  </div>
-                  {items.map(fx => (
-                    <div key={fx.id} className="grid grid-cols-[1fr_72px_64px_64px] gap-x-2 px-4 py-1.5 border-b border-border last:border-0">
-                      <span className="text-xs text-foreground">{fx.pair}</span>
-                      <span className="text-xs ui-number text-foreground text-right">{formatFx(fx.last, fx.decimals ?? 2)}</span>
-                      <span className={`text-xs ui-number text-right ${changeColor(fx.dayChangePct)}`}>{formatPct(fx.dayChangePct)}</span>
-                      <span className={`text-xs ui-number text-right ${changeColor(fx.ytdChangePct)}`}>{formatPct(fx.ytdChangePct)}</span>
-                    </div>
-                  ))}
+              {fxRows.map(fx => (
+                <div key={fx.id} className="grid grid-cols-[1fr_88px_72px] gap-x-2 px-4 py-1.5 border-b border-border last:border-0">
+                  <span className="text-xs text-foreground">{fx.shortName}</span>
+                  <span className="text-xs ui-number text-foreground text-right">{formatMacroValue(fx.value, fx.unit)}</span>
+                  <span className={`text-xs ui-number text-right ${fx.change != null ? changeColor(fx.change) : 'text-muted-fg'}`}>
+                    {fx.changeLabel ? formatMacroChange(fx.changeLabel) : '—'}
+                  </span>
                 </div>
               ))}
             </div>

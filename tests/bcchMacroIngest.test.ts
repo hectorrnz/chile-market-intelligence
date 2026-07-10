@@ -20,6 +20,7 @@ function makeDef(overrides: Partial<MacroSeriesDef> = {}): MacroSeriesDef {
     id: 'tpm',
     displayName: 'TPM',
     region: 'CL',
+    category: 'Rates',
     source: 'BCCh',
     sourceProvider: 'BCCh',
     manualKey: 'tpm',

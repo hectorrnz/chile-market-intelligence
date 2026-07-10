@@ -28,7 +28,7 @@ function toIndicator(def: MacroSeriesDef, points: FredSeriesPoint[]): MacroIndic
     id: def.fallbackStaticId,
     name: def.displayName,
     shortName: def.displayName,
-    category: 'US Rates',
+    category: def.category,
     region: def.region,
     value: derived.value,
     unit: def.unit,

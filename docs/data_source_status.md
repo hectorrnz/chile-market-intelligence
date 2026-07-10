@@ -449,38 +449,42 @@ Per the no-static-terminal-state policy above, every module still serving
 static data has a concrete target source, conversion path, blocker (if any),
 next phase, and priority — none is an open-ended "Static MVP" with no plan.
 
-### FX / Chilean rates — ✓ copper live via BCCh (Phase 8D); remainder still deferred
+### FX / Chilean rates — ✓ copper + EUR/CLP live via BCCh (Phase 8D/8D.1); FX panel now BCCh-only
 
-- **Done in Phase 8D:** Copper (`cobre-lme`) is now **live via BCCh** — `F019.PPB.PRE.40.M` ("Precio del cobre refinado BML, dólares/libra"), monthly, verified against the official SearchSeries/GetSeries catalog (the original Phase 4B deferral was a genuine USD/oz-vs-USD/lb unit mismatch on a *different* BCCh series; this one is already in USD/lb). Cross-checked against Yahoo Finance `HG=F` futures as a sanity check only. See `docs/macro_market_source_coverage.md` §1.
-- **Re-verified, still deferred (Phase 8D, no live series exists):** BTP-10 (no continuous secondary-market rate in the BCCh catalog), BCU-5 (bonds effectively discontinued since 2011-2013), PDBC-90d (that tenor discontinued since 2023-01-06; only 14-day PDBC is active now), TPM-TNA (TPM itself already is the nominal annual rate — no distinct series exists). See `docs/macro_market_source_coverage.md` §2.
-- **Verified but not wired (Phase 8D):** EUR/CLP (`F072.CLP.EUR.N.O.D`) — confirmed live against the official catalog, but adding it requires a new `macro_indicators` row + static-fallback entry + UI card, which is UI/data-model scope beyond this phase. See `docs/macro_market_source_coverage.md` §3.
-- **Remaining static fields:** all rows in `fxRates.json` (Key FX, USD-per, per-USD, Yen-per sections) other than copper/EUR/CLP as noted above.
-- **Target source:** Banco Central de Chile BDE API (same provider already live for macro) for any additional confirmed series; a dedicated FX provider would be needed for crosses BCCh doesn't publish (e.g. EURUSD, USDJPY).
-- **Conversion path:** extend `bcchSeriesManualMap.ts` with any additional verified series (`npm run bcch:search` / `npm run bcch:validate` — never hand-guess codes), then persist to `macro_observations` (already the table copper/EUR-CLP would use).
-- **Blocker:** none for BCCh-coverable series — this is data-entry/wiring work, not new-provider work. FX crosses need a new provider decision.
-- **Next phase:** wire EUR/CLP (UI slot + `macro_indicators` row); a genuinely new FX provider remains unplanned.
-- **Priority:** P1 for EUR/CLP wiring; P2 for a new FX-cross provider.
+- **Done in Phase 8D:** Copper (`cobre-lme`) is now **live via BCCh** — `F019.PPB.PRE.40.M`, monthly, USD/lb, verified against the official SearchSeries/GetSeries catalog. See `docs/macro_market_source_coverage.md` §1.
+- **Re-verified, still deferred (Phase 8D, no live series exists):** BTP-10, BCU-5, PDBC-90d, TPM-TNA. See `docs/macro_market_source_coverage.md` §2.
+- **Done in Phase 8D.1:** **EUR/CLP** (`F072.CLP.EUR.N.O.D`) is now **live via BCCh** — verified in Phase 8D, re-confirmed and wired this phase (new `macroSeries.ts`/`bcchSeriesManualMap.ts` entries, `macroIndicators.json` static fallback, `macro_indicators` DB row inserted, 2,486 rows persisted). See `docs/macro_market_source_coverage.md` §3.
+- **Done in Phase 8D.1 — FX panel cleaned up to BCCh-only:** the Home page's FX table no longer reads from the static `fxRates.json` (23 fabricated-source rows with fake "Bloomberg"/"CoinMarketCap" attributions). It now renders directly from the live macro `FX` category (2 rows: USD/CLP, EUR/CLP), inheriting the standard `DataSourceBadge` live/persisted/static status automatically. Removed: the sectioned Key-FX/USD-per/per-USD/Yen-per grouping, the "# of currency per USD" helper label, and the "Static MVP sample" footer. See `docs/macro_market_source_coverage.md` §8 for the full per-pair removal reasoning.
+- **Remaining static:** `fxRates.json`/`fxRates.ts` still exist and still back the separate Macro-page "FX depth" table (a different, curated-list feature) — not touched this phase; a natural next step is bringing that table to the same BCCh-only standard.
+- **Target source:** Banco Central de Chile BDE API (same provider already live for macro) for any additional confirmed series; a dedicated FX provider would be needed for crosses BCCh doesn't publish (e.g. EURUSD, USDJPY) — out of scope (no Frankfurter/Finnhub/paid vendors).
+- **Conversion path:** extend `bcchSeriesManualMap.ts` with any additional verified series, then persist to `macro_observations` (already the table copper/EUR-CLP use).
+- **Blocker:** none for BCCh-coverable series. FX crosses need a new (currently out-of-scope) provider decision.
+- **Next phase:** bring the Macro-page FX depth table to the same BCCh-only standard; a genuinely new FX-cross provider remains unplanned.
+- **Priority:** P2 (Macro-page FX depth cleanup); P3 (new FX-cross provider).
 
-### US macro — ✓ implemented via FRED (Phase 8D)
+### US macro — ✓ implemented via FRED (Phase 8D); category bug fixed, NFP deferred (Phase 8D.1)
 
-- **Done in Phase 8D:** 9 US indicators are now **live via FRED** (Federal Reserve Bank of St. Louis public CSV endpoint, no API key) — Fed Funds, US 3M/2Y/10Y/20Y/30Y Treasury yields, US Unemployment, US CPI m/m and y/y. `src/lib/providers/fredClient.ts` + `fredMacroProvider.ts` + `src/config/usFredSeriesManualMap.ts` (same human-verification discipline as `bcchSeriesManualMap.ts` — no code ever guessed). The macro orchestrator (`macroProvider.ts`) now queries BCCh and FRED in parallel for `resolveMacroIndicators()` and dispatches per-indicator to the correct provider for `resolveMacroHistory()`. Persists into the same `macro_observations` table (source-agnostic schema, no migration needed) via `scripts/ingest/fredMacro.ts` / `GET /api/cron/ingest-fred-macro` (unscheduled — manual/reviewable trigger only, same policy as the BCCh/CMF-XBRL crons). See `docs/macro_market_source_coverage.md` §4.
-- **Deferred (Phase 8D, considered and rejected):** Nonfarm payrolls (`PAYEMS` exists on FRED, but no UI slot yet — UI-scope, not source-scope); ISM/PMI (no free FRED series, ISM's own index is paid); a recession/leading-indicator series (FRED's `USREC` is a binary dummy, doesn't fit the existing value/change indicator model).
-- **Remaining static fields:** US GDP and DXY (no US-macro FRED wiring attempted for these this phase — GDP is quarterly/lower-frequency and DXY is a currency index, not a macro release; both stay `static_mvp` pending a future phase).
-- **Target source:** FRED (done, for the 9 series above); no free reliable source exists for US GDP/DXY-equivalent macro releases at the same cadence — a future phase could add FRED's `GDP`/`GDPC1` series for US GDP specifically.
-- **Conversion path:** for GDP, add the FRED series id to `usFredSeriesManualMap.ts` (same verification discipline) and a `BASE` entry in `macroSeries.ts` — the FRED provider/orchestrator plumbing already supports it with zero further architecture work.
-- **Next phase:** add a UI slot for Nonfarm Payrolls if desired; wire US GDP via FRED if desired; otherwise no further US-macro work planned near-term.
-- **Priority:** P2 (Payrolls UI slot / GDP wiring); done for the 9 series above.
+- **Done in Phase 8D:** 9 US indicators are now **live via FRED** (Federal Reserve Bank of St. Louis public CSV endpoint, no API key) — Fed Funds, US 3M/2Y/10Y/20Y/30Y Treasury yields, US Unemployment, US CPI m/m and y/y. See `docs/macro_market_source_coverage.md` §4.
+- **Fixed in Phase 8D.1 — category classification bug:** both live providers hardcoded `category: 'Rates'`/`'US Rates'` for every indicator, regardless of its true category (copper/CPI/UF/unemployment all misfiled). `MacroSeriesDef` gained a proper `category` field, matched exactly against `macroIndicators.json`; both providers now read it instead of hardcoding. Regression-tested. See `docs/macro_market_source_coverage.md` §7.
+- **Deferred in Phase 8D.1 (verified live, deliberately not wired):** Nonfarm Payrolls (`PAYEMS`) — it's a cumulative employment *level*, not the month-over-month *change* the headline print refers to; deriving that requires a new `diff` transform type not in the current vocabulary (`none`/`yoy`/`mom`/`level-to-yoy`/`bp-to-pct`), which exceeds "straightforward." See `docs/macro_market_source_coverage.md` §6.
+- **Deferred (Phase 8D, considered and rejected):** ISM/PMI (no free FRED series); a recession/leading-indicator series (FRED's `USREC` is a binary dummy, doesn't fit the value/change model).
+- **Remaining static fields:** US GDP and DXY (both stay `static_mvp` pending a future phase).
+- **Target source:** FRED (done, for the 9 series above + a future `diff` transform for NFP); no free reliable source exists for US GDP/DXY-equivalent releases at the same cadence.
+- **Conversion path:** for NFP, add a `diff` transform to `transforms.ts` and thread it through both providers; for GDP, add the FRED series id to `usFredSeriesManualMap.ts`.
+- **Next phase:** add a `diff` transform + NFP UI slot if desired; wire US GDP via FRED if desired.
+- **Priority:** P2 (NFP `diff` transform + UI slot); done for the 9 series + category fix above.
 
-### Economic calendar — deferred, unchanged (re-investigated Phase 8D)
+### Economic calendar — dates-only FRED calendar implemented (Phase 8D.1); synthetic calendar unchanged
 
-- **Current static fields:** `src/lib/data/calendar.ts` — schedule-driven release dates are deterministic/recurring, but **values are synthetic**.
-- **Re-investigated Phase 8D:** no free, structured (not scraped HTML), machine-readable calendar source was found. BCCh/INE/BLS/Fed publish release *dates* only on rendered web pages (no scraping, per standing policy); paid calendar vendors (Trading Economics, Econoday) require a commercial API key (out of scope: no paid/vendor APIs). See `docs/macro_market_source_coverage.md` §5.
-- **Target source:** none found — a machine-readable BCCh/INE/BLS/Fed release-schedule endpoint would be the ideal target if one is ever published; a paid calendar vendor remains explicitly out of scope.
-- **Conversion path:** re-run this discovery periodically; if a structured source ever appears, persist confirmed dates to a `calendar_events` table and backfill real values from `macro_observations`/FRED once a release date is in the past.
-- **Decision: defer, unchanged.** The existing synthetic calendar continues to serve its stated purpose and is not represented as a live feed anywhere in the UI.
-- **Blocker:** no stable, free, structured source exists — not a technical gap that more engineering would close.
-- **Next phase:** re-check periodically; no active work planned.
-- **Priority:** P3.
+- **Current static fields:** `src/lib/data/calendar.ts` — schedule-driven release dates are deterministic/recurring, but **values are synthetic**. Unchanged this phase.
+- **Done in Phase 8D.1:** a genuine free, official, structured **dates-only** calendar via FRED's Releases API (`https://api.stlouisfed.org/fred/release/dates`, distinct from the CSV graph endpoint), requiring a free server-only `FRED_API_KEY`. 13 curated releases (CPI, PPI, PCE, Employment Situation, JOLTS, ADP, GDP, Retail Sales, Industrial Production, Housing Starts/Sales, Existing Home Sales, International Trade) verified live. **A real data-quality issue was found and excluded**: 2 candidate releases (FOMC Press Release, H.15 Selected Interest Rates) returned near-daily noise rather than discrete dates — confirmed via live testing, removed from the allowlist rather than shipped. Additive new panel on `/macro/calendar`, clearly labeled "Dates only — no consensus," separate from the existing synthetic table. No persistence, no migration, no new cron — live-queried on each page load. See `docs/macro_market_source_coverage.md` §9.
+- **Not found (searched, not guessed):** University of Michigan Consumer Sentiment, ISM Manufacturing/Services PMI — no matching FRED release exists.
+- **Target source:** FRED Releases API (done, for the 13 curated releases above).
+- **Conversion path:** if usage justifies it, add persistence (a `calendar_events`-style table) and/or expand the allowlist if new relevant FRED releases are found.
+- **Decision:** the existing synthetic calendar continues unchanged, serving its own stated purpose; the new FRED panel is additive, not a replacement.
+- **Blocker:** none for the 13 curated releases; Consumer Sentiment/ISM PMI have no FRED release-dates source.
+- **Next phase:** consider persistence if usage grows; periodically re-check for Consumer Sentiment/ISM PMI availability.
+- **Priority:** P3 (persistence); done for the dates-only calendar above.
 
 ### Fundamentals / Charting — ✓ automation-ready manual-CSV-first step complete (Phase 8C); CMF/XBRL discovery complete, `feasible_with_mapping` (Phase 8C.1)
 

@@ -31,11 +31,27 @@ export type SeriesFrequency = 'daily' | 'monthly' | 'quarterly'
 /** Union of both providers' transform vocabularies — transforms.ts implements all of these. */
 export type SeriesTransform = BcchTransform
 
+/**
+ * Canonical macro category groups (Phase 8D.1). This is the SINGLE source of
+ * truth for an indicator's category — it must match the corresponding entry
+ * in `src/data/macroIndicators.json` exactly. Provider modules (bcchMacroProvider,
+ * fredMacroProvider) must read `def.category` and never hardcode a category —
+ * that hardcoding (`category: 'Rates'` / `'US Rates'` for every live series
+ * regardless of its true category) was a real bug: copper, IPC, UF, IMACEC,
+ * unemployment, US CPI, and US unemployment all rendered under the wrong
+ * Rates/US Rates band once live data replaced the static fallback.
+ */
+export type MacroCategory =
+  | 'Rates' | 'Inflation' | 'FX' | 'Activity' | 'Commodities' | 'Labor'
+  | 'US Rates' | 'US Inflation' | 'US FX' | 'US Activity' | 'US Labor' | 'Crypto'
+
 export interface MacroSeriesDef {
   /** Static indicator/history id this live series maps back to. */
   id: string
   displayName: string
   region: 'CL' | 'US'
+  /** Canonical category — must match macroIndicators.json's category for the same id. */
+  category: MacroCategory
   source: string
   sourceProvider: SeriesProvider
   /** Key into bcchSeriesManualMap (BCCh) or usFredSeriesManualMap (FRED), depending on sourceProvider. */
@@ -60,6 +76,7 @@ interface BaseDef {
   id: string
   displayName: string
   region: 'CL' | 'US'
+  category: MacroCategory
   source: string
   sourceProvider: SeriesProvider
   manualKey: string
@@ -68,36 +85,39 @@ interface BaseDef {
   fallbackStaticId: string
 }
 
-// Display/region metadata + the manual-map key. Live fields are merged below.
+// Display/region/category metadata + the manual-map key. Live fields are
+// merged below. `category` must match the corresponding id's category in
+// src/data/macroIndicators.json exactly (see the module doc comment above).
 const BASE: BaseDef[] = [
   // ── Chile (BCCh) ──────────────────────────────────────────────────────────
-  { id: 'tpm', displayName: 'Tasa de Política Monetaria (TPM)', region: 'CL', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'tpm', unit: '%', frequency: 'daily', fallbackStaticId: 'tpm' },
-  { id: 'ipc-mensual', displayName: 'IPC variación mensual', region: 'CL', source: 'INE (via BCCh BDE)', sourceProvider: 'BCCh', manualKey: 'ipc-mom', unit: '%', frequency: 'monthly', fallbackStaticId: 'ipc-mensual' },
-  { id: 'ipc-anual', displayName: 'IPC variación 12 meses', region: 'CL', source: 'INE (via BCCh BDE)', sourceProvider: 'BCCh', manualKey: 'ipc-yoy', unit: '%', frequency: 'monthly', fallbackStaticId: 'ipc-anual' },
-  { id: 'uf-diaria', displayName: 'Unidad de Fomento (UF)', region: 'CL', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'uf', unit: 'CLP', frequency: 'daily', fallbackStaticId: 'uf-diaria' },
-  { id: 'usdclp', displayName: 'Tipo de cambio observado USD/CLP', region: 'CL', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'usdclp', unit: 'CLP', frequency: 'daily', fallbackStaticId: 'usdclp' },
-  { id: 'imacec-anual', displayName: 'IMACEC variación 12 meses', region: 'CL', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'imacec-yoy', unit: '%', frequency: 'monthly', fallbackStaticId: 'imacec-anual' },
-  { id: 'desempleo', displayName: 'Tasa de desempleo', region: 'CL', source: 'INE (via BCCh BDE)', sourceProvider: 'BCCh', manualKey: 'unemployment', unit: '%', frequency: 'monthly', fallbackStaticId: 'desempleo' },
-  { id: 'cobre-lme', displayName: 'Precio del cobre (referencial)', region: 'CL', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'copper', unit: 'USD/lb', frequency: 'monthly', fallbackStaticId: 'cobre-lme' },
+  { id: 'tpm', displayName: 'Tasa de Política Monetaria (TPM)', region: 'CL', category: 'Rates', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'tpm', unit: '%', frequency: 'daily', fallbackStaticId: 'tpm' },
+  { id: 'ipc-mensual', displayName: 'IPC variación mensual', region: 'CL', category: 'Inflation', source: 'INE (via BCCh BDE)', sourceProvider: 'BCCh', manualKey: 'ipc-mom', unit: '%', frequency: 'monthly', fallbackStaticId: 'ipc-mensual' },
+  { id: 'ipc-anual', displayName: 'IPC variación 12 meses', region: 'CL', category: 'Inflation', source: 'INE (via BCCh BDE)', sourceProvider: 'BCCh', manualKey: 'ipc-yoy', unit: '%', frequency: 'monthly', fallbackStaticId: 'ipc-anual' },
+  { id: 'uf-diaria', displayName: 'Unidad de Fomento (UF)', region: 'CL', category: 'Inflation', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'uf', unit: 'CLP', frequency: 'daily', fallbackStaticId: 'uf-diaria' },
+  { id: 'usdclp', displayName: 'Tipo de cambio observado USD/CLP', region: 'CL', category: 'FX', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'usdclp', unit: 'CLP', frequency: 'daily', fallbackStaticId: 'usdclp' },
+  { id: 'eurclp', displayName: 'Tipo de cambio nominal EUR/CLP', region: 'CL', category: 'FX', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'eurclp', unit: 'CLP', frequency: 'daily', fallbackStaticId: 'eurclp' },
+  { id: 'imacec-anual', displayName: 'IMACEC variación 12 meses', region: 'CL', category: 'Activity', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'imacec-yoy', unit: '%', frequency: 'monthly', fallbackStaticId: 'imacec-anual' },
+  { id: 'desempleo', displayName: 'Tasa de desempleo', region: 'CL', category: 'Labor', source: 'INE (via BCCh BDE)', sourceProvider: 'BCCh', manualKey: 'unemployment', unit: '%', frequency: 'monthly', fallbackStaticId: 'desempleo' },
+  { id: 'cobre-lme', displayName: 'Precio del cobre (referencial)', region: 'CL', category: 'Commodities', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'copper', unit: 'USD/lb', frequency: 'monthly', fallbackStaticId: 'cobre-lme' },
   // Chilean fixed-income rates
-  { id: 'btu10', displayName: 'BTU 10 (UF, real)', region: 'CL', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'btu-10', unit: '%', frequency: 'daily', fallbackStaticId: 'btu10-ref' },
-  { id: 'btp10', displayName: 'BTP 10 (nominal)', region: 'CL', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'btp-10', unit: '%', frequency: 'daily', fallbackStaticId: 'btp10' },
-  { id: 'btu5', displayName: 'BTU 5 (UF, real)', region: 'CL', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'btu-5', unit: '%', frequency: 'daily', fallbackStaticId: 'btu5' },
-  { id: 'bcu5', displayName: 'BCU 5 (UF, real)', region: 'CL', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'bcu-5', unit: '%', frequency: 'daily', fallbackStaticId: 'bcu5' },
-  { id: 'swap2y', displayName: 'Cámara Swap 2Y', region: 'CL', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'camara-swap-2y', unit: '%', frequency: 'daily', fallbackStaticId: 'swap2y' },
-  { id: 'swap1y', displayName: 'Cámara Swap 1Y', region: 'CL', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'camara-swap-1y', unit: '%', frequency: 'daily', fallbackStaticId: 'swap1y' },
-  { id: 'pdbc90', displayName: 'PDBC 90 días', region: 'CL', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'pdbc-90d', unit: '%', frequency: 'daily', fallbackStaticId: 'pdbc90' },
-  { id: 'tpm-tna', displayName: 'TPM (tasa nominal anual)', region: 'CL', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'tpm-tna', unit: '%', frequency: 'daily', fallbackStaticId: 'tpm' },
+  { id: 'btu10', displayName: 'BTU 10 (UF, real)', region: 'CL', category: 'Rates', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'btu-10', unit: '%', frequency: 'daily', fallbackStaticId: 'btu10-ref' },
+  { id: 'btp10', displayName: 'BTP 10 (nominal)', region: 'CL', category: 'Rates', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'btp-10', unit: '%', frequency: 'daily', fallbackStaticId: 'btp10' },
+  { id: 'btu5', displayName: 'BTU 5 (UF, real)', region: 'CL', category: 'Rates', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'btu-5', unit: '%', frequency: 'daily', fallbackStaticId: 'btu5' },
+  { id: 'bcu5', displayName: 'BCU 5 (UF, real)', region: 'CL', category: 'Rates', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'bcu-5', unit: '%', frequency: 'daily', fallbackStaticId: 'bcu5' },
+  { id: 'swap2y', displayName: 'Cámara Swap 2Y', region: 'CL', category: 'Rates', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'camara-swap-2y', unit: '%', frequency: 'daily', fallbackStaticId: 'swap2y' },
+  { id: 'swap1y', displayName: 'Cámara Swap 1Y', region: 'CL', category: 'Rates', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'camara-swap-1y', unit: '%', frequency: 'daily', fallbackStaticId: 'swap1y' },
+  { id: 'pdbc90', displayName: 'PDBC 90 días', region: 'CL', category: 'Rates', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'pdbc-90d', unit: '%', frequency: 'daily', fallbackStaticId: 'pdbc90' },
+  { id: 'tpm-tna', displayName: 'TPM (tasa nominal anual)', region: 'CL', category: 'Rates', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'tpm-tna', unit: '%', frequency: 'daily', fallbackStaticId: 'tpm' },
   // ── United States (FRED, Phase 8D) ────────────────────────────────────────
-  { id: 'fed-funds', displayName: 'Federal Funds Effective Rate', region: 'US', source: 'Federal Reserve (via FRED)', sourceProvider: 'FRED', manualKey: 'fed-funds', unit: '%', frequency: 'monthly', fallbackStaticId: 'fed-funds' },
-  { id: 'us3m', displayName: 'US 3-Month Treasury Yield', region: 'US', source: 'US Treasury (via FRED)', sourceProvider: 'FRED', manualKey: 'us3m', unit: '%', frequency: 'daily', fallbackStaticId: 'us3m' },
-  { id: 'us2y', displayName: 'US 2-Year Treasury Yield', region: 'US', source: 'US Treasury (via FRED)', sourceProvider: 'FRED', manualKey: 'us2y', unit: '%', frequency: 'daily', fallbackStaticId: 'us2y' },
-  { id: 'us10y', displayName: 'US 10-Year Treasury Yield', region: 'US', source: 'US Treasury (via FRED)', sourceProvider: 'FRED', manualKey: 'us10y', unit: '%', frequency: 'daily', fallbackStaticId: 'us10y' },
-  { id: 'us20y', displayName: 'US 20-Year Treasury Yield', region: 'US', source: 'US Treasury (via FRED)', sourceProvider: 'FRED', manualKey: 'us20y', unit: '%', frequency: 'daily', fallbackStaticId: 'us20y' },
-  { id: 'us30y', displayName: 'US 30-Year Treasury Yield', region: 'US', source: 'US Treasury (via FRED)', sourceProvider: 'FRED', manualKey: 'us30y', unit: '%', frequency: 'daily', fallbackStaticId: 'us30y' },
-  { id: 'us-unemployment', displayName: 'US Unemployment Rate', region: 'US', source: 'BLS (via FRED)', sourceProvider: 'FRED', manualKey: 'us-unemployment', unit: '%', frequency: 'monthly', fallbackStaticId: 'us-unemployment' },
-  { id: 'us-cpi-mensual', displayName: 'US CPI Month-over-Month', region: 'US', source: 'BLS (via FRED)', sourceProvider: 'FRED', manualKey: 'us-cpi-mensual', unit: '%', frequency: 'monthly', fallbackStaticId: 'us-cpi-mensual' },
-  { id: 'us-cpi-anual', displayName: 'US CPI Year-over-Year', region: 'US', source: 'BLS (via FRED)', sourceProvider: 'FRED', manualKey: 'us-cpi-anual', unit: '%', frequency: 'monthly', fallbackStaticId: 'us-cpi-anual' },
+  { id: 'fed-funds', displayName: 'Federal Funds Effective Rate', region: 'US', category: 'US Rates', source: 'Federal Reserve (via FRED)', sourceProvider: 'FRED', manualKey: 'fed-funds', unit: '%', frequency: 'monthly', fallbackStaticId: 'fed-funds' },
+  { id: 'us3m', displayName: 'US 3-Month Treasury Yield', region: 'US', category: 'US Rates', source: 'US Treasury (via FRED)', sourceProvider: 'FRED', manualKey: 'us3m', unit: '%', frequency: 'daily', fallbackStaticId: 'us3m' },
+  { id: 'us2y', displayName: 'US 2-Year Treasury Yield', region: 'US', category: 'US Rates', source: 'US Treasury (via FRED)', sourceProvider: 'FRED', manualKey: 'us2y', unit: '%', frequency: 'daily', fallbackStaticId: 'us2y' },
+  { id: 'us10y', displayName: 'US 10-Year Treasury Yield', region: 'US', category: 'US Rates', source: 'US Treasury (via FRED)', sourceProvider: 'FRED', manualKey: 'us10y', unit: '%', frequency: 'daily', fallbackStaticId: 'us10y' },
+  { id: 'us20y', displayName: 'US 20-Year Treasury Yield', region: 'US', category: 'US Rates', source: 'US Treasury (via FRED)', sourceProvider: 'FRED', manualKey: 'us20y', unit: '%', frequency: 'daily', fallbackStaticId: 'us20y' },
+  { id: 'us30y', displayName: 'US 30-Year Treasury Yield', region: 'US', category: 'US Rates', source: 'US Treasury (via FRED)', sourceProvider: 'FRED', manualKey: 'us30y', unit: '%', frequency: 'daily', fallbackStaticId: 'us30y' },
+  { id: 'us-unemployment', displayName: 'US Unemployment Rate', region: 'US', category: 'US Labor', source: 'BLS (via FRED)', sourceProvider: 'FRED', manualKey: 'us-unemployment', unit: '%', frequency: 'monthly', fallbackStaticId: 'us-unemployment' },
+  { id: 'us-cpi-mensual', displayName: 'US CPI Month-over-Month', region: 'US', category: 'US Inflation', source: 'BLS (via FRED)', sourceProvider: 'FRED', manualKey: 'us-cpi-mensual', unit: '%', frequency: 'monthly', fallbackStaticId: 'us-cpi-mensual' },
+  { id: 'us-cpi-anual', displayName: 'US CPI Year-over-Year', region: 'US', category: 'US Inflation', source: 'BLS (via FRED)', sourceProvider: 'FRED', manualKey: 'us-cpi-anual', unit: '%', frequency: 'monthly', fallbackStaticId: 'us-cpi-anual' },
 ]
 
 function merge(base: BaseDef): MacroSeriesDef {

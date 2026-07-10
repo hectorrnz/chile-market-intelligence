@@ -18,6 +18,7 @@ function makeDef(overrides: Partial<MacroSeriesDef> = {}): MacroSeriesDef {
     id: 'us10y',
     displayName: 'US 10-Year Treasury Yield',
     region: 'US',
+    category: 'US Rates',
     source: 'US Treasury (via FRED)',
     sourceProvider: 'FRED',
     manualKey: 'us10y',

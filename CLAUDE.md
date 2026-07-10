@@ -390,6 +390,81 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Phase 8D.1 — Macro Category Fix + BCCh FX Cleanup + FRED Release-Date Calendar** ✓ COMPLETE (2026-07-10)
+
+Follow-up cleanup pass on Phase 8D. `FRED_API_KEY` became available (server-only, free, self-service) —
+used solely for the new dates-only release calendar; the 9 US macro time-series indicators from Phase 8D
+still need no key at all.
+
+**Macro category classification — real bug fixed.** Both live providers (`bcchMacroProvider.ts`,
+`fredMacroProvider.ts`) hardcoded `category: 'Rates'`/`'US Rates'` for every indicator, regardless of its
+true category — confirmed live before the fix: copper, IPC, UF, IMACEC, unemployment, US CPI, and US
+unemployment all reported the wrong category once live data replaced the static fallback. Fixed by adding a
+`category: MacroCategory` field to `MacroSeriesDef` (`src/config/macroSeries.ts`), matched exactly against
+`src/data/macroIndicators.json`'s category for every id; both providers now read `def.category` instead of
+hardcoding. A regression test (`tests/macroSeriesDualProvider.test.ts`) asserts every `MACRO_SERIES` entry's
+category matches its static counterpart, so this can never silently regress.
+
+**EUR/CLP — verified in Phase 8D, wired this phase.** `F072.CLP.EUR.N.O.D`, daily, re-confirmed live
+(recent values ~1,040–1,054 CLP/EUR) and wired via the same pattern as copper: `bcchSeriesManualMap.ts`
+entry, `macroSeries.ts` `BASE` entry (category `FX`), `macroIndicators.json` static fallback, and a new
+`macro_indicators` DB row (a data insert, not a migration). Live: 2,486 rows ingested and persisted.
+
+**FX panel (Home page) — cleaned up to BCCh-only.** The old panel rendered 25 currency pairs across 4
+sections (Key FX / # USD per / # of currency per USD / # of Yen per) from static `fxRates.json`, with
+fabricated source labels ("Bloomberg", "CoinMarketCap") this project has never had a relationship with. The
+panel now renders directly from the live macro `FX` category (`getByCategory('FX')`) — the same category
+the Macro page's indicators use — showing exactly the 2 BCCh-verified pairs (USD/CLP, EUR/CLP). Removed: the
+4-section grouping, the "# of currency per USD" helper label, and the "Static MVP sample" footer (now:
+"Source: Banco Central de Chile (BCCh) — verified live pairs only"). The other 23 pairs are all excluded for
+the same documented reason (`no_verified_bcch_series`) — none has a confirmed live BCCh series; a dedicated
+FX-cross provider remains explicitly out of scope (no Frankfurter/Finnhub/paid vendors). `fxRates.json`/
+`fxRates.ts` are untouched and still back the separate Macro-page "FX depth" table.
+
+**Nonfarm Payrolls — verified live, deliberately deferred.** FRED's `PAYEMS` is a cumulative employment
+*level* (thousands of persons), not the month-over-month *change* the headline print means (e.g. "+150K
+jobs"). Deriving that requires a new `diff` transform type — genuinely different from every transform
+already in `transforms.ts` (`none`/`yoy`/`mom`/`level-to-yoy`/`bp-to-pct`, all percentage-based or
+pass-through). Per the phase's own instruction, deferred and documented rather than overbuilt or shown
+misleadingly as a raw level.
+
+**Dates-only FRED economic release calendar — new.** FRED's Releases API
+(`https://api.stlouisfed.org/fred/release/dates`, distinct from the public CSV graph endpoint used for
+macro time series) requires the new `FRED_API_KEY`. Discovery matched all target categories against FRED's
+329-release catalog (never guessed an id): 15 candidates found, University of Michigan Consumer Sentiment
+and ISM PMI confirmed absent from FRED's release catalog (searched, not guessed). **A real data-quality
+issue was found and excluded, not silently shipped**: live-testing showed `release_id 101` ("FOMC Press
+Release") and `release_id 18` ("H.15 Selected Interest Rates") returning a release-date entry for
+essentially every consecutive calendar day (53 and 36 hits in a 45-day window) rather than discrete
+scheduled dates — a genuine FRED API/data-modeling quirk for those two releases specifically, confirmed by
+direct inspection. Both excluded from the final **13-release curated allowlist**
+(`src/config/fredReleaseAllowlist.ts`). Architecture: `fredReleaseCalendarClient.ts` (server-only, reads the
+key) → `fredReleaseCalendar.ts` (orchestrator, every event tagged `datesOnly: true` with
+`actual`/`consensus`/`prior` always `null`) → `GET /api/macro/fred-release-calendar` (public, sanitized,
+reports `configured: false` — not an error — when the key is unset) → `fredCalendar.ts` (client-safe fetch
+helper) → a new, clearly-labeled ("Dates only — no consensus") panel on `/macro/calendar`, additive below
+the existing synthetic schedule-driven table, which is completely unchanged. No persistence, no migration,
+no new cron — every request live-queries FRED directly (13 parallel requests per page load).
+
+**Tests:** 1 new test file (`tests/fredReleaseCalendar.test.ts`, 18 tests — allowlist shape/exclusions,
+configured/unconfigured paths, mocked fetch success/failure, dates-only invariants, no client-side key
+exposure) + additions to `tests/macroSeriesDualProvider.test.ts` (category regression guard, FX-panel
+cleanup hygiene checks). Full suite 1156 → 1187/1187, lint 0, build 0 errors.
+
+**Local validation:** live-verified via dev server — `/api/macro/fred-release-calendar` returns 19 clean,
+correctly-spaced events after excluding FOMC/H.15; Home page FX panel confirmed showing exactly USD/CLP +
+EUR/CLP with a live `DataSourceBadge`; `/macro/calendar` confirmed rendering the new panel correctly.
+
+Scope limits: macro category/FX/calendar cleanup only; no Finnhub, Frankfurter, or paid vendors; no full
+consensus/actual/prior economic calendar; financials, Structured Notes, auth/watchlist/portfolio, and UI
+redesign untouched; no new cron schedule (calendar is live-queried per-request, not cron-ingested).
+
+Next: bring the Macro page's separate FX depth table to the same BCCh-only standard; add a `diff` transform
++ UI slot for Nonfarm Payrolls if desired; consider persistence for the FRED release calendar if usage
+justifies it; periodically re-check for a Consumer Sentiment/ISM PMI FRED release.
+
+---
+
 **Phase 8D — FX, Rates, Copper, US Macro, and Economic Calendar Live-Source Completion** ✓ COMPLETE (2026-07-10)
 
 Expands live macro/market-source coverage beyond the existing Chile-only BCCh integration, using only

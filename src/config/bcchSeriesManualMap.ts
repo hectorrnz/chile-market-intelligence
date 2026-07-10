@@ -223,6 +223,23 @@ export const bcchSeriesManualMap: Record<string, BcchManualEntry> = {
     notes: 'Official BCCh reference copper price already in USD/lb (matches the UI unit exactly) — distinct from the USD/oz daily series (F019.PPB.PRE.100.D) that caused the original unit-mismatch deferral. Monthly frequency only; no daily USD/lb series exists at BCCh.',
   },
 
+  // Phase 8D.1 — verified via live SearchSeries + a fresh GetSeries re-check
+  // this phase (real recent daily values ~1040-1054 CLP/EUR, plausible).
+  // Previously discovered (Phase 8D) but deliberately left unwired pending a
+  // UI slot; now wired as the FX panel's second BCCh-verified pair.
+  eurclp: {
+    seriesId: 'F072.CLP.EUR.N.O.D',
+    verified: true,
+    frequency: 'DAILY',
+    transformation: 'none',
+    staticId: 'eurclp',
+    sourceName: 'Tipo de cambio nominal euro ($CLP/EUR)',
+    confidence: 'high',
+    verificationDate: '2026-07-10',
+    verificationMethod: 'BCCh SearchSeries + GetSeries validation (Phase 8D discovery); re-confirmed live with a fresh GetSeries call in Phase 8D.1 before wiring.',
+    notes: 'Official BCCh nominal EUR/CLP exchange rate. Daily. Latest observations in the ~1040-1054 CLP/EUR range, consistent with real EUR/CLP levels.',
+  },
+
   // Chilean fixed-income — partial progress:
   // BTU/BCU 10Y and 5Y are mapped above via the BUF secondary market composite.
   // BTP 10Y: no secondary market BTP rate found; only auction rates (non-daily).

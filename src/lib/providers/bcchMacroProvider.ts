@@ -33,7 +33,7 @@ function toIndicator(def: MacroSeriesDef, points: BcchSeriesPoint[]): MacroIndic
     id: def.fallbackStaticId,
     name: def.displayName,
     shortName: def.displayName,
-    category: 'Rates',
+    category: def.category,
     region: def.region,
     value: derived.value,
     unit: def.unit,

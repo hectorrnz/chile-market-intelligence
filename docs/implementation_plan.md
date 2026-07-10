@@ -1483,3 +1483,57 @@ sibling routes); EUR/CLP and Nonfarm Payrolls documented as ready-to-wire but ou
 Next: wire EUR/CLP (new `macro_indicators` row + UI card); add a Nonfarm Payrolls UI slot if desired;
 periodically re-check the economic-calendar source landscape — or return to Structured Notes (Santander/
 older-2024-Citi parser templates) or continue CMF/XBRL issuer work.
+
+---
+
+## Phase 8D.1 — Macro Category Fix + BCCh FX Cleanup + FRED Release-Date Calendar ✓ COMPLETE
+
+Follow-up cleanup pass on Phase 8D, using the newly-available `FRED_API_KEY` (server-only, free,
+self-service) for a new dates-only release calendar. Full detail in `CLAUDE.md` → "Phase 8D.1" entry;
+condensed here.
+
+**Category bug fixed.** `bcchMacroProvider.ts` and `fredMacroProvider.ts` both hardcoded
+`category: 'Rates'`/`'US Rates'` for every live indicator — confirmed live (copper, IPC, IMACEC,
+unemployment, US CPI, US unemployment all misfiled). Fixed by adding `category: MacroCategory` to
+`MacroSeriesDef` (`src/config/macroSeries.ts`), matched against `macroIndicators.json`; both providers now
+read `def.category`. Regression test in `tests/macroSeriesDualProvider.test.ts` asserts this can't recur.
+
+**EUR/CLP wired live** (`F072.CLP.EUR.N.O.D`, verified in Phase 8D, wired this phase) — same pattern as
+copper: manual map entry, `macroSeries.ts` entry (category `FX`), static fallback row, new `macro_indicators`
+DB row (data insert, no migration). 2,486 rows ingested.
+
+**Home page FX panel rebuilt BCCh-only.** Previously rendered 25 static currency pairs across 4 sections
+with fabricated "Bloomberg"/"CoinMarketCap" source labels. Now renders directly from the live macro `FX`
+category (`getByCategory('FX')`) — exactly 2 verified pairs (USD/CLP, EUR/CLP). Removed: the 4-section
+grouping, the "# of currency per USD" helper row, the "Static MVP sample" label. The other 23 pairs are
+excluded (`no_verified_bcch_series` — no confirmed live BCCh series exists for them); `fxRates.json`/
+`fxRates.ts` untouched, still back the separate Macro-page FX depth table.
+
+**Nonfarm Payrolls — verified live, deliberately deferred.** FRED's `PAYEMS` is a cumulative level, not the
+month-over-month change the "NFP" headline means; deriving it needs a new `diff` transform type (none of
+`transforms.ts`'s existing transforms fit) — judged not "straightforward," deferred and documented rather
+than overbuilt.
+
+**New: dates-only FRED release calendar.** FRED's Releases API (`/fred/release/dates`, distinct from the
+public CSV time-series endpoint) requires `FRED_API_KEY`. 13-release curated allowlist
+(`src/config/fredReleaseAllowlist.ts`) after excluding 2 releases (FOMC Press Release id 101, H.15 id 18)
+found via live testing to return near-daily noise (53/36 hits across every day in a 45-day window) rather
+than discrete dates — documented, not shipped. Architecture: `fredReleaseCalendarClient.ts` (server-only) →
+`fredReleaseCalendar.ts` (orchestrator, every event `datesOnly: true`, `actual`/`consensus`/`prior` always
+`null`) → `GET /api/macro/fred-release-calendar` (public, sanitized) → `fredCalendar.ts` (client fetch
+helper) → a new panel on `/macro/calendar`, additive below the unchanged synthetic calendar table. No
+persistence, no migration, no new cron — live-queried per request.
+
+**Tests:** `tests/fredReleaseCalendar.test.ts` (18 new — allowlist shape/exclusions, configured/unconfigured
+paths, mocked fetch, dates-only invariants, no client-side key exposure) + additions to
+`tests/macroSeriesDualProvider.test.ts` (category regression guard, FX-panel cleanup hygiene). Full suite
+1156 → 1187/1187, lint 0, build 0 errors.
+
+**Local validation:** `/api/macro/fred-release-calendar` returns 19 clean events; Home FX panel confirmed
+showing exactly USD/CLP + EUR/CLP; `/macro/calendar` FRED panel confirmed rendering correctly.
+
+Scope limits (explicit): no Finnhub, Frankfurter, or paid vendors; no full consensus/actual/prior calendar;
+financials/Structured Notes/auth/watchlist/portfolio/UI redesign untouched; no new cron schedule.
+
+Next: bring the Macro page's FX depth table to the same BCCh-only standard; add a `diff` transform + UI slot
+for Nonfarm Payrolls if desired; consider persistence for the FRED calendar if usage justifies it.

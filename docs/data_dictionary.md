@@ -656,6 +656,56 @@ cron routes.
 
 ---
 
+## Phase 8D.1 — Macro Category Fix, BCCh-Only FX Panel, Dates-Only FRED Calendar
+
+### Category classification (bug fix)
+
+`MacroSeriesDef` (`src/config/macroSeries.ts`) gained a `category: MacroCategory` field —
+`'Rates' | 'Inflation' | 'FX' | 'Activity' | 'Commodities' | 'Labor' | 'US Rates' | 'US Inflation' |
+'US FX' | 'US Activity' | 'US Labor' | 'Crypto'` — matching `macroIndicators.json`'s category for the same
+id exactly. Every `BASE` entry carries its correct category. Both `bcchMacroProvider.ts` and
+`fredMacroProvider.ts`'s `toIndicator()` functions read `def.category` instead of a hardcoded literal (the
+bug: every live indicator previously reported `category: 'Rates'`/`'US Rates'` regardless of truth).
+`tests/macroSeriesDualProvider.test.ts` asserts every entry's category matches its static counterpart, so a
+future series can never silently regress into the wrong category.
+
+### EUR/CLP (new live BCCh series)
+
+`eurclp` — `F072.CLP.EUR.N.O.D`, daily, CLP, category `FX`. Same wiring pattern as copper/usdclp: manual-map
+entry in `bcchSeriesManualMap.ts`, `BASE` entry in `macroSeries.ts`, static fallback in `macroIndicators.json`,
+and a `macro_indicators` DB row (inserted directly — a data operation, not a migration, since the table has
+no CHECK constraint on `id`).
+
+### FX panel (Home page) — now BCCh-only
+
+The Home page's FX table now sources from `getByCategory('FX')` (`src/lib/data/macro.ts`) instead of the
+static `src/data/fxRates.json` — i.e. it's just another view onto the same live macro `FX` category the
+Macro page's indicators use. Currently renders exactly 2 rows (USD/CLP, EUR/CLP), both BCCh-verified. The
+old 4-section grouping (Key FX / # USD per / # of currency per USD / # of Yen per) and its i18n keys
+(`fxKeyFx`, `fxUsdPer`, `fxPerUsd`, `fxYenPer`) were removed. `src/data/fxRates.json`/`fxRates.ts` remain in
+place, still used by the separate Macro-page "FX depth" table.
+
+### Dates-only FRED release calendar
+
+New, additive to `/macro/calendar` — does not modify the existing synthetic `src/lib/data/calendar.ts`.
+
+- `src/config/fredReleaseAllowlist.ts` — 13 curated FRED `release_id`s, each with a verified `fredReleaseName`
+  (provenance), a category (`Inflation | Labor | Monetary Policy | GDP/Growth | Retail/Consumer | Housing |
+  Trade | Industrial Production`), and a heuristic `importance`.
+- `src/lib/providers/fredReleaseCalendarClient.ts` — server-only client for FRED's Releases API
+  (`https://api.stlouisfed.org/fred/release/dates`), reads `FRED_API_KEY` (server-only, never
+  `NEXT_PUBLIC_`).
+- `src/lib/providers/fredReleaseCalendar.ts` — orchestrator: queries every curated release in parallel,
+  returns a sorted `FredCalendarEvent[]` where `actual`/`consensus`/`prior` are always `null` and
+  `datesOnly: true` always — this calendar structurally cannot fabricate a value.
+- `GET /api/macro/fred-release-calendar?days=60` — public, sanitized; returns `configured: false` (not an
+  error) when `FRED_API_KEY` is unset.
+- `src/lib/data/fredCalendar.ts` — client-safe fetch helper (type-only import from the provider layer).
+
+No persistence, no migration, no new cron — every request live-queries FRED directly.
+
+---
+
 ## Entity: Structured Notes (Phase 9A–9E)
 
 Internal, shared-book structured-note tracking — replaces the legacy `NUEVA BASE - Notas Estructuradas.xlsx`.

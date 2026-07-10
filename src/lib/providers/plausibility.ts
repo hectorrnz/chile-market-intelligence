@@ -14,6 +14,7 @@ export const PLAUSIBILITY: Record<string, Band> = {
   'ipc-yoy': { min: -5, max: 30 },
   uf: { min: 10000, max: 100000 },
   usdclp: { min: 300, max: 2000 },
+  eurclp: { min: 400, max: 2500 },
   'imacec-yoy': { min: -30, max: 30 },
   unemployment: { min: 0, max: 30 },
   copper: { min: 0.5, max: 15 },

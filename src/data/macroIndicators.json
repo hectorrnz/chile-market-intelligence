@@ -78,6 +78,22 @@
     "marketImplication": "Peso pressured by copper softness and global risk-off sentiment"
   },
   {
+    "id": "eurclp",
+    "name": "Tipo de Cambio EUR/CLP",
+    "shortName": "EUR/CLP",
+    "category": "FX",
+    "region": "CL",
+    "value": 1044.8,
+    "unit": "CLP",
+    "change": -4.9,
+    "changeLabel": "-4.9",
+    "period": "17-Jun-2025",
+    "source": "Banco Central de Chile",
+    "lastUpdated": "2025-06-17",
+    "importance": "medium",
+    "marketImplication": "Euro cross reflects relative ECB/Fed policy divergence"
+  },
+  {
     "id": "imacec-anual",
     "name": "IMACEC Variación 12 Meses",
     "shortName": "IMACEC 12m",
