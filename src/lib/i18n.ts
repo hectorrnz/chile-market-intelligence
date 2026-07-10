@@ -135,6 +135,12 @@ export const dict = {
       legendBreached: 'At least one underlying is at/below its barrier — coupon may be missed and principal is at risk.',
       legendUnavailable: 'Live market levels are unavailable, so status cannot be computed yet.',
       sortBy: 'Sort by',
+      calledNotice: {
+        headingOne: 'A structured note was called',
+        headingMany: 'structured notes were called',
+        detail: 'called on',
+        dismiss: 'Dismiss',
+      },
     },
     commandk: {
       recent:      'Recent searches',
@@ -912,6 +918,12 @@ export const dict = {
       legendAutocallable: 'Todos los subyacentes están en o sobre la barrera de autollamado — esta nota se llamaría en la próxima fecha de observación.',
       legendBreached: 'Al menos un subyacente está en o bajo su barrera — el cupón podría no pagarse y el capital está en riesgo.',
       legendUnavailable: 'Los niveles de mercado en vivo no están disponibles, por lo que el estado no puede calcularse aún.',
+      calledNotice: {
+        headingOne: 'Se llamó una nota estructurada',
+        headingMany: 'notas estructuradas fueron llamadas',
+        detail: 'llamada el',
+        dismiss: 'Descartar',
+      },
       sortBy: 'Ordenar por',
     },
     commandk: {
