@@ -149,6 +149,22 @@ fetched series that could silently drift apart.
   observed over time. No new cron schedule was added this phase per the explicit instruction not to
   schedule new cron jobs without justification.
 
+### Two real production bugs caught and fixed during validation
+
+- **Unbounded FRED fetches caused a timeout.** `fetchFredSeries` originally had no date-range parameter,
+  so daily Treasury-yield series (`DGS10`, `DGS2`, `DGS3MO`, `DGS20`, `DGS30` — decades of history) were
+  downloaded in full just to read the latest value, for both the indicators listing and history/ingestion.
+  Fixed by adding `cosd`/`coed` support (FRED's own "chart observation start/end date" params) and scoping
+  every call site (`getIndicators`, `getHistory`, the ingestion script, the cron route) to the window it
+  actually needs — mirroring `bcchClient`'s existing `firstDate`/`lastDate` pattern.
+- **FRED silently stalled requests with no descriptive `User-Agent`.** Even after the date-range fix,
+  `GET /api/macro?region=US` still hung indefinitely (90+ seconds, no response) from the live Vercel
+  deployment, while the identical request completed in under a second from a regular machine, and Yahoo
+  Finance calls from that same deployment returned in ~2s — ruling out a general network or payload
+  problem. Node's default `fetch` sends no descriptive User-Agent; FRED's edge appears to silently stall
+  such requests rather than reject them outright. Fixed by sending an explicit UA string. Verified live:
+  `/api/macro?region=US` now returns in ~2.6s.
+
 ### Plausibility bands added
 
 `src/lib/providers/plausibility.ts` gained 9 new bands (`fed-funds`, `us3m`, `us2y`, `us10y`, `us20y`,

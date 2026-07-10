@@ -437,6 +437,20 @@ unscoped in `scripts/ingest/bcchMacro.ts` and `src/lib/ingestion/bcchMacroIngest
 `getEnabledBcchSeries()` so the BCCh-only ingestion path can never accidentally attempt to fetch a FRED
 series code via the BCCh client.
 
+**Two real production bugs caught and fixed during live Production validation** (both would have silently
+broken US macro entirely if not caught): (1) `fetchFredSeries` had no date-range parameter, so daily
+Treasury-yield series (decades of history) were downloaded in full just to read the latest value — fixed by
+adding `cosd`/`coed` support (FRED's own chart start/end-date params) and scoping every call site to the
+window it actually needs, mirroring `bcchClient`'s `firstDate`/`lastDate` pattern; (2) even after that fix,
+`GET /api/macro?region=US` still hung indefinitely (90+ seconds) from the live Vercel deployment while the
+identical request completed in under a second from a regular machine and Yahoo Finance calls from that same
+deployment returned in ~2s — Node's default `fetch` sends no descriptive User-Agent, and FRED's edge
+appears to silently stall such requests rather than reject them. Fixed by sending an explicit UA string;
+verified live, `/api/macro?region=US` now returns in ~2.6s. A separate, unrelated pre-existing bug was also
+found (not fixed this phase, flagged as a follow-up task): the live BCCh/FRED providers hardcode
+`category: 'Rates'`/`'US Rates'` for every indicator regardless of its true category, which can misfile an
+indicator like copper (Commodities) into the wrong section on the Macro page once live data loads.
+
 **Ingestion**: `scripts/ingest/fredMacroCore.ts` (pure) + `scripts/ingest/fredMacro.ts` (CLI,
 `npm run ingest:fred-macro:dry` / `ingest:fred-macro -- --all --write`) + `src/lib/ingestion/fredMacroIngestion.ts`
 (shared logic, mirrors `bcchMacroIngestion.ts`) + `GET /api/cron/ingest-fred-macro` (Bearer `CRON_SECRET`)
