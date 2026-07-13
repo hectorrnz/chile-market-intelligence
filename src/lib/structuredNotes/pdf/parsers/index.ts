@@ -9,7 +9,7 @@
 // the wrong issuer's field aliases.
 
 import type { StructuredNoteExtractionResult } from '../../types.ts'
-import { toLines } from './shared.ts'
+import { checkCouponPlausibility, toLines } from './shared.ts'
 import { parseCitiHsbc, CITI_HSBC_PARSER_VERSION } from './citiHsbcParser.ts'
 import { parseCreditAgricole, CREDIT_AGRICOLE_PARSER_VERSION } from './creditAgricoleParser.ts'
 import { parseBnpParibas, BNP_PARIBAS_PARSER_VERSION } from './bnpParibasParser.ts'
@@ -66,6 +66,20 @@ export function extractWithRouter(pages: string[], opts: { fileName?: string } =
   // a generic "Review required".
   if (detectedIssuer === 'generic' && !result.note?.issuerDisplayName && !result.ok) {
     result.errors.push('unsupported issuer format — issuer could not be identified, manual entry required')
+  }
+
+  // Issuer-agnostic sanity check: an out-of-range coupon almost always means a
+  // parser mistook a redemption/payout multiplier (principal + premium, e.g.
+  // "N x 113.70%") for the premium itself. This must force review-required
+  // regardless of the parser's own confidence score — a "100% confident"
+  // extraction of an impossible number is exactly the failure mode this
+  // guards against, applied uniformly across every issuer parser.
+  if (result.note) {
+    const implausible = checkCouponPlausibility(result.note.couponRateAnnualized, result.note.couponRatePeriodic)
+    if (implausible) {
+      result.errors.push(implausible)
+      result.ok = false
+    }
   }
 
   return { detectedIssuer, result }

@@ -68,6 +68,15 @@ export function parseNum(raw: string): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+/** Elapsed time in (fractional) years between two ISO dates, simple ACT/365.25. Null on any bad input. */
+export function yearsBetweenIsoDates(fromIso: string | null, toIso: string | null): number | null {
+  if (!fromIso || !toIso) return null
+  const from = Date.parse(fromIso)
+  const to = Date.parse(toIso)
+  if (Number.isNaN(from) || Number.isNaN(to) || to <= from) return null
+  return (to - from) / (1000 * 60 * 60 * 24 * 365.25)
+}
+
 export function parsePct(raw: string): number | null {
   const m = /(-?\d+(?:\.\d+)?)\s*%/.exec(raw)
   if (!m) return null
@@ -294,6 +303,36 @@ export function classifyReviewState(ok: boolean, confidenceScore: number, fields
   if (fieldsLowConfidence === 0 && confidenceScore >= 0.9) return 'ready'
   if (confidenceScore >= 0.7) return 'review_recommended'
   return 'review_required'
+}
+
+/**
+ * A coupon rate outside this range is never a real structured-note coupon —
+ * it means a parser mistook a redemption/payout MULTIPLIER (principal +
+ * premium, e.g. "113.70%" of notional) for the premium itself. Real
+ * memory-coupon/autocall coupons observed across all issuer families in this
+ * app are single-digit to low-double-digit % p.a.; 60% is a generous upper
+ * bound that still catches a mixed-up multiplier (which is always >= 100%
+ * once a principal component is bundled in) with margin to spare.
+ */
+export const MAX_PLAUSIBLE_ANNUALIZED_COUPON = 0.6
+export const MIN_PLAUSIBLE_ANNUALIZED_COUPON = -0.6
+
+/**
+ * Sanity-checks an extracted annualized/periodic coupon rate against the
+ * plausible range above. Returns a human-readable reason string when the
+ * value is out of range (implausible), or null when it's fine or absent.
+ * Never fabricates a "corrected" number — just flags it so the router can
+ * force the note to review-required rather than trusting a parser bug (or a
+ * genuinely malformed source document) at face value.
+ */
+export function checkCouponPlausibility(couponRateAnnualized: number | null, couponRatePeriodic: number | null): string | null {
+  for (const [label, v] of [['annualized', couponRateAnnualized], ['periodic', couponRatePeriodic]] as const) {
+    if (v === null || !Number.isFinite(v)) continue
+    if (v > MAX_PLAUSIBLE_ANNUALIZED_COUPON || v < MIN_PLAUSIBLE_ANNUALIZED_COUPON) {
+      return `implausible coupon rate: ${label} rate of ${(v * 100).toFixed(2)}% is outside the plausible ${(MIN_PLAUSIBLE_ANNUALIZED_COUPON * 100).toFixed(0)}% to ${(MAX_PLAUSIBLE_ANNUALIZED_COUPON * 100).toFixed(0)}% range — likely a redemption multiplier mistaken for a coupon, or a malformed source document; flagged for manual review`
+    }
+  }
+  return null
 }
 
 /**

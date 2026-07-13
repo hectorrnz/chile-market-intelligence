@@ -17,7 +17,7 @@
 import type { ExtractedField, StructuredNote, StructuredNoteObservation, StructuredNoteUnderlying } from '../../types.ts'
 import { calculateCouponAnnualized, frequencyToPeriodsPerYear } from '../../calculations.ts'
 import { resolveUnderlyingSymbol } from '../../underlyingSymbolMap.ts'
-import { extractIsin, field, labelDateJoined, labelValue, mapIssuerDisplay, parseNum, parseTermSheetDate } from './shared.ts'
+import { extractIsin, field, labelDateJoined, labelValue, mapIssuerDisplay, parseNum, parseTermSheetDate, yearsBetweenIsoDates } from './shared.ts'
 import type { IssuerParser } from './types.ts'
 
 export const BNP_PARIBAS_PARSER_VERSION = '9C.bnpParibas.2'
@@ -107,12 +107,35 @@ export const parseBnpParibas: IssuerParser = (ctx) => {
   // not unextracted, so it is reported as `couponRateAnnualized` (the
   // return-if-called) with `couponRatePeriodic`/`couponFrequency` left null —
   // never fabricate a periodic rate the term sheet doesn't have.
+  //
+  // BUG FIX: "N x 113.70%" is the TOTAL Automatic Early Redemption Amount —
+  // it bundles the 100% principal repayment together with the premium, e.g.
+  // 113.70% = 100% principal + 13.70% premium. A prior version of this parser
+  // used the raw 113.70% directly as the coupon rate, producing an impossible
+  // >100% p.a. "coupon" (caught via a real uploaded document — see
+  // tests/structuredNotesBnpParser.test.ts). The premium is the multiplier
+  // minus the bundled 100% principal, then annualized over the time from
+  // trade date to the autocall observation date (the date this premium is
+  // actually paid on) — not treated as already-annualized at face value,
+  // since a note whose first call date isn't ~1 year out would otherwise
+  // silently misstate the true annual rate.
   let isZeroCouponAutocallPremium = false
+  let couponAnnualizationWarning: string | null = null
   if (!couponM) {
     const premiumM = /\bN\s*x\s*(\d+(?:\.\d+)?)\s*%/i.exec(joined)
     if (premiumM) {
       isZeroCouponAutocallPremium = true
-      couponRateAnnualized = Number(premiumM[1]) / 100
+      const totalRedemptionPct = Number(premiumM[1]) / 100
+      const premiumPct = totalRedemptionPct - 1
+      const aerDateM = /If,\s+on\s+([A-Za-z]+\s+\d{1,2}(?:st|nd|rd|th),\s+\d{4}),/i.exec(joined)
+      const aerObservationDate = aerDateM ? parseTermSheetDate(aerDateM[1]) : null
+      const yearsToObservation = yearsBetweenIsoDates(tradeDate ?? issueDate, aerObservationDate)
+      if (yearsToObservation !== null) {
+        couponRateAnnualized = premiumPct / yearsToObservation
+      } else {
+        couponRateAnnualized = premiumPct
+        couponAnnualizationWarning = 'Could not determine time to the autocall observation date — reporting the raw redemption premium, not a true annualized rate'
+      }
       couponRatePeriodicExcerpt = premiumM[0]
     }
   }
@@ -122,7 +145,10 @@ export const parseBnpParibas: IssuerParser = (ctx) => {
     confidence: couponRatePeriodic !== null ? 'high' : isZeroCouponAutocallPremium ? 'medium' : 'low',
     warning: couponRatePeriodic !== null ? null : isZeroCouponAutocallPremium ? 'No periodic coupon in this product — return paid as a single autocall premium (see couponRateAnnualized)' : 'Coupon rate not found',
   }))
-  push(field('couponRateAnnualized', couponRateAnnualized, { confidence: couponRateAnnualized !== null ? 'medium' : 'low' }))
+  push(field('couponRateAnnualized', couponRateAnnualized, {
+    confidence: couponAnnualizationWarning ? 'low' : couponRateAnnualized !== null ? 'medium' : 'low',
+    warning: couponAnnualizationWarning,
+  }))
 
   // ── Underlyings — clean single-line table row with absolute levels ──────
   // "<n> <Name> <TICKER> <initial> <knockIn> <autocall> <couponBarrier> <sponsor...>"

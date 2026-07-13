@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { extractStructuredNoteTerms, parseTermSheetDate } from '../src/lib/structuredNotes/pdf/extractStructuredNoteTerms.ts'
 import { detectIssuer } from '../src/lib/structuredNotes/pdf/parsers/index.ts'
+import { yearsBetweenIsoDates } from '../src/lib/structuredNotes/pdf/parsers/shared.ts'
 
 const FIXTURE = fileURLToPath(new URL('fixtures/structured-notes/bnp_sample_terms.txt', import.meta.url))
 const text = readFileSync(FIXTURE, 'utf8')
@@ -147,9 +148,17 @@ describe('BNP Paribas — Catapult/Certificate Plus template (zero-coupon, singl
     assert.equal(n2.autocallBarrierPct, 1)
   })
 
-  it('has no periodic coupon — reports the single autocall premium as couponRateAnnualized instead of fabricating a periodic rate', () => {
+  it('has no periodic coupon — reports the true annualized premium (multiplier minus the bundled 100% principal, annualized to the autocall date), never the raw redemption multiplier', () => {
     assert.equal(n2.couponRatePeriodic, null)
-    assert.equal(n2.couponRateAnnualized, 1.12)
+    // Regression for a real bug: "N x 112.00%" bundles 100% principal + 12%
+    // premium — the old parser used 112% directly as the coupon (an
+    // impossible >100% p.a. "coupon"), caught via a real uploaded document
+    // that showed a 113.70% coupon on-screen. The premium is 12%, annualized
+    // over trade date (2025-01-04) -> autocall observation (2026-01-06).
+    const expectedYears = yearsBetweenIsoDates('2025-01-04', '2026-01-06')!
+    const expected = 0.12 / expectedYears
+    assert.ok(Math.abs(n2.couponRateAnnualized! - expected) < 1e-9)
+    assert.ok(n2.couponRateAnnualized! > 0.1 && n2.couponRateAnnualized! < 0.15, 'annualized premium must be a plausible single-digit-to-teens rate, never >100%')
   })
 
   it('extracts the prose-only autocall observation date plus the final maturity observation (not silently dropped)', () => {

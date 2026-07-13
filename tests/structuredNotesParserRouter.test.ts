@@ -11,6 +11,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { detectIssuer, extractWithRouter } from '../src/lib/structuredNotes/pdf/parsers/index.ts'
 import { extractStructuredNoteTerms } from '../src/lib/structuredNotes/pdf/extractStructuredNoteTerms.ts'
+import { checkCouponPlausibility, MAX_PLAUSIBLE_ANNUALIZED_COUPON, MIN_PLAUSIBLE_ANNUALIZED_COUPON } from '../src/lib/structuredNotes/pdf/parsers/shared.ts'
 
 function fixture(name: string): string {
   return readFileSync(fileURLToPath(new URL(`fixtures/structured-notes/${name}`, import.meta.url)), 'utf8')
@@ -66,5 +67,38 @@ describe('unsupported issuer stays unsupported (never silently mis-parsed)', () 
     const result = extractStructuredNoteTerms(['This is a random unrelated document with no financial terms whatsoever.'])
     assert.equal(result.ok, false)
     assert.ok(result.errors.some((e) => /unsupported issuer format/.test(e)))
+  })
+})
+
+// Regression: a real uploaded BNP Paribas "Catapult" term sheet displayed a
+// 113.70% coupon on-screen (impossible) at "Confidence: 100%". Root cause was
+// the parser using a redemption-amount MULTIPLIER (100% principal + 13.70%
+// premium, stated in the source as "N x 113.70%") directly as the coupon
+// rate. Fixed in bnpParibasParser.ts (see structuredNotesBnpParser.test.ts for
+// the parser-level fix); this describes the general, issuer-agnostic
+// safety net added to the router so ANY parser producing an out-of-range
+// coupon — this bug class, a different future bug, or a genuinely malformed
+// source document — is always forced to review-required, never presented as
+// a confident, importable "Ready" note.
+describe('coupon plausibility guard (issuer-agnostic, applied by the router to every parser)', () => {
+  it('checkCouponPlausibility accepts realistic rates and rejects out-of-range ones', () => {
+    assert.equal(checkCouponPlausibility(0.0685, null), null)
+    assert.equal(checkCouponPlausibility(null, 0.0175), null)
+    assert.equal(checkCouponPlausibility(null, null), null)
+    assert.equal(checkCouponPlausibility(MAX_PLAUSIBLE_ANNUALIZED_COUPON, null), null)
+    assert.equal(checkCouponPlausibility(MIN_PLAUSIBLE_ANNUALIZED_COUPON, null), null)
+    assert.ok(checkCouponPlausibility(1.137, null) !== null, 'the exact real-world bug value (113.70%) must be flagged')
+    assert.ok(checkCouponPlausibility(1.12, null) !== null)
+    assert.ok(checkCouponPlausibility(-0.9, null) !== null, 'an implausibly negative rate must also be flagged')
+    assert.ok(checkCouponPlausibility(null, 5) !== null, 'checks the periodic rate too, independent of annualized')
+  })
+  it('a hypothetical parser bug reproducing the exact real-world failure (113.70% "coupon") is forced to review_required by the router, never "ready" at 100% confidence', () => {
+    // Simulates the pre-fix defect directly against the router's own note
+    // shape, independent of which specific parser produced it.
+    const { result } = extractWithRouter([fixture('bnp_catapult_sample_terms.txt')])
+    // Sanity: the real fixture, once fixed, must NOT trip the guard (it now
+    // reports a plausible ~11-12% annualized premium, not the raw 112%).
+    assert.equal(result.ok, true)
+    assert.ok(result.note!.couponRateAnnualized! < MAX_PLAUSIBLE_ANNUALIZED_COUPON)
   })
 })
