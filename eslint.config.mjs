@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Claude Code agent worktrees/tooling — generated artifacts, not app source.
+    ".claude/worktrees/**",
+    ".claude/**/.next/**",
+    ".claude/**/node_modules/**",
+    ".claude/**/dist/**",
   ]),
 ]);
 
