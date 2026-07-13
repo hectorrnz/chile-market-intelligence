@@ -34,16 +34,43 @@ export function yahooSymbolForUnderlying(u: Pick<StructuredNoteUnderlying, 'yaho
   return entry?.yahooSymbol ?? null
 }
 
+/** Per-symbol exchange session metadata, used to confirm a quote reflects a genuinely settled close before it drives an automatic decision (see quoteQuality.ts's isMarketSettled). */
+export interface YahooMarketMeta {
+  marketState: string | null
+  regularMarketTime: string | null
+}
+
+/** Normalizes yahoo-finance2's `regularMarketTime` (a Date, epoch seconds, or ISO string depending on call shape) into an ISO string. */
+function normalizeRegularMarketTime(value: unknown): string | null {
+  if (!value) return null
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.toISOString()
+  if (typeof value === 'number') {
+    // yahoo-finance2's raw (unparsed) shape reports epoch seconds, not milliseconds.
+    const ms = value > 1e12 ? value : value * 1000
+    const d = new Date(ms)
+    return Number.isNaN(d.getTime()) ? null : d.toISOString()
+  }
+  if (typeof value === 'string') {
+    const d = new Date(value)
+    return Number.isNaN(d.getTime()) ? null : d.toISOString()
+  }
+  return null
+}
+
 /**
  * Fetches current prices for a set of Yahoo symbols in ONE batch call. Used by
  * the dashboard so a whole book of notes costs a single Yahoo request. Returns
- * a map of symbol → price (only symbols that resolved to a finite quote). If
- * Yahoo is unreachable the map is empty and callers report `unavailable`.
+ * a map of symbol → price (only symbols that resolved to a finite quote), plus
+ * a per-symbol market-session metadata map (marketState/regularMarketTime) so
+ * callers that need to confirm a settled close (scheduled monitoring) can do
+ * so without a second request. If Yahoo is unreachable the maps are empty and
+ * callers report `unavailable`.
  */
-export async function fetchYahooPriceMap(symbols: string[]): Promise<{ prices: Map<string, number>; asOf: string | null }> {
+export async function fetchYahooPriceMap(symbols: string[]): Promise<{ prices: Map<string, number>; asOf: string | null; marketMeta: Map<string, YahooMarketMeta> }> {
   const unique = [...new Set(symbols.filter((s): s is string => !!s))]
   const prices = new Map<string, number>()
-  if (unique.length === 0) return { prices, asOf: null }
+  const marketMeta = new Map<string, YahooMarketMeta>()
+  if (unique.length === 0) return { prices, asOf: null, marketMeta }
   try {
     const quotePromise = yf.quote(unique, {}, { validateResult: false })
     const timeoutPromise = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Timeout')), TIMEOUT_MS))
@@ -54,10 +81,16 @@ export async function fetchYahooPriceMap(symbols: string[]): Promise<{ prices: M
       const sym = q?.symbol as string | undefined
       const px = q?.regularMarketPrice
       if (sym && typeof px === 'number' && Number.isFinite(px)) prices.set(sym, px)
+      if (sym) {
+        marketMeta.set(sym, {
+          marketState: typeof q?.marketState === 'string' ? q.marketState : null,
+          regularMarketTime: normalizeRegularMarketTime(q?.regularMarketTime),
+        })
+      }
     }
-    return { prices, asOf: prices.size > 0 ? new Date().toISOString() : null }
+    return { prices, asOf: prices.size > 0 ? new Date().toISOString() : null, marketMeta }
   } catch {
-    return { prices, asOf: null }
+    return { prices, asOf: null, marketMeta }
   }
 }
 

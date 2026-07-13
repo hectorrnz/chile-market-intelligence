@@ -299,6 +299,16 @@ describe('observation QA — quoteMeta-driven review reasons (Phase 9E)', () => 
     const result = evaluateCouponObservation(note(), note().observations[0], new Map([['^GSPC', 7000], ['^RUT', 2700]]), quoteMeta)
     assert.ok(result.reviewReasons.includes('large_price_move_warning'))
   })
+  it('reports market_not_settled when quoteMeta carries that quality reason', () => {
+    const now = new Date().toISOString()
+    const quoteMeta = new Map<string, QuoteMetaEntry>([
+      ['^GSPC', { asOf: now, supported: true, providerError: false, qualityReasons: ['market_not_settled'] }],
+      ['^RUT', { asOf: now, supported: true, providerError: false }],
+    ])
+    const result = evaluateCouponObservation(note(), note().observations[0], new Map([['^GSPC', 7000], ['^RUT', 2700]]), quoteMeta)
+    assert.ok(result.reviewReasons.includes('market_not_settled'))
+    assert.equal(result.reviewRequired, true)
+  })
   it('a clean coupon evaluation with quoteMeta present but no issues has empty reviewReasons', () => {
     const now = new Date().toISOString()
     const quoteMeta = new Map([

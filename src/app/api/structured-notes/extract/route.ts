@@ -63,7 +63,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     )
   }
 
-  const result = extractStructuredNoteTerms(pages, { fileName })
+  // Every issuer parser is written to degrade to `ok: false` + errors on a
+  // document it can't fully map, never to throw — but a regex on a
+  // never-before-seen template shape is still just code, and a future
+  // uncaught exception here must never crash the whole upload as a bare 500.
+  // Degrade to the same review-required shape the parsers themselves use.
+  let result: ReturnType<typeof extractStructuredNoteTerms>
+  try {
+    result = extractStructuredNoteTerms(pages, { fileName })
+  } catch (e) {
+    const message = e instanceof Error ? e.message.slice(0, 200) : 'unknown parser error'
+    return NextResponse.json(
+      { error: 'extraction_failed', detail: `Term extraction failed unexpectedly: ${message}. Manual entry required.`, reviewState: 'unsupported' },
+      { status: 422 },
+    )
+  }
   const unsupported = result.errors.some((e) => e.includes('unsupported issuer format'))
   const reviewState = classifyReviewState(result.ok, result.confidenceScore, result.fieldsLowConfidence, unsupported)
 

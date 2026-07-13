@@ -8,7 +8,7 @@
 // Every quote from this provider is labeled `free_monitoring_estimate` — Yahoo's unofficial endpoint is
 // never represented as an official calculation-agent determination.
 
-import { fetchYahooPriceMap } from '../../structuredNoteMarketProvider.ts'
+import { fetchYahooPriceMap, type YahooMarketMeta } from '../../structuredNoteMarketProvider.ts'
 import type {
   StructuredNoteMarketDataProvider,
   StructuredNoteMarketDataProviderStatus,
@@ -27,7 +27,13 @@ interface RawYahooQuote {
   asOf: string | null
 }
 
-function buildQuote(raw: RawYahooQuote, requestedSymbol: string, status: StructuredNoteMarketDataStatus, warning: string | null = null): StructuredNoteMarketDataQuote {
+function buildQuote(
+  raw: RawYahooQuote,
+  requestedSymbol: string,
+  status: StructuredNoteMarketDataStatus,
+  warning: string | null = null,
+  marketMeta?: YahooMarketMeta,
+): StructuredNoteMarketDataQuote {
   const priceOk = raw.price !== null && Number.isFinite(raw.price)
   return {
     symbol: requestedSymbol,
@@ -45,7 +51,13 @@ function buildQuote(raw: RawYahooQuote, requestedSymbol: string, status: Structu
     status,
     stale: false, // staleness is computed relative to evaluation time by quoteQuality.ts, not by the provider itself
     warning,
-    metadata: {},
+    // marketState/regularMarketTime let a caller confirm this quote reflects
+    // a genuinely settled close (see quoteQuality.ts's isMarketSettled) before
+    // it drives an automatic decision like an autocall status transition.
+    metadata: {
+      marketState: marketMeta?.marketState ?? null,
+      regularMarketTime: marketMeta?.regularMarketTime ?? null,
+    },
   }
 }
 

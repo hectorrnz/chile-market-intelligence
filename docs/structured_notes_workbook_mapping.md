@@ -208,6 +208,31 @@ layout the `9B.multi.1` parser did not recognize at the time:
   of the four. Issuer `BBVA GLOBAL MARKETS, B.V.`, Guarantor `BANCO BILBAO VIZCAYA
   ARGENTARIA, S.A.`.
 
-**Remaining gap**: Barclays/BNP/Santander/Crédit Agricole/BBVA appendix layouts *other* than the ones
-validated above (e.g. Santander's own template, and older 2024-vintage Citi single-underlying layouts) are
-still not targeted — they correctly flag for review with honest per-field gaps, never mis-parsed.
+**Remaining gap**: older 2024-vintage Citi single-underlying layouts are still not targeted — they
+correctly flag for review with honest per-field gaps, never mis-parsed.
+
+## 8. Santander parser + a second BNP template (post-9C, real uploads)
+
+- **Santander International Products Plc** ("Autocallable Memory Coupon Phoenix Index Basket Linked
+  Notes"): now has a dedicated parser (`santanderParser.ts`). Distinctive shape vs the other issuers:
+  ISIN label is "ISIN Code" (already handled by the shared `extractIsin` alias); barriers are plain-
+  English "`<Label> means N%`" clauses ("Coupon Barrier Level means 65%", "AER Level means 100%",
+  "Redemption Barrier Level means 65%") rather than a table column or a percentage-of-strike phrase;
+  the underlying table gives only ONE absolute level per row (no per-underlying barrier levels — the
+  same note-level percentages apply to every underlying); the row wraps across 3 physical lines in real
+  PDF extraction ("1 S&P 500 SPX Index New York Stock\nExchange\nUS...\nUSD 5239.6"); and the
+  coupon/autocall schedule is printed as TWO SEPARATE numbered vertical lists ("Observation Date (n)"
+  then "Interest Payment Date (n)", each "n \<date\>" one per line) rather than a combined table —
+  collected separately and zipped by position. Guarantor `Banco Santander S.A.`.
+- **BNP Paribas — second template** ("2Y Autocallable Certificate Plus"/"Catapult"): the existing
+  `bnpParibasParser.ts` (Phoenix Snowball, memory-coupon, multi-underlying) doesn't cover this
+  structurally different, simpler family — single underlying, NO periodic coupon at all (the return is
+  one fixed autocall premium, e.g. "N x 113.70%"), ticker inline as "(Bloomberg: SPX)" with barrier
+  percentages inline in parens next to each level, and the one early-redemption date given only in
+  prose ("If, on April 06th, 2026, ... redeem each Certificate on April 13th, 2026 ..."), never a table
+  row. Extended the existing parser with fallback extraction for all three shapes (only attempted when
+  the primary Phoenix-Snowball regexes find nothing), bumped to `9C.bnpParibas.2`.
+- **Shared bug fix**: `labelDateJoined` previously took the FIRST text occurrence of a label and gave up
+  if it wasn't immediately followed by a date — but "Final Observation Date" (and labels like it) can
+  legitimately appear earlier in explanatory prose with no date attached, before the real data line.
+  Fixed to try every occurrence in order, returning the first one that actually parses as a date.

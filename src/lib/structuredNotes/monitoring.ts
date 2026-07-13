@@ -54,6 +54,7 @@ export type ReviewRequiredReason =
   | 'provider_error'
   | 'large_price_move_warning'
   | 'provider_disagreement'
+  | 'market_not_settled'
   | 'final_observation_requires_official_verification'
   | 'non_trading_day_or_unavailable_close'
   | 'ambiguous_underlying_mapping'
@@ -76,6 +77,7 @@ const REVIEW_REASON_TEXT: Record<ReviewRequiredReason, string> = {
   provider_error: 'the market-data provider returned an error for one or more underlyings',
   large_price_move_warning: 'one or more underlyings moved further than the large-move threshold since the prior snapshot — verify before trusting',
   provider_disagreement: 'multiple providers disagreed on a price beyond the configured threshold',
+  market_not_settled: 'one or more underlyings have a market session not yet confirmed closed, or a closing print too recent to trust — waiting for a settled close',
   final_observation_requires_official_verification: 'final redemption is a legal determination — verify against an official calculation-agent or closing-price source before treating as final',
   non_trading_day_or_unavailable_close: 'no close is available for the valuation date (non-trading day or provider gap)',
   ambiguous_underlying_mapping: 'one or more underlyings have no resolved market-data symbol (ambiguous or unverified mapping)',
@@ -278,6 +280,7 @@ function reviewReasonsForUnderlyings(
       if (isQuoteStale(meta.asOf, referenceDate, STALE_THRESHOLD_OBSERVATION_DAYS)) reasons.add('stale_price')
       if (meta.qualityReasons?.includes('large_price_move_warning')) reasons.add('large_price_move_warning')
       if (meta.qualityReasons?.includes('provider_disagreement')) reasons.add('provider_disagreement')
+      if (meta.qualityReasons?.includes('market_not_settled')) reasons.add('market_not_settled')
     }
   }
   return [...reasons]

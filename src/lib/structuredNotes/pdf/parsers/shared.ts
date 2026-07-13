@@ -154,12 +154,29 @@ export function extractAfterLabel(joined: string, label: string, maxLen = 60): {
   return { value: rest.trim(), rawExcerpt: (m[0] + rest).trim() }
 }
 
-/** Wrap-tolerant counterpart to `labelDate` — searches the joined text, not per-line. */
+/**
+ * Wrap-tolerant counterpart to `labelDate` — searches the joined text, not
+ * per-line. Tries EVERY occurrence of `label` in order and returns the first
+ * one immediately followed by a parseable date — not just the first
+ * occurrence. A label like "Final Observation Date" often also appears
+ * earlier in explanatory prose ("...the performance of the Underlying on
+ * Final Observation Date, the...") with no date attached; blindly taking the
+ * first hit would silently fail to find the real data line further down the
+ * document. This can only find MORE valid dates than a first-occurrence-only
+ * search, never fewer, so it is a strict improvement for every existing caller.
+ */
 export function labelDateJoined(joined: string, label: string): { iso: string; raw: string } | null {
-  const after = extractAfterLabel(joined, label, 40)
-  if (!after) return null
-  const iso = parseTermSheetDate(after.value)
-  return iso ? { iso, raw: after.value } : null
+  const re = new RegExp(buildLabelRegex(label).source, 'gi')
+  let m: RegExpExecArray | null
+  while ((m = re.exec(joined))) {
+    const rest = joined.slice(m.index + m[0].length, m.index + m[0].length + 40).trim()
+    const iso = parseTermSheetDate(rest)
+    if (iso) return { iso, raw: rest }
+    // Guard against a zero-width match looping forever (shouldn't occur for
+    // a non-empty label, but exec() on a global regex can stall on one).
+    if (m[0].length === 0) re.lastIndex += 1
+  }
+  return null
 }
 
 /** Maps a legal issuer/guarantor name to the app's short display name. Returns null if unrecognized. */

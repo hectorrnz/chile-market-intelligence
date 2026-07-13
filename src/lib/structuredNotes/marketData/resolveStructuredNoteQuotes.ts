@@ -180,6 +180,9 @@ export async function resolveStructuredNoteQuotes(options: ResolveStructuredNote
     const providerError = best?.quote.status === 'provider_error'
     const supported = best?.quote.status !== 'unsupported'
 
+    const marketState = typeof best?.quote.metadata?.marketState === 'string' ? best.quote.metadata.marketState as string : null
+    const regularMarketTime = typeof best?.quote.metadata?.regularMarketTime === 'string' ? best.quote.metadata.regularMarketTime as string : null
+
     const quality = classifyQuoteQuality({
       price: best?.quote.price ?? null,
       asOf: best?.quote.asOf ?? null,
@@ -190,6 +193,8 @@ export async function resolveStructuredNoteQuotes(options: ResolveStructuredNote
       previousPrice: options.previousPrices?.get(symbol) ?? null,
       quoteCurrency: best?.quote.currency ?? null,
       expectedCurrency: options.expectedCurrencies?.get(symbol) ?? null,
+      marketState,
+      regularMarketTime,
     })
 
     if (quality.reasons.includes('stale_price')) staleSymbols.push(symbol)

@@ -20,7 +20,7 @@ import { resolveUnderlyingSymbol } from '../../underlyingSymbolMap.ts'
 import { extractIsin, field, labelDateJoined, labelValue, mapIssuerDisplay, parseNum, parseTermSheetDate } from './shared.ts'
 import type { IssuerParser } from './types.ts'
 
-export const BNP_PARIBAS_PARSER_VERSION = '9C.bnpParibas.1'
+export const BNP_PARIBAS_PARSER_VERSION = '9C.bnpParibas.2'
 
 export const parseBnpParibas: IssuerParser = (ctx) => {
   const { lines, joined } = ctx
@@ -80,23 +80,48 @@ export const parseBnpParibas: IssuerParser = (ctx) => {
   push(field('maturityDate', maturityDate, { rawExcerpt: maturity?.raw ?? null, sourceSection: 'header', confidence: maturityDate ? 'high' : 'low', warning: maturityDate ? null : 'Maturity date not found' }))
 
   // ── Barriers (note-level %) ───────────────────────────────────────────────
+  // Two BNP templates observed: the memory-coupon "Phoenix Snowball" (labels
+  // "Knock-in Level"/coupon-barrier prose above) and the zero-coupon
+  // "Autocallable Certificate Plus"/Catapult template, which states its single
+  // barrier inline in the underlying row as "Kick-out Level" (see the
+  // underlying-row fallback below) rather than as a standalone label.
   const autocallM = /Automatic\s+Early\s+i\s+(\d+(?:\.\d+)?)\s*%\s*x\s*Index/i.exec(joined)
   const knockInM = /Knock-?in\s+Level\w*\s+(\d+(?:\.\d+)?)\s*%\s*x\s*Index/i.exec(joined)
   const couponBarrierM = /greater\s+than\s+or\s+equal\s+to\s+(\d+(?:\.\d+)?)\s*%\s*of\s+Indexi?Initial/i.exec(joined)
   const autocallPct = autocallM ? Number(autocallM[1]) / 100 : 1
-  const knockInPct = knockInM ? Number(knockInM[1]) / 100 : null
-  const couponBarrierPct = couponBarrierM ? Number(couponBarrierM[1]) / 100 : knockInPct
+  let knockInPct = knockInM ? Number(knockInM[1]) / 100 : null
+  let couponBarrierPct = couponBarrierM ? Number(couponBarrierM[1]) / 100 : knockInPct
   push(field('knockInBarrierPct', knockInPct, { rawExcerpt: knockInM?.[0] ?? null, sourceSection: 'Automatic Early Redemption', confidence: knockInPct !== null ? 'high' : 'low', warning: knockInPct !== null ? null : 'Knock-in barrier not found' }))
   push(field('couponBarrierPct', couponBarrierPct, { rawExcerpt: couponBarrierM?.[0] ?? null, confidence: couponBarrierM ? 'high' : couponBarrierPct !== null ? 'medium' : 'low' }))
   push(field('autocallBarrierPct', autocallPct, { rawExcerpt: autocallM?.[0] ?? null, confidence: autocallM ? 'high' : 'medium' }))
 
-  // ── Coupon: "N x 3.41% x (1 + T)" ─────────────────────────────────────────
+  // ── Coupon: "N x 3.41% x (1 + T)" (Phoenix Snowball memory coupon) ─────────
   const couponM = /N\s*x\s*(\d+(?:\.\d+)?)\s*%\s*x\s*\(\s*1\s*\+\s*T\s*\)/i.exec(joined)
   const couponRatePeriodic = couponM ? Number(couponM[1]) / 100 : null
-  const couponFrequency = 'quarterly' // confirmed by the ~3-month spacing of the schedule rows below
-  const couponRateAnnualized = calculateCouponAnnualized(couponRatePeriodic, frequencyToPeriodsPerYear(couponFrequency))
-  push(field('couponFrequency', couponFrequency, { confidence: 'medium' }))
-  push(field('couponRatePeriodic', couponRatePeriodic, { rawExcerpt: couponM?.[0] ?? null, confidence: couponRatePeriodic !== null ? 'high' : 'low', warning: couponRatePeriodic !== null ? null : 'Coupon rate not found' }))
+  const couponFrequency: string | null = couponM ? 'quarterly' : null // confirmed by the ~3-month spacing of the schedule rows below
+  let couponRateAnnualized = couponM ? calculateCouponAnnualized(couponRatePeriodic, frequencyToPeriodsPerYear(couponFrequency)) : null
+  let couponRatePeriodicExcerpt = couponM?.[0] ?? null
+  // Fallback: the "Autocallable Certificate Plus"/Catapult template has NO
+  // periodic coupon at all — the entire return is a single fixed premium paid
+  // if/when the note autocalls, e.g. "N x 113.70%". This is genuinely absent,
+  // not unextracted, so it is reported as `couponRateAnnualized` (the
+  // return-if-called) with `couponRatePeriodic`/`couponFrequency` left null —
+  // never fabricate a periodic rate the term sheet doesn't have.
+  let isZeroCouponAutocallPremium = false
+  if (!couponM) {
+    const premiumM = /\bN\s*x\s*(\d+(?:\.\d+)?)\s*%/i.exec(joined)
+    if (premiumM) {
+      isZeroCouponAutocallPremium = true
+      couponRateAnnualized = Number(premiumM[1]) / 100
+      couponRatePeriodicExcerpt = premiumM[0]
+    }
+  }
+  push(field('couponFrequency', couponFrequency, { confidence: couponFrequency ? 'medium' : 'low' }))
+  push(field('couponRatePeriodic', couponRatePeriodic, {
+    rawExcerpt: couponRatePeriodicExcerpt,
+    confidence: couponRatePeriodic !== null ? 'high' : isZeroCouponAutocallPremium ? 'medium' : 'low',
+    warning: couponRatePeriodic !== null ? null : isZeroCouponAutocallPremium ? 'No periodic coupon in this product — return paid as a single autocall premium (see couponRateAnnualized)' : 'Coupon rate not found',
+  }))
   push(field('couponRateAnnualized', couponRateAnnualized, { confidence: couponRateAnnualized !== null ? 'medium' : 'low' }))
 
   // ── Underlyings — clean single-line table row with absolute levels ──────
@@ -122,6 +147,42 @@ export const parseBnpParibas: IssuerParser = (ctx) => {
       knockInBarrierPct: knockInPct, couponBarrierPct, autocallBarrierPct: autocallPct,
     })
   }
+  // Fallback: the "Autocallable Certificate Plus"/Catapult template has a
+  // single-underlying cover-table row with the ticker inline in "(Bloomberg:
+  // XXX)" and barrier percentages inline in parens next to each level, e.g.
+  // "S&P 500® (Bloomberg: SPX) 5,074.08 5,074.08 (100%) 3,298.15 (65%)" —
+  // structurally different from the compressed multi-underlying table above
+  // (no leading row index, no separate absolute coupon-barrier column).
+  if (underlyings.length === 0) {
+    const singleRowRe = /([A-Za-z0-9&®'.]+(?:\s+[A-Za-z0-9&®'.]+)*?)\s*\(Bloomberg:\s*([A-Z]{2,6})\)\s+([\d,]+\.\d+)\s+([\d,]+\.\d+)\s*\((\d+(?:\.\d+)?)%\)\s+([\d,]+\.\d+)\s*\((\d+(?:\.\d+)?)%\)/i
+    const sm2 = singleRowRe.exec(joined)
+    if (sm2) {
+      const ticker = sm2[2]
+      const initial = parseNum(sm2[3])
+      const strike = parseNum(sm2[4])
+      const strikePct = Number(sm2[5]) / 100
+      const kickOut = parseNum(sm2[6])
+      const kickOutPct = Number(sm2[7]) / 100
+      if (initial !== null && initial > 0) {
+        const sourceTicker = `${ticker} Index`
+        const resolved = resolveUnderlyingSymbol(ticker) ?? resolveUnderlyingSymbol(sourceTicker)
+        // A single global barrier (the Kick-out Level) plays the same role
+        // this parser's other fields call "knock-in"/"coupon barrier" — never
+        // leave the note-level barrier fields null just because this
+        // template states it inline instead of as a standalone label.
+        if (knockInPct === null) knockInPct = kickOutPct
+        if (couponBarrierPct === null) couponBarrierPct = kickOutPct
+        underlyings.push({
+          underlyingOrder: 1,
+          underlyingName: sourceTicker, sourceTicker, bloombergTicker: sourceTicker,
+          yahooSymbol: resolved?.yahooSymbol ?? null, assetClass: resolved?.assetClass ?? 'index',
+          initialLevel: initial, strikeLevel: strike,
+          knockInBarrierLevel: kickOut, couponBarrierLevel: kickOut, autocallBarrierLevel: strike,
+          knockInBarrierPct: kickOutPct, couponBarrierPct: kickOutPct, autocallBarrierPct: strikePct,
+        })
+      }
+    }
+  }
   push(field('underlyings.count', String(underlyings.length), { sourceSection: 'Term Sheet', confidence: underlyings.length > 0 ? 'high' : 'low', warning: underlyings.length > 0 ? null : 'No underlyings extracted' }))
 
   // ── Schedule — clean single-line rows: "<t> <date> <date> <date>" (valuation, autocall redemption, coupon payment) ──
@@ -141,6 +202,27 @@ export const parseBnpParibas: IssuerParser = (ctx) => {
       couponDuePct: couponRatePeriodic, autocallBarrierPct: autocallPct, couponBarrierPct,
       status: 'scheduled',
     })
+  }
+  // Fallback: the "Autocallable Certificate Plus"/Catapult template has no
+  // periodic schedule table at all — its single early-redemption opportunity
+  // is stated only in prose: "If, on April 06th, 2026, the official closing
+  // level ... redeem each Certificate on April 13th, 2026 at ...". Extract it
+  // as one 'autocall' observation rather than silently dropping the note's
+  // only interim observation date.
+  if (observations.length === 0) {
+    const aerProseM = /If,\s+on\s+([A-Za-z]+\s+\d{1,2}(?:st|nd|rd|th),\s+\d{4}),[^]*?redeem\s+each\s+Certificate\s+on\s+([A-Za-z]+\s+\d{1,2}(?:st|nd|rd|th),\s+\d{4})/i.exec(joined)
+    if (aerProseM) {
+      const aerValuation = parseTermSheetDate(aerProseM[1])
+      const aerRedemption = parseTermSheetDate(aerProseM[2])
+      if (aerValuation && aerRedemption) {
+        observations.push({
+          observationNumber: observations.length + 1, observationType: 'autocall',
+          valuationDate: aerValuation, paymentDate: aerRedemption, redemptionDate: aerRedemption,
+          couponDuePct: null, autocallBarrierPct: autocallPct, couponBarrierPct: null,
+          status: 'scheduled',
+        })
+      }
+    }
   }
   if (finalValuationDate && maturityDate && (observations.length === 0 || observations[observations.length - 1].valuationDate !== finalValuationDate)) {
     observations.push({
@@ -180,7 +262,7 @@ export const parseBnpParibas: IssuerParser = (ctx) => {
     ['underlyings', underlyings.length > 0],
     ['initial/strike levels', underlyings.length > 0 && underlyings.every((u) => u.initialLevel !== null || u.strikeLevel !== null)],
     ['barriers', couponBarrierPct !== null && knockInPct !== null],
-    ['coupon rate', couponRatePeriodic !== null],
+    ['coupon rate', couponRatePeriodic !== null || couponRateAnnualized !== null],
     ['observation schedule', observations.length > 0],
   ]
   for (const [name, ok] of critical) if (!ok) errors.push(`missing critical field: ${name}`)

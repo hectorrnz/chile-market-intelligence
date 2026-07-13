@@ -10,10 +10,12 @@ import {
   detectProviderDisagreement,
   classifyQuoteQuality,
   compareProviderQuotes,
+  isMarketSettled,
   STALE_THRESHOLD_DASHBOARD_DAYS,
   STALE_THRESHOLD_OBSERVATION_DAYS,
   LARGE_PRICE_MOVE_WARNING_PCT,
   PROVIDER_DISAGREEMENT_WARNING_PCT,
+  MIN_SETTLE_MINUTES_AFTER_CLOSE,
 } from '../src/lib/structuredNotes/marketData/quoteQuality.ts'
 
 describe('isQuoteStale', () => {
@@ -155,6 +157,66 @@ describe('classifyQuoteQuality', () => {
     const observation = classifyQuoteQuality({ price: 100, asOf, referenceDate, supported: true, providerError: false, isForDueObservation: true })
     assert.equal(dashboard.level, 'ok') // within 3-day dashboard threshold
     assert.equal(observation.level, 'warning') // beyond the 1-day observation threshold
+  })
+})
+
+describe('isMarketSettled', () => {
+  const referenceDate = '2027-01-01T21:30:00.000Z'
+  it('treats no signal at all as settled (no false positives from missing data)', () => {
+    assert.equal(isMarketSettled(null, null, referenceDate), true)
+    assert.equal(isMarketSettled(undefined, undefined, referenceDate), true)
+  })
+  it('is not settled while the market state is still live', () => {
+    assert.equal(isMarketSettled('REGULAR', null, referenceDate), false)
+    assert.equal(isMarketSettled('PRE', null, referenceDate), false)
+    assert.equal(isMarketSettled('POST', null, referenceDate), false)
+  })
+  it('trusts an explicit CLOSED state with no timestamp to check against', () => {
+    assert.equal(isMarketSettled('CLOSED', null, referenceDate), true)
+  })
+  it('is not settled when CLOSED but the close print is too recent', () => {
+    const closeTime = '2027-01-01T21:15:00.000Z' // 15 minutes before referenceDate
+    assert.equal(isMarketSettled('CLOSED', closeTime, referenceDate), false)
+  })
+  it('is settled when CLOSED and the close print is old enough', () => {
+    const closeTime = '2027-01-01T21:00:00.000Z' // 30 minutes before referenceDate
+    assert.equal(isMarketSettled('CLOSED', closeTime, referenceDate), true)
+  })
+  it('respects a custom settle-buffer', () => {
+    const closeTime = '2027-01-01T21:20:00.000Z' // 10 minutes before referenceDate
+    assert.equal(isMarketSettled('CLOSED', closeTime, referenceDate, 5), true)
+    assert.equal(isMarketSettled('CLOSED', closeTime, referenceDate, 15), false)
+  })
+  it('never rejects on an unparsable timestamp', () => {
+    assert.equal(isMarketSettled('CLOSED', 'not-a-date', referenceDate), true)
+  })
+  it('default buffer matches the documented 30 minutes', () => {
+    assert.equal(MIN_SETTLE_MINUTES_AFTER_CLOSE, 30)
+  })
+})
+
+describe('classifyQuoteQuality — market settlement (due observations only)', () => {
+  const referenceDate = '2027-01-01T21:30:00.000Z'
+  it('does not check settlement for a routine (non-due-observation) read', () => {
+    const r = classifyQuoteQuality({ price: 100, asOf: referenceDate, referenceDate, supported: true, providerError: false, marketState: 'REGULAR' })
+    assert.equal(r.level, 'ok')
+    assert.ok(!r.reasons.includes('market_not_settled'))
+  })
+  it('warns (not rejects) a due-observation quote taken while the market is still live', () => {
+    const r = classifyQuoteQuality({ price: 100, asOf: referenceDate, referenceDate, supported: true, providerError: false, isForDueObservation: true, marketState: 'REGULAR' })
+    assert.equal(r.level, 'warning')
+    assert.ok(r.reasons.includes('market_not_settled'))
+  })
+  it('warns a due-observation quote whose close print is too fresh', () => {
+    const closeTime = '2027-01-01T21:20:00.000Z' // 10 min before referenceDate
+    const r = classifyQuoteQuality({ price: 100, asOf: referenceDate, referenceDate, supported: true, providerError: false, isForDueObservation: true, marketState: 'CLOSED', regularMarketTime: closeTime })
+    assert.ok(r.reasons.includes('market_not_settled'))
+  })
+  it('is ok for a due-observation quote confirmed CLOSED and settled', () => {
+    const closeTime = '2027-01-01T21:00:00.000Z' // 30 min before referenceDate
+    const r = classifyQuoteQuality({ price: 100, asOf: referenceDate, referenceDate, supported: true, providerError: false, isForDueObservation: true, marketState: 'CLOSED', regularMarketTime: closeTime })
+    assert.equal(r.level, 'ok')
+    assert.ok(!r.reasons.includes('market_not_settled'))
   })
 })
 

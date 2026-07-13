@@ -17,11 +17,12 @@ function fixture(name: string): string {
 }
 
 describe('issuer detection — never guesses between two issuers', () => {
-  it('detects each of the four new issuers unambiguously', () => {
+  it('detects each of the five new issuers unambiguously', () => {
     assert.equal(detectIssuer(fixture('creditagricole_sample_terms.txt')), 'credit_agricole')
     assert.equal(detectIssuer(fixture('bnp_sample_terms.txt')), 'bnp_paribas')
     assert.equal(detectIssuer(fixture('barclays_sample_terms.txt')), 'barclays')
     assert.equal(detectIssuer(fixture('bbva_sample_terms.txt')), 'bbva')
+    assert.equal(detectIssuer(fixture('santander_sample_terms.txt')), 'santander')
   })
   it('falls back to "generic" for Citi/HSBC and anything unrecognized', () => {
     assert.equal(detectIssuer(fixture('citi_sample_terms.txt')), 'generic')
@@ -33,9 +34,10 @@ describe('issuer detection — never guesses between two issuers', () => {
 describe('router dispatch', () => {
   it('routes each fixture to its matching issuer parser (parserVersion proves the dispatch, not just a shared fallback)', () => {
     assert.equal(extractWithRouter([fixture('creditagricole_sample_terms.txt')]).result.parserVersion, '9C.creditAgricole.1')
-    assert.equal(extractWithRouter([fixture('bnp_sample_terms.txt')]).result.parserVersion, '9C.bnpParibas.1')
+    assert.equal(extractWithRouter([fixture('bnp_sample_terms.txt')]).result.parserVersion, '9C.bnpParibas.2')
     assert.equal(extractWithRouter([fixture('barclays_sample_terms.txt')]).result.parserVersion, '9C.barclays.1')
     assert.equal(extractWithRouter([fixture('bbva_sample_terms.txt')]).result.parserVersion, '9C.bbva.1')
+    assert.equal(extractWithRouter([fixture('santander_sample_terms.txt')]).result.parserVersion, '9F.santander.1')
     assert.equal(extractWithRouter([fixture('citi_sample_terms.txt')]).result.parserVersion, '9B.multi.1')
   })
   it('Citi and HSBC continue extracting at full confidence, unchanged, via the generic fallback path', () => {

@@ -59,6 +59,11 @@ export async function fetchMonitoringPrices(symbols: string[]): Promise<Monitori
     symbols: requested,
     providers: [yahooStructuredNoteProvider],
     referenceDate,
+    // Every price fetched here can drive a due coupon/autocall/final
+    // observation this same run — use the tighter observation-grade quality
+    // checks (staleness threshold, market-settlement check) rather than the
+    // looser dashboard defaults.
+    isForDueObservation: true,
   })
 
   const succeeded = result.quotes.filter((q) => q.status === 'success' && q.quality.level !== 'reject').map((q) => q.symbol)

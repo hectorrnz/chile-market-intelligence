@@ -1,0 +1,52 @@
+UNDERLYING INFORMATION
+PRODUCT DETAILS
+DATES
+REDEMPTION
+Term Sheet
+Final Terms and Conditions (our ref. CE00000AGI) as of January 05th, 2025
+2Y Autocallable Certificate Plus on S&P 500® in USD
+Underlying Initial Underlying Level Strike Level Kick-out Level
+S&P 500®
+(Bloomberg: SPX)
+4,800.00 4,800.00
+(100%)
+2,880.00
+(60%)
+ISIN / Common XS0000000000 / 000000000
+Issue Amount USD 2,000,000
+Number of Certificates 2,000
+Notional Amount per
+Certificate (N) 1 Certificate = USD 1,000
+Currency USD
+Minimum Trading Size 1 Certificate (and multiples of 1 Certificate thereafter)
+Issue Price per
+Certificate 100.00%
+Trade Date January 04th, 2025
+Strike Date January 04th, 2025
+Issue Date January 11th, 2025
+Last Trading Date January 05th, 2027
+Redemption Valuation
+Date January 05th, 2027
+Redemption Date January 12th, 2027
+Automatic Early
+Redemption
+If, on January 06th, 2026, the official closing level of the Underlying Index is greater than or equal to
+the Automatic Early Redemption Level, then the Issuer shall redeem each Certificate on January
+13th, 2026 at the Automatic Early Redemption Amount calculated as follows:
+N x 112.00%
+Automatic Early
+Redemption Level 100% x IndexInitial, i.e. 4,800.00
+Final Redemption On the Redemption Date, if the Certificates have not been automatically early redeemed or
+purchased and cancelled by the Issuer prior to the Redemption Valuation Date, the Issuer shall
+redeem each Certificate at the following Cash Settlement Amount:
+1) If a Kick-out Event has not occurred:
+GENERAL INFORMATION
+2) If a Kick-out Event has occurred:
+Kick-out Level 60% x IndexInitial, i.e. 2,880.00
+Kick-out Determination
+Day The Redemption Valuation Date.
+Kick-out Event A Kick-out Event shall be deemed to occur if, at the Kick-out Valuation Time on the Kick-out
+Determination Day, the Underlying Index closes at a level strictly less than the Kick-out Level.
+Issuer BNP Paribas Issuance B.V.
+Guarantor BNP Paribas (S&P's A+ / Moody's A1 / Fitch A+)
+Calculation Agent BNP Paribas Financial Markets S.N.C.

@@ -36,7 +36,7 @@ describe('BNP Paribas — critical fields', () => {
     assert.equal(result.ok, true)
     assert.equal(result.errors.length, 0)
     assert.equal(result.confidenceScore, 1)
-    assert.equal(result.parserVersion, '9C.bnpParibas.1')
+    assert.equal(result.parserVersion, '9C.bnpParibas.2')
   })
   it('extracts ISIN (colon form: "ISIN: XS...")', () => assert.equal(n.isin, 'XS9999999992'))
   it('extracts issuer + display name + guarantor', () => {
@@ -105,5 +105,65 @@ describe('BNP Paribas — hygiene', () => {
     const bad = extractStructuredNoteTerms(['just some random text with no terms at all'])
     assert.equal(bad.ok, false)
     assert.ok(bad.errors.length > 0)
+  })
+})
+
+// A second, structurally different BNP template — the zero-coupon
+// "Autocallable Certificate Plus"/Catapult family — was found (real upload)
+// to fail extraction under the original Phoenix Snowball-tuned regexes: no
+// periodic coupon, a single-underlying row with the ticker inline in
+// "(Bloomberg: XXX)" and barrier percentages inline in parens, plus a
+// prose-only (not tabular) early-redemption date. Never crashed — surfaced as
+// review-required, per the parser's safety design — but should now extract
+// cleanly rather than requiring manual entry.
+describe('BNP Paribas — Catapult/Certificate Plus template (zero-coupon, single underlying)', () => {
+  const FIXTURE2 = fileURLToPath(new URL('fixtures/structured-notes/bnp_catapult_sample_terms.txt', import.meta.url))
+  const text2 = readFileSync(FIXTURE2, 'utf8')
+  const result2 = extractStructuredNoteTerms([text2], { fileName: 'bnp_catapult_sample_terms.txt' })
+  const n2 = result2.note!
+
+  it('detects bnp_paribas', () => {
+    assert.equal(detectIssuer(text2), 'bnp_paribas')
+  })
+
+  it('extracts successfully with full confidence (previously flagged review-required)', () => {
+    assert.equal(result2.ok, true)
+    assert.deepEqual(result2.errors, [])
+    assert.equal(result2.confidenceScore, 1)
+  })
+
+  it('extracts the single-underlying inline "(Bloomberg: XXX)" row with strike/kick-out levels', () => {
+    assert.equal(n2.underlyings.length, 1)
+    const u = n2.underlyings[0]
+    assert.equal(u.initialLevel, 4800)
+    assert.equal(u.strikeLevel, 4800)
+    assert.equal(u.knockInBarrierLevel, 2880)
+    assert.equal(u.yahooSymbol, '^GSPC')
+  })
+
+  it('treats the inline Kick-out Level as the note-level knock-in/coupon barrier (65%-style role)', () => {
+    assert.equal(n2.knockInBarrierPct, 0.6)
+    assert.equal(n2.couponBarrierPct, 0.6)
+    assert.equal(n2.autocallBarrierPct, 1)
+  })
+
+  it('has no periodic coupon — reports the single autocall premium as couponRateAnnualized instead of fabricating a periodic rate', () => {
+    assert.equal(n2.couponRatePeriodic, null)
+    assert.equal(n2.couponRateAnnualized, 1.12)
+  })
+
+  it('extracts the prose-only autocall observation date plus the final maturity observation (not silently dropped)', () => {
+    assert.equal(n2.observations.length, 2)
+    assert.equal(n2.observations[0].observationType, 'autocall')
+    assert.equal(n2.observations[0].valuationDate, '2026-01-06')
+    assert.equal(n2.observations[0].paymentDate, '2026-01-13')
+    assert.equal(n2.observations[1].observationType, 'final')
+    assert.equal(n2.observations[1].valuationDate, '2027-01-05')
+  })
+
+  it('does not regress the original Phoenix Snowball fixture (still confidence 1, still parserVersion 9C.bnpParibas.2)', () => {
+    assert.equal(result.ok, true)
+    assert.equal(result.confidenceScore, 1)
+    assert.equal(result.parserVersion, '9C.bnpParibas.2')
   })
 })

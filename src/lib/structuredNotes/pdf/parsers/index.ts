@@ -15,15 +15,17 @@ import { parseCreditAgricole, CREDIT_AGRICOLE_PARSER_VERSION } from './creditAgr
 import { parseBnpParibas, BNP_PARIBAS_PARSER_VERSION } from './bnpParibasParser.ts'
 import { parseBarclays, BARCLAYS_PARSER_VERSION } from './barclaysParser.ts'
 import { parseBbva, BBVA_PARSER_VERSION } from './bbvaParser.ts'
+import { parseSantander, SANTANDER_PARSER_VERSION } from './santanderParser.ts'
 import type { DetectedIssuer, IssuerParseContext } from './types.ts'
 
-export const ROUTER_VERSION = '9C.router.1'
+export const ROUTER_VERSION = '9F.router.2'
 export {
   CITI_HSBC_PARSER_VERSION,
   CREDIT_AGRICOLE_PARSER_VERSION,
   BNP_PARIBAS_PARSER_VERSION,
   BARCLAYS_PARSER_VERSION,
   BBVA_PARSER_VERSION,
+  SANTANDER_PARSER_VERSION,
 }
 
 /**
@@ -36,6 +38,7 @@ export function detectIssuer(joined: string): DetectedIssuer {
   if (/bnp\s+paribas/i.test(joined)) return 'bnp_paribas'
   if (/barclays/i.test(joined)) return 'barclays'
   if (/\bbbva\b/i.test(joined)) return 'bbva'
+  if (/santander/i.test(joined)) return 'santander'
   return 'generic'
 }
 
@@ -50,6 +53,7 @@ export function extractWithRouter(pages: string[], opts: { fileName?: string } =
     bnp_paribas: parseBnpParibas,
     barclays: parseBarclays,
     bbva: parseBbva,
+    santander: parseSantander,
     generic: parseCitiHsbc,
   }[detectedIssuer]
 

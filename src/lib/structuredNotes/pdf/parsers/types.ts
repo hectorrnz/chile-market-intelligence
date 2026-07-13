@@ -24,7 +24,7 @@ export interface IssuerParseContext {
 export type IssuerParser = (ctx: IssuerParseContext) => StructuredNoteExtractionResult
 
 /** Identifiers the router can detect from issuer/guarantor keywords in the document. */
-export type DetectedIssuer = 'credit_agricole' | 'bnp_paribas' | 'barclays' | 'bbva' | 'generic'
+export type DetectedIssuer = 'credit_agricole' | 'bnp_paribas' | 'barclays' | 'bbva' | 'santander' | 'generic'
 
 /** UI-facing bucket for the review workflow (never a blanket "success"/"fail"). */
 export type ReviewState = 'ready' | 'review_recommended' | 'review_required' | 'unsupported'

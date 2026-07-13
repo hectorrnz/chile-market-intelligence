@@ -18,6 +18,8 @@ export const STALE_THRESHOLD_OBSERVATION_DAYS = 1
 export const LARGE_PRICE_MOVE_WARNING_PCT = 15
 /** Two providers quoting the same symbol more than this percent apart is flagged as a disagreement warning. */
 export const PROVIDER_DISAGREEMENT_WARNING_PCT = 1
+/** A regular-market close must be at least this many minutes old before a DUE observation trusts it as settled — guards against a quote taken right at the bell before the closing print has finalized. */
+export const MIN_SETTLE_MINUTES_AFTER_CLOSE = 30
 
 export type QuoteQualityLevel = 'ok' | 'warning' | 'reject'
 
@@ -30,6 +32,7 @@ export type QuoteQualityReason =
   | 'large_price_move_warning'
   | 'currency_mismatch'
   | 'provider_disagreement'
+  | 'market_not_settled'
 
 export interface QuoteQualityResult {
   level: QuoteQualityLevel
@@ -95,6 +98,32 @@ export function detectProviderDisagreement(
   return { flagged: diffPct > thresholdPct, diffPct }
 }
 
+/**
+ * True when a quote's exchange-session state confirms a genuinely settled
+ * close: the market session has ended (`marketState === 'CLOSED'`) AND, if a
+ * last-trade timestamp is available, at least `minSettleMinutes` have passed
+ * since it — a quote taken right at the bell can carry a not-yet-finalized
+ * closing print. Degrades to `true` (no flag) whenever there is no positive
+ * signal either way (missing marketState AND missing timestamp, or an
+ * unparsable timestamp) — this check only ever flags on real evidence the
+ * session isn't settled, never on the absence of data.
+ */
+export function isMarketSettled(
+  marketState: string | null | undefined,
+  regularMarketTime: string | null | undefined,
+  referenceDate: string,
+  minSettleMinutes: number = MIN_SETTLE_MINUTES_AFTER_CLOSE,
+): boolean {
+  if (!marketState && !regularMarketTime) return true
+  if (marketState && marketState !== 'CLOSED') return false
+  if (!regularMarketTime) return true
+  const t = Date.parse(regularMarketTime)
+  const ref = Date.parse(referenceDate)
+  if (Number.isNaN(t) || Number.isNaN(ref)) return true
+  const minutesSince = (ref - t) / 60_000
+  return minutesSince >= minSettleMinutes
+}
+
 export interface ClassifyQuoteQualityInput {
   price: number | null | undefined
   asOf: string | null | undefined
@@ -106,6 +135,10 @@ export interface ClassifyQuoteQualityInput {
   previousPrice?: number | null
   quoteCurrency?: string | null
   expectedCurrency?: string | null
+  /** Exchange session state (e.g. 'CLOSED', 'REGULAR', 'POST') from the provider, if available. */
+  marketState?: string | null
+  /** ISO timestamp of the last regular-market trade, if available. */
+  regularMarketTime?: string | null
 }
 
 /**
@@ -132,6 +165,10 @@ export function classifyQuoteQuality(input: ClassifyQuoteQualityInput): QuoteQua
     if (move.flagged) reasons.push('large_price_move_warning')
 
     if (detectCurrencyMismatch(input.quoteCurrency ?? null, input.expectedCurrency ?? null)) reasons.push('currency_mismatch')
+
+    if (input.isForDueObservation && !isMarketSettled(input.marketState ?? null, input.regularMarketTime ?? null, input.referenceDate)) {
+      reasons.push('market_not_settled')
+    }
   }
 
   if (reasons.some((r) => r === 'missing_price' || r === 'invalid_price' || r === 'unsupported_symbol' || r === 'provider_error')) {

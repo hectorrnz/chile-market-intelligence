@@ -175,6 +175,53 @@ describe('provider fallback/sanity-check orchestrator — resolveStructuredNoteQ
     assert.equal(result.unsupportedSymbols.includes('^GSPC'), true)
   })
 
+  it('flags market_not_settled for a due observation when the quote metadata says the market is still live', async () => {
+    const liveProvider: StructuredNoteMarketDataProvider = {
+      providerId: 'live-provider',
+      providerName: 'live-provider',
+      sourceType: 'free_monitoring_estimate',
+      supportsSymbol: () => true,
+      normalizeQuote: (raw) => raw as StructuredNoteMarketDataQuote,
+      async fetchQuotes(): Promise<StructuredNoteMarketDataResult> {
+        return {
+          quotes: [{
+            symbol: '^GSPC', requestedSymbol: '^GSPC', sourceSymbol: '^GSPC', price: 7000, asOf: '2027-01-01T21:30:00.000Z',
+            currency: null, provider: 'live-provider', sourceType: 'free_monitoring_estimate', status: 'success', stale: false,
+            warning: null, metadata: { marketState: 'REGULAR', regularMarketTime: null },
+          }],
+          provider: 'live-provider', requested: ['^GSPC'], succeeded: ['^GSPC'], failed: [], warnings: [], asOf: '2027-01-01T21:30:00.000Z',
+        }
+      },
+    }
+    const result = await resolveStructuredNoteQuotes({ symbols: ['^GSPC'], providers: [liveProvider], referenceDate: '2027-01-01T21:30:00.000Z', isForDueObservation: true })
+    assert.ok(result.reviewRequiredSymbols.includes('^GSPC'))
+    assert.ok(result.quotes[0].quality.reasons.includes('market_not_settled'))
+    // Still usable — a warning, not a reject.
+    assert.equal(result.priceMap.get('^GSPC'), 7000)
+  })
+
+  it('does not flag market_not_settled for a routine (non-due-observation) read even with a live market state', async () => {
+    const liveProvider: StructuredNoteMarketDataProvider = {
+      providerId: 'live-provider',
+      providerName: 'live-provider',
+      sourceType: 'free_monitoring_estimate',
+      supportsSymbol: () => true,
+      normalizeQuote: (raw) => raw as StructuredNoteMarketDataQuote,
+      async fetchQuotes(): Promise<StructuredNoteMarketDataResult> {
+        return {
+          quotes: [{
+            symbol: '^GSPC', requestedSymbol: '^GSPC', sourceSymbol: '^GSPC', price: 7000, asOf: '2027-01-01T21:30:00.000Z',
+            currency: null, provider: 'live-provider', sourceType: 'free_monitoring_estimate', status: 'success', stale: false,
+            warning: null, metadata: { marketState: 'REGULAR', regularMarketTime: null },
+          }],
+          provider: 'live-provider', requested: ['^GSPC'], succeeded: ['^GSPC'], failed: [], warnings: [], asOf: '2027-01-01T21:30:00.000Z',
+        }
+      },
+    }
+    const result = await resolveStructuredNoteQuotes({ symbols: ['^GSPC'], providers: [liveProvider], referenceDate: '2027-01-01T21:30:00.000Z' })
+    assert.ok(!result.reviewRequiredSymbols.includes('^GSPC'))
+  })
+
   it('applies quote-quality classification (stale) using the referenceDate', async () => {
     const stale = mockProvider('stale-provider', new Map([['^GSPC', 7000]]))
     // Override asOf to be old by monkey-patching fetchQuotes via a fresh provider.
