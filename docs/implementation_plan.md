@@ -1593,3 +1593,62 @@ watchlist/portfolio changes; no new cron schedule.
 Next: periodically re-check for a real official Chile release-date source; add a `diff` transform + UI slot
 for Nonfarm Payrolls if desired; consider persistence for the FRED calendar if usage justifies it — or
 return to Structured Notes (Santander/older-2024-Citi parser templates) or CMF/XBRL issuer work.
+
+---
+
+## Phase 8D.3 — Economic Calendar Actual/Previous Enrichment + Weekday Post-Close Refresh ✓ COMPLETE (2026-07-13)
+
+Enriches the FRED dates-only release calendar (Phase 8D.1 / calendar-integrity fix) with **real `actual` and
+`previous` values**. Release **dates** still come from FRED's release calendar; actual/previous **values** come
+from FRED **time-series** (the keyless CSV endpoint already used for US macro), transformed via the shared
+`transforms.ts`. Consensus/forecast/surprise remain **unavailable by design** — this is not a vendor calendar.
+
+**Release-to-source mapping** (`src/config/calendarEnrichmentMap.ts`) — 11 curated US releases → FRED series,
+each verified live before mapping (never guessed), tagged with `originatingAgency` (BLS/BEA/Census/Fed) for
+provenance: CPI (`CPIAUCSL` y/y+m/m), PPI (`PPIFIS`), PCE + core PCE (`PCEPI`/`PCEPILFE`), Employment Situation
+(NFP `PAYEMS` + unemployment `UNRATE`), JOLTS (`JTSJOL`), GDP (`A191RL1Q225SBEA`), Retail Sales (`RSAFS`),
+Industrial Production (`INDPRO`), Housing Starts (`HOUST`), New Home Sales (`HSN1F`), Trade Balance (`BOPGSTB`).
+
+**FRED-normalized, direct BLS/BEA/Census deferred.** FRED redistributes the agencies' primary series verbatim;
+standing up three keyed agency clients with unverified series/table/line-code mappings was assessed and
+deferred (never-guess rule) — the prompt authorized FRED as the normalized source. The fetched source is always
+FRED and labeled as such; the UI never claims a direct BLS/BEA/Census call.
+
+**NFP `level-diff` transform** — new `transforms.ts` transform derives the headline Nonfarm Payrolls
+month-over-month change from `PAYEMS` (a cumulative level in thousands); the raw level is never the headline.
+The `diff`-transform previously deferred in 8D/8D.1 is now implemented, bounded to this use.
+
+**Excluded, not fabricated:** ADP (FRED `NPPTTL` stale since 2022) and Existing Home Sales (NAR, non-govt) —
+dates-only, actual/previous unavailable.
+
+**Enrichment semantics** (`src/lib/providers/calendarEnrichment.ts`, server-only): past → published
+actual+previous; scheduled → pending actual + last-published previous; failed/insufficient → unavailable (never
+zero-filled). Best-effort — any fetch failure degrades that metric only; the dates-only calendar always renders.
+Wired into `GET /api/macro/fred-release-calendar` (now `enriched: true`, `consensusAvailable: false`); the UI
+(`/macro/calendar`) shows Metric / Actual / Previous / Source (agency chip) / Imp. columns with pending +
+unavailable states, and an honest footer naming both sources.
+
+**Weekday post-close cron** `/api/cron/refresh-calendar-enrichment` (Bearer `CRON_SECRET`, `vercel.json`
+`30 22 * * 1-5`) recomputes the enrichment ~30 min after the US close and returns a structured
+availability/health summary — stateless (`persisted: false`; enrichment is computed live per request, no
+migration/persistence this phase).
+
+**Tests:** `tests/calendarEnrichment.test.ts` (22 new — `level-diff` math, map shape/exclusions,
+published/pending/unavailable, multi-metric releases, provider-error isolation via injected fetcher, cron
+auth/no-key-leak, no forecast/surprise fields, vercel schedule) + `tests/calendarProductionIntegrity.test.ts`
+updated for the real actual/previous columns. Full suite 1298 → **1320/1320**, lint 0, build 0 errors.
+
+**Local validation (dev server, real FRED):** `/api/macro/fred-release-calendar?days=45` → `enriched: true`,
+22 enriched events; Trade Balance (past) actual −77,585 / previous −54,570 (published, BEA); CPI (upcoming)
+pending / previous 4.17% y/y (BLS); NFP previous +57K (level-diff, never the raw level); consensus null and no
+forecast/surprise field anywhere. Cron 401 without bearer, authorized run `status: success` (37 metrics, 0
+unavailable). `/macro/calendar`, `/macro`, `/api/macro`, `/api/market/stocks`, `/api/health/ingestion` all 200;
+`supabase:check-macro` unchanged (22/22 healthy).
+
+Scope limits: actual/previous enrichment for curated US releases only; FRED-normalized sourcing (direct
+BLS/BEA/Census deferred); no consensus/forecast/surprise; no Finnhub/Frankfurter/Investing.com/ForexPros/paid
+vendor; no Chile HTML scraping (Chile calendar stays deferred); no persistence/migration; no financials/
+Structured Notes/auth/watchlist/portfolio changes; no visual redesign beyond the new columns.
+
+Next: add direct BLS/BEA/Census provider clients if warranted; persist enrichment if usage justifies; add a
+standalone NFP macro-indicator card; periodically re-check for a real official Chile release-date source.

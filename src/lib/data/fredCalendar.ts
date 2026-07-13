@@ -1,14 +1,19 @@
-// Phase 8D.1 — Client-safe fetch helper for the dates-only FRED release
-// calendar. Only imports a TYPE from the provider layer, so no server code
-// or credentials reach the browser bundle.
+// Phase 8D.1 — Client-safe fetch helper for the FRED release calendar.
+// Phase 8D.3 — events now carry actual/previous enrichment `metrics`.
+// Only TYPE imports from the provider layer, so no server code or credentials
+// reach the browser bundle (type-only imports are erased at build time).
 
-import type { FredCalendarEvent } from '@/lib/providers/fredReleaseCalendar'
+import type { EnrichedFredCalendarEvent } from '@/lib/providers/calendarEnrichment'
 
 export interface FredCalendarFetchResult {
   ok: boolean
   configured: boolean
   datesOnly: boolean
-  events: FredCalendarEvent[]
+  /** Phase 8D.3 — true when events carry actual/previous `metrics`. */
+  enriched?: boolean
+  /** Always false — no free official consensus/forecast source. */
+  consensusAvailable?: boolean
+  events: EnrichedFredCalendarEvent[]
   reason?: string
 }
 

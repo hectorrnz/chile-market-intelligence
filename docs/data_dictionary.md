@@ -714,6 +714,29 @@ walks every file under `src/app/**` and fails if any of them import it.
 
 No persistence, no migration, no new cron — every request live-queries FRED directly.
 
+### Calendar actual/previous enrichment (Phase 8D.3)
+
+`/macro/calendar` release rows are enriched with **real `actual` and `previous` values**. Two distinct
+sources: release **dates** come from the FRED release calendar; actual/previous **values** come from FRED
+**time-series** (keyless CSV endpoint), transformed via `src/lib/providers/transforms.ts`. Consensus/forecast/
+surprise are never produced (no free official source). Mapping: `src/config/calendarEnrichmentMap.ts`
+(11 curated US releases → verified FRED series ids, each tagged with its `originatingAgency`
+BLS/BEA/Census/Federal Reserve for provenance; the fetched source is always FRED). Resolver:
+`src/lib/providers/calendarEnrichment.ts`.
+
+- **EnrichedMetric** fields: `key`, `label`, `unit`, `decimals`, `actual`, `previous`, `actualPeriod`,
+  `previousPeriod`, `status` (`published`/`pending`/`unavailable`), `consensus` (always `null`), `source`
+  (always FRED), `originatingAgency`. Past release → published actual+previous; scheduled → pending actual +
+  last-published previous; failed/insufficient series → unavailable (never zero-filled).
+- **New `level-diff` transform** derives headline Nonfarm Payrolls (`PAYEMS` level → month-over-month change
+  in thousands) — the raw employment level is never shown as the headline.
+- **Excluded (not fabricated):** ADP (FRED `NPPTTL` stale since 2022), Existing Home Sales (NAR, non-govt) —
+  dates-only, actual/previous unavailable.
+- **No persistence/migration** — computed live per request. A weekday post-close cron
+  (`/api/cron/refresh-calendar-enrichment`, Bearer `CRON_SECRET`, `vercel.json` `30 22 * * 1-5`) recomputes
+  and returns a stateless availability/health summary. Full detail + verified series table:
+  `docs/macro_market_source_coverage.md` §11.
+
 ---
 
 ## Entity: Structured Notes (Phase 9A–9E)

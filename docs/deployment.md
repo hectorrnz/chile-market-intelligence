@@ -196,6 +196,25 @@ surfaces a `live-unavailable` status (still serving static data underneath).
 Unmapped indicators always stay on static. Credentials are server-only and never
 logged; the BCCh discovery/validation scripts never run during the Vercel build.
 
+## Phase 8D.3 — Vercel Cron: Weekday Post-Close Calendar-Enrichment Refresh
+
+`vercel.json` schedules `GET /api/cron/refresh-calendar-enrichment` at **22:30 UTC weekdays**
+(`30 22 * * 1-5`) — ~30 min after the US market close across DST — so macro data published during
+the day is picked up. Protected by `Authorization: Bearer <CRON_SECRET>` (same pattern as every
+other cron route; no new env var). Calendar enrichment is **stateless** this phase (no persistence),
+so the run recomputes the FRED-sourced actual/previous enrichment and returns a structured
+availability/health summary (`status: success | partial_success | failure | not_configured`,
+`persisted: false`, per-agency counts) rather than writing rows. It never returns `FRED_API_KEY`
+or any raw payload. Manual trigger:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/refresh-calendar-enrichment
+```
+
+Requires only `FRED_API_KEY` (server-only, already set for the calendar) + `CRON_SECRET`. If the key
+is unset the route returns `status: not_configured` (not an error). See
+`docs/macro_market_source_coverage.md` §11.
+
 ## Phase 5D — Vercel Cron: Scheduled BCCh Macro Ingestion
 
 A daily cron job refreshes BCCh macro observations in Supabase so the persisted

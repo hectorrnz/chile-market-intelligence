@@ -12,6 +12,10 @@
     {
       "path": "/api/cron/structured-notes/snapshot",
       "schedule": "30 21 * * 1-5"
+    },
+    {
+      "path": "/api/cron/refresh-calendar-enrichment",
+      "schedule": "30 22 * * 1-5"
     }
   ]
 }

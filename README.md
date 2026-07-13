@@ -2,7 +2,22 @@
 
 An internal buyside web terminal for Nevada Inversiones, a Chilean family office. Tracks Chilean listed equities, macroeconomic indicators, CMF filings (Hechos Esenciales), and earnings releases.
 
-**Current phase:** Phase 8D.2 complete — a calendar production-integrity fix. A read-only audit of
+**Current phase:** Phase 8D.3 complete — **economic-calendar actual/previous enrichment**. The US
+`/macro/calendar` release rows now show **real `actual` and `previous` values** alongside the release dates:
+release *dates* come from FRED's release calendar, actual/previous *values* from FRED **time-series** (the
+keyless CSV endpoint, transformed via the shared `transforms.ts`) — two distinct, honestly-labeled sources.
+11 curated US releases are mapped to verified FRED series (each tagged with its originating agency —
+BLS/BEA/Census/Fed — for provenance; the value is always fetched from FRED and labeled as such). A new
+`level-diff` transform derives the headline Nonfarm Payrolls month-over-month change from `PAYEMS` (never the
+raw level). **Consensus/forecast/surprise are never shown** — no free official source provides them. ADP
+(stale FRED series) and Existing Home Sales (NAR, non-govt) are excluded, not fabricated. Direct BLS/BEA/
+Census API integration was assessed and deferred (FRED-normalized sourcing, per the never-guess-an-identifier
+rule). A weekday post-close cron (`/api/cron/refresh-calendar-enrichment`, `30 22 * * 1-5`) recomputes the
+enrichment; it is stateless (no persistence this phase). See
+[`docs/macro_market_source_coverage.md`](docs/macro_market_source_coverage.md) §11 for the full mapping +
+decision record.
+
+**Phase 8D.2** (prior) — a calendar production-integrity fix. A read-only audit of
 `/macro/calendar` found a real bug: the page rendered a **synthetic, deterministic-pseudo-random table**
 (`src/lib/data/calendar.ts`) above the real FRED dates-only calendar, including Chile rows that named
 BCCh/INE despite having zero actual BCCh/INE backing — easily mistaken for real data given the identical
@@ -25,7 +40,7 @@ itself) and every prior phase remain live in production, unchanged.
 | **Stocks** | Full IPSA universe table with sort, filter by sector, search, CSV export |
 | **Company Detail** | KPI strip, stock price chart (1D–5Y, daily/weekly series), earnings history with beat/miss vs consensus, valuation grid, Hechos Esenciales, News, document links, print tearsheet |
 | **Macro** | Chile and US indicators grouped by category; clickable popup chart (1Y–10Y); yield curves; FX depth table; economic calendar |
-| **Macro Calendar** | Real FRED dates-only US release calendar (13 curated releases); honest Chile-deferred state (no fabricated rows) |
+| **Macro Calendar** | Real FRED US release calendar with actual/previous values enriched from FRED time-series (11 mapped releases, agency-labeled, no consensus); honest Chile-deferred state (no fabricated rows) |
 | **Earnings** | Upcoming calendar + recent results with revenue surprise column; CSV export |
 | **Hechos Esenciales** | Full CMF filings table with type/materiality filter and search; CSV export |
 | **Compare** | Market Data panel (price, day change, market cap, sector, currency, 1D–1Y performance) wired to persisted/live Supabase market data; Bloomberg COMP-style comparative return chart for up to 6 tickers (static sample); fundamentals comparison table (temporary static); vs-IPSA benchmark; CSV export |
@@ -92,7 +107,7 @@ naming its actual status. **Full page-by-page detail:**
 | FX panel (Home page) | Banco Central de Chile — BCCh-only (Phase 8D.1) | **Live/persisted** — USD/CLP + EUR/CLP, both BCCh-verified |
 | FX rates / Chilean rates (Macro page depth table) | Copper + EUR/CLP live via BCCh; BTP-10/BCU-5/PDBC-90d/TPM-TNA re-confirmed no live series exists | **Mostly temporary static** — see `docs/macro_market_source_coverage.md` |
 | News | — | **Temporary static** — candidate sources named in-app (Phase 8E) |
-| Economic calendar — US (dates-only FRED panel) | FRED Releases API (`FRED_API_KEY`, Phase 8D.1) | **Live** — 13 curated releases, dates only, no consensus/actual/prior |
+| Economic calendar — US | FRED Releases API (dates) + FRED time-series (actual/previous), `FRED_API_KEY`, Phase 8D.3 | **Live** — 11 curated releases with real actual/previous (agency-labeled); no consensus/forecast/surprise |
 | Economic calendar — Chile | — (no free/stable/structured official BCCh/INE release-date source verified) | **Unavailable** — honest deferred state, no fabricated rows (Phase 8D.2) |
 | Watchlist / Portfolio / Transactions / Cash | Supabase, user-scoped | **Persisted** (auth required) |
 
@@ -153,7 +168,7 @@ without them** (they never run during build). Full guide:
 - **Desktop-only layout** — minimum comfortable viewport is ~1280px wide; 1440px recommended (mobile-responsive is a planned future phase)
 - **Portfolio average cost is weighted-average only** — no FIFO/LIFO or specific-lot selection
 - **Portfolio has no FX conversion, dividends, or performance attribution** (time/money-weighted returns) — those remain planned
-- **Some data is still static** — macro (BCCh for Chile, FRED for US) and market (Yahoo Finance) are live with Supabase persistence; company financials are automated from **CMF XBRL**/`cmf_bank` filings for mapped issuers with Yahoo Finance/manual CSV as fallback; CMF *Hechos Esenciales*, news, and most FX/Chilean-rates rows remain static/blocked sample data. The economic calendar is real for the US (FRED dates-only) and honestly deferred/unavailable for Chile — never fabricated sample data
+- **Some data is still static** — macro (BCCh for Chile, FRED for US) and market (Yahoo Finance) are live with Supabase persistence; company financials are automated from **CMF XBRL**/`cmf_bank` filings for mapped issuers with Yahoo Finance/manual CSV as fallback; CMF *Hechos Esenciales*, news, and most FX/Chilean-rates rows remain static/blocked sample data. The US economic calendar is real (FRED release dates + actual/previous from FRED time-series, agency-labeled, no consensus) and honestly deferred/unavailable for Chile — never fabricated sample data
 
 ---
 
@@ -184,6 +199,7 @@ without them** (they never run during build). Full guide:
 | **Phase 8D** | FX/rates + US macro + economic calendar live source completion — copper live via BCCh, 9 US macro series live via FRED (no API key), dual-provider macro orchestrator; economic calendar/EUR-CLP/BTP-10/BCU-5/PDBC-90d/TPM-TNA all re-investigated and documented as deferred | ✓ Complete |
 | **Phase 8D.1** | Macro category bug fix, EUR/CLP wired, Home FX panel cleaned up to BCCh-only, dates-only FRED release calendar (13 curated releases); Nonfarm Payrolls investigated and deferred | ✓ Complete |
 | **Phase 8D.2** | Calendar production-integrity fix — removed the synthetic forecast/actual/prior table (including fabricated Chile/BCCh/INE-named rows) from `/macro/calendar` and the Macro page; real FRED dates-only calendar preserved; honest Chile-deferred state added | ✓ Complete |
+| **Phase 8D.3** | Economic-calendar actual/previous enrichment — US release rows enriched with real actual/previous from verified FRED time-series (11 mapped releases, agency-labeled); `level-diff` transform for headline NFP; no consensus/forecast/surprise; ADP/Existing Home Sales excluded (stale/non-govt); weekday post-close refresh cron | ✓ Complete |
 | **Phase 8E** | Hechos Relevantes + News ingestion workaround | Planned |
 | **Phase 6E** | Portfolio analytics / performance attribution | Planned |
 | **Phase 7A** | Mobile-responsive foundation — intentionally after data-credibility phases (8B–8E) unless a UX emergency arises | Planned |

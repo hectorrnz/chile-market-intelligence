@@ -7,7 +7,12 @@
 // second in one pair of parentheses — so `change` here is a plain number in the
 // same unit as `value` (no bp/pp suffixes).
 
-export type Transform = 'none' | 'yoy' | 'mom' | 'level-to-yoy' | 'bp-to-pct'
+// 'level-diff' — the period-over-period ABSOLUTE change of a level series
+// (curr − prev), in the series' own units. Added Phase 8D.3 to derive the
+// headline Nonfarm Payrolls print ("+150K jobs") from FRED PAYEMS, which is a
+// cumulative employment LEVEL in thousands of persons — never shown raw as the
+// headline. Unlike 'mom' (a percentage change), this is a raw difference.
+export type Transform = 'none' | 'yoy' | 'mom' | 'level-to-yoy' | 'bp-to-pct' | 'level-diff'
 
 export interface SeriesPoint { date: string; value: number | null }
 export interface Derived { value: number; change: number | null; asOf: string }
@@ -50,6 +55,10 @@ function metricAt(arr: { date: string; value: number }[], idx: number, transform
     case 'mom': {
       const prev = idx > 0 ? arr[idx - 1] : null
       return prev ? pct(cur.value, prev.value) : null
+    }
+    case 'level-diff': {
+      const prev = idx > 0 ? arr[idx - 1] : null
+      return prev ? round2(cur.value - prev.value) : null
     }
     case 'yoy':
     case 'level-to-yoy': {

@@ -374,3 +374,82 @@ Scope limits (explicit, unchanged from the fix's brief): no new economic-calenda
 Frankfurter, Investing.com/ForexPros, or paid vendor sources; no Chile HTML scraping; no NFP PAYEMS
 diff-transform; no visual redesign beyond the minimal content swap needed to remove fabricated data; no
 financials/Structured Notes/auth/watchlist/portfolio changes.
+
+## 11. Calendar actual/previous enrichment from primary official data (Phase 8D.3)
+
+Builds on §9/§10: the FRED **release calendar** still supplies the release *dates* (§9), but each curated US
+release is now enriched with **real `actual` and `previous` values** — replacing the "dates only" limitation
+noted in §9. Consensus/forecast/surprise remain **unavailable by design** (no free official source provides
+them; this is not a vendor-style calendar).
+
+**Release-date source vs actual-value source — two distinct, honestly-labeled sources:**
+- **Release dates:** FRED Releases API (`/fred/release/dates`, `fredReleaseCalendarClient.ts`) — unchanged.
+- **Actual/previous values:** FRED **time-series** (the keyless public CSV endpoint `fredClient.ts` already
+  uses for US macro), transformed via the shared `transforms.ts` logic. Each metric records its
+  `originatingAgency` (BLS / BEA / Census / Federal Reserve) for provenance; the value we actually **fetch**
+  is always FRED, and the UI labels it as such. We never claim to have called BLS/BEA/Census directly.
+
+**Why FRED-normalized and not direct BLS/BEA/Census APIs — deferred, not skipped.** Direct integration of
+the BLS, BEA, and Census APIs was assessed. FRED redistributes those agencies' primary series verbatim, and
+every FRED series id used here was **verified live** (Phase 8D.3 — real Jun/2026 data returned) before being
+added to `src/config/calendarEnrichmentMap.ts` — matching the project's standing never-guess-an-identifier
+rule. Standing up three new keyed agency clients with unverified series/table/line-code mappings in one phase
+would have been more error-prone and out of proportion to the value, so it is **deferred** and documented
+here. The prompt explicitly authorized "FRED as normalized fallback where primary-source integration is not
+practical in this phase" — that is the path taken.
+
+**Release-to-source mapping** (`src/config/calendarEnrichmentMap.ts`, all series verified live):
+
+| FRED release (id) | Metric(s) | FRED series | Transform | Originating agency |
+|---|---|---|---|---|
+| Consumer Price Index (10) | CPI y/y, CPI m/m | `CPIAUCSL` | `yoy`, `mom` | BLS |
+| Producer Price Index (46) | PPI y/y, PPI m/m | `PPIFIS` | `yoy`, `mom` | BLS |
+| Personal Income & Outlays (54) | PCE y/y, Core PCE y/y | `PCEPI`, `PCEPILFE` | `yoy` | BEA |
+| Employment Situation (50) | Nonfarm Payrolls (m/m chg), Unemployment Rate | `PAYEMS`, `UNRATE` | `level-diff`, `none` | BLS |
+| JOLTS (192) | Job Openings | `JTSJOL` | `none` | BLS |
+| GDP (53) | Real GDP q/q (SAAR) | `A191RL1Q225SBEA` | `none` | BEA |
+| Retail Sales (9) | Retail Sales m/m | `RSAFS` | `mom` | Census |
+| Industrial Production (13) | Industrial Production m/m | `INDPRO` | `mom` | Federal Reserve |
+| Housing Starts (27) | Housing Starts (SAAR) | `HOUST` | `none` | Census |
+| New Residential Sales (97) | New Home Sales (SAAR) | `HSN1F` | `none` | Census |
+| Int'l Trade in Goods & Services (51) | Trade Balance | `BOPGSTB` | `none` | BEA |
+
+**Excluded, not fabricated:** ADP (release 194) — its FRED series `NPPTTL` is **stale** (latest obs 2022,
+discontinued on FRED); Existing Home Sales (291) — NAR data, not a government agency. Both stay dates-only
+(actual/previous rendered as unavailable) rather than shown with a stale or mislabeled number.
+
+**Nonfarm Payrolls — headline monthly change, not the raw level.** `PAYEMS` is a cumulative employment
+*level* (thousands of persons). A new `level-diff` transform (`transforms.ts`) derives the headline print
+(`level[t] − level[t-1]`, e.g. +57K for Jun-2026) — the raw level is never shown as the headline. This is the
+`diff` transform §5/§6/§10 repeatedly deferred; it is now implemented, bounded to this one use.
+
+**Actual/previous semantics** (`src/lib/providers/calendarEnrichment.ts`): a **past** release shows the
+latest published print as `actual` + the prior print as `previous` (`published`); a **scheduled** release
+shows `actual = pending` (not yet published) + the last published print as `previous` (`pending`); a
+failed/insufficient series is `unavailable` (never zero-filled). Enrichment is **best-effort** — any fetch
+failure degrades that metric to `unavailable` and the dates-only calendar always still renders.
+
+**Persistence:** none. Enrichment is computed live per request from FRED (deduped/parallel series fetches;
+most enrichment series are not in `macro_indicators`, so deriving from persisted observations was not
+possible without adding indicators — out of scope). A **weekday post-close refresh cron**
+(`/api/cron/refresh-calendar-enrichment`, Bearer `CRON_SECRET`, `vercel.json` `30 22 * * 1-5`) recomputes the
+enrichment ~30 min after the US close and returns a structured availability/health summary — stateless
+(`persisted: false`), a post-close validity check rather than a data-write. `FRED_API_KEY` stays server-only.
+
+**Tests:** `tests/calendarEnrichment.test.ts` (22 new — `level-diff` math, map shape/exclusions, buildEnriched
+published/pending/unavailable, multi-metric releases, provider-error isolation via injected fetcher, cron
+auth/no-key-leak, no forecast/surprise fields, vercel schedule) + `tests/calendarProductionIntegrity.test.ts`
+updated for the new (real) actual/previous columns. Full suite 1298 → 1320/1320, lint 0, build 0 errors.
+
+**Local validation (dev server, real FRED):** `/api/macro/fred-release-calendar?days=45` → `enriched: true`,
+`consensusAvailable: false`, 22 enriched events; Trade Balance (past) `actual -77585 / previous -54570`
+(published, BEA); CPI (upcoming) `actual pending / previous 4.17% y/y` (BLS); NFP `previous +57K` (level-diff,
+never the raw 158,984 level); consensus null and no forecast/surprise field on any metric. Cron: 401 without
+bearer, authorized run `status: success` (37 metrics, 0 unavailable). `supabase:check-macro` unchanged
+(22/22 healthy).
+
+Scope limits (explicit): actual/previous enrichment for curated US releases only; FRED-normalized sourcing
+(direct BLS/BEA/Census API clients deferred, documented above); no consensus/forecast/surprise; no Finnhub/
+Frankfurter/Investing.com/ForexPros/paid vendor; no Chile HTML scraping (Chile calendar stays deferred, §10);
+no persistence/migration; no financials/Structured Notes/auth/watchlist/portfolio changes; no visual
+redesign beyond adding the metric/actual/previous/source columns.

@@ -59,8 +59,11 @@ describe('/macro/calendar — no fabricated data in production', () => {
     assert.doesNotMatch(src, /from ['"]@\/lib\/data\/calendar['"]/)
     assert.doesNotMatch(src, /getCalendarForWeek|searchUpcoming|weekStartOf|getEventsForDay/)
   })
-  it('renders no forecast/actual/prior columns (the fabricated-value columns)', () => {
-    assert.doesNotMatch(src, /t\.cal\.forecast|t\.cal\.actual\b|t\.cal\.prior\b/)
+  it('renders no fabricated forecast/consensus columns (Phase 8D.3 adds REAL actual/previous, never forecast/consensus)', () => {
+    // The removed synthetic table used t.cal.forecast/actual/prior. Phase 8D.3's
+    // enrichment uses distinct keys (actualCol/previousCol) fed by real FRED
+    // time-series — but consensus/forecast must never appear.
+    assert.doesNotMatch(src, /t\.cal\.forecast\b|t\.cal\.consensus\b/)
   })
   it('renders no week-navigation or free-text search controls (only relevant to the removed synthetic table)', () => {
     assert.doesNotMatch(src, /t\.cal\.search\b|weekLabel|addDays/)
@@ -73,9 +76,9 @@ describe('/macro/calendar — real FRED dates-only calendar preserved', () => {
   it('still fetches the FRED release calendar', () => {
     assert.match(src, /fetchFredReleaseCalendar/)
   })
-  it('shows dates-only / no-consensus labeling', () => {
-    assert.match(src, /t\.common\.datesOnly/)
-    assert.match(src, /t\.cal\.fredSubtitle/)
+  it('shows no-consensus labeling (Phase 8D.3 enriched note names FRED + originating agencies, disclaims consensus)', () => {
+    assert.match(src, /t\.cal\.noConsensus/)
+    assert.match(src, /t\.cal\.enrichedNote/)
   })
   it('never fabricates actual/consensus/prior for the FRED section (the type itself forbids it)', () => {
     const providerSrc = readFileSync(join(ROOT, 'src/lib/providers/fredReleaseCalendar.ts'), 'utf8')
@@ -149,14 +152,15 @@ describe('FRED_API_KEY — remains server-only (unchanged by this fix)', () => {
     const src = readFileSync(FRED_CALENDAR_ROUTE, 'utf8')
     assert.doesNotMatch(src, /process\.env\./)
   })
-  it("the route's JSON response only ever includes the sanitized fields (ok/configured/datesOnly/events/reason) — no key or raw-payload field", () => {
+  it("the route's JSON response only ever includes sanitized fields — no key or raw-payload field", () => {
     const src = readFileSync(FRED_CALENDAR_ROUTE, 'utf8')
     const jsonBlocks = [...src.matchAll(/NextResponse\.json\(\s*\{([\s\S]*?)\}\s*[,)]/g)].map((m) => m[1])
     assert.ok(jsonBlocks.length > 0, 'expected at least one NextResponse.json({...}) call')
+    const allowed = ['ok', 'configured', 'datesOnly', 'enriched', 'consensusAvailable', 'events', 'reason']
     for (const block of jsonBlocks) {
       const fieldNames = [...block.matchAll(/^\s*(?:\.\.\.\()?(\w+)\s*:/gm)].map((m) => m[1])
       for (const f of fieldNames) {
-        assert.ok(['ok', 'configured', 'datesOnly', 'events', 'reason'].includes(f), `unexpected response field "${f}" — verify it isn't leaking the key or a raw payload`)
+        assert.ok(allowed.includes(f), `unexpected response field "${f}" — verify it isn't leaking the key or a raw payload`)
       }
     }
   })
