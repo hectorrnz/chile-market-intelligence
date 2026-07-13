@@ -1,6 +1,21 @@
-// Schedule-driven economic calendar. Events are generated deterministically
-// from recurring release rules, so any week (past or future) always has data.
-// Static MVP sample — values are synthetic; replace with BCCh/BLS/Fed feeds in Phase 4.
+// TEST/DEMO-ONLY — NOT IMPORTED BY ANY PRODUCTION ROUTE OR PAGE.
+//
+// Schedule-driven synthetic calendar generator. Events are produced
+// deterministically from recurring release rules (deterministic
+// pseudo-random forecast/actual/prior values via mulberry32(hash(...))) so
+// any week (past or future) always has data — useful for exercising
+// calendar-shaped UI in tests, never for showing real economic data.
+//
+// Removed from production in the calendar-integrity fix: it fabricated
+// numbers with no BCCh/FRED/INE backing (including on Chile rows that
+// referenced those institutions by name) and was easily mistaken for real
+// data on /macro/calendar and the Macro page. The real, non-fabricated
+// release-date calendar is the FRED dates-only calendar
+// (src/lib/providers/fredReleaseCalendar.ts), rendered on /macro/calendar.
+//
+// Do not import this module from src/app/**. tests/calendarSchedule.test.ts
+// covers its own regression (no weekend-scheduled events) — that coverage is
+// retained even though the module is no longer production-relevant.
 
 export interface CalEvent {
   id: string

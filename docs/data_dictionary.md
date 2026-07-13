@@ -687,8 +687,6 @@ place, still used by the separate Macro-page "FX depth" table.
 
 ### Dates-only FRED release calendar
 
-New, additive to `/macro/calendar` — does not modify the existing synthetic `src/lib/data/calendar.ts`.
-
 - `src/config/fredReleaseAllowlist.ts` — 13 curated FRED `release_id`s, each with a verified `fredReleaseName`
   (provenance), a category (`Inflation | Labor | Monetary Policy | GDP/Growth | Retail/Consumer | Housing |
   Trade | Industrial Production`), and a heuristic `importance`.
@@ -701,6 +699,18 @@ New, additive to `/macro/calendar` — does not modify the existing synthetic `s
 - `GET /api/macro/fred-release-calendar?days=60` — public, sanitized; returns `configured: false` (not an
   error) when `FRED_API_KEY` is unset.
 - `src/lib/data/fredCalendar.ts` — client-safe fetch helper (type-only import from the provider layer).
+
+### Calendar production-integrity fix — synthetic calendar removed from production
+
+The schedule-driven synthetic calendar (`src/lib/data/calendar.ts` — deterministic pseudo-random
+forecast/actual/prior values, including Chile rows referencing BCCh/INE by name despite no actual backing)
+was removed from every production route/page (`/macro/calendar`'s top table and `/macro`'s "today's
+releases" widget). `/macro/calendar` now renders only the real FRED dates-only calendar above plus an honest
+Chile release-calendar **deferred** block (`t.cal.chileTitle`/`chileDeferred`/`chileUnavailable` — no
+fabricated rows). `src/lib/data/calendar.ts` is retained (its pure date-scheduling logic still has real
+regression coverage in `tests/calendarSchedule.test.ts`) but its file header now reads "TEST/DEMO-ONLY — NOT
+IMPORTED BY ANY PRODUCTION ROUTE OR PAGE," enforced by `tests/calendarProductionIntegrity.test.ts`, which
+walks every file under `src/app/**` and fails if any of them import it.
 
 No persistence, no migration, no new cron — every request live-queries FRED directly.
 

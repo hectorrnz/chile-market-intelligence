@@ -185,10 +185,13 @@ found during this phase's discovery pass:
 - Paid calendar vendors (Trading Economics, Econoday, etc.) require a commercial API key — explicitly
   out of scope ("no paid/vendor APIs").
 
-**Decision: defer, unchanged.** Per the phase's calendar rule — "if no stable source exists, document
-deferred status" — this is recorded here rather than building a fragile scraper or a partially-fabricated
-calendar. The existing synthetic calendar continues to serve its stated purpose (a realistic release
-schedule for UI/testing) and is not represented anywhere as a live external feed.
+**Decision (as of Phase 8D): defer, unchanged.** Per the phase's calendar rule — "if no stable source exists,
+document deferred status" — this is recorded here rather than building a fragile scraper or a
+partially-fabricated calendar.
+> **Superseded by §10.** A later read-only audit found the synthetic calendar's fabricated values were being
+> mistaken for real data in production despite the "not represented as a live external feed" intent above —
+> it was subsequently removed from every production route/page (see §10, "Calendar production-integrity
+> fix"). The module itself is retained, explicitly marked test/demo-only in its own file header.
 
 ## 6. Nonfarm Payrolls — verified live, deliberately deferred (Phase 8D.1)
 
@@ -291,10 +294,10 @@ each event `datesOnly: true` with `actual`/`consensus`/`prior` always `null`) �
 /api/macro/fred-release-calendar` (public, sanitized — never echoes the key or a raw FRED payload; reports
 `configured: false` with an empty list, not an error, when `FRED_API_KEY` is unset) →
 `src/lib/data/fredCalendar.ts` (client-safe fetch helper, type-only import from the provider layer) → a new
-panel on `/macro/calendar`, additive below the existing synthetic schedule-driven table, explicitly labeled
-"Dates only — no consensus" with a subtitle clarifying that actual reported values come from the macro
-time-series indicators, sourced separately. The existing synthetic calendar (`src/lib/data/calendar.ts`) is
-completely unchanged.
+panel on `/macro/calendar`, explicitly labeled "Dates only — no consensus" with a subtitle clarifying that
+actual reported values come from the macro time-series indicators, sourced separately. At the time this
+section was written, this panel sat additively below the existing synthetic schedule-driven table — see §10
+below for the production-integrity fix that subsequently removed that synthetic table from production.
 
 **No persistence, no migration, no new cron.** Every request live-queries FRED's Releases API directly
 (13 parallel requests, ~60-day window); given the modest request volume and no rate-limit issues observed,
@@ -320,3 +323,54 @@ GDP 2026-07-30, Employment Situation 2026-08-07) — no noise, no fabricated val
   support an arbitrary `source_provider` string and per-row `metadata` jsonb — FRED rows are written through
   the exact same `upsertMacroObservations()` repository function BCCh rows use, with `source_provider: 'FRED
   (St. Louis Fed)'` and `metadata.provider: 'fred'` distinguishing them.
+
+## 10. Calendar production-integrity fix — synthetic table removed from production
+
+A read-only audit of `/macro/calendar` (post-Phase 8D.1) found that the page rendered **two** sections: the
+real FRED dates-only calendar (§9, unchanged) and a schedule-driven **synthetic table** above it
+(`src/lib/data/calendar.ts`) showing deterministic pseudo-random forecast/actual/prior values via
+`mulberry32(hash(key+date))` — including Chile rows whose event names referenced BCCh/INE by name despite
+having zero actual BCCh/INE backing. The same synthetic module also powered a "today's releases" preview
+widget on the Macro page (`/macro`). Both were fully production-reachable and could be mistaken for real
+economic data, since they rendered with the same table styling as genuinely live indicator values and only a
+generic disclaimer (`common.mvpNote`) — no dedicated synthetic-data label.
+
+**Fix — removed from production, not merely relabeled:**
+- `/macro/calendar` no longer imports `src/lib/data/calendar.ts` at all. The removed synthetic table (week
+  navigation, free-text search, forecast/actual/prior columns, Chile + US rows) is gone; the page now shows
+  only the real FRED dates-only calendar (§9, unchanged) plus a new honest **Chile release calendar: deferred**
+  block (no fabricated rows — states plainly that no free/stable/structured official Chile release-date
+  source has been verified, and that BCCh/INE macro *values* remain available via the macro indicators
+  elsewhere in the app, separately from release *dates*).
+- `/macro` (the Macro page) no longer imports `src/lib/data/calendar.ts` either. Its "today's releases"
+  synthetic preview widget was replaced with a plain link out to `/macro/calendar` — same visual container,
+  no fabricated table.
+- `src/lib/data/calendar.ts` itself is **retained**, not deleted, since `tests/calendarSchedule.test.ts`
+  (added when a real user-reported weekend-scheduling bug was fixed in the module) still exercises its pure
+  date-scheduling logic as a regression guard. The file's header comment now explicitly reads
+  "TEST/DEMO-ONLY — NOT IMPORTED BY ANY PRODUCTION ROUTE OR PAGE," and a new test
+  (`tests/calendarProductionIntegrity.test.ts`) walks every file under `src/app/**` and asserts none of them
+  import it — so it cannot silently be wired back into a production surface without a test failure.
+
+**No new provider added; no scraping added.** Per this fix's explicit scope: no Finnhub, no Frankfurter, no
+Investing.com/ForexPros crawling, no paid vendor calendar, no Chile HTML scraping, no PAYEMS diff-transform
+work — all remain out of scope, matching §5's and §6's standing deferrals.
+
+**Tests:** `tests/calendarProductionIntegrity.test.ts` (20 new) — no production file imports the synthetic
+module; the module is explicitly marked test/demo-only; `/macro/calendar` renders no forecast/actual/prior
+columns and no week-nav/search controls; the FRED section's dates-only/no-consensus labeling is unchanged;
+the FRED provider's `actual`/`consensus`/`prior` fields are structurally `null`; the new Chile deferred copy
+exists in both EN/ES and asserts "no verified official source"; the now-dead synthetic-table-only i18n keys
+(`search`/`today`/`next`/`results`/`noResults`/`noToday`/`time`/`country`/`event`/`forecast`/`actual`/`prior`)
+are confirmed removed; the Macro page's widget removal is confirmed; `FRED_API_KEY` handling (server-only,
+never `NEXT_PUBLIC_`, never echoed in the route's JSON response) is unchanged and re-verified. Full suite
+1278 → 1298/1298, lint 0, build 0 errors.
+
+**Local validation:** `npm run supabase:check` / `supabase:check-macro` unchanged from baseline (22/22 macro
+indicators healthy, `eurclp`/`cobre-lme` persisted correctly) — this fix touches only the calendar UI/i18n
+layer, no macro ingestion or category logic.
+
+Scope limits (explicit, unchanged from the fix's brief): no new economic-calendar provider; no Finnhub,
+Frankfurter, Investing.com/ForexPros, or paid vendor sources; no Chile HTML scraping; no NFP PAYEMS
+diff-transform; no visual redesign beyond the minimal content swap needed to remove fabricated data; no
+financials/Structured Notes/auth/watchlist/portfolio changes.

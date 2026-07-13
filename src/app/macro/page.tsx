@@ -14,7 +14,6 @@ import { getYieldCurve } from '@/lib/data/yieldCurves'
 import { getMacroHistoryForTimeframe, fetchMacroHistory } from '@/lib/data/macroHistory'
 import { DataSourceBadge } from '@/components/ui/DataSourceBadge'
 import type { DataSourceStatus } from '@/lib/providers/types'
-import { getEventsForDay, getCalendarForWeek, weekStartOf, todayUTC, dateStr, dayLabel } from '@/lib/data/calendar'
 import { changeColor, formatMacroValue, formatMacroChange, formatFx, formatPct } from '@/lib/formatters'
 import { LineChart } from '@/components/charts/LineChart'
 import { YieldCurveChart } from '@/components/charts/YieldCurveChart'
@@ -129,12 +128,6 @@ export default function MacroPage() {
     setFxSort(prev => (prev?.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: key === 'pair' ? 'asc' : 'desc' }))
   const fxArrow = (key: string) => (fxSort?.key === key ? (fxSort.dir === 'asc' ? ' ↑' : ' ↓') : '')
 
-  const today = todayUTC()
-  const todayStr = dateStr(today)
-  const todays = getEventsForDay(today, e => e.country === region)
-  const weekAhead = getCalendarForWeek(weekStartOf(today), e => e.country === region).filter(e => e.date >= todayStr)
-  const calRows = todays.length ? todays : weekAhead.slice(0, 5)
-
   const openRow = (r: Row) => { if (r.histId) { setSelected(r); setTimeframe(5) } }
   const historyData = selected?.histId
     ? getMacroHistoryForTimeframe(selected.histId, timeframe).map(p => ({ date: p.date, value: p.value }))
@@ -155,41 +148,15 @@ export default function MacroPage() {
         }
       />
 
-      {/* Economic calendar — today's releases (top of page) */}
+      {/* Economic calendar pointer — the fabricated "today's releases" preview
+          (synthetic forecast/actual/prior values, no BCCh/FRED/INE backing) was
+          removed from production per the calendar-integrity fix. The real
+          dates-only FRED release calendar lives on /macro/calendar. */}
       <div className="bg-surface border border-border rounded overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
+        <div className="px-4 py-2.5 flex items-center justify-between">
           <span className="ui-label text-muted-fg">{t.macro.calToday}</span>
           <Link href="/macro/calendar" className="text-xs text-primary hover:underline">{t.macro.viewFull}</Link>
         </div>
-        {calRows.length === 0 ? (
-          <div className="px-4 py-4 text-xs text-muted-fg">{t.cal.noToday}</div>
-        ) : (
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border bg-surface-2">
-                <th className="text-left py-2 pl-4 pr-3 ui-table-header text-muted-fg">{t.cal.time}</th>
-                <th className="text-left py-2 px-3 ui-table-header text-muted-fg">{t.cal.event}</th>
-                <th className="text-right py-2 px-3 ui-table-header text-muted-fg">{t.cal.forecast}</th>
-                <th className="text-right py-2 px-3 ui-table-header text-muted-fg">{t.cal.actual}</th>
-                <th className="text-right py-2 px-3 pr-4 ui-table-header text-muted-fg">{t.cal.prior}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {calRows.map(e => {
-                const high = e.importance === 'High'
-                return (
-                  <tr key={e.id} className="border-b border-border last:border-0" style={high ? { borderLeft: '3px solid var(--negative)', backgroundColor: 'color-mix(in oklab, var(--negative) 5%, var(--surface))' } : { borderLeft: '3px solid transparent' }}>
-                    <td className="py-2 pl-4 pr-3 ui-number text-muted-fg whitespace-nowrap">{todays.length ? e.time : dayLabel(e.date)}</td>
-                    <td className={`py-2 px-3 ${high ? 'font-semibold text-foreground' : 'text-foreground'}`}>{e.name}</td>
-                    <td className="py-2 px-3 text-right ui-number text-muted-fg">{e.forecast != null ? `${e.forecast}${e.unit}` : '—'}</td>
-                    <td className={`py-2 px-3 text-right ui-number ${e.actual != null ? 'text-foreground' : 'text-muted-fg'}`}>{e.actual != null ? `${e.actual}${e.unit}` : '—'}</td>
-                    <td className="py-2 px-3 pr-4 text-right ui-number text-muted-fg">{e.prior != null ? `${e.prior}${e.unit}` : '—'}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        )}
       </div>
 
       {/* One indicators table with highlighted category bands */}

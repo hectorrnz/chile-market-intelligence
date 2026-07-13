@@ -1537,3 +1537,59 @@ financials/Structured Notes/auth/watchlist/portfolio/UI redesign untouched; no n
 
 Next: bring the Macro page's FX depth table to the same BCCh-only standard; add a `diff` transform + UI slot
 for Nonfarm Payrolls if desired; consider persistence for the FRED calendar if usage justifies it.
+
+---
+
+## Phase 8D.2 — Calendar Production Integrity Fix ✓ COMPLETE (2026-07-13)
+
+A read-only audit of `/macro/calendar` requested by the user found a real bug: the page rendered a
+schedule-driven **synthetic table** (`src/lib/data/calendar.ts` — deterministic pseudo-random forecast/
+actual/prior values via `mulberry32(hash(key+date))`) above the real FRED dates-only calendar built in Phase
+8D.1. The synthetic table included Chile rows whose event names referenced BCCh/INE by name ("TPM Rate
+Decision (BCCh)", "Unemployment Rate (INE)") despite having zero actual BCCh/INE backing, and rendered with
+identical table styling to genuinely live data — easily mistaken for real economic figures. The same
+synthetic module also powered a "today's releases" preview widget on the Macro page (`/macro`).
+
+**Fix — removed from production, not merely relabeled:**
+- `/macro/calendar` no longer imports `src/lib/data/calendar.ts`. The removed synthetic table (week
+  navigation, free-text search, forecast/actual/prior columns, Chile + US rows) is gone; the page now shows
+  only the real FRED dates-only calendar (unchanged) plus a new honest **Chile release calendar: deferred**
+  block — states plainly that no free/stable/structured official Chile release-date source has been
+  verified, and that BCCh/INE macro *values* remain available via the app's macro indicators elsewhere,
+  separately from release *dates*.
+- `/macro` no longer imports `src/lib/data/calendar.ts` either — its "today's releases" synthetic preview
+  widget was replaced with a plain link out to `/macro/calendar`, same visual container, no fabricated table.
+- `src/lib/data/calendar.ts` itself is **retained, not deleted** — `tests/calendarSchedule.test.ts` (added in
+  a prior session after a real user-reported weekend-scheduling bug in this same module) still exercises its
+  pure date-scheduling logic as a regression guard. Its file header now explicitly reads "TEST/DEMO-ONLY —
+  NOT IMPORTED BY ANY PRODUCTION ROUTE OR PAGE."
+- Removed the now-dead synthetic-table-only i18n keys (`search`/`today`/`next`/`results`/`noResults`/
+  `noToday`/`time`/`country`/`event`/`forecast`/`actual`/`prior` in the `cal` block) and added
+  `chileTitle`/`chileDeferred`/`chileUnavailable` (EN + ES).
+
+**No new provider, no scraping.** Per the fix's explicit scope: no Finnhub, no Frankfurter, no
+Investing.com/ForexPros crawling, no paid vendor calendar, no Chile HTML scraping, no PAYEMS diff-transform
+work — all remain out of scope, unchanged from Phase 8D/8D.1's own deferrals.
+
+**Tests:** `tests/calendarProductionIntegrity.test.ts` (20 new) — no file under `src/app/**` imports the
+synthetic module; the module is explicitly marked test/demo-only; `/macro/calendar` renders no forecast/
+actual/prior columns and no week-nav/search controls; FRED's dates-only/no-consensus labeling is unchanged;
+the FRED provider's `actual`/`consensus`/`prior` fields are structurally `null`; the new Chile deferred copy
+exists in EN/ES and asserts "no verified official source"; the dead i18n keys are confirmed removed; the
+Macro page widget removal is confirmed; `FRED_API_KEY` handling (server-only, never `NEXT_PUBLIC_`, never
+echoed in the route's JSON response) is unchanged and re-verified. Full suite 1278 → 1298/1298, lint 0,
+build 0 errors.
+
+**Local validation:** `npm run supabase:check` / `supabase:check-macro` unchanged from baseline (22/22 macro
+indicators healthy, `eurclp`/`cobre-lme` persisted correctly) — this fix touches only the calendar UI/i18n
+layer, no macro ingestion or category logic. See `docs/macro_market_source_coverage.md` §10 for the full
+discovery/removal rationale.
+
+Scope limits (explicit): no new economic-calendar provider; no Finnhub, Frankfurter, Investing.com/
+ForexPros, or paid vendor sources; no Chile HTML scraping; no NFP PAYEMS diff-transform; no visual redesign
+beyond the minimal content swap needed to remove fabricated data; no financials/Structured Notes/auth/
+watchlist/portfolio changes; no new cron schedule.
+
+Next: periodically re-check for a real official Chile release-date source; add a `diff` transform + UI slot
+for Nonfarm Payrolls if desired; consider persistence for the FRED calendar if usage justifies it — or
+return to Structured Notes (Santander/older-2024-Citi parser templates) or CMF/XBRL issuer work.

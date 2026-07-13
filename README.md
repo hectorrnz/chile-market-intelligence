@@ -2,7 +2,18 @@
 
 An internal buyside web terminal for Nevada Inversiones, a Chilean family office. Tracks Chilean listed equities, macroeconomic indicators, CMF filings (Hechos Esenciales), and earnings releases.
 
-**Current phase:** Phase 8D.1 complete — a follow-up cleanup pass on Phase 8D's macro/FX work. **A real bug was fixed**: live BCCh/FRED indicators previously all reported category "Rates"/"US Rates" regardless of their true category (copper, CPI, UF, unemployment all misfiled) — `macroSeries.ts` now carries a proper per-indicator category, verified against the static data and regression-tested. **EUR/CLP is now live via BCCh** (`F072.CLP.EUR.N.O.D`, daily) — verified in Phase 8D but left unwired pending a UI slot; now wired. **The Home page's FX panel is now BCCh-only**: it renders directly from the live macro FX category (2 rows: USD/CLP, EUR/CLP) instead of a static file with fabricated "Bloomberg"/"CoinMarketCap" source labels — the old sectioned layout, the "# of currency per USD" helper text, and the "Static MVP sample" footer are gone. **A dates-only US economic release calendar** is now live on `/macro/calendar` via FRED's official Releases API (13 curated releases: CPI, PPI, PCE, Employment Situation, JOLTS, ADP, GDP, Retail Sales, Industrial Production, Housing Starts/Sales, Existing Home Sales, International Trade) — a real data-quality issue (2 candidate releases returning near-daily noise instead of discrete dates) was found and excluded rather than shipped. Nonfarm Payrolls was investigated and deliberately deferred (a cumulative employment level, not the month-over-month change the headline print means — needs a new transform type). See [`docs/macro_market_source_coverage.md`](docs/macro_market_source_coverage.md) for full details. Phase 8D (copper + 9 US macro series live via FRED, dual-provider architecture) and every prior phase remain live in production, unchanged.
+**Current phase:** Phase 8D.2 complete — a calendar production-integrity fix. A read-only audit of
+`/macro/calendar` found a real bug: the page rendered a **synthetic, deterministic-pseudo-random table**
+(`src/lib/data/calendar.ts`) above the real FRED dates-only calendar, including Chile rows that named
+BCCh/INE despite having zero actual BCCh/INE backing — easily mistaken for real data given the identical
+table styling. **Removed from production**: `/macro/calendar` now shows only the real FRED dates-only
+calendar plus a new honest "Chile release calendar: deferred" state (no fabricated rows); the Macro page's
+"today's releases" preview widget (same synthetic source) was replaced with a plain link to the full
+calendar. The synthetic module is retained for its own test coverage but explicitly marked
+test/demo-only and verified (via a new regression test) to be unreachable from any production route or
+page. See [`docs/macro_market_source_coverage.md`](docs/macro_market_source_coverage.md) §10 for full
+details. Phase 8D.1 (macro category fix, EUR/CLP live via BCCh, BCCh-only FX panel, the FRED calendar
+itself) and every prior phase remain live in production, unchanged.
 
 ---
 
@@ -14,7 +25,7 @@ An internal buyside web terminal for Nevada Inversiones, a Chilean family office
 | **Stocks** | Full IPSA universe table with sort, filter by sector, search, CSV export |
 | **Company Detail** | KPI strip, stock price chart (1D–5Y, daily/weekly series), earnings history with beat/miss vs consensus, valuation grid, Hechos Esenciales, News, document links, print tearsheet |
 | **Macro** | Chile and US indicators grouped by category; clickable popup chart (1Y–10Y); yield curves; FX depth table; economic calendar |
-| **Macro Calendar** | Week-by-week release calendar with search and high-impact highlighting |
+| **Macro Calendar** | Real FRED dates-only US release calendar (13 curated releases); honest Chile-deferred state (no fabricated rows) |
 | **Earnings** | Upcoming calendar + recent results with revenue surprise column; CSV export |
 | **Hechos Esenciales** | Full CMF filings table with type/materiality filter and search; CSV export |
 | **Compare** | Market Data panel (price, day change, market cap, sector, currency, 1D–1Y performance) wired to persisted/live Supabase market data; Bloomberg COMP-style comparative return chart for up to 6 tickers (static sample); fundamentals comparison table (temporary static); vs-IPSA benchmark; CSV export |
@@ -81,8 +92,8 @@ naming its actual status. **Full page-by-page detail:**
 | FX panel (Home page) | Banco Central de Chile — BCCh-only (Phase 8D.1) | **Live/persisted** — USD/CLP + EUR/CLP, both BCCh-verified |
 | FX rates / Chilean rates (Macro page depth table) | Copper + EUR/CLP live via BCCh; BTP-10/BCU-5/PDBC-90d/TPM-TNA re-confirmed no live series exists | **Mostly temporary static** — see `docs/macro_market_source_coverage.md` |
 | News | — | **Temporary static** — candidate sources named in-app (Phase 8E) |
-| Economic calendar (synthetic table) | — (re-investigated Phase 8D — no stable free structured source found, deferred) | **Temporary static** (schedule-driven, synthetic values) |
-| Economic calendar (dates-only FRED panel) | FRED Releases API (`FRED_API_KEY`, Phase 8D.1) | **Live** — 13 curated releases, dates only, no consensus/actual/prior |
+| Economic calendar — US (dates-only FRED panel) | FRED Releases API (`FRED_API_KEY`, Phase 8D.1) | **Live** — 13 curated releases, dates only, no consensus/actual/prior |
+| Economic calendar — Chile | — (no free/stable/structured official BCCh/INE release-date source verified) | **Unavailable** — honest deferred state, no fabricated rows (Phase 8D.2) |
 | Watchlist / Portfolio / Transactions / Cash | Supabase, user-scoped | **Persisted** (auth required) |
 
 ### Live macro architecture (Phase 4A; dual-provider since Phase 8D)
@@ -142,7 +153,7 @@ without them** (they never run during build). Full guide:
 - **Desktop-only layout** — minimum comfortable viewport is ~1280px wide; 1440px recommended (mobile-responsive is a planned future phase)
 - **Portfolio average cost is weighted-average only** — no FIFO/LIFO or specific-lot selection
 - **Portfolio has no FX conversion, dividends, or performance attribution** (time/money-weighted returns) — those remain planned
-- **Some data is still static** — macro (BCCh for Chile, FRED for US) and market (Yahoo Finance) are live with Supabase persistence; company financials are automated from **CMF XBRL**/`cmf_bank` filings for mapped issuers with Yahoo Finance/manual CSV as fallback; CMF *Hechos Esenciales*, news, most FX/Chilean-rates rows, and the economic calendar remain static/blocked sample data
+- **Some data is still static** — macro (BCCh for Chile, FRED for US) and market (Yahoo Finance) are live with Supabase persistence; company financials are automated from **CMF XBRL**/`cmf_bank` filings for mapped issuers with Yahoo Finance/manual CSV as fallback; CMF *Hechos Esenciales*, news, and most FX/Chilean-rates rows remain static/blocked sample data. The economic calendar is real for the US (FRED dates-only) and honestly deferred/unavailable for Chile — never fabricated sample data
 
 ---
 
@@ -172,6 +183,7 @@ without them** (they never run during build). Full guide:
 | **Phase 9E** | Structured Notes — free market-data provider abstraction + fallback/sanity-check orchestrator + quote-quality rules (staleness, large-move, cross-provider disagreement); Yahoo remains the sole active provider after a documented free-provider discovery pass | ✓ Complete |
 | **Phase 8D** | FX/rates + US macro + economic calendar live source completion — copper live via BCCh, 9 US macro series live via FRED (no API key), dual-provider macro orchestrator; economic calendar/EUR-CLP/BTP-10/BCU-5/PDBC-90d/TPM-TNA all re-investigated and documented as deferred | ✓ Complete |
 | **Phase 8D.1** | Macro category bug fix, EUR/CLP wired, Home FX panel cleaned up to BCCh-only, dates-only FRED release calendar (13 curated releases); Nonfarm Payrolls investigated and deferred | ✓ Complete |
+| **Phase 8D.2** | Calendar production-integrity fix — removed the synthetic forecast/actual/prior table (including fabricated Chile/BCCh/INE-named rows) from `/macro/calendar` and the Macro page; real FRED dates-only calendar preserved; honest Chile-deferred state added | ✓ Complete |
 | **Phase 8E** | Hechos Relevantes + News ingestion workaround | Planned |
 | **Phase 6E** | Portfolio analytics / performance attribution | Planned |
 | **Phase 7A** | Mobile-responsive foundation — intentionally after data-credibility phases (8B–8E) unless a UX emergency arises | Planned |
