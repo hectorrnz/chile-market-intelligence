@@ -298,9 +298,11 @@ export const dict = {
     dataSource: {
       static:          'Static MVP',
       live:            'Live BCCh',
+      liveFred:        'Live FRED',
       hybridFallback:  'Hybrid fallback',
       liveUnavailable: 'Live unavailable',
       persisted:       'Persisted BCCh',
+      persistedFred:   'Persisted FRED',
     },
     marketData: {
       static:          'Static market data',
@@ -401,7 +403,8 @@ export const dict = {
       usSubtitle:   'Federal Reserve · BLS · FRED — Static MVP sample',
       clSubtitle:   'Banco Central · INE · Hacienda · LME',
       clickToChart: 'Click any row to view historical series',
-      chartSource:  'Historical values via Banco Central de Chile (BCCh)',
+      chartSourceBcch: 'Historical values via Banco Central de Chile (BCCh)',
+      chartSourceFred: 'Historical values via FRED (Federal Reserve Bank of St. Louis)',
       noHistory:    'No history available',
       usRates:      'US Rates',
       usInflation:  'US Inflation',
@@ -1101,9 +1104,11 @@ export const dict = {
     dataSource: {
       static:          'MVP estático',
       live:            'BCCh en vivo',
+      liveFred:        'FRED en vivo',
       hybridFallback:  'Respaldo híbrido',
       liveUnavailable: 'En vivo no disponible',
       persisted:       'BCCh persistido',
+      persistedFred:   'FRED persistido',
     },
     marketData: {
       static:          'Datos de mercado estáticos',
@@ -1204,7 +1209,8 @@ export const dict = {
       usSubtitle:   'Reserva Federal · BLS · FRED — Muestra MVP estático',
       clSubtitle:   'Banco Central · INE · Hacienda · LME',
       clickToChart: 'Haga clic en cualquier fila para ver la serie histórica',
-      chartSource:  'Valores históricos vía Banco Central de Chile (BCCh)',
+      chartSourceBcch: 'Valores históricos vía Banco Central de Chile (BCCh)',
+      chartSourceFred: 'Valores históricos vía FRED (Reserva Federal de St. Louis)',
       noHistory:    'Sin datos históricos',
       usRates:      'Tasas EE.UU.',
       usInflation:  'Inflación EE.UU.',

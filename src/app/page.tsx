@@ -251,7 +251,7 @@ export default function HomePage() {
             <div className="px-4">{macroChile.map(ind => <MacroRow key={ind.id} ind={ind} />)}</div>
             <div className="px-4 py-1.5 bg-surface-2 border-y border-border flex items-center justify-between" style={{ borderLeft: '2px solid var(--primary)' }}>
               <span className="ui-label text-foreground">{t.home.macroUsTitle.split('·')[1]?.trim() ?? 'US'}</span>
-              <DataSourceBadge status={usMacroStatus} />
+              <DataSourceBadge status={usMacroStatus} provider="FRED" />
             </div>
             <div className="px-4">{macroUs.map(ind => <MacroRow key={ind.id} ind={ind} />)}</div>
           </div>

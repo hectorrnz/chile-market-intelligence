@@ -12,6 +12,7 @@ import { getChileanRates } from '@/lib/data/chileanRates'
 import { getFxRates } from '@/lib/data/fxRates'
 import { getYieldCurve } from '@/lib/data/yieldCurves'
 import { getMacroHistoryForTimeframe, fetchMacroHistory } from '@/lib/data/macroHistory'
+import { getSeriesByStaticId } from '@/config/macroSeries'
 import { DataSourceBadge } from '@/components/ui/DataSourceBadge'
 import type { DataSourceStatus } from '@/lib/providers/types'
 import { changeColor, formatMacroValue, formatMacroChange, formatFx, formatPct } from '@/lib/formatters'
@@ -54,17 +55,38 @@ export default function MacroPage() {
 
   // Phase 4A: static-first, upgrade-if-live. Render static immediately, then
   // ask /api/macro whether live data is available and swap it in if so.
+  //
+  // Fetched per-region (not with region omitted) for two reasons: (1) each
+  // region's own static fallback applies independently if only the other
+  // region's live provider succeeds — a combined/omitted-region call could
+  // silently drop an entire region's rows if only one provider responded;
+  // (2) the header badge needs a per-region status (Chile → BCCh, US → FRED)
+  // to avoid the "Live BCCh" label being shown for US/FRED-sourced data, a
+  // real mislabeling bug found on this page and mirrored from the Home page's
+  // already-correct per-region pattern.
   const [macroAll, setMacroAll] = useState<MacroIndicator[]>(() => getAllIndicators())
-  const [srcStatus, setSrcStatus] = useState<DataSourceStatus>('static')
+  const [clStatus, setClStatus] = useState<DataSourceStatus>('static')
+  const [usStatus, setUsStatus] = useState<DataSourceStatus>('static')
   useEffect(() => {
     const ac = new AbortController()
-    fetchMacroIndicators(undefined, ac.signal).then(res => {
-      if (!res) return
-      setSrcStatus(res.metadata.status)
-      if (res.metadata.liveAvailable && res.data.length) setMacroAll(res.data)
+    Promise.all([
+      fetchMacroIndicators('CL', ac.signal),
+      fetchMacroIndicators('US', ac.signal),
+    ]).then(([clRes, usRes]) => {
+      if (clRes) setClStatus(clRes.metadata.status)
+      if (usRes) setUsStatus(usRes.metadata.status)
+      const clData = clRes?.metadata.liveAvailable && clRes.data.length
+        ? clRes.data
+        : getAllIndicators().filter(i => !i.region || i.region === 'CL')
+      const usData = usRes?.metadata.liveAvailable && usRes.data.length
+        ? usRes.data
+        : getAllIndicators().filter(i => i.region === 'US')
+      setMacroAll([...clData, ...usData])
     })
     return () => ac.abort()
   }, [])
+  const srcStatus = region === 'CL' ? clStatus : usStatus
+  const srcProvider = region === 'CL' ? 'BCCh' : 'FRED'
 
   // Modal chart: try the live/hybrid history endpoint; fall back to static.
   // Live data is tagged with its (indicator:timeframe) key so a stale series is
@@ -85,6 +107,15 @@ export default function MacroPage() {
   }, [selected?.histId, timeframe])
   const histKey = selected?.histId ? `${selected.histId}:${timeframe}` : ''
   const liveChart = liveHist && liveHist.key === histKey ? liveHist.data : null
+
+  // The popup chart's badge/footer must name the PROVIDER THAT ACTUALLY BACKS
+  // this specific series, not a page-wide assumption — a Chile-rate row
+  // (histId from RATE_HIST, e.g. 'tpm'/'btu10-ref') is always BCCh-sourced (or
+  // static, never FRED), while a canonical indicator id (histId === i.id, e.g.
+  // 'fed-funds'/'us10y') looks up its real sourceProvider from the registry.
+  const chartProvider = selected?.histId && getSeriesByStaticId(selected.histId)?.sourceProvider === 'FRED'
+    ? 'FRED' as const
+    : 'BCCh' as const
 
   const catLabel: Record<string, string> = {
     Rates: t.macro.monetary, 'US Rates': t.macro.monetary,
@@ -142,7 +173,7 @@ export default function MacroPage() {
         asOf
         actions={
           <div className="flex items-center gap-2.5">
-            <DataSourceBadge status={srcStatus} />
+            <DataSourceBadge status={srcStatus} provider={srcProvider} />
             <span className="text-xs px-2.5 py-1 rounded bg-surface-2 border border-border text-foreground font-medium">{region === 'CL' ? 'Chile' : 'US'}</span>
           </div>
         }
@@ -275,8 +306,8 @@ export default function MacroPage() {
               <div className="flex items-center justify-center h-40 text-xs text-muted-fg border border-border rounded">{t.macro.noHistory}</div>
             )}
             <div className="flex items-center gap-2 mt-3">
-              <DataSourceBadge status={histStatus} />
-              <span className="text-xs text-muted-fg">· {t.macro.chartSource}</span>
+              <DataSourceBadge status={histStatus} provider={chartProvider} />
+              <span className="text-xs text-muted-fg">· {chartProvider === 'FRED' ? t.macro.chartSourceFred : t.macro.chartSourceBcch}</span>
             </div>
           </div>
         </div>
