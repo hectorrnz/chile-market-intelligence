@@ -6,7 +6,7 @@ import type { MacroProvider, ProviderResult } from './types'
 import type { MacroIndicator, MacroHistoryPoint } from '@/types'
 import { isFredConfigured, fetchFredSeries, type FredSeriesPoint } from './fredClient'
 import { getEnabledFredSeries, getSeriesByStaticId, type MacroSeriesDef } from '@/config/macroSeries'
-import { deriveValueChange, transformSeries } from './transforms'
+import { deriveValueChange, transformSeries, monthEndSample } from './transforms'
 import { isPlausible } from './plausibility'
 
 const NO_CODE = 'No live FRED series code mapped yet'
@@ -17,9 +17,14 @@ function firstDateFor(years: number): string {
   return d.toISOString().slice(0, 10)
 }
 
+/** Applies the series' resample policy (if any) before any transform/derivation. */
+function preprocess(def: MacroSeriesDef, points: FredSeriesPoint[]): FredSeriesPoint[] {
+  return def.resample === 'month-end' ? monthEndSample(points) : points
+}
+
 /** Build a MacroIndicator from a fetched series, applying transform + plausibility. */
 function toIndicator(def: MacroSeriesDef, points: FredSeriesPoint[]): MacroIndicator | null {
-  const derived = deriveValueChange(points, def.transformation)
+  const derived = deriveValueChange(preprocess(def, points), def.transformation)
   if (!derived) return null
   // Reject an implausible value rather than display a wrong mapping.
   if (!isPlausible(def.manualKey, derived.value)) return null
@@ -81,7 +86,7 @@ export const fredMacroProvider: MacroProvider = {
     const res = await fetchFredSeries(def.providerSeriesCode, { startDate })
     if (!res.ok) return res
     const cutoffIso = firstDateFor(years)
-    const windowed = res.data.filter((p) => p.date >= cutoffIso)
+    const windowed = preprocess(def, res.data).filter((p) => p.date >= cutoffIso)
     const data: MacroHistoryPoint[] = transformSeries(windowed, def.transformation)
       .map((p) => ({ indicatorId, date: p.date, value: p.value }))
     if (data.length < 2) return { ok: false, reason: 'FRED series too short to chart' }

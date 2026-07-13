@@ -87,6 +87,28 @@ export function deriveValueChange(points: SeriesPoint[], transform: Transform): 
 }
 
 /**
+ * Downsamples a series published at a finer cadence than its declared
+ * `frequency` down to one observation per calendar month — the LATEST
+ * observation on or before each month's last available date. Added Phase
+ * 8D.4 for FRED's DFEDTARU (Fed funds target range upper limit): FRED
+ * publishes it daily, but it's a step function that only changes on FOMC
+ * decision dates — resampling to month-end keeps its cadence/history
+ * consistent with every other monthly US indicator instead of persisting
+ * thousands of duplicate daily rows. Never invents a value — only ever
+ * selects a real observation that was actually published.
+ */
+export function monthEndSample(points: SeriesPoint[]): SeriesPoint[] {
+  const arr = valued(points)
+  const byMonth = new Map<string, { date: string; value: number }>()
+  for (const p of arr) {
+    const monthKey = p.date.slice(0, 7) // YYYY-MM
+    const existing = byMonth.get(monthKey)
+    if (!existing || p.date > existing.date) byMonth.set(monthKey, p)
+  }
+  return [...byMonth.values()].sort((a, b) => a.date.localeCompare(b.date))
+}
+
+/**
  * Transform an entire series for charting (each point carries the displayed
  * metric). Points with no derivable metric (e.g. early points lacking a
  * year-ago base for yoy) are dropped.

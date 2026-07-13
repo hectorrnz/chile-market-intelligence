@@ -1,8 +1,68 @@
 // Run with: npm test  (Node strips TS types natively — no toolchain)
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { deriveValueChange, transformSeries } from '../src/lib/providers/transforms.ts'
+import { deriveValueChange, transformSeries, monthEndSample } from '../src/lib/providers/transforms.ts'
 import { isPlausible, plausibilityReason } from '../src/lib/providers/plausibility.ts'
+
+// ── monthEndSample (Phase 8D.4 — Fed Funds target-range swap) ───────────────
+
+test('monthEndSample: multiple points in one month keeps only the latest (a real daily step-function series)', () => {
+  const pts = [
+    { date: '2026-06-24', value: 3.75 },
+    { date: '2026-06-25', value: 3.75 },
+    { date: '2026-06-30', value: 3.75 },
+    { date: '2026-07-01', value: 3.75 },
+    { date: '2026-07-13', value: 3.75 },
+  ]
+  const out = monthEndSample(pts)
+  assert.deepEqual(out, [
+    { date: '2026-06-30', value: 3.75 },
+    { date: '2026-07-13', value: 3.75 },
+  ])
+})
+
+test('monthEndSample: captures a mid-month rate change as that month\'s value (not the stale start-of-month one)', () => {
+  const pts = [
+    { date: '2026-05-01', value: 4.00 },
+    { date: '2026-05-15', value: 3.75 }, // FOMC cut mid-month
+    { date: '2026-05-31', value: 3.75 },
+  ]
+  const out = monthEndSample(pts)
+  assert.deepEqual(out, [{ date: '2026-05-31', value: 3.75 }])
+})
+
+test('monthEndSample: already-monthly input passes through unchanged (one point per month)', () => {
+  const pts = [
+    { date: '2026-01-01', value: 4.33 },
+    { date: '2026-02-01', value: 4.22 },
+    { date: '2026-03-01', value: 4.09 },
+  ]
+  assert.deepEqual(monthEndSample(pts), pts)
+})
+
+test('monthEndSample: empty/single-point input handled without throwing', () => {
+  assert.deepEqual(monthEndSample([]), [])
+  assert.deepEqual(monthEndSample([{ date: '2026-06-01', value: 3.75 }]), [{ date: '2026-06-01', value: 3.75 }])
+})
+
+test('monthEndSample: out-of-order input is sorted chronologically in the output', () => {
+  const pts = [
+    { date: '2026-02-15', value: 4.22 },
+    { date: '2026-01-10', value: 4.33 },
+    { date: '2026-02-01', value: 4.22 },
+  ]
+  const out = monthEndSample(pts)
+  assert.deepEqual(out.map((p) => p.date), ['2026-01-10', '2026-02-15'])
+})
+
+test('monthEndSample: never fabricates a value — every output point is a real input observation', () => {
+  const pts = [
+    { date: '2026-06-24', value: 3.75 },
+    { date: '2026-06-25', value: 3.75 },
+  ]
+  const out = monthEndSample(pts)
+  for (const p of out) assert.ok(pts.some((raw) => raw.date === p.date && raw.value === p.value))
+})
 
 test('transform "none": value is latest, change is delta vs previous', () => {
   const pts = [

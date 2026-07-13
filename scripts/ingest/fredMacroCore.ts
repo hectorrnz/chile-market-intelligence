@@ -1,7 +1,7 @@
 // Phase 8D — Pure/testable logic for FRED (US macro) ingestion.
 // Mirrors bcchMacroCore.ts's shape exactly. No I/O, no env reads, no Supabase.
 
-import { transformSeries, type SeriesPoint } from '../../src/lib/providers/transforms.ts'
+import { transformSeries, monthEndSample, type SeriesPoint } from '../../src/lib/providers/transforms.ts'
 import type { MacroSeriesDef } from '../../src/config/macroSeries.ts'
 
 export const INGESTION_VERSION = '8D.0'
@@ -105,7 +105,11 @@ export function buildObservationRows(
 ): ObservationUpsertRow[] {
   if (!def.providerSeriesCode) return []
 
-  const transformed = transformSeries(rawPoints, def.transformation)
+  // Downsample before transform for series whose raw FRED publication cadence
+  // is finer than their declared frequency (e.g. DFEDTARU is daily but a step
+  // function) — mirrors src/lib/ingestion/fredMacroIngestion.ts.
+  const sourcePoints = def.resample === 'month-end' ? monthEndSample(rawPoints) : rawPoints
+  const transformed = transformSeries(sourcePoints, def.transformation)
   const isDerived = def.transformation !== 'none'
 
   let filtered = transformed.filter(

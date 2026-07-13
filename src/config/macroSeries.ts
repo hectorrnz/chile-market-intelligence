@@ -66,6 +66,8 @@ export interface MacroSeriesDef {
   fallbackStaticId: string
   /** Derived: true only when the manual mapping is verified with a seriesId. */
   enabled: boolean
+  /** 'month-end' when the raw provider series must be downsampled before use — see monthEndSample() in transforms.ts. */
+  resample?: 'month-end'
   confidence: 'high' | 'medium' | 'low'
   verified: boolean
   verificationDate: string | null
@@ -109,7 +111,7 @@ const BASE: BaseDef[] = [
   { id: 'pdbc90', displayName: 'PDBC 90 días', region: 'CL', category: 'Rates', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'pdbc-90d', unit: '%', frequency: 'daily', fallbackStaticId: 'pdbc90' },
   { id: 'tpm-tna', displayName: 'TPM (tasa nominal anual)', region: 'CL', category: 'Rates', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'tpm-tna', unit: '%', frequency: 'daily', fallbackStaticId: 'tpm' },
   // ── United States (FRED, Phase 8D) ────────────────────────────────────────
-  { id: 'fed-funds', displayName: 'Federal Funds Effective Rate', region: 'US', category: 'US Rates', source: 'Federal Reserve (via FRED)', sourceProvider: 'FRED', manualKey: 'fed-funds', unit: '%', frequency: 'monthly', fallbackStaticId: 'fed-funds' },
+  { id: 'fed-funds', displayName: 'Federal Funds Rate (Target Upper Limit)', region: 'US', category: 'US Rates', source: 'Federal Reserve (via FRED)', sourceProvider: 'FRED', manualKey: 'fed-funds', unit: '%', frequency: 'monthly', fallbackStaticId: 'fed-funds' },
   { id: 'us3m', displayName: 'US 3-Month Treasury Yield', region: 'US', category: 'US Rates', source: 'US Treasury (via FRED)', sourceProvider: 'FRED', manualKey: 'us3m', unit: '%', frequency: 'daily', fallbackStaticId: 'us3m' },
   { id: 'us2y', displayName: 'US 2-Year Treasury Yield', region: 'US', category: 'US Rates', source: 'US Treasury (via FRED)', sourceProvider: 'FRED', manualKey: 'us2y', unit: '%', frequency: 'daily', fallbackStaticId: 'us2y' },
   { id: 'us10y', displayName: 'US 10-Year Treasury Yield', region: 'US', category: 'US Rates', source: 'US Treasury (via FRED)', sourceProvider: 'FRED', manualKey: 'us10y', unit: '%', frequency: 'daily', fallbackStaticId: 'us10y' },
@@ -128,6 +130,7 @@ function merge(base: BaseDef): MacroSeriesDef {
       ...base,
       providerSeriesCode: live ? (m!.seriesId as string) : null,
       enabled: live,
+      resample: m?.resample,
       transformation: m?.transformation ?? 'none',
       confidence: m?.confidence ?? 'low',
       verified: Boolean(m?.verified),

@@ -91,7 +91,7 @@ scraping" constraints — FRED is strictly better than either a paid vendor or a
 
 | Indicator id | FRED series | Frequency | Transform | Verified value (Phase 8D) |
 |---|---|---|---|---|
-| `fed-funds` | `FEDFUNDS` | monthly | none | 3.63% (Jun-2026) |
+| `fed-funds` | `DFEDTARU` (upper target limit — swapped from `FEDFUNDS`, Phase 8D.4, resampled month-end from FRED's native daily cadence) | monthly | none | 3.75% (2026-07-13) |
 | `us3m` | `DGS3MO` | daily | none | — |
 | `us2y` | `DGS2` | daily | none | — |
 | `us10y` | `DGS10` | daily | none | 4.56% (2026-07-08) |
@@ -453,3 +453,36 @@ Scope limits (explicit): actual/previous enrichment for curated US releases only
 Frankfurter/Investing.com/ForexPros/paid vendor; no Chile HTML scraping (Chile calendar stays deferred, §10);
 no persistence/migration; no financials/Structured Notes/auth/watchlist/portfolio changes; no visual
 redesign beyond adding the metric/actual/previous/source columns.
+
+## 12. Fed Funds indicator swapped from effective rate to target range upper limit (Phase 8D.4)
+
+A user-reported anomaly ("Fed Funds moved from 4.51% to 4.48% between points — that's not a multiple of
+25bp, and there are ~8 FOMC meetings a year") led to a real finding: `fed-funds` was mapped to FRED's
+`FEDFUNDS` — the **effective** federal funds rate, a volume-weighted-average market rate that floats
+smoothly within/near the FOMC's target range and is not required to move in clean 25bp steps at meeting
+dates. That's correct FRED data, just not what most readers mean by "the Fed funds rate."
+
+**Swapped to `DFEDTARU`** — the FOMC's **target range upper limit**, the number markets actually quote (e.g.
+"4.25–4.50%, upper bound 4.50%"). Verified live: current upper 3.75% / lower (`DFEDTARL`) 3.50% — a clean
+25bp band, confirming `DFEDTARU` is a genuine step function that only changes on an FOMC decision date.
+
+**Kept monthly periodicity, per instruction.** `DFEDTARU` is published **daily** by FRED (unchanged between
+meetings, since it's a step function) — resampling it to raw daily rows would multiply stored/returned points
+without adding real information and would break the monthly cadence every other US indicator uses. A new
+pure helper, `monthEndSample()` (`src/lib/providers/transforms.ts`), downsamples to one observation per
+calendar month (the latest real observation on/before each month's end — never invents a value). A new
+`resample?: 'month-end'` field on `FredManualEntry`/`MacroSeriesDef` gates this, applied identically in all
+three places raw FRED points are consumed for this series: `fredMacroProvider.ts` (live indicator + history
+endpoints), `fredMacroIngestion.ts` (cron/API ingestion), and `fredMacroCore.ts` (CLI ingestion script) — so
+the live display, the persisted Supabase history, and the manual CLI backfill can never disagree.
+
+**No other series affected** — `resample` is undefined for every other FRED/BCCh entry, so their raw daily/
+monthly cadence from FRED/BCCh is completely unchanged.
+
+**Tests:** `tests/transforms.test.ts` extended with `monthEndSample` cases (multiple points per month keeps
+only the latest; already-monthly input passes through unchanged; empty/single-point input; non-chronological
+input order). Full suite passes (see validation below).
+
+Scope limits: this single indicator swap only; no new FRED series added beyond `DFEDTARU`/`DFEDTARL`
+(verification only, `DFEDTARL` not wired to any UI — it was fetched only to confirm the band width); no
+change to any other US or Chile indicator's series/cadence/transform.

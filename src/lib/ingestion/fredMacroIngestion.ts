@@ -12,7 +12,7 @@
 // The CLI script (scripts/ingest/fredMacro.ts) remains separate to avoid pulling
 // Next.js env/module machinery into the CLI context.
 
-import { transformSeries } from '../providers/transforms.ts'
+import { transformSeries, monthEndSample } from '../providers/transforms.ts'
 import { fetchFredSeries, isFredConfigured } from '../providers/fredClient.ts'
 import { getEnabledFredSeries } from '../../config/macroSeries.ts'
 import { usFredSeriesManualMap } from '../../config/usFredSeriesManualMap.ts'
@@ -223,7 +223,13 @@ export async function runFredMacroIngestion(opts: IngestionOptions): Promise<Ing
 
     rowsSeen += res.data.length
 
-    const transformed = transformSeries(res.data, def.transformation)
+    // Downsample before transform/persistence for series whose raw FRED
+    // publication cadence is finer than their declared frequency (e.g.
+    // DFEDTARU is daily but a step function) — keeps stored rows consistent
+    // with every other monthly US indicator instead of persisting thousands
+    // of duplicate daily values.
+    const sourcePoints = def.resample === 'month-end' ? monthEndSample(res.data) : res.data
+    const transformed = transformSeries(sourcePoints, def.transformation)
     const isDerived   = def.transformation !== 'none'
     const fetchedAt   = new Date().toISOString()
 
