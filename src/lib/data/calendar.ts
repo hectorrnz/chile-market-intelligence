@@ -33,7 +33,21 @@ interface Sched {
 }
 
 function daysInMonth(y: number, m: number) { return new Date(Date.UTC(y, m + 1, 0)).getUTCDate() }
-function clampDay(y: number, m: number, d: number) { return Math.min(d, daysInMonth(y, m)) }
+function clampDay(y: number, m: number, d: number) { return Math.min(Math.max(d, 1), daysInMonth(y, m)) }
+/**
+ * Government/agency releases never land on a weekend. Shift Saturday back to
+ * the preceding Friday and Sunday forward to the following Monday — unless
+ * that shift would cross a month boundary (Saturday the 1st, or Sunday the
+ * last day of the month), in which case shift the other direction instead so
+ * the result always stays within the same month.
+ */
+function avoidWeekend(y: number, m: number, d: number): number {
+  const day = clampDay(y, m, d)
+  const wd = new Date(Date.UTC(y, m, day)).getUTCDay()
+  if (wd === 6) return day > 1 ? day - 1 : day + 2
+  if (wd === 0) return day < daysInMonth(y, m) ? day + 1 : day - 2
+  return day
+}
 function nthWeekday(y: number, m: number, n: number, wd: number): number[] {
   const firstWd = new Date(Date.UTC(y, m, 1)).getUTCDay()
   const day = 1 + ((wd - firstWd + 7) % 7) + (n - 1) * 7
@@ -45,16 +59,16 @@ function everyWeekday(y: number, m: number, wd: number): number[] {
   for (let d = 1; d <= dim; d++) if (new Date(Date.UTC(y, m, d)).getUTCDay() === wd) out.push(d)
   return out
 }
-const monthlyDay = (d: number): Occ => (y, m) => [clampDay(y, m, d)]
+const monthlyDay = (d: number): Occ => (y, m) => [avoidWeekend(y, m, d)]
 const inMonths = (months: number[], inner: Occ): Occ => (y, m) => (months.includes(m) ? inner(y, m) : [])
 
 const SCHED: Sched[] = [
   // ── United States ──
-  { key: 'us-cpi-yoy', country: 'US', name: 'CPI y/y', category: 'Inflation', importance: 'High', unit: '%', time: '08:30', base: 3.4, vol: 0.3, dp: 1, occ: monthlyDay(12) },
-  { key: 'us-cpi-mom', country: 'US', name: 'CPI m/m', category: 'Inflation', importance: 'High', unit: '%', time: '08:30', base: 0.3, vol: 0.2, dp: 1, occ: monthlyDay(12) },
+  { key: 'us-cpi-yoy', country: 'US', name: 'CPI y/y', category: 'Inflation', importance: 'High', unit: '%', time: '08:30', base: 3.4, vol: 0.3, dp: 1, occ: monthlyDay(14) },
+  { key: 'us-cpi-mom', country: 'US', name: 'CPI m/m', category: 'Inflation', importance: 'High', unit: '%', time: '08:30', base: 0.3, vol: 0.2, dp: 1, occ: monthlyDay(14) },
   { key: 'us-nfp', country: 'US', name: 'Nonfarm Payrolls', category: 'Labor', importance: 'High', unit: 'K', time: '08:30', base: 180, vol: 60, dp: 0, occ: (y, m) => nthWeekday(y, m, 1, 5) },
   { key: 'us-unemp', country: 'US', name: 'Unemployment Rate', category: 'Labor', importance: 'High', unit: '%', time: '08:30', base: 3.9, vol: 0.1, dp: 1, occ: (y, m) => nthWeekday(y, m, 1, 5) },
-  { key: 'us-fomc', country: 'US', name: 'FOMC Rate Decision', category: 'Rates', importance: 'High', unit: '%', time: '14:00', base: 4.5, vol: 0, dp: 2, occ: inMonths([0, 2, 4, 5, 6, 8, 10, 11], monthlyDay(18)) },
+  { key: 'us-fomc', country: 'US', name: 'FOMC Rate Decision', category: 'Rates', importance: 'High', unit: '%', time: '14:00', base: 4.5, vol: 0, dp: 2, occ: inMonths([0, 2, 4, 5, 6, 8, 10, 11], monthlyDay(29)) },
   { key: 'us-retail', country: 'US', name: 'Retail Sales m/m', category: 'Activity', importance: 'Medium', unit: '%', time: '08:30', base: 0.4, vol: 0.4, dp: 1, occ: monthlyDay(15) },
   { key: 'us-gdp', country: 'US', name: 'GDP q/q (ann.)', category: 'Activity', importance: 'High', unit: '%', time: '08:30', base: 2.5, vol: 0.5, dp: 1, occ: inMonths([0, 3, 6, 9], monthlyDay(28)) },
   { key: 'us-pce', country: 'US', name: 'Core PCE y/y', category: 'Inflation', importance: 'Medium', unit: '%', time: '08:30', base: 2.8, vol: 0.2, dp: 1, occ: monthlyDay(28) },
