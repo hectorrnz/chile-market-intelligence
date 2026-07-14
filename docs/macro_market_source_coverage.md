@@ -21,6 +21,7 @@ stay `unavailable`, never static-filled or guessed; a source is only wired in af
 | Macro category classification | **Fixed (Phase 8D.1)** | — | Real bug fixed — see §7 |
 | FX panel (Home page) | **Cleaned up — BCCh-only (Phase 8D.1)** | BCCh (usdclp, eurclp) | See §8 |
 | Economic calendar (dates-only) | **Implement (Phase 8D.1)** | FRED Releases API (`FRED_API_KEY`) | 13 curated releases, dates only |
+| Macro / US forex table | **Implement (FX Data Task)** | CurrencyFreaks (`CURRENCYFREAKS_API_KEY`) | 12 USD-base pairs, unofficial third-party — see §13 |
 
 ## 1. Copper — implemented via BCCh
 
@@ -486,3 +487,69 @@ input order). Full suite passes (see validation below).
 Scope limits: this single indicator swap only; no new FRED series added beyond `DFEDTARU`/`DFEDTARL`
 (verification only, `DFEDTARL` not wired to any UI — it was fetched only to confirm the band width); no
 change to any other US or Chile indicator's series/cadence/transform.
+
+## 13. Macro / US forex table — CurrencyFreaks (unofficial third-party FX)
+
+The Macro page's "FX depth" panel had two independent problems on the US side: it read from the same static
+`fxRates.json` sample the 8D.1 fix already removed from the Home page's FX panel (fabricated "Bloomberg"
+source attribution, no live/persisted path at all), and its 8-pair `US_FX` id list (`dxy, eurusd, gbpusd,
+usdjpy, usdcny, usdcad, usdchf, usdkrw`) never matched the requested pair set. Chile's FX depth panel is
+untouched — it stays exactly as it was (static sample, `CL_FX` id list), per the standing rule that Chile FX
+is BCCh-official only.
+
+**CurrencyFreaks** (`https://api.currencyfreaks.com/v2.0/rates/latest`) was chosen and wired for the Macro /
+US table only. It is explicitly **not** presented as official — `sourceType: 'unofficial_third_party_fx'`
+everywhere in code and copy, matching this project's "never call an unofficial source official" rule (the
+same discipline already applied to Yahoo Finance fundamentals and the LatAm index proxies).
+
+**Free-plan characteristics verified live** (2026-07-14, curl against the real endpoint, key never printed):
+base is **USD-only** (no custom base currency available on this plan — confirmed via the real response's
+`"base": "USD"` field); `rates` are returned as numeric strings; `date` was a midnight-UTC timestamp
+(`2026-07-14 00:00:00+00`) and did not change across repeated same-day calls — the plan appears to publish
+**one snapshot per day**, not intraday. No day-change, YTD-change, or historical-series field exists on this
+endpoint at any tier used here. Consequently:
+- The 6-hour server-side cache (`resolveUsForexTable()`, module-scope, per server instance) is conservative
+  by design but not the limiting factor — the source itself would return the same value for the whole day
+  regardless of cache TTL. Estimated monthly request volume at this TTL: at most 4 fetches/day × ~30 days
+  ≈ **120 requests/month**, far inside any reasonable free-tier quota.
+- **Day/YTD change columns are never fabricated.** `UsForexRow.dayChangePct`/`ytdChangePct` are typed `null`
+  (not optional-zero) — the UI renders an "As of" timestamp column instead of a change column for this table,
+  consistent with the "omit, don't fake" instruction.
+- No historical endpoint was used or is needed — only `/rates/latest`.
+
+**Pair methodology** (`src/lib/providers/currencyFreaksFxProvider.ts`, pure `buildUsForexRows()`): the
+requested symbol set (EUR, GBP, JPY, CHF, CAD, AUD, NZD, MXN, BRL, CNY, KRW, TWD) is split into **8 direct
+pairs** (USD/JPY, USD/CHF, USD/CAD, USD/MXN, USD/BRL, USD/CNY, USD/KRW, USD/TWD — the raw USD-base rate used
+as-is) and **4 inverted pairs** (EUR/USD, GBP/USD, AUD/USD, NZD/USD — `1 / rate`, since CurrencyFreaks only
+publishes the USD-base direction). Inverted pairs carry a `direction: 'inverted'` tag and render with a `†`
+marker + an explicit "Derived (1 / USD-base rate)" disclaimer in the UI — never silently presented as if
+CurrencyFreaks itself published the EUR-base rate directly. A rate that is missing, zero, negative, or
+non-numeric for a given symbol is **omitted from the row list**, never coerced to zero or fabricated. If the
+provider ever reports a non-USD base, the whole table fails closed (`ok:false`) rather than silently
+mislabeling every derived pair — the pair methodology's correctness depends entirely on the USD-base
+assumption holding.
+
+**Architecture**: `currencyFreaksClient.ts` (server-only raw HTTP client — reads
+`process.env.CURRENCYFREAKS_API_KEY` only, sanitizes any error text, 10s timeout, never throws) →
+`currencyFreaksFxProvider.ts` (server-only orchestrator — pair methodology + the 6h cache + fail-closed base
+check) → `GET /api/macro/fx/us` (public, sanitized, never echoes the key or raw provider JSON) →
+`src/lib/data/currencyFreaksFx.ts` (client-safe fetch helper — only a TYPE import from the provider layer, so
+no server code reaches the browser bundle) → the Macro page's US-region FX depth table (fetched lazily only
+when `region === 'US'`, never on the Chile tab).
+
+**No new env var pattern** — mirrors `FRED_API_KEY`'s existing server-only handling exactly
+(`.env.example` documents it, never `NEXT_PUBLIC_`, never logged, blank-key path returns
+`configured: false`/empty rows rather than erroring, matching the app's "must run with zero env vars" rule).
+
+**Verified locally** (dev server, real key): `/api/macro/fx/us` → `ok: true`, `source: CurrencyFreaks`,
+`sourceType: unofficial_third_party_fx`, `base: USD`, 12 rows, all 8 direct + 4 inverted pairs correctly
+computed against the real live rates. Macro page US region renders the table with the `SourceStateBadge`,
+the "As of" column, the `†`/disclaimer footer, and correctly shows **no** day/YTD columns. Chile region
+regression-checked unchanged (same static table, same `CL_FX` list). Confirmed the API key never appears in
+the Next.js client bundle (`.next/static`) — only in server-side build cache, which is not shipped to the
+browser.
+
+Scope limits (explicit): Macro / US forex table only; Chile FX untouched (stays BCCh-official/static, no
+CurrencyFreaks call ever made for CL); no paid CurrencyFreaks tier/feature; no historical CurrencyFreaks data;
+no non-USD crosses beyond the 4 documented inverted pairs; no fabricated day-change/YTD; no changes to
+financials, Structured Notes, the economic calendar's actual/previous logic, or auth/watchlist/portfolio.

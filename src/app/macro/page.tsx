@@ -14,6 +14,9 @@ import { getYieldCurve } from '@/lib/data/yieldCurves'
 import { getMacroHistoryForTimeframe, fetchMacroHistory } from '@/lib/data/macroHistory'
 import { getSeriesByStaticId } from '@/config/macroSeries'
 import { DataSourceBadge } from '@/components/ui/DataSourceBadge'
+import { SourceStateBadge } from '@/components/ui/SourceStateBadge'
+import { fetchUsForexTable } from '@/lib/data/currencyFreaksFx'
+import type { UsForexTableResult } from '@/lib/providers/currencyFreaksFxProvider'
 import type { DataSourceStatus } from '@/lib/providers/types'
 import { changeColor, formatMacroValue, formatMacroChange, formatFx, formatPct } from '@/lib/formatters'
 import { LineChart } from '@/components/charts/LineChart'
@@ -30,7 +33,6 @@ const RATE_HIST: Record<string, string> = {
   swap2y: 'swap2y', swap1y: 'swap1y', pdbc90: 'pdbc90',
 }
 const CL_FX = ['clp', 'eurclp', 'clpcop', 'usdbrl', 'usdars', 'usdmxn', 'usdcop', 'usdpen']
-const US_FX = ['dxy', 'eurusd', 'gbpusd', 'usdjpy', 'usdcny', 'usdcad', 'usdchf', 'usdkrw']
 
 interface Row {
   id: string; label: string; value: number; unit: string
@@ -125,6 +127,18 @@ export default function MacroPage() {
     ? 'FRED' as const
     : 'BCCh' as const
 
+  // FX Data Task — Macro / US forex table is CurrencyFreaks (unofficial
+  // third-party), fetched lazily only when the US region is active and cached
+  // server-side (see currencyFreaksFxProvider.ts). Chile FX below is entirely
+  // separate and stays BCCh/static-sourced via getFxRates() — untouched.
+  const [usForex, setUsForex] = useState<UsForexTableResult | null>(null)
+  useEffect(() => {
+    if (region !== 'US') return
+    const ac = new AbortController()
+    fetchUsForexTable(ac.signal).then(res => { if (res) setUsForex(res) })
+    return () => ac.abort()
+  }, [region])
+
   const catLabel: Record<string, string> = {
     Rates: t.macro.monetary, 'US Rates': t.macro.monetary,
     Inflation: t.macro.inflation, 'US Inflation': t.macro.inflation,
@@ -152,8 +166,8 @@ export default function MacroPage() {
     : indByCat(['US Rates', 'US Inflation', 'US Activity', 'US Labor', 'US FX', 'Crypto'])
 
   const curve = getYieldCurve(region)
-  const fxIds = region === 'CL' ? CL_FX : US_FX
-  const fx = getFxRates().filter(f => fxIds.includes(f.id)).sort((a, b) => fxIds.indexOf(a.id) - fxIds.indexOf(b.id))
+  // Chile FX depth stays static/BCCh-sourced (getFxRates()) — unchanged.
+  const fx = getFxRates().filter(f => CL_FX.includes(f.id)).sort((a, b) => CL_FX.indexOf(a.id) - CL_FX.indexOf(b.id))
   const sortedFx = (() => {
     if (!fxSort) return fx
     const get = (f: typeof fx[number]) => fxSort.key === 'pair' ? f.pair : fxSort.key === 'last' ? f.last : fxSort.key === 'day' ? f.dayChangePct : f.ytdChangePct
@@ -261,29 +275,71 @@ export default function MacroPage() {
           <p className="text-xs text-muted-fg mt-2">{curve.source}</p>
         </div>
 
-        <div className="bg-surface border border-border rounded overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-border"><span className="ui-label text-muted-fg">{t.macro.fxDepth}</span></div>
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border bg-surface-2">
-                <th onClick={() => toggleFx('pair')} className="text-left py-2 pl-4 pr-3 ui-table-header text-muted-fg cursor-pointer hover:text-foreground select-none">{t.macro.pair}{fxArrow('pair')}</th>
-                <th onClick={() => toggleFx('last')} className="text-right py-2 px-3 ui-table-header text-muted-fg cursor-pointer hover:text-foreground select-none">{t.home.last}{fxArrow('last')}</th>
-                <th onClick={() => toggleFx('day')} className="text-right py-2 px-3 ui-table-header text-muted-fg cursor-pointer hover:text-foreground select-none">{t.home.dayChg}{fxArrow('day')}</th>
-                <th onClick={() => toggleFx('ytd')} className="text-right py-2 px-3 pr-4 ui-table-header text-muted-fg cursor-pointer hover:text-foreground select-none">{t.home.ytd}{fxArrow('ytd')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedFx.map(f => (
-                <tr key={f.id} className="border-b border-border last:border-0">
-                  <td className="py-2 pl-4 pr-3 text-foreground">{f.pair}</td>
-                  <td className="py-2 px-3 text-right ui-number text-foreground">{formatFx(f.last, f.decimals ?? 2)}</td>
-                  <td className={`py-2 px-3 text-right ui-number ${changeColor(f.dayChangePct)}`}>{formatPct(f.dayChangePct)}</td>
-                  <td className={`py-2 px-3 pr-4 text-right ui-number ${changeColor(f.ytdChangePct)}`}>{formatPct(f.ytdChangePct)}</td>
+        {region === 'CL' ? (
+          <div className="bg-surface border border-border rounded overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-border"><span className="ui-label text-muted-fg">{t.macro.fxDepth}</span></div>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border bg-surface-2">
+                  <th onClick={() => toggleFx('pair')} className="text-left py-2 pl-4 pr-3 ui-table-header text-muted-fg cursor-pointer hover:text-foreground select-none">{t.macro.pair}{fxArrow('pair')}</th>
+                  <th onClick={() => toggleFx('last')} className="text-right py-2 px-3 ui-table-header text-muted-fg cursor-pointer hover:text-foreground select-none">{t.home.last}{fxArrow('last')}</th>
+                  <th onClick={() => toggleFx('day')} className="text-right py-2 px-3 ui-table-header text-muted-fg cursor-pointer hover:text-foreground select-none">{t.home.dayChg}{fxArrow('day')}</th>
+                  <th onClick={() => toggleFx('ytd')} className="text-right py-2 px-3 pr-4 ui-table-header text-muted-fg cursor-pointer hover:text-foreground select-none">{t.home.ytd}{fxArrow('ytd')}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {sortedFx.map(f => (
+                  <tr key={f.id} className="border-b border-border last:border-0">
+                    <td className="py-2 pl-4 pr-3 text-foreground">{f.pair}</td>
+                    <td className="py-2 px-3 text-right ui-number text-foreground">{formatFx(f.last, f.decimals ?? 2)}</td>
+                    <td className={`py-2 px-3 text-right ui-number ${changeColor(f.dayChangePct)}`}>{formatPct(f.dayChangePct)}</td>
+                    <td className={`py-2 px-3 pr-4 text-right ui-number ${changeColor(f.ytdChangePct)}`}>{formatPct(f.ytdChangePct)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="bg-surface border border-border rounded overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-2">
+              <span className="ui-label text-muted-fg">{t.macro.fxDepth}</span>
+              <SourceStateBadge sourceKey={usForex?.ok ? 'currencyFreaksLive' : 'currencyFreaksUnavailable'} />
+            </div>
+            {usForex?.ok && usForex.rows.length > 0 ? (
+              <>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-border bg-surface-2">
+                      <th className="text-left py-2 pl-4 pr-3 ui-table-header text-muted-fg">{t.macro.pair}</th>
+                      <th className="text-right py-2 px-3 ui-table-header text-muted-fg">{t.home.last}</th>
+                      <th className="text-left py-2 px-3 pr-4 ui-table-header text-muted-fg">{t.macro.fxAsOf}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {usForex.rows.map(r => (
+                      <tr key={r.id} className="border-b border-border last:border-0">
+                        <td className="py-2 pl-4 pr-3 text-foreground">
+                          {r.pair}
+                          <span className="ml-1.5 text-muted-fg" title={r.direction === 'direct' ? t.macro.fxDirect : t.macro.fxDerived}>
+                            {r.direction === 'direct' ? '' : '†'}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-right ui-number text-foreground">{formatFx(r.last, r.decimals)}</td>
+                        <td className="py-2 px-3 pr-4 text-muted-fg whitespace-nowrap">{usForex.asOf ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="px-4 py-2 border-t border-border space-y-0.5">
+                  <p className="text-xs text-muted-fg">{t.macro.fxUnofficial}</p>
+                  <p className="text-xs text-muted-fg">† {t.macro.fxDerived} · {t.macro.fxNoChangeData}</p>
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center justify-center h-40 text-xs text-muted-fg">{t.macro.fxUnavailable}</div>
+            )}
+          </div>
+        )}
       </div>
 
       <SourceNote>{t.common.mvpNote}</SourceNote>

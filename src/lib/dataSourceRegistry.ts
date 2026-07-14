@@ -156,6 +156,18 @@ export const SOURCE_REGISTRY = {
     labelEn: 'Source-agnostic financials layer',
     labelEs: 'Capa de financials agnóstica de fuente',
   },
+  currencyFreaksLive: {
+    id: 'currencyfreaks-live',
+    state: 'live',
+    labelEn: 'CurrencyFreaks FX reference (unofficial third-party)',
+    labelEs: 'Referencia FX de CurrencyFreaks (terceros no oficial)',
+  },
+  currencyFreaksUnavailable: {
+    id: 'currencyfreaks-unavailable',
+    state: 'unavailable',
+    labelEn: 'CurrencyFreaks unavailable',
+    labelEs: 'CurrencyFreaks no disponible',
+  },
 } as const satisfies Record<string, SourceEntry>
 
 export type SourceKey = keyof typeof SOURCE_REGISTRY

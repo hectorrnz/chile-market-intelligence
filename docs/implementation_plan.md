@@ -1652,3 +1652,41 @@ Structured Notes/auth/watchlist/portfolio changes; no visual redesign beyond the
 
 Next: add direct BLS/BEA/Census provider clients if warranted; persist enrichment if usage justifies; add a
 standalone NFP macro-indicator card; periodically re-check for a real official Chile release-date source.
+
+---
+
+## FX Data Task — Macro / US Forex Table via CurrencyFreaks ✓ COMPLETE (2026-07-14)
+
+Adds a server-side **CurrencyFreaks** provider (unofficial third-party, `sourceType:
+'unofficial_third_party_fx'`) for the Macro page's US-region "FX depth" table, which previously read the same
+fabricated-"Bloomberg"-sourced static `fxRates.json` the 8D.1 Home-page fix had already retired for Chile.
+**Chile FX is entirely untouched** — stays BCCh-official/static via `getFxRates()`/`CL_FX`.
+
+**Architecture:** `currencyFreaksClient.ts` (server-only, reads `CURRENCYFREAKS_API_KEY` only, sanitized
+errors, 10s timeout) → `currencyFreaksFxProvider.ts` (server-only — pair methodology + a 6-hour module-scope
+cache, fails closed on a non-USD base) → `GET /api/macro/fx/us` (public, sanitized) →
+`src/lib/data/currencyFreaksFx.ts` (client-safe fetch helper, type-only import from the provider). Macro page
+fetches it lazily only when `region === 'US'`.
+
+**USD-base pair methodology** (verified live, 2026-07-14): 8 **direct** pairs (USD/JPY, USD/CHF, USD/CAD,
+USD/MXN, USD/BRL, USD/CNY, USD/KRW, USD/TWD — raw rate) + 4 **inverted** pairs (EUR/USD, GBP/USD, AUD/USD,
+NZD/USD — `1/rate`, marked `†` "Derived" in the UI). Day-change/YTD are typed `null` and never rendered — the
+source has no such field on the free plan, and it publishes only one snapshot/day (verified via repeated
+same-day calls), which is why the 6h cache is conservative rather than a limiting factor (~120 req/month
+estimate).
+
+**Tests:** `tests/currencyFreaksFx.test.ts` — 28 new (missing key, no key/URL leakage, symbol filtering,
+numeric parsing + invalid-rate rejection, direct/inverted pair math, missing-rate omission, non-USD-base
+fail-closed, 6h caching, no raw-payload leakage, Macro-page wiring + Chile-untouched regression, no
+`NEXT_PUBLIC_CURRENCYFREAKS_API_KEY`). Full suite 1369 → **1397/1397**, lint 0, build 0 errors.
+
+**Local validation:** `/api/macro/fx/us` → `ok: true`, `source: CurrencyFreaks`, `base: USD`, 12 rows, all
+pairs correct against the live endpoint. Macro / US page confirmed rendering the badge, "As of" column, `†`
+disclaimer, and no day/YTD columns; Chile region regression-checked unchanged. Confirmed the API key never
+appears in the Next.js client bundle (`.next/static`) — only in server-side build cache. `supabase:check` /
+`supabase:check-macro` unchanged (no schema touched by this task).
+
+Scope limits (explicit): Macro / US forex table only; Chile FX untouched; no paid CurrencyFreaks tier; no
+historical CurrencyFreaks data; no non-USD crosses beyond the 4 documented inverted pairs; no fabricated
+day-change/YTD; financials, Structured Notes, the calendar's actual/previous logic, and auth/watchlist/
+portfolio untouched. See `docs/macro_market_source_coverage.md` §13 for the full discovery/design record.

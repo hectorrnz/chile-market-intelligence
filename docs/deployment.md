@@ -122,7 +122,7 @@ All data currently served by the app comes from static JSON files in `src/data/`
 | `src/data/hechosEsenciales.json` | CMF API |
 | `src/data/companies.json` / `stockPrices.json` | Bolsa de Santiago / Brain Data |
 | `src/data/news.json` | News aggregation service |
-| `src/data/fxRates.json` | Bloomberg / FRED |
+| `src/data/fxRates.json` (Chile FX, and formerly the whole FX table) | Macro / Chile stays BCCh-official; Macro / US forex table is now live via CurrencyFreaks (`CURRENCYFREAKS_API_KEY`, unofficial third-party) — see `docs/macro_market_source_coverage.md` §13 |
 
 When live sources are connected (Phase 4–5), data fetching will move to `src/lib/db/` and the static JSON files will be archived rather than deleted.
 
