@@ -682,25 +682,40 @@ The Home page's FX table now sources from `getByCategory('FX')` (`src/lib/data/m
 static `src/data/fxRates.json` — i.e. it's just another view onto the same live macro `FX` category the
 Macro page's indicators use. Currently renders exactly 2 rows (USD/CLP, EUR/CLP), both BCCh-verified. The
 old 4-section grouping (Key FX / # USD per / # of currency per USD / # of Yen per) and its i18n keys
-(`fxKeyFx`, `fxUsdPer`, `fxPerUsd`, `fxYenPer`) were removed. `src/data/fxRates.json`/`fxRates.ts` remain in
-place, still used by the Macro-page "FX depth" table's **Chile** region only (see below — the US region no
-longer uses this static file).
+(`fxKeyFx`, `fxUsdPer`, `fxPerUsd`, `fxYenPer`) were removed. `src/data/fxRates.json`/`fxRates.ts` are no
+longer imported by any production page — see below.
 
-### Macro / US forex table — CurrencyFreaks (unofficial third-party)
+### Macro / Chile FX depth table — removed from production
 
-The Macro page's "FX depth" table on the **US** region is sourced from **CurrencyFreaks**
-(`https://api.currencyfreaks.com/v2.0/rates/latest`), not the static `fxRates.json` file — the **Chile**
-region is untouched and still reads `fxRates.json`/`CL_FX`. Architecture:
-`src/lib/providers/currencyFreaksClient.ts` (server-only HTTP client, reads `CURRENCYFREAKS_API_KEY`) →
-`src/lib/providers/currencyFreaksFxProvider.ts` (server-only — pair methodology + a 6-hour in-memory cache) →
-`GET /api/macro/fx/us` (public, sanitized) → `src/lib/data/currencyFreaksFx.ts` (client-safe fetch helper).
+The Macro page's Chile-region "FX depth" table (previously `fxRates.json`/`CL_FX`) had no live or persisted
+backing at all — a static/sample table sitting next to genuinely live BCCh rows. It was removed from
+production and replaced with a plain integrity note pointing to the live BCCh USD/CLP + EUR/CLP rows already
+shown in the indicators table above. `src/data/fxRates.json`/`fxRates.ts` remain in the repo, header-marked
+"TEST/DEMO-ONLY — NOT IMPORTED BY ANY PRODUCTION ROUTE OR PAGE", with a regression test
+(`tests/frankfurterFx.test.ts`) asserting no production file imports them.
 
-**USD-base only** (verified live) — 8 pairs are **direct** (USD/JPY, USD/CHF, USD/CAD, USD/MXN, USD/BRL,
-USD/CNY, USD/KRW, USD/TWD, using the raw rate) and 4 are **inverted** (EUR/USD, GBP/USD, AUD/USD, NZD/USD,
-`1 / rate`, marked with a `†` in the UI and an explicit "derived" disclaimer). Day-change/YTD are typed
-`null` and never rendered — the source has no such field. `sourceType: 'unofficial_third_party_fx'`
-everywhere; the UI badge/footer never claims this is an official rate. Full discussion:
-`docs/macro_market_source_coverage.md` §13.
+### Macro / US forex table — Frankfurter (free, no API key)
+
+The Macro page's "FX depth" table on the **US** region is sourced from **Frankfurter**
+(`https://api.frankfurter.dev/v2/rates`) — free, open-source, no API key, sourcing from 84 central banks.
+CurrencyFreaks (the prior source) is deprecated: `src/lib/providers/currencyFreaksClient.ts`/
+`currencyFreaksFxProvider.ts`/`src/lib/data/currencyFreaksFx.ts` remain in the repo, header-marked
+"DEPRECATED ... NOT IMPORTED BY ANY PRODUCTION ROUTE OR PAGE" — `CURRENCYFREAKS_API_KEY` stays configured in
+Vercel but is no longer read by any production code path.
+
+Architecture: `src/lib/providers/frankfurterClient.ts` (server-only HTTP client, no key) →
+`src/lib/providers/frankfurterFxProvider.ts` (server-only — pair methodology + 1D/YTD change + a 6-hour
+in-memory cache) → `GET /api/macro/fx/us` (public, sanitized) → `src/lib/data/frankfurterFx.ts` (client-safe
+fetch helper).
+
+**USD-base only** — 8 pairs are **direct** (USD/JPY, USD/CHF, USD/CAD, USD/MXN, USD/BRL, USD/CNY, USD/KRW,
+USD/TWD, using the raw rate) and 4 are **inverted** (EUR/USD, GBP/USD, AUD/USD, NZD/USD, `1 / rate`, marked
+with a `†` in the UI and an explicit "derived" disclaimer). **1D and YTD % change are real**, computed from
+two bounded Frankfurter time-series calls (a recent 10-day window for the latest two available dates; a
+prior-year-end window for the YTD base date) — never fabricated: a pair whose previous/YTD-base snapshot
+isn't found in its window reports `null` for that field, rendered as `—`. `sourceType:
+'free_third_party_fx_reference'` everywhere; the UI badge/footer never claims this is an official rate. Full
+discussion: `docs/macro_market_source_coverage.md` §14.
 
 ### Dates-only FRED release calendar
 

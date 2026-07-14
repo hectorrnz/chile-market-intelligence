@@ -1,3 +1,13 @@
+// DEPRECATED (FX Integrity Task, superseded by frankfurterFxProvider.ts).
+// NOT IMPORTED BY ANY PRODUCTION ROUTE OR PAGE. The Macro / US forex table now
+// uses Frankfurter (free, no API key, real 1D/YTD change) instead of this
+// CurrencyFreaks provider, which never had access to historical/change data
+// on the plan tier used. Kept in the repo (not deleted) only in case a future
+// need for CurrencyFreaks-specific data arises; `CURRENCYFREAKS_API_KEY`
+// remains configured in Vercel but is no longer read by any production code
+// path. See tests/currencyFreaksFx.test.ts's production-import guard and
+// docs/macro_market_source_coverage.md §14 for the full deprecation record.
+//
 // FX Data Task — Macro / US forex table provider (CurrencyFreaks, unofficial
 // third-party). SERVER-ONLY.
 //

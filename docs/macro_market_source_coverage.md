@@ -21,7 +21,8 @@ stay `unavailable`, never static-filled or guessed; a source is only wired in af
 | Macro category classification | **Fixed (Phase 8D.1)** | — | Real bug fixed — see §7 |
 | FX panel (Home page) | **Cleaned up — BCCh-only (Phase 8D.1)** | BCCh (usdclp, eurclp) | See §8 |
 | Economic calendar (dates-only) | **Implement (Phase 8D.1)** | FRED Releases API (`FRED_API_KEY`) | 13 curated releases, dates only |
-| Macro / US forex table | **Implement (FX Data Task)** | CurrencyFreaks (`CURRENCYFREAKS_API_KEY`) | 12 USD-base pairs, unofficial third-party — see §13 |
+| Macro / US forex table | **Implemented then replaced (FX Data Task → FX Integrity Task)** | CurrencyFreaks (§13, deprecated) → **Frankfurter, no key** | 12 USD-base pairs + real 1D/YTD change — see §14 |
+| Chile Macro-page FX depth table | **Removed from production (FX Integrity Task)** | was `fxRates.json` static/sample | No live/persisted backing existed — see §14 |
 
 ## 1. Copper — implemented via BCCh
 
@@ -553,3 +554,97 @@ Scope limits (explicit): Macro / US forex table only; Chile FX untouched (stays 
 CurrencyFreaks call ever made for CL); no paid CurrencyFreaks tier/feature; no historical CurrencyFreaks data;
 no non-USD crosses beyond the 4 documented inverted pairs; no fabricated day-change/YTD; no changes to
 financials, Structured Notes, the economic calendar's actual/previous logic, or auth/watchlist/portfolio.
+
+## 14. Macro / US FX moved to Frankfurter; real 1D/YTD change; Chile FX depth table removed
+
+§13's CurrencyFreaks integration had a real limitation: its free-plan `/rates/latest` endpoint has no
+day-change/YTD/historical field at all, so the Macro / US forex table could only ever show a static "last"
+value with no change — never the 1D/YTD figures a genuine FX reference table needs. Separately, an audit for
+this task found the Chile Macro-page "FX depth" table (`src/data/fxRates.json` via `getFxRates()`/`CL_FX`)
+had **no live or persisted backing at all** — a pure static/sample table sitting in production next to
+genuinely live BCCh data, exactly the pattern the no-static-terminal-state policy forbids.
+
+**Frankfurter chosen and verified live** (2026-07-14, no API key, confirmed via `https://frankfurter.dev/`:
+"Free, open-source exchange rates API sourcing from 84 central banks. Current and historical rates for 201
+currencies. No API key required."). The real v2 REST shape (`https://api.frankfurter.dev/v2/rates`) was
+verified directly, not assumed — it differs from the classic v1 `frankfurter.app` shape
+(`{amount, base, date, rates: {...}}`): v2 returns a **flat array** of `{date, base, quote, rate}`, and uses
+`quotes=` (not `symbols=`) for currency filtering. Confirmed the historical single-date path
+(`?date=YYYY-MM-DD`) and the time-series path (`?from=...&to=...`) both work with `base=USD&quotes=...`. All
+12 target currencies (EUR, GBP, JPY, CHF, CAD, AUD, NZD, MXN, BRL, CNY, KRW, TWD) confirmed present in
+`/v2/currencies` — **no pairs were removed**, the full requested set is supported.
+
+**A genuine data-quality question was investigated and resolved before wiring anything in**: querying single
+weekend dates (e.g. a Saturday) returned a *slightly different* rate each day rather than the prior business
+day's frozen value — unlike the classic ECB-only `frankfurter.app`, which correctly freezes at the last
+business day for a weekend query (re-verified live on `frankfurter.app` for comparison). This is not
+fabrication: v2 blends up to 84 real central-bank feeds (confirmed via `/v2/providers`, which lists each
+contributing bank, its `rate_type`, and its own last-published date), so a weekend value can be a real, if
+minor, multi-source blend rather than a single frozen ECB print. This is why the resolver never assumes any
+particular day has data — it always queries a bounded window and picks whatever dates are actually present.
+
+**Pair methodology, unchanged from §13's direct/inverted design** (`src/lib/providers/frankfurterFxProvider.ts`):
+8 direct pairs (USD/JPY, USD/CHF, USD/CAD, USD/MXN, USD/BRL, USD/CNY, USD/KRW, USD/TWD — the raw USD-base
+rate) + 4 inverted pairs (EUR/USD, GBP/USD, AUD/USD, NZD/USD — `1/rate`, marked `†` "derived" in the UI).
+
+**1D/YTD change — real, computed from two bounded time-series calls per refresh, never fabricated:**
+1. A **recent window** (last 10 calendar days through today) locates the two most recent *distinct* dates
+   actually present in the response — `currentDate` and `previousDate`. This is deliberately date-arithmetic-
+   free (no "yesterday = today − 1" assumption): whatever gap or oddity the provider has, the two latest real
+   observations are used, tolerating any holiday/outage without special-casing weekends.
+2. A **prior-year-end window** (Dec 20 → Dec 31 of the previous calendar year) locates the latest date on or
+   before Dec 31 — `ytdBaseDate`. If nothing is found in that bounded window, `ytdBaseDate` stays `null` and
+   every pair's `ytdChangePct` is `null` — never interpolated or guessed.
+3. **1D % = (current/previous − 1) × 100; YTD % = (current/ytdBase − 1) × 100.** For inverted pairs, **both**
+   snapshots are inverted first (`1/rate`) and the % change is computed on the *inverted* values — never
+   derived from the raw USD-base quote's own change (a wrong-sign bug this project's tests specifically guard
+   against: EUR/USD must go *up* when the raw USD-base EUR rate goes *down*).
+4. Any pair whose previous/YTD-base rate isn't found in its window reports that one field as `null` (never
+   `0`, never a stale/interpolated value) — the UI renders `—` for that cell only, the pair's current value
+   and the other change still display normally.
+
+**Caching — 2 Frankfurter calls per refresh, 6-hour server-side TTL** (unchanged conservative posture from
+§13; Frankfurter has no published rate limit for its self-hosted-friendly free tier, so this is deliberately
+generous, not a quota necessity). Estimated volume: at most 4 refreshes/day × 2 calls ≈ 8 requests/day ≈ 240/
+month — trivial for a free, keyless, open-source API.
+
+**Chile Macro-page FX depth table removed from production.** The CL region's second grid slot now shows a
+plain integrity note ("A broader Chilean FX depth table is not shown here — verified BCCh-live pairs (USD/CLP,
+EUR/CLP) are in the table above.") instead of the removed static table — no empty visual gap, no static data
+presented as if live. Chile's genuinely live/persisted BCCh pairs (USD/CLP, EUR/CLP) are untouched and remain
+visible in the main indicators table's FX category, exactly as before. `getFxRates()`/`CL_FX` are no longer
+referenced anywhere in `macro/page.tsx`.
+
+**`fxRates.ts`/`fxRates.json` retained but marked test/demo-only** — mirrors the `calendar.ts` precedent from
+the calendar production-integrity fix (Phase 8D.2): the file header now explicitly reads "TEST/DEMO-ONLY — NOT
+IMPORTED BY ANY PRODUCTION ROUTE OR PAGE," and `tests/frankfurterFx.test.ts` walks every file under `src/app`
+and `src/lib/data` and fails if any of them import it — so it cannot silently be wired back into a production
+surface without a test failure.
+
+**CurrencyFreaks deprecated, not deleted.** `currencyFreaksClient.ts`/`currencyFreaksFxProvider.ts`/
+`src/lib/data/currencyFreaksFx.ts` remain in the repo with explicit "DEPRECATED ... NOT IMPORTED BY ANY
+PRODUCTION ROUTE OR PAGE" headers; `GET /api/macro/fx/us` now imports `frankfurterFxProvider.ts` instead.
+`CURRENCYFREAKS_API_KEY` **remains configured in Vercel** (per instruction — never removed from the
+environment) but is no longer read by any production code path. A regression test walks `src/app` and
+`src/lib/data` and fails if any production file re-imports the deprecated provider/client.
+
+**Tests:** `tests/frankfurterFx.test.ts` (new, 42 tests) — Frankfurter response parsing (latest/historical/
+time-series), currency-code coverage, direct/inverted pair value + 1D/YTD math (including the inverted-sign
+regression case above), weekend/holiday-tolerant date selection, missing-snapshot → `null` (never 0/
+fabricated), caching, no-raw-payload leakage, Macro-page wiring, Chile-depth-table removal, CurrencyFreaks-
+production-import guard, `fxRates.ts` production-import guard. `tests/currencyFreaksFx.test.ts` retained (25
+tests) as regression coverage for the deprecated-but-kept low-level client/provider, updated to assert the
+deprecation itself rather than production wiring. Full suite 1397 → **1436/1436**, lint 0, build 0 errors.
+
+**Local validation (dev server, real Frankfurter):** `/api/macro/fx/us` → `ok: true`, `source: Frankfurter FX
+reference`, `sourceType: free_third_party_fx_reference`, `currentDate: 2026-07-14`, `previousDate:
+2026-07-13`, `ytdBaseDate: 2025-12-31`, all 12 pairs with real, distinct 1D/YTD percentages (e.g. USD/BRL YTD
+−7.09%, AUD/USD YTD +3.68%). Macro / US page confirmed rendering the `SourceStateBadge`, Day/YTD columns with
+real signed percentages, the `†`/attribution footer. Macro / Chile page confirmed rendering the integrity note
+in place of the removed static table, live BCCh USD/CLP + EUR/CLP unaffected in the indicators table above. No
+console errors. `supabase:check`/`supabase:check-macro` unchanged (this task touches no schema).
+
+Scope limits (explicit): Macro / US forex table + Chile FX depth table removal only; no CurrencyFreaks
+historical workaround; no paid FX API; no Frankfurter MCP server (direct REST API only, per instruction); no
+broad FX architecture refactor; no changes to financials, Structured Notes, the economic calendar's actual/
+previous logic, or auth/watchlist/portfolio; `CURRENCYFREAKS_API_KEY` left configured in Vercel, unremoved.

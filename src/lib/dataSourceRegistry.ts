@@ -156,6 +156,10 @@ export const SOURCE_REGISTRY = {
     labelEn: 'Source-agnostic financials layer',
     labelEs: 'Capa de financials agnóstica de fuente',
   },
+  // DEPRECATED (FX Integrity Task) — no longer referenced by any production
+  // page; the Macro / US forex table now uses frankfurterLive/Unavailable
+  // below. Kept only so historical code/tests referencing these keys don't
+  // break; do not wire new call sites to these.
   currencyFreaksLive: {
     id: 'currencyfreaks-live',
     state: 'live',
@@ -167,6 +171,18 @@ export const SOURCE_REGISTRY = {
     state: 'unavailable',
     labelEn: 'CurrencyFreaks unavailable',
     labelEs: 'CurrencyFreaks no disponible',
+  },
+  frankfurterLive: {
+    id: 'frankfurter-live',
+    state: 'live',
+    labelEn: 'Frankfurter FX reference (free third-party)',
+    labelEs: 'Referencia FX de Frankfurter (terceros gratuito)',
+  },
+  frankfurterUnavailable: {
+    id: 'frankfurter-unavailable',
+    state: 'unavailable',
+    labelEn: 'Frankfurter unavailable',
+    labelEs: 'Frankfurter no disponible',
   },
 } as const satisfies Record<string, SourceEntry>
 

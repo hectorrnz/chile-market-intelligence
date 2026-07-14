@@ -250,38 +250,21 @@ describe('resolveUsForexTable', () => {
   })
 })
 
-// ── Macro/US wiring + Chile-FX-untouched regression ──────────────────────────
+// ── Deprecation regression (FX Integrity Task) ───────────────────────────────
+// The Macro / US forex table moved to Frankfurter (see frankfurterFx.test.ts,
+// which owns the "no production import" and "Chile untouched" guards now).
+// This file keeps only the low-level CurrencyFreaks client/provider unit tests
+// above (still valid regression coverage for the retained-but-unused module)
+// plus a check that the deprecation itself is real and won't silently regress.
 
 const repoRoot = path.resolve(import.meta.dirname, '..')
-const macroPageSrc = fs.readFileSync(path.join(repoRoot, 'src/app/macro/page.tsx'), 'utf8')
 
-describe('Macro page — US forex table uses CurrencyFreaks, Chile stays BCCh/static', () => {
-  it('imports fetchUsForexTable and wires it under a region === "US" branch', () => {
-    assert.match(macroPageSrc, /fetchUsForexTable/)
-    assert.match(macroPageSrc, /region\s*!==\s*'US'/)
-  })
-
-  it('Chile FX depth table still uses getFxRates() filtered by CL_FX — untouched', () => {
-    assert.match(macroPageSrc, /CL_FX\.includes\(f\.id\)/)
-  })
-
-  it('no hardcoded US_FX static list remains (fully replaced by the CurrencyFreaks row set)', () => {
-    assert.doesNotMatch(macroPageSrc, /const US_FX/)
-  })
-
-  it('does not fabricate day/YTD change for the CurrencyFreaks rows (no formatPct call on usForex rows)', () => {
-    const usForexBlock = macroPageSrc.slice(macroPageSrc.indexOf('usForex?.ok'))
-    assert.doesNotMatch(usForexBlock.slice(0, 3000), /formatPct\(r\./)
-  })
-})
-
-describe('CurrencyFreaks client/provider — no NEXT_PUBLIC env var, no key logging', () => {
+describe('CurrencyFreaks client/provider — deprecated, no NEXT_PUBLIC env var, no key logging', () => {
   const clientSrc = fs.readFileSync(path.join(repoRoot, 'src/lib/providers/currencyFreaksClient.ts'), 'utf8')
   const providerSrc = fs.readFileSync(path.join(repoRoot, 'src/lib/providers/currencyFreaksFxProvider.ts'), 'utf8')
-  const routeSrc = fs.readFileSync(path.join(repoRoot, 'src/app/api/macro/fx/us/route.ts'), 'utf8')
 
   it('never defines a NEXT_PUBLIC_CURRENCYFREAKS_API_KEY', () => {
-    for (const src of [clientSrc, providerSrc, routeSrc]) {
+    for (const src of [clientSrc, providerSrc]) {
       assert.doesNotMatch(src, /NEXT_PUBLIC_CURRENCYFREAKS/)
     }
   })
@@ -290,7 +273,15 @@ describe('CurrencyFreaks client/provider — no NEXT_PUBLIC env var, no key logg
     assert.match(clientSrc, /process\.env\.CURRENCYFREAKS_API_KEY/)
   })
 
-  it('the API route never reads process.env.CURRENCYFREAKS_API_KEY directly — only the provider does', () => {
+  it('both files are explicitly marked deprecated / not imported by production', () => {
+    assert.match(clientSrc, /DEPRECATED/)
+    assert.match(providerSrc, /DEPRECATED/)
+    assert.match(providerSrc, /NOT IMPORTED BY ANY PRODUCTION ROUTE OR PAGE/)
+  })
+
+  it('the API route (/api/macro/fx/us) no longer imports this provider — see frankfurterFx.test.ts', () => {
+    const routeSrc = fs.readFileSync(path.join(repoRoot, 'src/app/api/macro/fx/us/route.ts'), 'utf8')
+    assert.doesNotMatch(routeSrc, /currencyFreaksFxProvider/)
     assert.doesNotMatch(routeSrc, /process\.env\.CURRENCYFREAKS_API_KEY/)
   })
 })

@@ -9,14 +9,13 @@ import { usePersistentState } from '@/lib/usePersistentState'
 import { useEscape } from '@/lib/useEscape'
 import { getAllIndicators, fetchMacroIndicators } from '@/lib/data/macro'
 import { getChileanRates } from '@/lib/data/chileanRates'
-import { getFxRates } from '@/lib/data/fxRates'
 import { getYieldCurve } from '@/lib/data/yieldCurves'
 import { getMacroHistoryForTimeframe, fetchMacroHistory } from '@/lib/data/macroHistory'
 import { getSeriesByStaticId } from '@/config/macroSeries'
 import { DataSourceBadge } from '@/components/ui/DataSourceBadge'
 import { SourceStateBadge } from '@/components/ui/SourceStateBadge'
-import { fetchUsForexTable } from '@/lib/data/currencyFreaksFx'
-import type { UsForexTableResult } from '@/lib/providers/currencyFreaksFxProvider'
+import { fetchUsForexTable } from '@/lib/data/frankfurterFx'
+import type { UsForexTableResult } from '@/lib/providers/frankfurterFxProvider'
 import type { DataSourceStatus } from '@/lib/providers/types'
 import { changeColor, formatMacroValue, formatMacroChange, formatFx, formatPct } from '@/lib/formatters'
 import { LineChart } from '@/components/charts/LineChart'
@@ -32,7 +31,6 @@ const RATE_HIST: Record<string, string> = {
   btp10: 'btp10', btu5: 'btu5', bcu5: 'bcu5',
   swap2y: 'swap2y', swap1y: 'swap1y', pdbc90: 'pdbc90',
 }
-const CL_FX = ['clp', 'eurclp', 'clpcop', 'usdbrl', 'usdars', 'usdmxn', 'usdcop', 'usdpen']
 
 interface Row {
   id: string; label: string; value: number; unit: string
@@ -45,7 +43,6 @@ export default function MacroPage() {
   const [region, setRegion] = usePersistentState<Region>('cmi.macroRegion', 'CL')
   const [selected, setSelected] = useState<Row | null>(null)
   const [timeframe, setTimeframe] = useState<Timeframe>(5)
-  const [fxSort, setFxSort] = useState<{ key: 'pair' | 'last' | 'day' | 'ytd'; dir: 'asc' | 'desc' } | null>(null)
   useEscape(!!selected, () => setSelected(null))
 
   // Region is driven by the sidebar Macro dropdown (Chile / US)
@@ -127,10 +124,12 @@ export default function MacroPage() {
     ? 'FRED' as const
     : 'BCCh' as const
 
-  // FX Data Task — Macro / US forex table is CurrencyFreaks (unofficial
-  // third-party), fetched lazily only when the US region is active and cached
-  // server-side (see currencyFreaksFxProvider.ts). Chile FX below is entirely
-  // separate and stays BCCh/static-sourced via getFxRates() — untouched.
+  // FX Integrity Task — Macro / US forex table is Frankfurter (free, no key,
+  // real 1D/YTD change), fetched lazily only when the US region is active and
+  // cached server-side (see frankfurterFxProvider.ts). The Chile Macro-page FX
+  // depth table was removed from production (it was a static/sample table with
+  // no live/persisted backing) — Chile's verified live BCCh FX pairs (USD/CLP,
+  // EUR/CLP) remain visible in the indicators table above (FX category).
   const [usForex, setUsForex] = useState<UsForexTableResult | null>(null)
   useEffect(() => {
     if (region !== 'US') return
@@ -166,20 +165,6 @@ export default function MacroPage() {
     : indByCat(['US Rates', 'US Inflation', 'US Activity', 'US Labor', 'US FX', 'Crypto'])
 
   const curve = getYieldCurve(region)
-  // Chile FX depth stays static/BCCh-sourced (getFxRates()) — unchanged.
-  const fx = getFxRates().filter(f => CL_FX.includes(f.id)).sort((a, b) => CL_FX.indexOf(a.id) - CL_FX.indexOf(b.id))
-  const sortedFx = (() => {
-    if (!fxSort) return fx
-    const get = (f: typeof fx[number]) => fxSort.key === 'pair' ? f.pair : fxSort.key === 'last' ? f.last : fxSort.key === 'day' ? f.dayChangePct : f.ytdChangePct
-    return [...fx].sort((a, b) => {
-      const av = get(a), bv = get(b)
-      const cmp = typeof av === 'string' ? av.localeCompare(bv as string) : (av as number) - (bv as number)
-      return fxSort.dir === 'asc' ? cmp : -cmp
-    })
-  })()
-  const toggleFx = (key: 'pair' | 'last' | 'day' | 'ytd') =>
-    setFxSort(prev => (prev?.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: key === 'pair' ? 'asc' : 'desc' }))
-  const fxArrow = (key: string) => (fxSort?.key === key ? (fxSort.dir === 'asc' ? ' ↑' : ' ↓') : '')
 
   const openRow = (r: Row) => { if (r.histId) { setSelected(r); setTimeframe(5) } }
   const historyData = selected?.histId
@@ -276,34 +261,19 @@ export default function MacroPage() {
         </div>
 
         {region === 'CL' ? (
-          <div className="bg-surface border border-border rounded overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-border"><span className="ui-label text-muted-fg">{t.macro.fxDepth}</span></div>
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border bg-surface-2">
-                  <th onClick={() => toggleFx('pair')} className="text-left py-2 pl-4 pr-3 ui-table-header text-muted-fg cursor-pointer hover:text-foreground select-none">{t.macro.pair}{fxArrow('pair')}</th>
-                  <th onClick={() => toggleFx('last')} className="text-right py-2 px-3 ui-table-header text-muted-fg cursor-pointer hover:text-foreground select-none">{t.home.last}{fxArrow('last')}</th>
-                  <th onClick={() => toggleFx('day')} className="text-right py-2 px-3 ui-table-header text-muted-fg cursor-pointer hover:text-foreground select-none">{t.home.dayChg}{fxArrow('day')}</th>
-                  <th onClick={() => toggleFx('ytd')} className="text-right py-2 px-3 pr-4 ui-table-header text-muted-fg cursor-pointer hover:text-foreground select-none">{t.home.ytd}{fxArrow('ytd')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedFx.map(f => (
-                  <tr key={f.id} className="border-b border-border last:border-0">
-                    <td className="py-2 pl-4 pr-3 text-foreground">{f.pair}</td>
-                    <td className="py-2 px-3 text-right ui-number text-foreground">{formatFx(f.last, f.decimals ?? 2)}</td>
-                    <td className={`py-2 px-3 text-right ui-number ${changeColor(f.dayChangePct)}`}>{formatPct(f.dayChangePct)}</td>
-                    <td className={`py-2 px-3 pr-4 text-right ui-number ${changeColor(f.ytdChangePct)}`}>{formatPct(f.ytdChangePct)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          // The Chile Macro-page FX depth table (static/sample data, no
+          // live/persisted backing) was removed from production per the FX
+          // integrity fix — never show a static table as if it were live.
+          // Chile's verified live BCCh FX pairs (USD/CLP, EUR/CLP) remain
+          // visible in the indicators table above (FX category).
+          <div className="bg-surface border border-border rounded p-4 flex items-center justify-center text-center">
+            <p className="text-xs text-muted-fg max-w-xs">{t.macro.fxClDepthRemoved}</p>
           </div>
         ) : (
           <div className="bg-surface border border-border rounded overflow-hidden">
             <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-2">
               <span className="ui-label text-muted-fg">{t.macro.fxDepth}</span>
-              <SourceStateBadge sourceKey={usForex?.ok ? 'currencyFreaksLive' : 'currencyFreaksUnavailable'} />
+              <SourceStateBadge sourceKey={usForex?.ok ? 'frankfurterLive' : 'frankfurterUnavailable'} />
             </div>
             {usForex?.ok && usForex.rows.length > 0 ? (
               <>
@@ -312,7 +282,8 @@ export default function MacroPage() {
                     <tr className="border-b border-border bg-surface-2">
                       <th className="text-left py-2 pl-4 pr-3 ui-table-header text-muted-fg">{t.macro.pair}</th>
                       <th className="text-right py-2 px-3 ui-table-header text-muted-fg">{t.home.last}</th>
-                      <th className="text-left py-2 px-3 pr-4 ui-table-header text-muted-fg">{t.macro.fxAsOf}</th>
+                      <th className="text-right py-2 px-3 ui-table-header text-muted-fg">{t.home.dayChg}</th>
+                      <th className="text-right py-2 px-3 pr-4 ui-table-header text-muted-fg">{t.home.ytd}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -320,19 +291,26 @@ export default function MacroPage() {
                       <tr key={r.id} className="border-b border-border last:border-0">
                         <td className="py-2 pl-4 pr-3 text-foreground">
                           {r.pair}
-                          <span className="ml-1.5 text-muted-fg" title={r.direction === 'direct' ? t.macro.fxDirect : t.macro.fxDerived}>
-                            {r.direction === 'direct' ? '' : '†'}
-                          </span>
+                          {r.derived && (
+                            <span className="ml-1.5 text-muted-fg" title={t.macro.fxDerived}>†</span>
+                          )}
                         </td>
-                        <td className="py-2 px-3 text-right ui-number text-foreground">{formatFx(r.last, r.decimals)}</td>
-                        <td className="py-2 px-3 pr-4 text-muted-fg whitespace-nowrap">{usForex.asOf ?? '—'}</td>
+                        <td className="py-2 px-3 text-right ui-number text-foreground">{formatFx(r.value, r.decimals)}</td>
+                        <td className={`py-2 px-3 text-right ui-number ${r.oneDayChangePct != null ? changeColor(r.oneDayChangePct) : 'text-muted-fg'}`} title={r.oneDayChangePct == null ? t.macro.fxChangeUnavailable : undefined}>
+                          {r.oneDayChangePct != null ? formatPct(r.oneDayChangePct) : '—'}
+                        </td>
+                        <td className={`py-2 px-3 pr-4 text-right ui-number ${r.ytdChangePct != null ? changeColor(r.ytdChangePct) : 'text-muted-fg'}`} title={r.ytdChangePct == null ? t.macro.fxChangeUnavailable : undefined}>
+                          {r.ytdChangePct != null ? formatPct(r.ytdChangePct) : '—'}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
                 <div className="px-4 py-2 border-t border-border space-y-0.5">
                   <p className="text-xs text-muted-fg">{t.macro.fxUnofficial}</p>
-                  <p className="text-xs text-muted-fg">† {t.macro.fxDerived} · {t.macro.fxNoChangeData}</p>
+                  <p className="text-xs text-muted-fg">
+                    {t.macro.fxAsOf} {usForex.currentDate ?? '—'} · † {t.macro.fxDerived} · {usForex.providerAttribution}
+                  </p>
                 </div>
               </>
             ) : (

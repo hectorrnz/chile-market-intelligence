@@ -1,3 +1,9 @@
+// DEPRECATED (FX Integrity Task). NOT IMPORTED BY ANY PRODUCTION ROUTE OR PAGE.
+// Superseded by frankfurterFxProvider.ts/frankfurterClient.ts, which
+// need no key and provide real 1D/YTD change. `CURRENCYFREAKS_API_KEY` is no
+// longer read by production code. Kept only for possible future reuse — see
+// currencyFreaksFxProvider.ts's header for the full deprecation record.
+//
 // FX Data Task — CurrencyFreaks (unofficial third-party) latest-rates client.
 //
 // SERVER-ONLY. Never import from a client component. Reads
