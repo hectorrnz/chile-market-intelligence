@@ -6,6 +6,16 @@
 import type { DbListResult } from '../types'
 import type { Json, MacroIndicatorRow, MacroObservationRow } from '../../supabase/database.types'
 import { decideDbSource } from '../dbMode.ts'
+import {
+  downsampleMonthly,
+  downsampleWeekly,
+  applyMacroFrequency,
+  type MacroTimeframe,
+} from '../../providers/macroFrequency.ts'
+
+// Re-export the canonical downsamplers (defined once in macroFrequency) so
+// existing importers of this repository keep working.
+export { downsampleMonthly, downsampleWeekly }
 
 export interface MacroIndicatorRecord {
   id: string
@@ -399,38 +409,19 @@ export async function getLatestIngestionRun(
 
 // ─── Chart-ready observation helpers (5C.1) ───────────────────────────────────
 
-/** Last observation per calendar month — preserves ascending sort. */
-export function downsampleMonthly(
-  points: { date: string; value: number }[],
-): { date: string; value: number }[] {
-  const map = new Map<string, { date: string; value: number }>()
-  for (const p of points) map.set(p.date.slice(0, 7), p) // ascending → last wins
-  return [...map.values()].sort((a, b) => a.date.localeCompare(b.date))
-}
-
-/** Last observation per ISO week (Mon–Sun) — preserves ascending sort. */
-export function downsampleWeekly(
-  points: { date: string; value: number }[],
-): { date: string; value: number }[] {
-  const map = new Map<string, { date: string; value: number }>()
-  for (const p of points) {
-    const d = new Date(p.date + 'T00:00:00Z')
-    const day = d.getUTCDay() // 0=Sun
-    const mon = new Date(d)
-    mon.setUTCDate(d.getUTCDate() - ((day + 6) % 7))
-    map.set(mon.toISOString().slice(0, 10), p)
-  }
-  return [...map.values()].sort((a, b) => a.date.localeCompare(b.date))
-}
-
-/** Downsample to chart-appropriate density for the requested timeframe. */
+/**
+ * Downsample to chart-appropriate density for the requested timeframe, using the
+ * category-aware frequency policy (see macroFrequency.ts). `histId` is required
+ * to distinguish a market-priced series (1Y daily · 3Y/5Y weekly · 10Y monthly)
+ * from a central-bank rate / inflation / labor / activity series (monthly at
+ * every timeframe). An omitted `histId` defaults to the market plan.
+ */
 export function downsampleForTimeframe(
   points: { date: string; value: number }[],
-  years: 1 | 3 | 5 | 10,
+  years: MacroTimeframe,
+  histId = '',
 ): { date: string; value: number }[] {
-  if (years === 1) return points          // daily — keep all (~365 max)
-  if (years === 3) return downsampleWeekly(points)
-  return downsampleMonthly(points)        // 5Y / 10Y
+  return applyMacroFrequency(points, histId, years)
 }
 
 /**
@@ -492,7 +483,7 @@ export async function getMacroObservationsForTimeframe(
       .filter(r => r.value != null && r.observation_date >= cutoffStr)
       .map(r => ({ date: r.observation_date, value: Number(r.value) }))
 
-    return { data: downsampleForTimeframe(valid, years), source: 'supabase' }
+    return { data: downsampleForTimeframe(valid, years, indicatorId), source: 'supabase' }
   } catch {
     return { data: [], source: 'static', error: 'Supabase query failed' }
   }

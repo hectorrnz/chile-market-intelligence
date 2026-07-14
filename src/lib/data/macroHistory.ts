@@ -1,6 +1,7 @@
 import rawHistory from '@/data/macroHistory.json'
 import type { MacroHistoryPoint } from '@/types'
 import type { MacroHistoryResponse } from '@/lib/providers/types'
+import { macroChartFrequency } from '@/lib/providers/macroFrequency'
 
 const history = rawHistory as MacroHistoryPoint[]
 
@@ -23,31 +24,37 @@ function monthlyFor(indicatorId: string): MacroHistoryPoint[] {
 }
 
 /**
- * Macro popup chart frequencies:
- *   1Y  → daily   (up to 365 business days)
- *   3Y  → weekly  (up to 3×52 weeks)
- *   5Y / 10Y → monthly (downsampled from weekly)
- * Each falls back to the next coarser series if the preferred one is unavailable.
+ * Macro popup chart frequencies — category-aware (see macroFrequency.ts):
+ *   • Market series (non-CB rates, FX, commodities, crypto):
+ *       1Y → daily · 3Y/5Y → weekly · 10Y → monthly
+ *   • CB rates (TPM, Fed Funds) + inflation + labor + activity:
+ *       monthly at every timeframe
+ * Each frequency falls back to the next coarser materialized series if the
+ * preferred one is unavailable in the static bundle.
  */
 export function getMacroHistoryForTimeframe(
   indicatorId: string,
   years: 1 | 3 | 5 | 10
 ): MacroHistoryPoint[] {
-  if (years === 1) {
+  const freq = macroChartFrequency(indicatorId, years)
+
+  if (freq === 'daily') {
     const daily = byType(indicatorId, 'daily')
     if (daily.length >= 2) return daily.slice(-365)
-    const monthly = monthlyFor(indicatorId)
-    if (monthly.length >= 2) return monthly.slice(-12)
+    const weekly = byType(indicatorId, 'weekly')
+    if (weekly.length >= 2) return weekly.slice(-52)
     return byType(indicatorId, 'quarterly').slice(-4)
   }
-  if (years === 3) {
+
+  if (freq === 'weekly') {
     const weekly = byType(indicatorId, 'weekly')
-    if (weekly.length >= 2) return weekly.slice(-3 * 52)
+    if (weekly.length >= 2) return weekly.slice(-years * 52)
     const monthly = monthlyFor(indicatorId)
-    if (monthly.length >= 2) return monthly.slice(-36)
-    return byType(indicatorId, 'quarterly').slice(-12)
+    if (monthly.length >= 2) return monthly.slice(-years * 12)
+    return byType(indicatorId, 'quarterly').slice(-years * 4)
   }
-  // 5Y and 10Y: monthly (downsampled from weekly)
+
+  // monthly (CB rates, inflation, labor, activity — every timeframe)
   const monthly = monthlyFor(indicatorId)
   if (monthly.length >= 2) return monthly.slice(-years * 12)
   return byType(indicatorId, 'quarterly').slice(-years * 4)

@@ -161,40 +161,77 @@ describe('downsampleWeekly', () => {
   })
 })
 
-// ─── downsampleForTimeframe ───────────────────────────────────────────────────
+// ─── downsampleForTimeframe (category-aware) ──────────────────────────────────
 
-describe('downsampleForTimeframe', () => {
+describe('downsampleForTimeframe — market series (e.g. usdclp, us10y)', () => {
   it('returns all daily points for 1Y', () => {
     const pts = makeDailyPoints(1)
-    const result = downsampleForTimeframe(pts, 1)
+    const result = downsampleForTimeframe(pts, 1, 'usdclp')
     assert.equal(result.length, pts.length)
   })
 
   it('returns weekly for 3Y', () => {
     const pts = makeDailyPoints(3)
     const weekly = downsampleWeekly(pts)
-    const result = downsampleForTimeframe(pts, 3)
+    const result = downsampleForTimeframe(pts, 3, 'usdclp')
     assert.equal(result.length, weekly.length)
   })
 
-  it('returns monthly for 5Y', () => {
+  it('returns WEEKLY for 5Y (market series stay weekly at 5Y, not monthly)', () => {
     const pts = makeDailyPoints(5)
-    const monthly = downsampleMonthly(pts)
-    const result = downsampleForTimeframe(pts, 5)
-    assert.equal(result.length, monthly.length)
+    const weekly = downsampleWeekly(pts)
+    const result = downsampleForTimeframe(pts, 5, 'us10y')
+    assert.equal(result.length, weekly.length)
+    // and materially denser than a monthly downsample would be
+    assert.ok(result.length > downsampleMonthly(pts).length)
   })
 
   it('returns monthly for 10Y', () => {
     const pts = makeDailyPoints(10)
     const monthly = downsampleMonthly(pts)
-    const result = downsampleForTimeframe(pts, 10)
+    const result = downsampleForTimeframe(pts, 10, 'cobre-lme')
     assert.equal(result.length, monthly.length)
   })
 
+  it('omitted histId defaults to the market plan (weekly at 5Y)', () => {
+    const pts = makeDailyPoints(5)
+    assert.equal(downsampleForTimeframe(pts, 5).length, downsampleWeekly(pts).length)
+  })
+
   it('handles empty input for all timeframes', () => {
-    assert.deepEqual(downsampleForTimeframe([], 1), [])
-    assert.deepEqual(downsampleForTimeframe([], 3), [])
-    assert.deepEqual(downsampleForTimeframe([], 5), [])
-    assert.deepEqual(downsampleForTimeframe([], 10), [])
+    assert.deepEqual(downsampleForTimeframe([], 1, 'usdclp'), [])
+    assert.deepEqual(downsampleForTimeframe([], 3, 'usdclp'), [])
+    assert.deepEqual(downsampleForTimeframe([], 5, 'usdclp'), [])
+    assert.deepEqual(downsampleForTimeframe([], 10, 'usdclp'), [])
+  })
+})
+
+describe('downsampleForTimeframe — monthly-all series (CB rate / inflation / labor / activity)', () => {
+  it('Fed Funds is monthly at every timeframe (incl. 1Y and 3Y)', () => {
+    for (const y of [1, 3, 5, 10] as const) {
+      const pts = makeDailyPoints(y)
+      const result = downsampleForTimeframe(pts, y, 'fed-funds')
+      assert.equal(result.length, downsampleMonthly(pts).length, `1Y..10Y monthly, failed at ${y}Y`)
+    }
+  })
+
+  it('TPM (Chile central bank) is monthly at 1Y (not daily)', () => {
+    const pts = makeDailyPoints(1)
+    const result = downsampleForTimeframe(pts, 1, 'tpm')
+    assert.equal(result.length, downsampleMonthly(pts).length)
+    assert.ok(result.length < pts.length)
+  })
+
+  it('inflation (ipc-anual) is monthly at 3Y (not weekly)', () => {
+    const pts = makeDailyPoints(3)
+    const result = downsampleForTimeframe(pts, 3, 'ipc-anual')
+    assert.equal(result.length, downsampleMonthly(pts).length)
+    assert.ok(result.length < downsampleWeekly(pts).length)
+  })
+
+  it('labor (us-unemployment) is monthly at 1Y', () => {
+    const pts = makeDailyPoints(1)
+    const result = downsampleForTimeframe(pts, 1, 'us-unemployment')
+    assert.equal(result.length, downsampleMonthly(pts).length)
   })
 })

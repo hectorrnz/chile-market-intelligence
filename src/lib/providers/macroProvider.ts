@@ -12,6 +12,7 @@ import { staticMacroProvider } from './staticMacroProvider'
 import { bcchMacroProvider } from './bcchMacroProvider'
 import { fredMacroProvider } from './fredMacroProvider'
 import { getSeriesByStaticId } from '@/config/macroSeries'
+import { applyMacroFrequency } from './macroFrequency'
 import { getDbMode, decideDbSource } from '@/lib/db/dbMode'
 import {
   getMacroObservationsForTimeframe,
@@ -162,7 +163,15 @@ export async function resolveMacroHistory(
   const decision = decideSource(dataMode, liveOk, liveReason)
 
   if (decision.liveAvailable && liveData && liveData.ok) {
-    const points: MacroChartPoint[] = liveData.data.map(p => ({ date: p.date, value: p.value }))
+    // Live providers return their series at native cadence (daily for Treasury
+    // yields, monthly for CPI, etc.). Apply the same category-aware frequency
+    // policy the persisted and static paths use so the popup chart's density is
+    // identical regardless of which layer served the data.
+    const points: MacroChartPoint[] = applyMacroFrequency(
+      liveData.data.map(p => ({ date: p.date, value: p.value })),
+      indicatorId,
+      years,
+    )
     const seriesId = def?.providerSeriesCode ?? undefined
     return {
       data: points,
