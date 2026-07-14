@@ -4,11 +4,11 @@
     "name": "IPSA",
     "country": "Chile",
     "region": "LatAm",
-    "value": 10927.71,
+    "value": 10974.24,
     "currency": "CLP",
     "dayChangePct": 0.41,
     "ytdChangePct": 8.2,
-    "date": "2026-07-13",
+    "date": "2026-07-14",
     "source": "yfinance / Yahoo Finance"
   },
   {
@@ -16,11 +16,11 @@
     "name": "S&P 500",
     "country": "USA",
     "region": "North America",
-    "value": 7515.34,
+    "value": 7551.77,
     "currency": "USD",
-    "dayChangePct": -0.79,
-    "ytdChangePct": 9.58,
-    "date": "2026-07-13",
+    "dayChangePct": 0.48,
+    "ytdChangePct": 10.11,
+    "date": "2026-07-14",
     "source": "yfinance / Yahoo Finance"
   },
   {
@@ -28,11 +28,11 @@
     "name": "Ibovespa",
     "country": "Brazil",
     "region": "LatAm",
-    "value": 175739.08,
+    "value": 176307.62,
     "currency": "BRL",
-    "dayChangePct": -1.2,
-    "ytdChangePct": 9.47,
-    "date": "2026-07-13",
+    "dayChangePct": 0.32,
+    "ytdChangePct": 9.82,
+    "date": "2026-07-14",
     "source": "yfinance / Yahoo Finance"
   },
   {
@@ -40,11 +40,11 @@
     "name": "IPC México",
     "country": "Mexico",
     "region": "LatAm",
-    "value": 65973.08,
+    "value": 66765.53,
     "currency": "MXN",
-    "dayChangePct": -0.79,
-    "ytdChangePct": 2.86,
-    "date": "2026-07-13",
+    "dayChangePct": 1.2,
+    "ytdChangePct": 4.09,
+    "date": "2026-07-14",
     "source": "yfinance / Yahoo Finance"
   },
   {
@@ -52,11 +52,11 @@
     "name": "S&P Colombia (proxy)",
     "country": "Colombia",
     "region": "LatAm",
-    "value": 1571.62,
+    "value": 1568.25,
     "currency": "COP",
     "dayChangePct": -0.58,
     "ytdChangePct": -4.1,
-    "date": "2026-07-13",
+    "date": "2026-07-14",
     "source": "yfinance / Yahoo Finance"
   },
   {
@@ -64,11 +64,11 @@
     "name": "Peru ETF proxy (EPU)",
     "country": "Peru",
     "region": "LatAm",
-    "value": 85.21,
+    "value": 86.9,
     "currency": "USD",
-    "dayChangePct": -1.33,
-    "ytdChangePct": 19.13,
-    "date": "2026-07-13",
+    "dayChangePct": 1.98,
+    "ytdChangePct": 21.49,
+    "date": "2026-07-14",
     "source": "yfinance / Yahoo Finance"
   },
   {
@@ -76,11 +76,11 @@
     "name": "Euro Stoxx 50",
     "country": "Eurozone",
     "region": "Europe",
-    "value": 6269.97,
+    "value": 6270.65,
     "currency": "EUR",
-    "dayChangePct": -0.23,
-    "ytdChangePct": 5.85,
-    "date": "2026-07-13",
+    "dayChangePct": -0.01,
+    "ytdChangePct": 5.86,
+    "date": "2026-07-14",
     "source": "yfinance / Yahoo Finance"
   },
   {
@@ -88,11 +88,11 @@
     "name": "FTSE 100",
     "country": "UK",
     "region": "Europe",
-    "value": 10498.29,
+    "value": 10518.13,
     "currency": "GBP",
-    "dayChangePct": 0.01,
-    "ytdChangePct": 5.5,
-    "date": "2026-07-13",
+    "dayChangePct": 0.19,
+    "ytdChangePct": 5.7,
+    "date": "2026-07-14",
     "source": "yfinance / Yahoo Finance"
   },
   {
@@ -100,11 +100,11 @@
     "name": "Nikkei 225",
     "country": "Japan",
     "region": "Asia",
-    "value": 68557.73,
+    "value": 67242.73,
     "currency": "JPY",
-    "dayChangePct": 1.2,
-    "ytdChangePct": 32.27,
-    "date": "2026-07-13",
+    "dayChangePct": -1.92,
+    "ytdChangePct": 29.73,
+    "date": "2026-07-14",
     "source": "yfinance / Yahoo Finance"
   },
   {
@@ -112,11 +112,11 @@
     "name": "Hang Seng",
     "country": "Hong Kong",
     "region": "Asia",
-    "value": 24175.12,
+    "value": 24340.73,
     "currency": "HKD",
-    "dayChangePct": 0.6,
-    "ytdChangePct": -8.21,
-    "date": "2026-07-13",
+    "dayChangePct": 0.52,
+    "ytdChangePct": -7.58,
+    "date": "2026-07-14",
     "source": "yfinance / Yahoo Finance"
   },
   {
@@ -124,11 +124,11 @@
     "name": "KOSPI",
     "country": "South Korea",
     "region": "Asia",
-    "value": 7475.94,
+    "value": 6806.93,
     "currency": "KRW",
-    "dayChangePct": 2.52,
-    "ytdChangePct": 73.47,
-    "date": "2026-07-13",
+    "dayChangePct": -8.95,
+    "ytdChangePct": 57.95,
+    "date": "2026-07-14",
     "source": "yfinance / Yahoo Finance"
   }
 ]
