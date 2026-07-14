@@ -101,7 +101,15 @@ export default function MacroPage() {
     fetchMacroHistory(histId, `${timeframe}Y` as '1Y' | '3Y' | '5Y' | '10Y', ac.signal).then(res => {
       if (!res) return
       setHistStatus(res.metadata.status)
-      if (res.metadata.liveAvailable && res.data.length >= 2) setLiveHist({ key, data: res.data })
+      // `liveAvailable` only means "freshly live-fetched this request" — the
+      // Supabase-persisted branch of resolveMacroHistory deliberately sets it
+      // false even though its data is real and current (a real bug: this gate
+      // used to reject persisted history outright, silently falling back to
+      // the static bundled JSON for every indicator's popup chart, even when
+      // the API had just returned correct persisted data). Accept any
+      // non-static status instead.
+      const usable = res.metadata.status === 'live' || res.metadata.status === 'persisted'
+      if (usable && res.data.length >= 2) setLiveHist({ key, data: res.data })
     })
     return () => ac.abort()
   }, [selected?.histId, timeframe])
