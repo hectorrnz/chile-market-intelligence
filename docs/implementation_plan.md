@@ -1757,3 +1757,56 @@ historical workaround; no paid FX API; no Frankfurter MCP server (direct REST AP
 architecture refactor; financials, Structured Notes, the calendar's actual/previous logic, and
 auth/watchlist/portfolio untouched; `CURRENCYFREAKS_API_KEY` left configured in Vercel, unremoved. See
 `docs/macro_market_source_coverage.md` §14 for the full discovery/design record.
+
+---
+
+**Macro UX Task — Live Yield Curves, Update Button, Current-Month Calendar Embed, Badge/Footer Conventions**
+✓ COMPLETE (2026-07-14)
+
+Six-part Macro page overhaul requested directly by the user, all implemented and validated live:
+
+1. **Live yield curves (both regions).** New `src/lib/providers/yieldCurveProvider.ts` computes today/1-week-
+   ago/prior-year-end using **only already-verified series** (US: 5 FRED tenors 3M/2Y/10Y/20Y/30Y; CL: 5 BCCh
+   series TPM/Cámara Swap 1Y/2Y/BTU 5Y/10Y, the BTU tenors labeled `(UF)` since they're real not nominal rates)
+   — no new series were guessed or added without live verification (FRED access was unavailable from this
+   task's sandbox to verify additional tenors). A tenor missing a usable point for any target date is dropped
+   entirely, never fabricated. New `GET /api/macro/yield-curve?region=`, 6h server cache, static-curve fallback
+   preserved. Verified live in the dev server: "Live BCCh"/"Live FRED" badges with real values and dates.
+2. **"Live" badge wording + `"Source: X as of Mon/DD/YY"` footnote convention.** Fixed `frankfurterLive`/
+   `yahooLiveOverlay` registry labels to lead with "Live —". New `formatSourceDate()` (timezone-safe, no
+   `Date()` parsing) + shared `<TableSourceFooter>` component, wired into the Macro page's 3 tables,
+   `/macro/calendar`, and Home's Macro/FX panels (the sections with a real per-row as-of date).
+3. **Update Data button** on the Macro page — refreshes indicators (both regions), the yield curve, and
+   (US only) the Frankfurter FX table + current-month calendar in one click. Verified live: every expected
+   endpoint re-fetched with no errors.
+4. **Current-month economic calendar embedded** on the Macro main tab (US region — real FRED events for the
+   current calendar month) with "View full calendar →" for other months; Chile shows the same honest deferred
+   message `/macro/calendar` already used. `resolveFredReleaseCalendar` refactored into a thin wrapper over a
+   new `resolveFredReleaseCalendarRange(start, end)` (unchanged behavior, regression-tested); the table markup
+   was extracted into a shared `EconomicCalendarTable` component reused by both pages.
+5. **Region-aware subtitle — a real bug fixed.** The Macro page's subtitle was a single fixed string reading
+   "...Banco Central de Chile · INE · **Hacienda** · LME" shown even on the US tab (and Hacienda was never
+   actually a real source for any indicator). `clSubtitle`/`usSubtitle` existed in `i18n.ts` but were dead
+   code — now correctly wired per region, with the wording corrected (Hacienda removed; US gains BEA).
+6. **Market Implication column removed** from the indicators table (both regions) — static editorial
+   commentary, never a live/derived field; the underlying JSON field is untouched, only the column dropped.
+
+**Tests:** `tests/yieldCurveProvider.test.ts` (14 new), plus additions to `tests/fredReleaseCalendar.test.ts`
+(3) and `tests/formatters.test.ts` (4). Full suite 1436 → **1456/1456**, lint 0, build 0 errors (14 API
+routes, new `/api/macro/yield-curve`).
+
+**Local validation (dev server, real BCCh/FRED/Frankfurter):** both regions confirmed correct — no Chilean
+agency names on the US tab, no Market Implication column, real "Source: X as of Mon/DD/YY" footers, live
+yield curves with real values/dates, current-month FRED calendar embedded with real events, Update button
+verified via server logs (every endpoint re-fetched successfully). No console errors on Macro or Home.
+
+Scope limits (explicit): this Macro-page task only. The broader "all tables" footer/badge convention was
+applied to the Macro page, `/macro/calendar`, and Home's Macro/FX panels — sections with a genuine per-row
+as-of date. Home's sector/rates/index panels and other pages' static-only footers were left unchanged (no
+real date to report, would require fabrication or scope beyond this task). US yield curve stays 5 tenors
+pending live verification of additional FRED series. No new dependency, no schema change. See
+`docs/macro_market_source_coverage.md` §15 for the full record.
+
+Next: verify + add the remaining FRED Treasury tenors (1M/6M/1Y/3Y/5Y/7Y) for a richer US yield curve;
+extend the footer convention to Home's sector/rates/index panels if a real as-of date becomes available;
+periodically re-check for a live Chile release-date source.

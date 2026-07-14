@@ -1,21 +1,27 @@
 'use client'
 
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { SourceNote } from '@/components/ui/SourceNote'
+import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
+import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
+import { EconomicCalendarTable } from '@/components/macro/EconomicCalendarTable'
 import { useLang } from '@/components/providers/LangProvider'
 import { usePersistentState } from '@/lib/usePersistentState'
 import { useEscape } from '@/lib/useEscape'
 import { getAllIndicators, fetchMacroIndicators } from '@/lib/data/macro'
 import { getChileanRates } from '@/lib/data/chileanRates'
 import { getYieldCurve } from '@/lib/data/yieldCurves'
+import { fetchLiveYieldCurve } from '@/lib/data/yieldCurveLive'
 import { getMacroHistoryForTimeframe, fetchMacroHistory } from '@/lib/data/macroHistory'
 import { getSeriesByStaticId } from '@/config/macroSeries'
 import { DataSourceBadge } from '@/components/ui/DataSourceBadge'
 import { SourceStateBadge } from '@/components/ui/SourceStateBadge'
 import { fetchUsForexTable } from '@/lib/data/frankfurterFx'
 import type { UsForexTableResult } from '@/lib/providers/frankfurterFxProvider'
+import type { LiveYieldCurveResult } from '@/lib/providers/yieldCurveProvider'
+import { fetchFredReleaseCalendarRange, type FredCalendarFetchResult } from '@/lib/data/fredCalendar'
 import type { DataSourceStatus } from '@/lib/providers/types'
 import { changeColor, formatMacroValue, formatMacroChange, formatFx, formatPct } from '@/lib/formatters'
 import { LineChart } from '@/components/charts/LineChart'
@@ -35,7 +41,17 @@ const RATE_HIST: Record<string, string> = {
 interface Row {
   id: string; label: string; value: number; unit: string
   change?: number; changeLabel?: string; period: string; source: string
-  implication?: string; histId?: string
+  histId?: string
+}
+
+/** Current calendar month as [YYYY-MM-01, YYYY-MM-<lastDay>] using the reader's local clock — never fixed date arithmetic. */
+function currentMonthRangeIso(): { start: string; end: string } {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = now.getMonth()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const lastDay = new Date(y, m + 1, 0).getDate()
+  return { start: `${y}-${pad(m + 1)}-01`, end: `${y}-${pad(m + 1)}-${pad(lastDay)}` }
 }
 
 export default function MacroPage() {
@@ -124,6 +140,16 @@ export default function MacroPage() {
     ? 'FRED' as const
     : 'BCCh' as const
 
+  // Live yield curve (today / 1 week ago / prior year-end) — built from
+  // already-verified BCCh/FRED series (yieldCurveProvider.ts). Falls back to
+  // the static curve when the live fetch is unavailable or under-populated.
+  const [liveCurve, setLiveCurve] = useState<LiveYieldCurveResult | null>(null)
+  useEffect(() => {
+    const ac = new AbortController()
+    fetchLiveYieldCurve(region, ac.signal).then(res => setLiveCurve(res))
+    return () => ac.abort()
+  }, [region])
+
   // FX Integrity Task — Macro / US forex table is Frankfurter (free, no key,
   // real 1D/YTD change), fetched lazily only when the US region is active and
   // cached server-side (see frankfurterFxProvider.ts). The Chile Macro-page FX
@@ -138,6 +164,45 @@ export default function MacroPage() {
     return () => ac.abort()
   }, [region])
 
+  // Current-month economic calendar embed (US region only — Chile has no
+  // verified release-date source, see /macro/calendar's own deferred block).
+  // Other months are one click away via "View full calendar".
+  const [calendar, setCalendar] = useState<FredCalendarFetchResult | null>(null)
+  useEffect(() => {
+    if (region !== 'US') return
+    const ac = new AbortController()
+    const { start, end } = currentMonthRangeIso()
+    fetchFredReleaseCalendarRange(start, end, ac.signal).then(res => setCalendar(res))
+    return () => ac.abort()
+  }, [region])
+
+  // Update button: refreshes everything visible for the current region in one
+  // click. A standalone async function (not reused by any mount effect above)
+  // called only from the button's click handler — never invoked directly
+  // inside a useEffect body.
+  const doRefresh = useCallback(async () => {
+    const { start, end } = currentMonthRangeIso()
+    const [clRes, usRes, curveRes, forexRes, calRes] = await Promise.all([
+      fetchMacroIndicators('CL'),
+      fetchMacroIndicators('US'),
+      fetchLiveYieldCurve(region),
+      region === 'US' ? fetchUsForexTable() : Promise.resolve(null),
+      region === 'US' ? fetchFredReleaseCalendarRange(start, end) : Promise.resolve(null),
+    ])
+    if (clRes) setClStatus(clRes.metadata.status)
+    if (usRes) setUsStatus(usRes.metadata.status)
+    const clData = clRes?.metadata.liveAvailable && clRes.data.length
+      ? clRes.data
+      : getAllIndicators().filter(i => !i.region || i.region === 'CL')
+    const usData = usRes?.metadata.liveAvailable && usRes.data.length
+      ? usRes.data
+      : getAllIndicators().filter(i => i.region === 'US')
+    setMacroAll([...clData, ...usData])
+    setLiveCurve(curveRes)
+    if (forexRes) setUsForex(forexRes)
+    if (calRes) setCalendar(calRes)
+  }, [region])
+
   const catLabel: Record<string, string> = {
     Rates: t.macro.monetary, 'US Rates': t.macro.monetary,
     Inflation: t.macro.inflation, 'US Inflation': t.macro.inflation,
@@ -149,7 +214,7 @@ export default function MacroPage() {
 
   const toRow = (i: MacroIndicator): Row => ({
     id: i.id, label: i.shortName, value: i.value, unit: i.unit, change: i.change,
-    changeLabel: i.changeLabel, period: i.period, source: i.source, implication: i.marketImplication, histId: i.id,
+    changeLabel: i.changeLabel, period: i.period, source: i.source, histId: i.id,
   })
   const indicators = macroAll.filter(i => (region === 'CL' ? (!i.region || i.region === 'CL') : i.region === 'US'))
   const indByCat = (cats: string[]) =>
@@ -157,14 +222,23 @@ export default function MacroPage() {
 
   const clRatesRows: Row[] = getChileanRates().map(r => ({
     id: r.id, label: r.name, value: r.value, unit: r.unit, change: r.change, changeLabel: r.changeLabel,
-    period: 'Jun 2025', source: r.source, implication: r.fullName, histId: RATE_HIST[r.id],
+    period: 'Jun 2025', source: r.source, histId: RATE_HIST[r.id],
   }))
 
   const groups = region === 'CL'
     ? [{ cat: 'Rates', rows: clRatesRows }, ...indByCat(['Inflation', 'FX', 'Activity', 'Commodities', 'Labor'])]
     : indByCat(['US Rates', 'US Inflation', 'US Activity', 'US Labor', 'US FX', 'Crypto'])
 
-  const curve = getYieldCurve(region)
+  const staticCurve = getYieldCurve(region)
+  const curveOk = liveCurve?.ok === true
+  const curveTenors = curveOk ? liveCurve.tenors : staticCurve.tenors
+  const curveToday = curveOk ? liveCurve.today : staticCurve.today
+  const curveWeekAgo = curveOk ? liveCurve.weekAgo : staticCurve.weekAgo
+  const curveYearEnd = curveOk ? liveCurve.yearEnd : staticCurve.yearEnd
+  const curveSource = curveOk ? liveCurve.source : staticCurve.source
+  const curveAsOf = curveOk ? liveCurve.todayDate : null
+  const curveStatus: DataSourceStatus = curveOk ? 'live' : 'static'
+  const latestAsOf = indicators.reduce((max, i) => (i.lastUpdated > max ? i.lastUpdated : max), '')
 
   const openRow = (r: Row) => { if (r.histId) { setSelected(r); setTimeframe(5) } }
   const historyData = selected?.histId
@@ -176,25 +250,38 @@ export default function MacroPage() {
       <SectionHeader
         tag={t.macro.tag}
         title={t.macro.title}
-        subtitle={t.macro.subtitle}
+        subtitle={region === 'CL' ? t.macro.clSubtitle : t.macro.usSubtitle}
         asOf
         actions={
           <div className="flex items-center gap-2.5">
+            <UpdateDataButton onRefresh={doRefresh} />
             <DataSourceBadge status={srcStatus} provider={srcProvider} />
             <span className="text-xs px-2.5 py-1 rounded bg-surface-2 border border-border text-foreground font-medium">{region === 'CL' ? 'Chile' : 'US'}</span>
           </div>
         }
       />
 
-      {/* Economic calendar pointer — the fabricated "today's releases" preview
-          (synthetic forecast/actual/prior values, no BCCh/FRED/INE backing) was
-          removed from production per the calendar-integrity fix. The real
-          dates-only FRED release calendar lives on /macro/calendar. */}
+      {/* Economic calendar — current month embedded directly; other months via
+          "View full calendar". US region shows the real FRED dates-only calendar
+          (enriched with actual/previous); Chile has no verified release-date
+          source (see /macro/calendar's own honest deferred block). */}
       <div className="bg-surface border border-border rounded overflow-hidden">
-        <div className="px-4 py-2.5 flex items-center justify-between">
+        <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
           <span className="ui-label text-muted-fg">{t.macro.calToday}</span>
           <Link href="/macro/calendar" className="text-xs text-primary hover:underline">{t.macro.viewFull}</Link>
         </div>
+        {region === 'CL' ? (
+          <div className="px-4 py-6 text-center text-xs text-muted-fg">{t.cal.chileUnavailable}</div>
+        ) : calendar && !calendar.configured ? (
+          <div className="px-4 py-6 text-center text-xs text-muted-fg">{t.cal.fredUnavailable}</div>
+        ) : (
+          <EconomicCalendarTable events={calendar?.events ?? []} emptyMessage={t.cal.fredEmpty} />
+        )}
+        {region === 'US' && (
+          <div className="px-4 py-2 border-t border-border">
+            <TableSourceFooter source="FRED (Federal Reserve Bank of St. Louis)" asOf={null} />
+          </div>
+        )}
       </div>
 
       {/* One indicators table with highlighted category bands */}
@@ -206,15 +293,14 @@ export default function MacroPage() {
               <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg w-32">{t.macro.value}</th>
               <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg w-24">{t.macro.change}</th>
               <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg w-28">{t.macro.period}</th>
-              <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg w-40">{t.macro.source}</th>
-              <th className="text-left py-2.5 px-3 pr-4 ui-table-header text-muted-fg">{t.macro.implication}</th>
+              <th className="text-left py-2.5 px-3 pr-4 ui-table-header text-muted-fg w-40">{t.macro.source}</th>
             </tr>
           </thead>
           <tbody>
             {groups.map(({ cat, rows }) => (
               <Fragment key={cat}>
                 <tr>
-                  <td colSpan={6} className="bg-surface-2 px-4 py-1.5" style={{ borderLeft: '3px solid var(--accent)' }}>
+                  <td colSpan={5} className="bg-surface-2 px-4 py-1.5" style={{ borderLeft: '3px solid var(--accent)' }}>
                     <span className="ui-label text-foreground">{catLabel[cat] ?? cat}</span>
                   </td>
                 </tr>
@@ -230,8 +316,7 @@ export default function MacroPage() {
                       <td className="py-2.5 px-3 text-right ui-number text-foreground">{formatMacroValue(r.value, r.unit)}</td>
                       <td className={`py-2.5 px-3 text-right ui-number ${r.change != null ? changeColor(r.change) : 'text-muted-fg'}`}>{r.changeLabel ? formatMacroChange(r.changeLabel) : '—'}</td>
                       <td className="py-2.5 px-3 text-muted-fg whitespace-nowrap">{r.period}</td>
-                      <td className="py-2.5 px-3 text-muted-fg"><span className="block truncate max-w-[180px]" title={r.source}>{r.source}</span></td>
-                      <td className="py-2.5 px-3 pr-4 text-muted italic max-w-xs"><span className="block truncate" title={r.implication}>{r.implication ?? '—'}</span></td>
+                      <td className="py-2.5 px-3 pr-4 text-muted-fg"><span className="block truncate max-w-[220px]" title={r.source}>{r.source}</span></td>
                     </tr>
                   )
                 })}
@@ -239,25 +324,33 @@ export default function MacroPage() {
             ))}
           </tbody>
         </table>
-        <div className="px-4 py-2 border-t border-border"><p className="text-xs text-muted-fg">{t.macro.clickToChart}</p></div>
+        <div className="px-4 py-2 border-t border-border space-y-0.5">
+          <p className="text-xs text-muted-fg">{t.macro.clickToChart}</p>
+          <TableSourceFooter source={srcProvider === 'FRED' ? 'FRED (Federal Reserve Bank of St. Louis)' : 'Banco Central de Chile (BCCh)'} asOf={latestAsOf || null} />
+        </div>
       </div>
 
       {/* Fixed-income (yield curve) + FX depth */}
       <div className="grid grid-cols-2 gap-4 items-start">
         <div className="bg-surface border border-border rounded p-4">
-          <div className="ui-label text-muted-fg mb-1">{t.macro.yieldCurve}</div>
-          <div className="text-xs text-muted-fg mb-3">{curve.label}</div>
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <div className="ui-label text-muted-fg">{t.macro.yieldCurve}</div>
+            <DataSourceBadge status={curveStatus} provider={srcProvider} />
+          </div>
+          <div className="text-xs text-muted-fg mb-3">{staticCurve.label}</div>
           <YieldCurveChart
-            tenors={curve.tenors}
-            unit={curve.unit}
+            tenors={curveTenors}
+            unit={staticCurve.unit}
             series={[
-              { label: t.macro.curveToday, color: 'var(--primary)', values: curve.today },
-              { label: t.macro.curveWeek, color: 'var(--accent)', values: curve.weekAgo },
-              { label: t.macro.curveYearEnd, color: 'var(--muted)', dashed: true, values: curve.yearEnd },
+              { label: t.macro.curveToday, color: 'var(--primary)', values: curveToday },
+              { label: t.macro.curveWeek, color: 'var(--accent)', values: curveWeekAgo },
+              { label: t.macro.curveYearEnd, color: 'var(--muted)', dashed: true, values: curveYearEnd },
             ]}
             height={240}
           />
-          <p className="text-xs text-muted-fg mt-2">{curve.source}</p>
+          <div className="mt-2">
+            <TableSourceFooter source={curveSource} asOf={curveAsOf} />
+          </div>
         </div>
 
         {region === 'CL' ? (
@@ -308,9 +401,7 @@ export default function MacroPage() {
                 </table>
                 <div className="px-4 py-2 border-t border-border space-y-0.5">
                   <p className="text-xs text-muted-fg">{t.macro.fxUnofficial}</p>
-                  <p className="text-xs text-muted-fg">
-                    {t.macro.fxAsOf} {usForex.currentDate ?? '—'} · † {t.macro.fxDerived} · {usForex.providerAttribution}
-                  </p>
+                  <TableSourceFooter source={`${usForex.providerAttribution} · † ${t.macro.fxDerived}`} asOf={usForex.currentDate} />
                 </div>
               </>
             ) : (

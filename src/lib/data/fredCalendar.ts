@@ -29,3 +29,18 @@ export async function fetchFredReleaseCalendar(
     return null
   }
 }
+
+/** Fetches the calendar for an explicit [startIso, endIso] window — used by the Macro page's current-month embed. */
+export async function fetchFredReleaseCalendarRange(
+  startIso: string,
+  endIso: string,
+  signal?: AbortSignal,
+): Promise<FredCalendarFetchResult | null> {
+  try {
+    const res = await fetch(`/api/macro/fred-release-calendar?start=${startIso}&end=${endIso}`, { signal })
+    if (!res.ok) return null
+    return (await res.json()) as FredCalendarFetchResult
+  } catch {
+    return null
+  }
+}

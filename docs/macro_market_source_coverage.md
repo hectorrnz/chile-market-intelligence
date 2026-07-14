@@ -23,6 +23,9 @@ stay `unavailable`, never static-filled or guessed; a source is only wired in af
 | Economic calendar (dates-only) | **Implement (Phase 8D.1)** | FRED Releases API (`FRED_API_KEY`) | 13 curated releases, dates only |
 | Macro / US forex table | **Implemented then replaced (FX Data Task → FX Integrity Task)** | CurrencyFreaks (§13, deprecated) → **Frankfurter, no key** | 12 USD-base pairs + real 1D/YTD change — see §14 |
 | Chile Macro-page FX depth table | **Removed from production (FX Integrity Task)** | was `fxRates.json` static/sample | No live/persisted backing existed — see §14 |
+| Yield curve (both regions) | **Implement (Macro UX task)** | US: 5 already-verified FRED series · CL: 5 already-verified BCCh series | Today / 1-week-ago / prior-year-end — see §15 |
+| Economic calendar current-month embed | **Implement (Macro UX task)** | Same FRED release calendar, explicit month window | Embedded on `/macro` main tab — see §15 |
+| Macro subtitle / badge wording / Market Implication column | **Fixed (Macro UX task)** | — | See §15 |
 
 ## 1. Copper — implemented via BCCh
 
@@ -648,3 +651,112 @@ Scope limits (explicit): Macro / US forex table + Chile FX depth table removal o
 historical workaround; no paid FX API; no Frankfurter MCP server (direct REST API only, per instruction); no
 broad FX architecture refactor; no changes to financials, Structured Notes, the economic calendar's actual/
 previous logic, or auth/watchlist/portfolio; `CURRENCYFREAKS_API_KEY` left configured in Vercel, unremoved.
+
+## 15. Live yield curves, region-aware subtitle, Update button, current-month calendar embed, "Live" badge wording, column removal (Macro UX task)
+
+User-requested Macro page overhaul, six parts:
+
+**1. Live yield curve data (both regions).** New `src/lib/providers/yieldCurveProvider.ts` (server-only)
+builds today / 1-week-ago / prior-year-end for each region **reusing only already-verified series** — no new,
+unverified series codes were introduced (network access to verify additional FRED tenors, e.g. DGS1MO/DGS6MO/
+DGS1/DGS3/DGS5/DGS7, was unavailable from this task's sandbox; both `curl` and `WebFetch` against
+`fred.stlouisfed.org` were blocked/403'd, consistent with fredClient.ts's own documented note that FRED's edge
+requires a real browser-like User-Agent the app's own server-side client sends but this environment's tools
+don't). US curve: the 5 already-enabled FRED series (3M/2Y/10Y/20Y/30Y). Chile curve: the 5 already-enabled
+BCCh series (TPM, Cámara Swap 1Y/2Y, BTU 5Y/10Y) — the BTU tenors are UF-indexed **real** rates, not nominal,
+so they're labeled `(UF)` rather than silently mixed into what would otherwise read as one homogeneous nominal
+curve. For each target date, `latestOnOrBefore()` picks the most recent observation on/before that date from a
+bounded fetch window (mirrors the Frankfurter FX task's "bounded window, never fixed date arithmetic"
+pattern) — a tenor with no usable point for *any* of the 3 target dates is **dropped entirely** from all three
+series rather than fabricated, keeping the arrays aligned index-for-index. Server-cached 6h, success-only
+(a transient failure retries next request). New `GET /api/macro/yield-curve?region=CL|US` route; client-safe
+`src/lib/data/yieldCurveLive.ts` helper. The Macro page falls back to the static `yieldCurves.json` sample
+curve when the live fetch is unavailable/under-populated — verified live in the dev server for both regions
+("Live BCCh" / "Live FRED" badges, real current dates in the footer).
+
+**2. Green-dot badges now say "Live"; footnote convention `"Source: X as of Mon/DD/YY"` across Macro's
+tables.** `src/lib/dataSourceRegistry.ts`'s `frankfurterLive`/`yahooLiveOverlay` labels reworded to lead with
+"Live —" (all other `state:'live'` entries, e.g. `bcchLive`="Live BCCh", already followed this convention).
+New `formatSourceDate()` (`src/lib/formatters.ts`) formats a YYYY-MM-DD string as `Mon/DD/YY` by parsing the
+components directly (never via `new Date()`+`toLocaleDateString`, which can shift a day depending on the
+reader's timezone). New shared `<TableSourceFooter source asOf />` component
+(`src/components/ui/TableSourceFooter.tsx`) renders the standardized footnote; wired into the Macro page's
+indicators table, yield curve, US forex table, and `/macro/calendar`'s FRED table, plus the Home page's
+combined Macro card and FX table (both of which have a real per-row `lastUpdated` to compute a genuine as-of
+date from — sector/index/rates panels on Home have no per-row date field and were left as their existing
+honest "static sample" wording rather than fabricating a date).
+
+**3. Update Data button on the Macro page.** Reuses the existing `<UpdateDataButton onRefresh={doRefresh} />`
+component (already used on Home/Stocks/Portfolio/Company). `doRefresh` is a self-contained async function
+(never called from inside a `useEffect` body — the React Compiler's `react-hooks/set-state-in-effect` lint
+rule flags any effect that invokes a function it can trace into a `setState` call, even an async one whose
+promise isn't awaited synchronously; every mount effect on this page keeps its original inline
+`fetch(...).then(res => setState(res))` shape instead) that re-fetches indicators (both regions), the yield
+curve, and — for the US region — the Frankfurter FX table and the current-month calendar, all via
+`Promise.all`, refreshing exactly what's visible for whichever region tab is currently active.
+
+**4. Current-month economic calendar embedded on the Macro main tab.** `resolveFredReleaseCalendar(daysAhead)`
+in `fredReleaseCalendar.ts` was refactored into a thin wrapper over a new `resolveFredReleaseCalendarRange(start,
+end)` (identical behavior, verified via the existing test suite unchanged) that accepts an explicit window
+instead of a fixed 7-day-back rolling one. The API route (`GET /api/macro/fred-release-calendar`) now accepts
+optional `start`/`end` query params (both must be valid `YYYY-MM-DD`) that take precedence over `days`. The
+table markup itself was extracted from `/macro/calendar/page.tsx` into a shared
+`src/components/macro/EconomicCalendarTable.tsx` so both pages stay pixel-identical. The Macro page computes
+the current calendar month's `[1st, last day]` window (`currentMonthRangeIso()`, using the reader's local
+clock, never UTC/fixed arithmetic) and embeds the table for the US region; Chile shows the same honest
+"release calendar deferred" message `/macro/calendar` already shows (no fabricated Chile rows). "View full
+calendar →" still links to `/macro/calendar` for other months.
+
+**5. Region-aware subtitle — a real mislabeling bug fixed.** The Macro page's `SectionHeader` subtitle was
+previously always `t.macro.subtitle`, a single fixed string reading "Sources: Banco Central de Chile (BDE) ·
+INE · **Hacienda** · LME" — shown **even on the US tab**, incorrectly naming Chilean government agencies as
+sources for FRED-backed US data. (Separately: Hacienda — Chile's Ministry of Finance — was never actually a
+data source for any indicator in this app; the string appears to have been copied into the subtitle without
+verification.) `t.macro.clSubtitle`/`t.macro.usSubtitle` already existed in `i18n.ts` but were dead code — never
+wired to the `SectionHeader`. Fixed: the subtitle is now `region === 'CL' ? t.macro.clSubtitle :
+t.macro.usSubtitle`, and both strings were corrected — CL: "Sources: Banco Central de Chile (BDE) · INE · LME"
+(Hacienda removed); US: "Sources: Federal Reserve · BLS · BEA · FRED" (added BEA, which the FRED-sourced GDP/
+PCE releases actually originate from, per `calendarEnrichmentMap.ts`'s existing `originatingAgency` field).
+
+**6. Market Implication column removed.** The rightmost column on the indicators table (both regions) showed
+`marketImplication` — static editorial commentary from `macroIndicators.json`, never a live/derived data
+field — per explicit instruction. The column, its i18n header key (`t.macro.implication`), and the `Row.
+implication`/`toRow()`/`clRatesRows` field mappings were removed from `macro/page.tsx`; the underlying
+`marketImplication` field stays in `MacroIndicator`/`macroIndicators.json` (used elsewhere, e.g. document
+drill-downs) — only the table column rendering it was dropped.
+
+**Tests:** `tests/yieldCurveProvider.test.ts` (new, 14 tests — `latestOnOrBefore` pure logic, tenor-definition
+hygiene guarding against any unverified series reference, mocked-network resolution for both regions including
+tenor-dropping on partial data, `ok:false` on insufficient tenors, and cache behavior) + additions to
+`tests/fredReleaseCalendar.test.ts` (3 new — `resolveFredReleaseCalendarRange`'s explicit-window behavior,
+configured:false short-circuit, and a regression check that `resolveFredReleaseCalendar(daysAhead)`'s own
+7-day-back rolling window is unchanged) + additions to `tests/formatters.test.ts` (4 new — `formatSourceDate`
+formatting, timezone-safety, and malformed-input passthrough). Full suite 1436 → **1456/1456**, lint 0, build 0
+errors (13 → 14 API routes, new `/api/macro/yield-curve`).
+
+**Local validation (dev server, real BCCh/FRED/Frankfurter):** both Macro regions confirmed rendering
+correctly — CL: subtitle without Hacienda, no Market Implication column, table footer "Source: Banco Central de
+Chile (BCCh) as of Jun/17/25", yield curve **"Live BCCh"** with real TPM/1Y/2Y/5Y(UF)/10Y(UF) values and a
+real as-of date, honest Chile-calendar-deferred message. US: subtitle without Chilean agencies, table sources
+correctly "Federal Reserve (via FRED)"/"US Treasury (via FRED)"/"BLS (via FRED)" (never Chilean), yield curve
+**"Live FRED"** with real 3M/2Y/10Y/20Y/30Y values, current-month (July 2026) FRED calendar embedded with real
+CPI/PPI/GDP/PCE/Retail Sales/Housing/Trade events, FX table showing **"Live — Frankfurter FX reference (free
+third-party)"**. Clicked Update Data on both regions — server logs confirmed every expected endpoint
+(`/api/macro`, `/api/macro/yield-curve`, `/api/macro/fx/us`, `/api/macro/fred-release-calendar`) re-fetched
+successfully with no errors. Home page's Macro card and FX table confirmed rendering the new
+`"Source: X as of Mon/DD/YY"` footer format with real dates. No console errors on any page.
+
+Scope limits (explicit): this Macro-page UX task only — the broader "all tables of the platform" footer/badge
+sweep (task ask #2) was applied to the Macro page (all 3 tables), `/macro/calendar`, and the Home page's
+Macro/FX panels (the sections with a genuine per-row as-of date); Home's sector/rates/index panels, and other
+pages' static-only footers (Compare, Charting, Earnings, Hechos, Watchlist, Portfolio, Structured Notes) were
+left unchanged — they have no real per-row date to report and already carry honest "static sample" wording, so
+converting them to the new footer format would either fabricate a date or require deeper per-page plumbing
+beyond this task's scope. US yield curve stays a 5-tenor curve (vs. the prior 11-tenor static sample) pending
+live verification of FRED's other constant-maturity series from an environment with network access. No new
+dependency, no schema/migration change, no changes to financials/Structured Notes/auth/watchlist/portfolio.
+
+Next: verify and add the remaining FRED Treasury tenors (1M/6M/1Y/3Y/5Y/7Y) to enrich the US yield curve;
+consider extending the `"Source: X as of Y"` footer convention to Home's sector/rates/index panels if a
+meaningful as-of date becomes available for them; periodically re-check for a live Chile release-date source
+for the current-month calendar embed's Chile side.

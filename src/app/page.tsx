@@ -6,6 +6,7 @@ import { useLang } from '@/components/providers/LangProvider'
 import { usePersistentState } from '@/lib/usePersistentState'
 import { StatusPill } from '@/components/ui/StatusPill'
 import { AsOfBadge } from '@/components/ui/AsOfBadge'
+import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { DataSourceBadge } from '@/components/ui/DataSourceBadge'
 import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
 import type { DataSourceStatus } from '@/lib/providers/types'
@@ -100,6 +101,8 @@ export default function HomePage() {
   // series (same 'FX' category the Macro page's live indicators use), never a
   // fabricated/unverified pair. Currently: USD/CLP, EUR/CLP.
   const fxRows = getByCategory('FX').map(fx => liveIndicatorMap[fx.id] ?? fx)
+  const macroAsOf = [...macroChile, ...macroUs].reduce((max, i) => (i.lastUpdated > max ? i.lastUpdated : max), '')
+  const fxAsOf = fxRows.reduce((max, i) => (i.lastUpdated > max ? i.lastUpdated : max), '')
   const recentHechos = getRecentHechos(8)
   const upcoming = getUpcomingEarnings().slice(0, 2)
   const recent = getRecentResults().slice(0, 2)
@@ -256,7 +259,7 @@ export default function HomePage() {
             <div className="px-4">{macroUs.map(ind => <MacroRow key={ind.id} ind={ind} />)}</div>
           </div>
           <div className="px-4 py-2 border-t border-border shrink-0">
-            <p className="text-xs text-muted-fg">{t.home.macroSource}</p>
+            <TableSourceFooter source={t.home.macroSource} asOf={macroAsOf || null} />
           </div>
         </div>
 
@@ -325,7 +328,7 @@ export default function HomePage() {
               ))}
             </div>
             <div className="px-4 py-2 border-t border-border shrink-0">
-              <p className="text-xs text-muted-fg">{t.home.fxSource}</p>
+              <TableSourceFooter source={t.home.fxSource} asOf={fxAsOf || null} />
             </div>
           </div>
         </div>

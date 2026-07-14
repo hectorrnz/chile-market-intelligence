@@ -12,7 +12,7 @@ import {
   isFredCalendarConfigured,
   fetchFredReleaseDates,
 } from '../src/lib/providers/fredReleaseCalendarClient.ts'
-import { resolveFredReleaseCalendar } from '../src/lib/providers/fredReleaseCalendar.ts'
+import { resolveFredReleaseCalendar, resolveFredReleaseCalendarRange } from '../src/lib/providers/fredReleaseCalendar.ts'
 
 const ORIGINAL_KEY = process.env.FRED_API_KEY
 const ORIGINAL_FETCH = globalThis.fetch
@@ -210,6 +210,53 @@ describe('resolveFredReleaseCalendar', () => {
     assert.equal(result.configured, true)
     assert.equal(result.ok, false)
     assert.deepEqual(result.events, [])
+  })
+})
+
+describe('resolveFredReleaseCalendarRange — explicit window (Macro page current-month embed)', () => {
+  afterEach(() => { restoreEnv(); restoreFetch() })
+
+  it('returns configured:false with no network call when FRED_API_KEY is unset', async () => {
+    delete process.env.FRED_API_KEY
+    let fetchCalled = false
+    globalThis.fetch = (async () => { fetchCalled = true; throw new Error('should not be called') }) as typeof fetch
+    const result = await resolveFredReleaseCalendarRange('2026-07-01', '2026-07-31')
+    assert.equal(result.configured, false)
+    assert.equal(result.ok, false)
+    assert.deepEqual(result.events, [])
+    assert.equal(fetchCalled, false)
+  })
+
+  it('only requests the exact [start, end] window passed in (not a fixed rolling window)', async () => {
+    process.env.FRED_API_KEY = 'fake-test-key-not-real'
+    const seenRanges: Array<{ start: string; end: string }> = []
+    globalThis.fetch = (async (url: string) => {
+      const u = new URL(url)
+      seenRanges.push({ start: u.searchParams.get('realtime_start')!, end: u.searchParams.get('realtime_end')! })
+      return { ok: true, json: async () => ({ release_dates: [] }) }
+    }) as unknown as typeof fetch
+
+    await resolveFredReleaseCalendarRange('2026-07-01', '2026-07-31')
+    assert.ok(seenRanges.length > 0)
+    for (const r of seenRanges) {
+      assert.equal(r.start, '2026-07-01')
+      assert.equal(r.end, '2026-07-31')
+    }
+  })
+
+  it('resolveFredReleaseCalendar(daysAhead) is unchanged behaviorally — still a 7-day-back rolling window', async () => {
+    process.env.FRED_API_KEY = 'fake-test-key-not-real'
+    let seenStart = ''
+    globalThis.fetch = (async (url: string) => {
+      const u = new URL(url)
+      seenStart = u.searchParams.get('realtime_start')!
+      return { ok: true, json: async () => ({ release_dates: [] }) }
+    }) as unknown as typeof fetch
+
+    await resolveFredReleaseCalendar(60)
+    const expected = new Date()
+    expected.setDate(expected.getDate() - 7)
+    assert.equal(seenStart, expected.toISOString().slice(0, 10))
   })
 })
 

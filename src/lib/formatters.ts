@@ -53,6 +53,23 @@ export function formatMarketCapMM(valueInMillions: number): string {
   return `${formatCLP(valueInMillions)} MM CLP`
 }
 
+const SOURCE_DATE_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/**
+ * Formats a YYYY-MM-DD (or ISO datetime) string as "Mon/DD/YY" for the
+ * standardized "Source: X as of Mon/DD/YY" table footnote convention. Parses
+ * the date components directly (never via `new Date()`) so the result can
+ * never shift by a day depending on the reader's/server's timezone.
+ */
+export function formatSourceDate(isoDate: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(isoDate)
+  if (!m) return isoDate
+  const [, y, mo, d] = m
+  const mi = Number(mo) - 1
+  if (mi < 0 || mi > 11) return isoDate
+  return `${SOURCE_DATE_MONTHS[mi]}/${d}/${y.slice(-2)}`
+}
+
 /** Format ISO date string as DD MMM YYYY (es-CL short month). */
 export function formatDate(isoDate: string): string {
   return new Date(isoDate).toLocaleDateString('es-CL', {

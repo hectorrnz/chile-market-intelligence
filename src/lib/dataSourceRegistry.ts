@@ -55,8 +55,8 @@ export const SOURCE_REGISTRY = {
   yahooLiveOverlay: {
     id: 'yahoo-live-overlay',
     state: 'live',
-    labelEn: 'Yahoo Finance live overlay',
-    labelEs: 'Superposición en vivo de Yahoo Finance',
+    labelEn: 'Live — Yahoo Finance overlay',
+    labelEs: 'En vivo — superposición de Yahoo Finance',
   },
   staticFallback: {
     id: 'static-fallback',
@@ -175,8 +175,8 @@ export const SOURCE_REGISTRY = {
   frankfurterLive: {
     id: 'frankfurter-live',
     state: 'live',
-    labelEn: 'Frankfurter FX reference (free third-party)',
-    labelEs: 'Referencia FX de Frankfurter (terceros gratuito)',
+    labelEn: 'Live — Frankfurter FX reference (free third-party)',
+    labelEs: 'En vivo — referencia FX de Frankfurter (terceros gratuito)',
   },
   frankfurterUnavailable: {
     id: 'frankfurter-unavailable',

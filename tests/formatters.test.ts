@@ -3,8 +3,25 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   formatCLP, formatPercent, formatPct, formatFx, formatEPS, formatNetDebt,
-  formatMarketCapMM, surprisePct, changeColor,
+  formatMarketCapMM, surprisePct, changeColor, formatSourceDate,
 } from '../src/lib/formatters.ts'
+
+test('formatSourceDate renders "Mon/DD/YY" for the standardized table footnote', () => {
+  assert.equal(formatSourceDate('2026-07-14'), 'Jul/14/26')
+  assert.equal(formatSourceDate('2026-01-05'), 'Jan/05/26')
+  assert.equal(formatSourceDate('2026-12-31T10:15:00.000Z'), 'Dec/31/26')
+})
+
+test('formatSourceDate never shifts by a day regardless of timezone (no Date() parsing)', () => {
+  // A naive `new Date('2026-01-01')` + toLocaleDateString in a negative-UTC-offset
+  // timezone can render Dec 31 — formatSourceDate must not reproduce that bug.
+  assert.equal(formatSourceDate('2026-01-01'), 'Jan/01/26')
+})
+
+test('formatSourceDate returns the input unchanged for a malformed date', () => {
+  assert.equal(formatSourceDate('not-a-date'), 'not-a-date')
+  assert.equal(formatSourceDate(''), '')
+})
 
 test('formatCLP groups thousands with Chilean periods', () => {
   assert.equal(formatCLP(1234567), '1.234.567')

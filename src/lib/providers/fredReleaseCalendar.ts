@@ -50,16 +50,17 @@ function addDaysIso(days: number): string {
 }
 
 /**
- * Resolves the dates-only FRED release calendar for a window from 7 days ago
- * (so recently-released events still show as context) through `daysAhead`.
+ * Resolves the dates-only FRED release calendar for an explicit [startIso, endIso]
+ * window — used directly by the "current month" embed on the Macro page so
+ * past-in-month releases (before today) still show, not just a fixed 7-day
+ * lookback. `resolveFredReleaseCalendar` below is the narrower, existing
+ * rolling-window convenience wrapper used by /macro/calendar.
  */
-export async function resolveFredReleaseCalendar(daysAhead = 60): Promise<FredCalendarResult> {
+export async function resolveFredReleaseCalendarRange(startIso: string, endIso: string): Promise<FredCalendarResult> {
   if (!isFredCalendarConfigured()) {
     return { ok: false, events: [], reason: 'FRED_API_KEY not configured', configured: false }
   }
 
-  const startIso = addDaysIso(-7)
-  const endIso = addDaysIso(daysAhead)
   const today = todayIso()
 
   const perRelease = await Promise.all(
@@ -101,4 +102,12 @@ export async function resolveFredReleaseCalendar(daysAhead = 60): Promise<FredCa
     return { ok: false, events: [], reason: 'All FRED release-date lookups failed', configured: true }
   }
   return { ok: true, events, configured: true }
+}
+
+/**
+ * Resolves the dates-only FRED release calendar for a window from 7 days ago
+ * (so recently-released events still show as context) through `daysAhead`.
+ */
+export async function resolveFredReleaseCalendar(daysAhead = 60): Promise<FredCalendarResult> {
+  return resolveFredReleaseCalendarRange(addDaysIso(-7), addDaysIso(daysAhead))
 }
