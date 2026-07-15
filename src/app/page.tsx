@@ -14,6 +14,7 @@ import { getAllCompanies } from '@/lib/data/companies'
 import { getAllSnapshots } from '@/lib/data/stocks'
 import { getAllIndicators, getByCategory, fetchMacroIndicators } from '@/lib/data/macro'
 import { getChileanRates } from '@/lib/data/chileanRates'
+import { getSeriesByStaticId } from '@/config/macroSeries'
 import { getRecentHechos } from '@/lib/data/hechos'
 import { getUpcomingEarnings, getRecentResults } from '@/lib/data/earnings'
 import { getAllNews } from '@/lib/data/news'
@@ -236,10 +237,13 @@ export default function HomePage() {
   const sortArrow = (key: 'dayChg' | 'ytd') => watchlistSort?.key === key ? (watchlistSort.dir === 'desc' ? ' ▼' : ' ▲') : ''
 
   // Drag-to-reorder Chilean rates (persisted to localStorage). Rows whose id
-  // matches a verified live BCCh series (btu10/btu5/swap2y/swap1y — the same
-  // instruments already used by the yield curve) overlay live value/change;
-  // the remaining rows (btp10/bcu5/pdbc90/tpm-tna) stay static — no live BCCh
-  // series exists for them (documented deferred, Phase 4B).
+  // matches a verified live BCCh series (BTU 10/5, Swap 1Y/2Y, BTP 2, PDBC 14d,
+  // TPM/TNA) overlay live value/change; only BCU 5 has no live BCCh series at
+  // all (re-confirmed 2026-07-15, genuinely zero recent observations) and was
+  // removed from the panel rather than shown stale. The live indicator's id
+  // is resolved via `getSeriesByStaticId(r.id)?.fallbackStaticId` because a
+  // couple of rows (btu10→'btu10-ref', tpm-tna→'tpm') are keyed differently
+  // in the live provider output than in this static row's own id.
   const rates = getChileanRates()
   const [order, setOrder] = usePersistentState<string[]>('cmi.ratesOrder', rates.map(r => r.id))
   const orderedIds = [
@@ -248,7 +252,8 @@ export default function HomePage() {
   ]
   const rateOrder = orderedIds.map(id => rates.find(r => r.id === id)!) as ChileanRate[]
   const liveRateRows = rateOrder.map(r => {
-    const liveInd = liveIndicatorMap[r.id]
+    const liveId = getSeriesByStaticId(r.id)?.fallbackStaticId ?? r.id
+    const liveInd = liveIndicatorMap[liveId]
     return liveInd ? { ...r, value: liveInd.value, change: liveInd.change, changeLabel: liveInd.changeLabel, _liveAsOf: liveInd.lastUpdated } : { ...r, _liveAsOf: undefined as string | undefined }
   })
   const ratesLiveCount = liveRateRows.filter(r => r._liveAsOf).length
@@ -538,9 +543,10 @@ export default function HomePage() {
         </div>
 
         {/* Chilean rates — drag to reorder, scrolls to match heat map height.
-            Rows with a verified live BCCh series (btu10/btu5/swap1y/swap2y)
-            show a live dot; the remaining rows (no BCCh series exists — see
-            docs/macro_market_source_coverage.md) stay static, never faked. */}
+            Every remaining row has a verified live BCCh series and shows a
+            live dot; BCU 5 was removed (no live series exists for it,
+            re-confirmed 2026-07-15) rather than shown static. See
+            docs/macro_market_source_coverage.md for the full discovery record. */}
         <div className="bg-surface border border-border rounded overflow-hidden flex flex-col" style={{ height: heatH || undefined }}>
           <div className="px-4 py-2.5 border-b border-border shrink-0 flex items-center justify-between">
             <span className="ui-label text-muted-fg">{t.home.chileanRates}</span>

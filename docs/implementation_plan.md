@@ -1905,3 +1905,66 @@ console errors.
 Scope limits (explicit): this Home-page follow-up only. Did not touch the Macro page's own Rates section
 (already live where verified), Earnings/Hechos footers (genuinely static/blocked), or add any new BCCh series
 — reused only the 4 already-verified rate series. No new dependency, no schema change.
+
+---
+
+**Home Page Follow-up 2 — Chilean Rates Fully Live, Fixed a Real Live-Id Mismatch Bug** (2026-07-15)
+
+Addresses two more explicit user gaps after the previous Home follow-up: (1) TPM/TNA didn't match the Macro
+Chile table's live TPM value; (2) several Chilean Rates rows still showed no live dot at all.
+
+**Root cause found while investigating (1):** the live BCCh provider (`bcchMacroProvider.ts`) emits each
+indicator's `id` as its series definition's `fallbackStaticId`, not the definition's own `id`. For two rows
+this genuinely differs from the row's own static id — `btu10` → `'btu10-ref'`, and `tpm-tna` → `'tpm'` (the
+same TPM series, intentionally reused rather than a separate fetch). The previous overlay looked up
+`liveIndicatorMap[r.id]` directly, which silently never matched these two rows even once truly live — a
+latent bug, not something this session introduced. Fixed by resolving through
+`getSeriesByStaticId(r.id)?.fallbackStaticId` (already-exported from `macroSeries.ts`) on both the Home page
+and the Macro page's own Chilean-Rates block (`clRatesRows`, which had the exact same gap — it read straight
+from `chileanRates.json` with no live overlay at all, previously).
+
+**Ran the official BCCh SearchSeries/GetSeries discovery tool live** (credentials available locally) to
+re-check the 4 rows still marked deferred since Phase 4B:
+- **PDBC 90d → PDBC 14d, now live.** BCCh's 90d tenor is discontinued; the active 14d series
+  (`F022.PDBC.TIN.D014.NO.Z.D`) is genuinely fresh (last obs 14-Jul-2026 = 4.5%). Verified, enabled, row
+  relabeled to match.
+- **TPM/TNA, now live** — deliberately NOT given its own separate BCCh-enabled series (would duplicate-fetch
+  the exact same TPM series under a second definition); instead resolved from the already-fetched `tpm`
+  indicator via the same `fallbackStaticId` mechanism above. Always matches the Macro Chile table exactly,
+  zero extra network calls.
+- **BTP 10 → relabeled "BTP 2", now live (user-approved substitution).** The 10-year BTP auction rate hasn't
+  printed since 17-Dec-2025 (BCCh only auctions that tenor occasionally); BTP 2Y
+  (`F022.BTP.TIN.AN02.NO.Z.D`) is the closest tenor with a materially fresher print. Presented this trade-off
+  to the user directly (forcing a 7-month-stale value into a "10 years" label vs. relabeling to a fresher
+  tenor vs. removing the row) — user chose "swap in the closest live tenor, relabel it."
+- **BCU 5 — removed entirely, not faked.** Re-confirmed live: `GetSeries` returned **zero** valid
+  observations for any BCU auction tenor in the 2025–2026 window (bonds haven't been issued since ~2013,
+  consistent with the original Phase 4B finding). No live proxy exists at any tenor, so the row was dropped
+  from `chileanRates.json` rather than shown static or substituted with an unrelated instrument.
+
+**Files changed:** `src/config/bcchSeriesManualMap.ts` (`btp-10` and `pdbc-90d` promoted to verified with real
+seriesIds; `tpm-tna` and `bcu-5` stay deliberately unverified, both with updated documentation notes);
+`src/config/macroSeries.ts` (displayName cosmetic updates for `btp10`/`pdbc90`); `src/data/chileanRates.json`
+(renamed BTP 10→"BTP 2", PDBC 90d→"PDBC 14d", removed `bcu5`); `src/app/page.tsx` (Home rates overlay now
+resolves via `getSeriesByStaticId`); `src/app/macro/page.tsx` (`clRatesRows` now overlays live values the same
+way; `RATE_HIST` drops the `bcu5` entry); `src/lib/providers/macroFrequency.ts` (comment accuracy only).
+
+**Tests:** `tests/bcchMapping.test.ts` updated (`bcu-5` is now the "known-unverified" example instead of
+`btp-10`; added explicit checks for the new `btp-10`/`pdbc-90d` seriesIds and `tpm-tna`'s deliberate
+non-enablement) + `tests/homeWatchlistOverhaul.test.ts` gained a new describe block
+(`getSeriesByStaticId` regression guard: asserts `btu10→'btu10-ref'`, `tpm-tna→'tpm'`, and every other row
+resolves to itself) plus updated assertions for the relabeled/removed rows. Full suite 1479 → **1487/1487**,
+lint 0, build 0 errors.
+
+**Local validation (dev server, real BCCh/FRED credentials, DATA_MODE=hybrid):** `/api/macro?region=CL`
+returned `status: "live"` with ids `tpm,ipc-mensual,ipc-anual,uf-diaria,usdclp,eurclp,imacec-anual,desempleo,
+cobre-lme,btu10-ref,btp10,btu5,swap2y,swap1y,pdbc90` (confirming the fallbackStaticId behavior directly, and
+confirming `bcu5`/`tpm-tna` are correctly absent from the live fetch). Home page: Chilean Rates badge reads
+"Live BCCh", all 7 remaining rows show a live dot, footer shows a real `asOf` date, and **TPM/TNA reads
+4,50% — exactly matching the Macro Chile card's live TPM value**. Macro page (Chile region): the Rates
+section shows the same live values with real per-row dates (2026-07-13/14/15), BCU 5 absent, no console
+errors.
+
+Scope limits (explicit): Chilean Rates panel only (Home + Macro page's own Rates block); no new BCCh series
+beyond the two newly-verified substitutions; no change to the yield curve (already lived on its own verified
+tenor set); FX/Earnings/Hechos untouched.

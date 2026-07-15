@@ -1,10 +1,9 @@
 [
   { "id": "btu10", "name": "BTU 10", "fullName": "Bono Tesorería UF 10 años (real)", "value": 2.95, "unit": "%", "change": 0.03, "changeLabel": "+0.03%", "source": "Bolsa de Comercio de Santiago" },
-  { "id": "btp10", "name": "BTP 10", "fullName": "Bono Tesorería Pesos 10 años (nominal)", "value": 5.85, "unit": "%", "change": 0.05, "changeLabel": "+0.05%", "source": "Bolsa de Comercio de Santiago" },
+  { "id": "btp10", "name": "BTP 2", "fullName": "Bono Tesorería Pesos 2 años (nominal)", "value": 5.85, "unit": "%", "change": 0.05, "changeLabel": "+0.05%", "source": "Bolsa de Comercio de Santiago" },
   { "id": "btu5", "name": "BTU 5", "fullName": "Bono Tesorería UF 5 años (real)", "value": 2.55, "unit": "%", "change": 0.02, "changeLabel": "+0.02%", "source": "Bolsa de Comercio de Santiago" },
-  { "id": "bcu5", "name": "BCU 5", "fullName": "Bono Banco Central UF 5 años (real)", "value": 2.40, "unit": "%", "change": 0.01, "changeLabel": "+0.01%", "source": "Banco Central de Chile" },
   { "id": "swap2y", "name": "Cámara Swap 2Y", "fullName": "Swap promedio cámara 2 años", "value": 4.75, "unit": "%", "change": -0.05, "changeLabel": "-0.05%", "source": "Banco Central de Chile" },
   { "id": "swap1y", "name": "Cámara Swap 1Y", "fullName": "Swap promedio cámara 1 año", "value": 4.95, "unit": "%", "change": -0.04, "changeLabel": "-0.04%", "source": "Banco Central de Chile" },
-  { "id": "pdbc90", "name": "PDBC 90d", "fullName": "Pagaré Descontable Banco Central 90 días", "value": 5.10, "unit": "%", "change": -0.02, "changeLabel": "-0.02%", "source": "Banco Central de Chile" },
+  { "id": "pdbc90", "name": "PDBC 14d", "fullName": "Pagaré Descontable Banco Central 14 días", "value": 5.10, "unit": "%", "change": -0.02, "changeLabel": "-0.02%", "source": "Banco Central de Chile" },
   { "id": "tpm-tna", "name": "TPM / TNA", "fullName": "Tasa Política Monetaria (tasa nominal anual)", "value": 5.00, "unit": "%", "change": -0.25, "changeLabel": "-0.25%", "source": "Banco Central de Chile" }
 ]

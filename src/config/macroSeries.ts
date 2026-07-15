@@ -103,12 +103,12 @@ const BASE: BaseDef[] = [
   { id: 'cobre-lme', displayName: 'Precio del cobre (referencial)', region: 'CL', category: 'Commodities', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'copper', unit: 'USD/lb', frequency: 'monthly', fallbackStaticId: 'cobre-lme' },
   // Chilean fixed-income rates
   { id: 'btu10', displayName: 'BTU 10 (UF, real)', region: 'CL', category: 'Rates', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'btu-10', unit: '%', frequency: 'daily', fallbackStaticId: 'btu10-ref' },
-  { id: 'btp10', displayName: 'BTP 10 (nominal)', region: 'CL', category: 'Rates', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'btp-10', unit: '%', frequency: 'daily', fallbackStaticId: 'btp10' },
+  { id: 'btp10', displayName: 'BTP 2 (nominal)', region: 'CL', category: 'Rates', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'btp-10', unit: '%', frequency: 'daily', fallbackStaticId: 'btp10' },
   { id: 'btu5', displayName: 'BTU 5 (UF, real)', region: 'CL', category: 'Rates', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'btu-5', unit: '%', frequency: 'daily', fallbackStaticId: 'btu5' },
   { id: 'bcu5', displayName: 'BCU 5 (UF, real)', region: 'CL', category: 'Rates', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'bcu-5', unit: '%', frequency: 'daily', fallbackStaticId: 'bcu5' },
   { id: 'swap2y', displayName: 'Cámara Swap 2Y', region: 'CL', category: 'Rates', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'camara-swap-2y', unit: '%', frequency: 'daily', fallbackStaticId: 'swap2y' },
   { id: 'swap1y', displayName: 'Cámara Swap 1Y', region: 'CL', category: 'Rates', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'camara-swap-1y', unit: '%', frequency: 'daily', fallbackStaticId: 'swap1y' },
-  { id: 'pdbc90', displayName: 'PDBC 90 días', region: 'CL', category: 'Rates', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'pdbc-90d', unit: '%', frequency: 'daily', fallbackStaticId: 'pdbc90' },
+  { id: 'pdbc90', displayName: 'PDBC 14 días', region: 'CL', category: 'Rates', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'pdbc-90d', unit: '%', frequency: 'daily', fallbackStaticId: 'pdbc90' },
   { id: 'tpm-tna', displayName: 'TPM (tasa nominal anual)', region: 'CL', category: 'Rates', source: 'Banco Central de Chile', sourceProvider: 'BCCh', manualKey: 'tpm-tna', unit: '%', frequency: 'daily', fallbackStaticId: 'tpm' },
   // ── United States (FRED, Phase 8D) ────────────────────────────────────────
   { id: 'fed-funds', displayName: 'Federal Funds Rate (Target Upper Limit)', region: 'US', category: 'US Rates', source: 'Federal Reserve (via FRED)', sourceProvider: 'FRED', manualKey: 'fed-funds', unit: '%', frequency: 'monthly', fallbackStaticId: 'fed-funds' },

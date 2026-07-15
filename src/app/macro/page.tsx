@@ -34,7 +34,7 @@ const TIMEFRAMES: Timeframe[] = [1, 3, 5, 10]
 
 const RATE_HIST: Record<string, string> = {
   'tpm-tna': 'tpm', btu10: 'btu10-ref',
-  btp10: 'btp10', btu5: 'btu5', bcu5: 'bcu5',
+  btp10: 'btp10', btu5: 'btu5',
   swap2y: 'swap2y', swap1y: 'swap1y', pdbc90: 'pdbc90',
 }
 
@@ -220,10 +220,20 @@ export default function MacroPage() {
   const indByCat = (cats: string[]) =>
     cats.map(cat => ({ cat, rows: indicators.filter(i => i.category === cat).map(toRow) })).filter(g => g.rows.length > 0)
 
-  const clRatesRows: Row[] = getChileanRates().map(r => ({
-    id: r.id, label: r.name, value: r.value, unit: r.unit, change: r.change, changeLabel: r.changeLabel,
-    period: 'Jun 2025', source: r.source, histId: RATE_HIST[r.id],
-  }))
+  // The "Rates" category is deliberately excluded from indByCat below (this
+  // block is the sole renderer for it) — but `indicators` (fetched CL data)
+  // still carries the live BCCh values for these ids, keyed by each series
+  // def's `fallbackStaticId` (which differs from the row's own id for
+  // btu10→'btu10-ref' and tpm-tna→'tpm'). Overlay them the same way Home does.
+  const clRatesRows: Row[] = getChileanRates().map(r => {
+    const liveId = getSeriesByStaticId(r.id)?.fallbackStaticId ?? r.id
+    const live = indicators.find(i => i.id === liveId)
+    return {
+      id: r.id, label: r.name, value: live?.value ?? r.value, unit: r.unit,
+      change: live?.change ?? r.change, changeLabel: live?.changeLabel ?? r.changeLabel,
+      period: live?.period ?? 'Jun 2025', source: r.source, histId: RATE_HIST[r.id],
+    }
+  })
 
   const groups = region === 'CL'
     ? [{ cat: 'Rates', rows: clRatesRows }, ...indByCat(['Inflation', 'FX', 'Activity', 'Commodities', 'Labor'])]

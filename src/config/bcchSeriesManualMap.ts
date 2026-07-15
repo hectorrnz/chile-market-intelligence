@@ -242,22 +242,60 @@ export const bcchSeriesManualMap: Record<string, BcchManualEntry> = {
 
   // Chilean fixed-income — partial progress:
   // BTU/BCU 10Y and 5Y are mapped above via the BUF secondary market composite.
-  // BTP 10Y: no secondary market BTP rate found; only auction rates (non-daily).
-  // BCU 5Y: BCU bonds stale (last auction 2011-2013); BUF 5Y already covers this.
-  'btp-10': pending('btp10', 'DAILY', 'none',
-    'No secondary market BTP series found. F022.BTP.TIN.AN10.NO.Z.D is an auction rate, not a continuous daily secondary market rate.'),
+  // BCU 5Y: BCU bonds stale (last auction 2011-2013); re-confirmed live 2026-07-15
+  // (GetSeries returned zero valid observations for 2025-2026) — genuinely no live
+  // source exists. The "BCU 5" row was removed from the UI rather than fake it.
   'bcu-5': pending('bcu5', 'DAILY', 'none',
-    'BCU bonds no longer actively issued. Last licitación 2011-2013. BUF 5Y (btu-5) covers combined BCU/BTU secondary market at 5Y.'),
+    'BCU bonds no longer actively issued (re-confirmed 2026-07-15: zero valid 2025-2026 observations via GetSeries). Row removed from the Chilean Rates panel — no live proxy substituted.'),
 
-  // PDBC: 90d tenor discontinued. Active instrument is 14d (F022.PDBC.TIN.D014.NO.Z.D).
-  // Mapping 14d to "PDBC 90d" display label would be misleading. Needs UI label update first.
-  'pdbc-90d': pending('pdbc90', 'DAILY', 'none',
-    'BCCh no longer issues PDBC at 90d. Active PDBC is 14d (F022.PDBC.TIN.D014.NO.Z.D = 4.5%). UI label needs update before mapping.'),
+  // BTP 10Y — re-verified 2026-07-15: BCCh only auctions the 10Y tenor
+  // occasionally (F022.BTP.TIN.AN10.NO.Z.D last printed 17-Dec-2025, 7 months
+  // stale). BTP 2Y (F022.BTP.TIN.AN02.NO.Z.D) is the closest tenor with a
+  // materially fresher print. Per explicit user decision, the row is relabeled
+  // "BTP 2" (chileanRates.json name/fullName) rather than showing a stale 10Y
+  // value or leaving it static — the id stays "btp10" internally only to avoid
+  // churning the persisted drag-order key.
+  'btp-10': {
+    seriesId: 'F022.BTP.TIN.AN02.NO.Z.D',
+    verified: true,
+    frequency: 'DAILY',
+    transformation: 'none',
+    staticId: 'btp10',
+    sourceName: 'Tasas de interés por licitación de BTP a 2 años (base 365 días) (porcentaje)',
+    confidence: 'medium',
+    verificationDate: '2026-07-15',
+    verificationMethod: 'BCCh SearchSeries + GetSeries validation; user-approved tenor substitution (10Y auction rate too stale, 2Y is the freshest longer tenor)',
+    notes: 'Row relabeled "BTP 2" in the UI — this is an auction rate for the 2-year tenor, not the 10-year the row previously showed. No live 10Y BTP rate exists (auctions too infrequent).',
+  },
 
-  // TPM TNA: BCCh TPM (F022.TPM.TIN.D001.NO.Z.D) IS the nominal annual rate.
-  // No separate TNA series found. Verify whether tpm-tna should share the TPM series.
-  'tpm-tna': pending('tpm', 'DAILY', 'none',
-    'TPM is already expressed as nominal annual rate. No distinct TNA series found. May share the TPM seriesId — investigate before enabling.'),
+  // PDBC: 90d tenor discontinued. Active instrument is 14d — verified live
+  // 2026-07-15 (F022.PDBC.TIN.D014.NO.Z.D, daily, last obs 14-07-2026 = 4.5%).
+  // UI label updated to "PDBC 14d" to match.
+  'pdbc-90d': {
+    seriesId: 'F022.PDBC.TIN.D014.NO.Z.D',
+    verified: true,
+    frequency: 'DAILY',
+    transformation: 'none',
+    staticId: 'pdbc90',
+    sourceName: 'Tasa de interés de PDBC a 14 días (porcentaje)',
+    confidence: 'high',
+    verificationDate: '2026-07-15',
+    verificationMethod: 'BCCh SearchSeries + GetSeries validation',
+    notes: 'BCCh no longer issues PDBC at 90d; the active tenor is 14d. Row relabeled "PDBC 14d" in the UI to match what is actually live.',
+  },
+
+  // TPM TNA: BCCh TPM (F022.TPM.TIN.D001.NO.Z.D) IS the nominal annual rate —
+  // the same series already live for the main "tpm" indicator. No distinct TNA
+  // series exists in the catalog. This entry is intentionally left NOT
+  // separately live-enabled here (verified stays false) to avoid a redundant
+  // duplicate BCCh fetch of the exact same series under a second series
+  // definition — the UI (Home + Macro Chilean Rates panels) instead resolves
+  // this row's live value directly from the already-fetched "tpm" indicator
+  // via `getSeriesByStaticId('tpm-tna').fallbackStaticId === 'tpm'`
+  // (src/config/macroSeries.ts), so it always matches the Macro Chile table's
+  // TPM value exactly with zero extra network calls.
+  'tpm-tna': pending('tpm-tna', 'DAILY', 'none',
+    'TPM is already expressed as nominal annual rate — no distinct TNA series exists. Deliberately not separately live-enabled: the UI resolves this row\'s value from the already-fetched "tpm" indicator (see macroSeries.ts fallbackStaticId) instead of duplicating the fetch.'),
 }
 
 /** A mapping is live-eligible only when verified AND it has a seriesId. */

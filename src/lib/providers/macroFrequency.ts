@@ -19,7 +19,7 @@ export type MacroTimeframe = 1 | 3 | 5 | 10
  * popup passes (which for Chile-rate rows is the RATE_HIST-mapped id, e.g.
  * `tpm`/`btu10-ref`, not the table row id). Any id NOT listed here is treated as
  * a market-priced series and gets the higher-frequency market plan — this
- * correctly covers the Chile secondary-rate history ids (btp10, btu5, bcu5,
+ * correctly covers the Chile secondary-rate history ids (btp10, btu5,
  * swap1y, swap2y, pdbc90) which are non-central-bank rates.
  */
 const MONTHLY_ALL_IDS: ReadonlySet<string> = new Set([

@@ -8,6 +8,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { getSeriesByStaticId } from '../src/config/macroSeries.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const HOME_PAGE = join(ROOT, 'src/app/page.tsx')
@@ -126,9 +127,10 @@ describe('Home page — badges show Live on initial load, not just after clickin
 describe('Home page — Chilean Rates overlay live BCCh values where a verified series exists', () => {
   const src = readFileSync(HOME_PAGE, 'utf8')
 
-  it('overlays live values only for rate ids with a matching liveIndicatorMap entry', () => {
+  it('overlays live values by resolving each row through getSeriesByStaticId (handles ids that differ from the live provider key)', () => {
     assert.ok(src.includes('const liveRateRows = rateOrder.map(r => {'))
-    assert.ok(src.includes('liveIndicatorMap[r.id]'))
+    assert.ok(src.includes("getSeriesByStaticId(r.id)?.fallbackStaticId ?? r.id"))
+    assert.ok(src.includes('liveIndicatorMap[liveId]'))
   })
 
   it('renders a DataSourceBadge + TableSourceFooter for the rates panel (no longer a bare "Static MVP sample" line)', () => {
@@ -142,12 +144,39 @@ describe('Home page — Chilean Rates overlay live BCCh values where a verified 
     assert.ok(!/ratesSource:\s+'Source: Banco Central · BCS — Static MVP sample'/.test(enHome))
   })
 
-  it('never wires a live overlay for the known-unverified rate ids (btp10, bcu5, pdbc90, tpm-tna)', () => {
-    // These ids have no verified BCCh series (see bcchSeriesManualMap.ts) — the
-    // overlay must only ever apply generically via liveIndicatorMap lookup,
-    // never a hardcoded special case for one of the unverified ids.
-    for (const uncoveredId of ['btp10', 'bcu5', 'pdbc90', 'tpm-tna']) {
-      assert.ok(!src.includes(`liveIndicatorMap['${uncoveredId}']`) && !src.includes(`liveIndicatorMap["${uncoveredId}"]`))
+  it('never hardcodes a rate id inline — the overlay applies generically via getSeriesByStaticId + liveIndicatorMap lookup', () => {
+    for (const id of ['btp10', 'btu10', 'btu5', 'swap2y', 'swap1y', 'pdbc90', 'tpm-tna']) {
+      assert.ok(!src.includes(`liveIndicatorMap['${id}']`) && !src.includes(`liveIndicatorMap["${id}"]`))
+    }
+  })
+
+  it('the BCU 5 row was removed entirely rather than shown static or faked live (no live BCCh series exists for it)', () => {
+    const ratesJson = readFileSync(join(ROOT, 'src/data/chileanRates.json'), 'utf8')
+    assert.ok(!/"id":\s*"bcu5"/.test(ratesJson), 'bcu5 must be removed from chileanRates.json')
+  })
+
+  it('BTP 10 and PDBC 90d rows were relabeled to match the tenor that is actually live (BTP 2 / PDBC 14d)', () => {
+    const ratesJson = readFileSync(join(ROOT, 'src/data/chileanRates.json'), 'utf8')
+    assert.ok(ratesJson.includes('"name": "BTP 2"'))
+    assert.ok(ratesJson.includes('"name": "PDBC 14d"'))
+  })
+})
+
+describe('Chilean Rates live-id resolution — regression guard for a real id-mismatch bug found this phase', () => {
+  // The live BCCh provider emits each Rates indicator's `id` as the series
+  // def's `fallbackStaticId`, not its own `id` — for btu10 and tpm-tna these
+  // differ from the chileanRates.json row's own id ('btu10' vs 'btu10-ref',
+  // 'tpm-tna' vs 'tpm'). A naive `liveIndicatorMap[r.id]` lookup would never
+  // match those two rows even once genuinely live — this guards the fix.
+  it('btu10 resolves to the live provider key "btu10-ref", not "btu10"', () => {
+    assert.equal(getSeriesByStaticId('btu10')?.fallbackStaticId, 'btu10-ref')
+  })
+  it('tpm-tna resolves to the live provider key "tpm" (reuses the main TPM series)', () => {
+    assert.equal(getSeriesByStaticId('tpm-tna')?.fallbackStaticId, 'tpm')
+  })
+  it('rows whose id already matches the live key resolve to themselves', () => {
+    for (const id of ['btp10', 'btu5', 'swap2y', 'swap1y', 'pdbc90']) {
+      assert.equal(getSeriesByStaticId(id)?.fallbackStaticId, id)
     }
   })
 })
