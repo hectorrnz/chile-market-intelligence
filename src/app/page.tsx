@@ -18,6 +18,7 @@ import { getSeriesByStaticId } from '@/config/macroSeries'
 import { getRecentHechos } from '@/lib/data/hechos'
 import { getUpcomingEarnings, getRecentResults } from '@/lib/data/earnings'
 import { fetchLiveNews, type NewsFetchResponse } from '@/lib/data/newsLive'
+import { getNewsSourceCode } from '@/lib/news/sourceCodes'
 import { getDocumentByRelatedId } from '@/lib/data/documents'
 import { getSectorPerformance } from '@/lib/data/sectorPerformance'
 import { getIndexPerformance } from '@/lib/data/indexPerformance'
@@ -634,10 +635,11 @@ export default function HomePage() {
           (no impact-based reordering — matches a Bloomberg NH-style feed).
           High-impact items get an edge-to-edge highlighted headline bar
           (solid --negative background, like NH's alert rows) — everything
-          else on the row (meta/summary/chips) stays normal. affectedAssets/
-          affectedTags are used for classification only and are never
-          rendered as chips — only affectedTickers show, since those are the
-          directly actionable/linkable entities. */}
+          else on the row stays normal. No per-item source name or category
+          tag — a short source code (see sourceCodes.ts) sits to the left of
+          the timestamp instead, exactly like NH's "BN"/"DJ"/"TWT" column.
+          affectedAssets/affectedTags are used for classification only and
+          are never rendered as chips — only affectedTickers show. */}
       <div className="bg-surface border border-border rounded overflow-hidden">
         <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
           <span className="ui-label text-muted-fg">{t.home.newsTitle}</span>
@@ -664,6 +666,7 @@ export default function HomePage() {
           )}
           {newsResult?.data.map(item => {
             const isHigh = item.impactLevel === 'High'
+            const sourceTitle = `${item.source} — ${item.sourceType === 'official' ? t.home.newsOfficialSource : t.home.newsMediaSource}`
             return (
               <div key={item.id} className="py-1.5">
                 <div
@@ -673,12 +676,10 @@ export default function HomePage() {
                   <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="hover:underline min-w-0">
                     <p className="text-xs leading-snug font-medium" style={isHigh ? { color: '#fff' } : undefined}>{item.headline}</p>
                   </a>
-                  <span className="ui-number text-xs shrink-0 whitespace-nowrap pt-px" style={isHigh ? { color: '#fff' } : { color: 'var(--muted-fg)' }}>{formatNewsTimestamp(item.publishedAt)}</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-xs text-muted-fg mt-0.5 px-4">
-                  <span title={item.sourceType === 'official' ? t.home.newsOfficialSource : t.home.newsMediaSource}>{item.source}</span>
-                  <span>·</span>
-                  <span>{item.category}</span>
+                  <span className="flex items-center gap-1.5 shrink-0 whitespace-nowrap pt-px">
+                    <span className="ui-number text-[10px] font-mono" title={sourceTitle} style={isHigh ? { color: '#fff' } : { color: 'var(--muted-fg)' }}>{getNewsSourceCode(item.source)}</span>
+                    <span className="ui-number text-xs" style={isHigh ? { color: '#fff' } : { color: 'var(--muted-fg)' }}>{formatNewsTimestamp(item.publishedAt)}</span>
+                  </span>
                 </div>
                 {item.summary && (
                   <p className="text-xs text-muted leading-snug mt-1 truncate px-4">{item.summary}</p>
@@ -693,12 +694,6 @@ export default function HomePage() {
               </div>
             )
           })}
-        </div>
-        <div className="px-4 py-2 border-t border-border">
-          <p className="text-xs text-muted-fg">
-            {t.home.newsSourcesLabel}{' '}
-            {(newsResult?.sourceStatuses ?? []).filter(s => s.status === 'success').map(s => s.source).join(', ') || '—'}
-          </p>
         </div>
       </div>
 

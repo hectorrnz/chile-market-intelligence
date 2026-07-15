@@ -13,6 +13,7 @@ import { classifyCategory, classifyImpact } from '../src/lib/news/newsClassifica
 import { dfNewsProvider } from '../src/lib/providers/news/dfNewsProvider.ts'
 import { fetchAllNews, __resetNewsCacheForTests, NEWS_MAX_AGE_MS } from '../src/lib/providers/news/newsProvider.ts'
 import { formatNewsTimestamp } from '../src/lib/formatters.ts'
+import { getNewsSourceCode } from '../src/lib/news/sourceCodes.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
@@ -372,6 +373,20 @@ describe('formatNewsTimestamp', () => {
     const dd = String(threeDaysAgo.getDate()).padStart(2, '0')
     const mm = String(threeDaysAgo.getMonth() + 1).padStart(2, '0')
     assert.equal(label, `${dd}/${mm}`)
+  })
+})
+
+// ── getNewsSourceCode — NH-style "BN"/"DJ" style source code column ───────
+
+describe('getNewsSourceCode', () => {
+  it('returns a known short code for Diario Financiero', () => {
+    assert.equal(getNewsSourceCode('Diario Financiero'), 'DF')
+  })
+
+  it('falls back to an uppercased 2-3 letter code for an unmapped source (never blank, never throws)', () => {
+    const code = getNewsSourceCode('Some New Outlet')
+    assert.ok(code.length > 0)
+    assert.equal(code, code.toUpperCase())
   })
 })
 

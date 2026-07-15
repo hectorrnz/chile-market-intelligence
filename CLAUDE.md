@@ -240,11 +240,14 @@ docs/                 — Project documentation
   and never "Bloomberg" unless this project ever has a real licensed Bloomberg relationship (it does not).
 - Module title is **NEWS** (English) / **NOTICIAS** (Spanish). Do NOT rename back to "Chilean News".
 - **Compact NH/Bloomberg-terminal row style (updated 2026-07-15):** headline (direct-linked to `sourceUrl`,
-  `text-xs`) sits on one row with its timestamp pinned to the **far right of that same row** — NOT a separate
-  meta line. Below it: a slim meta row (source · category, no timestamp), then a one-line truncated summary
-  (or the honest "no summary available" string), then — **only if `affectedTickers` is non-empty** — a row of
-  ticker chips with **no visible "Affected:" label**. Rows use tight vertical padding (`py-1.5`) — this is a
-  dense terminal feed, not a card list.
+  `text-xs`) sits on one row with a **source code + timestamp pinned to the far right of that same row**
+  (`getNewsSourceCode()` in `src/lib/news/sourceCodes.ts` — a 2-3 letter code like NH's "BN"/"DJ"/"TWT"
+  column, e.g. "DF" for Diario Financiero; hover shows the full source name + official/media status via
+  `title`). There is **no separate source-name/category meta line** — category is used for classification
+  only, never shown as a visible tag. Below the headline row: a one-line truncated summary (only if present —
+  no "no summary available" filler text), then — **only if `affectedTickers` is non-empty** — a row of ticker
+  chips with **no visible "Affected:" label**. Rows use tight vertical padding (`py-1.5`) — this is a dense
+  terminal feed, not a card list.
 - **`affectedAssets`/`affectedTags` are classification-only — never rendered as chips.** They still feed
   `classifyCategory`/`classifyImpact` (see `src/lib/news/newsClassification.ts`), but showing generic
   macro/sector keywords ("CPI", "Copper", "GDP", "Banking"...) as visible tags reads as clutter in a
@@ -271,10 +274,10 @@ docs/                 — Project documentation
   window rolls forward automatically as the 15-min cache refreshes. This is enforced server-side, once, for
   every consumer (Home and Company page both read the same pre-filtered list) — do not re-implement the
   cutoff per-page.
-- **Sources footer is a plain list, not a sentence:** `"{t.home.newsSourcesLabel} {successful sources joined
-  by ', '}"` (e.g. "Sources: Diario Financiero"), built from `sourceStatuses` where `status === 'success'` —
-  never a hardcoded prose footnote naming deferred sources (that record lives in
-  `docs/data_source_status.md`, not the UI).
+- **No per-item source name and no card-level "Sources:" footer (updated 2026-07-15).** Both were tried and
+  removed — the per-item source is now conveyed only by the short code next to the timestamp (see above), and
+  a card-level sources footer is redundant with that. The deferred-source discovery record lives in
+  `docs/data_source_status.md`, not the UI.
 
 ## Number and Font Rules (Phase 2B)
 
