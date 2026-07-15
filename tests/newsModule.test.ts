@@ -11,9 +11,10 @@ import { parseRssItems } from '../src/lib/providers/news/rssClient.ts'
 import { mapAffectedEntities } from '../src/lib/news/tickerMapping.ts'
 import { classifyCategory, classifyImpact } from '../src/lib/news/newsClassification.ts'
 import { dfNewsProvider } from '../src/lib/providers/news/dfNewsProvider.ts'
+import { laTerceraNewsProvider } from '../src/lib/providers/news/laTerceraNewsProvider.ts'
 import { fetchAllNews, __resetNewsCacheForTests, NEWS_MAX_AGE_MS } from '../src/lib/providers/news/newsProvider.ts'
 import { formatNewsTimestamp } from '../src/lib/formatters.ts'
-import { getNewsSourceCode } from '../src/lib/news/sourceCodes.ts'
+import { getNewsSourceCode, getNewsSourceColor } from '../src/lib/news/sourceCodes.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
@@ -265,6 +266,42 @@ describe('dfNewsProvider — mocked network', () => {
   })
 })
 
+// ── La Tercera provider (mocked fetch) ────────────────────────────────────
+
+describe('laTerceraNewsProvider — mocked network', () => {
+  afterEach(() => { globalThis.fetch = ORIGINAL_FETCH })
+
+  it('is a media source named La Tercera, never Bloomberg/official', () => {
+    assert.equal(laTerceraNewsProvider.name, 'La Tercera')
+    assert.equal(laTerceraNewsProvider.sourceType, 'media')
+    assert.doesNotMatch(laTerceraNewsProvider.name, /bloomberg/i)
+  })
+
+  it('parses a mocked Arc feed preserving the direct latercera.com link', async () => {
+    const xml = `<rss><channel>
+      <item><title><![CDATA[Hacienda sube proyección de ingresos fiscales]]></title>
+      <link>https://www.latercera.com/pulso/noticia/hacienda-sube-proyeccion/</link>
+      <pubDate>Wed, 15 Jul 2026 16:15:55 +0000</pubDate>
+      <description><![CDATA[Impulsado por el mayor precio del cobre y el litio.]]></description></item>
+    </channel></rss>`
+    globalThis.fetch = (async () => ({ ok: true, text: async () => xml })) as unknown as typeof fetch
+    const result = await laTerceraNewsProvider.fetchLatest()
+    assert.equal(result.ok, true)
+    assert.equal(result.data.length, 1)
+    assert.equal(result.data[0].sourceUrl, 'https://www.latercera.com/pulso/noticia/hacienda-sube-proyeccion/')
+    assert.equal(result.data[0].summary, 'Impulsado por el mayor precio del cobre y el litio.')
+  })
+
+  it('degrades to unavailable (never throws) on non-200 / network error / empty feed', async () => {
+    globalThis.fetch = (async () => ({ ok: false, status: 500 })) as unknown as typeof fetch
+    assert.equal((await laTerceraNewsProvider.fetchLatest()).ok, false)
+    globalThis.fetch = (async () => { throw new Error('down') }) as unknown as typeof fetch
+    assert.equal((await laTerceraNewsProvider.fetchLatest()).ok, false)
+    globalThis.fetch = (async () => ({ ok: true, text: async () => '<html>no feed</html>' })) as unknown as typeof fetch
+    assert.equal((await laTerceraNewsProvider.fetchLatest()).ok, false)
+  })
+})
+
 // ── Orchestrator (fetchAllNews) ────────────────────────────────────────────
 
 describe('fetchAllNews — orchestration, dedup, sort, status', () => {
@@ -340,8 +377,10 @@ describe('fetchAllNews — orchestration, dedup, sort, status', () => {
     let calls = 0
     globalThis.fetch = (async () => { calls++; return { ok: true, text: async () => '<rss><channel></channel></rss>' } }) as unknown as typeof fetch
     await fetchAllNews()
+    const afterFirst = calls // one fetch per registered provider
+    assert.ok(afterFirst >= 1)
     await fetchAllNews()
-    assert.equal(calls, 1)
+    assert.equal(calls, afterFirst) // second call served from cache — no new fetches
   })
 
   it('rolls off an item older than NEWS_MAX_AGE_MS (1 week)', async () => {
@@ -387,6 +426,27 @@ describe('getNewsSourceCode', () => {
     const code = getNewsSourceCode('Some New Outlet')
     assert.ok(code.length > 0)
     assert.equal(code, code.toUpperCase())
+  })
+
+  it('gives Diario Financiero and La Tercera distinct identity colors (via CSS vars, never hardcoded hex)', () => {
+    const df = getNewsSourceColor('Diario Financiero')
+    const lt = getNewsSourceColor('La Tercera')
+    assert.match(df, /^var\(--news-src-df\)$/)
+    assert.match(lt, /^var\(--news-src-lt\)$/)
+    assert.notEqual(df, lt)
+  })
+
+  it('falls back to the muted-fg token (never a raw hex) for an unmapped source', () => {
+    assert.equal(getNewsSourceColor('Some New Outlet'), 'var(--muted-fg)')
+  })
+
+  it('the --news-src-* CSS vars are actually defined in globals.css (light + dark)', () => {
+    const css = readFileSync(join(ROOT, 'src/app/globals.css'), 'utf8')
+    for (const v of ['--news-src-df', '--news-src-lt', '--news-src-em', '--news-src-de', '--news-src-cmf', '--news-src-bc']) {
+      // defined at least twice: once in :root (light), once in .dark
+      const count = (css.match(new RegExp(v.replace(/[-]/g, '\\-') + '\\s*:', 'g')) || []).length
+      assert.ok(count >= 2, `${v} should be defined in both :root and .dark (found ${count})`)
+    }
   })
 })
 

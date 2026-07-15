@@ -229,21 +229,38 @@ docs/                 — Project documentation
   use a relative import with an explicit `.ts` extension (see the existing provider files for the pattern);
   JSON data must be loaded via `fs.readFileSync` + `import.meta.url` (see `tickerMapping.ts`), never a plain
   `import ... from '....json'`, for the same reason.
-- **Implemented source:** Diario Financiero (df.cl) official RSS feed — a real `media` source, never labeled
-  `official`. **Deferred:** Emol (its own listed RSS endpoint fails TLS certificate validation), Diario
-  Estrategia (no discoverable feed), La Tercera/Pulso (no working feed at common paths), CMF (Hechos
-  Esenciales portal stays CAPTCHA-blocked; its separate "Comunicados de Prensa" page is a real, non-CAPTCHA
-  candidate but its DOM structure isn't confirmed yet — do not write a parser against unconfirmed structure),
-  BCCh (press-release feed not yet confirmed; BCCh macro *values* are already live elsewhere in the app). See
+- **Implemented sources (both real `media`, never `official`):** (1) **Diario Financiero** (df.cl) official
+  RSS feed; (2) **La Tercera** — its native Arc Publishing "outboundfeeds" RSS, specifically the **Pulso**
+  (business/finance) section: `https://www.latercera.com/arc/outboundfeeds/rss/category/pulso/?outputType=xml`
+  — direct latercera.com article links, verified live (~57 finance items). Each is a plain `NewsProvider`
+  registered in `newsProvider.ts`'s `PROVIDERS` array; adding another is just one entry there.
+- **Deferred sources:** **Emol** — genuinely has NO viable feed: its legacy `rss.emol.com/rss.asp` endpoint is
+  dead (HTTP connection-reset; the HTTPS variant 404s / serves a wrong cert), modern paths are SPA soft-200s,
+  and even the Google News RSS workaround is a dead end (its `site:emol.com` operator returns only ~1 item,
+  and Emol didn't appear at all in a general Google-News Chile-economy topic feed). Do NOT wire Emol via a
+  1-item or JS-interstitial-link feed — it stays deferred until a real feed appears. **Diario Estrategia** (no
+  native feed, but it DID appear in the Google-News economy aggregate — a possible future path if the
+  redirect-link tradeoff is acceptable), **CMF** (Hechos Esenciales stays CAPTCHA-blocked; its "Comunicados de
+  Prensa" page is a real non-CAPTCHA candidate, DOM unconfirmed — do not parse unconfirmed structure), **BCCh**
+  (press-release feed not confirmed; BCCh macro *values* are already live elsewhere). See
   `docs/data_source_status.md`'s News section for the full discovery record.
+- **Google News RSS** is an acceptable *category* of source (Google's own public syndication endpoint, not
+  scraping) but was rejected for Emol specifically on quality grounds (volume + interstitial links). If ever
+  used, attribute each item to the real outlet via its `<source>` tag, filter to the approved universe, and
+  never present a Google redirect link as the outlet's own direct link without saying so.
 - `sourceType` is `'official'` ONLY for CMF/BCCh when actually implemented as such — never any media outlet,
   and never "Bloomberg" unless this project ever has a real licensed Bloomberg relationship (it does not).
 - Module title is **NEWS** (English) / **NOTICIAS** (Spanish). Do NOT rename back to "Chilean News".
 - **Compact NH/Bloomberg-terminal row style (updated 2026-07-15):** headline (direct-linked to `sourceUrl`,
   `text-xs`) sits on one row with a **source code + timestamp pinned to the far right of that same row**
   (`getNewsSourceCode()` in `src/lib/news/sourceCodes.ts` — a 2-3 letter code like NH's "BN"/"DJ"/"TWT"
-  column, e.g. "DF" for Diario Financiero; hover shows the full source name + official/media status via
-  `title`). There is **no separate source-name/category meta line** — category is used for classification
+  column, e.g. "DF" for Diario Financiero, "LT" for La Tercera; hover shows the full source name +
+  official/media status via `title`). **Each source's code is a distinct color** (`getNewsSourceColor()` →
+  `var(--news-src-*)` CSS vars defined in `globals.css`, light+dark) so multiple outlets are distinguishable
+  at a glance — these are institutional GS-palette identity colors, deliberately NOT the positive/negative/
+  warning signal tokens (which carry meaning). Never hardcode the hex in a component; add a new source's color
+  as a `--news-src-*` var pair and map it in `sourceCodes.ts`. There is **no separate source-name/category
+  meta line** — category is used for classification
   only, never shown as a visible tag. Below the headline row: a one-line truncated summary (only if present —
   no "no summary available" filler text), then — **only if `affectedTickers` is non-empty** — a row of ticker
   chips with **no visible "Affected:" label**. Rows use tight vertical padding (`py-1.5`) — this is a dense

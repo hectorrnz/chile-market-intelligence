@@ -18,7 +18,7 @@ import { getSeriesByStaticId } from '@/config/macroSeries'
 import { getRecentHechos } from '@/lib/data/hechos'
 import { getUpcomingEarnings, getRecentResults } from '@/lib/data/earnings'
 import { fetchLiveNews, type NewsFetchResponse } from '@/lib/data/newsLive'
-import { getNewsSourceCode } from '@/lib/news/sourceCodes'
+import { getNewsSourceCode, getNewsSourceColor } from '@/lib/news/sourceCodes'
 import { getDocumentByRelatedId } from '@/lib/data/documents'
 import { getSectorPerformance } from '@/lib/data/sectorPerformance'
 import { getIndexPerformance } from '@/lib/data/indexPerformance'
@@ -677,7 +677,7 @@ export default function HomePage() {
                     <p className="text-xs leading-snug font-medium" style={isHigh ? { color: '#fff' } : undefined}>{item.headline}</p>
                   </a>
                   <span className="flex items-center gap-1.5 shrink-0 whitespace-nowrap pt-px">
-                    <span className="ui-number text-[10px] font-mono" title={sourceTitle} style={isHigh ? { color: '#fff' } : { color: 'var(--muted-fg)' }}>{getNewsSourceCode(item.source)}</span>
+                    <span className="ui-number text-[10px] font-mono font-semibold" title={sourceTitle} style={isHigh ? { color: '#fff' } : { color: getNewsSourceColor(item.source) }}>{getNewsSourceCode(item.source)}</span>
                     <span className="ui-number text-xs" style={isHigh ? { color: '#fff' } : { color: 'var(--muted-fg)' }}>{formatNewsTimestamp(item.publishedAt)}</span>
                   </span>
                 </div>

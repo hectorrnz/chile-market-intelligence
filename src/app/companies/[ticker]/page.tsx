@@ -16,7 +16,7 @@ import { getSnapshotByTicker, getAllSnapshots } from '@/lib/data/stocks'
 import { getEarningsByTicker } from '@/lib/data/earnings'
 import { getHechosByTicker } from '@/lib/data/hechos'
 import { fetchLiveNews, type NewsFetchResponse } from '@/lib/data/newsLive'
-import { getNewsSourceCode } from '@/lib/news/sourceCodes'
+import { getNewsSourceCode, getNewsSourceColor } from '@/lib/news/sourceCodes'
 import { getStockHistoryForTimeframe } from '@/lib/data/stockHistory'
 import { formatCLP, formatPct, formatFx, formatMillionsCLP, formatEPS, formatNetDebt, formatMarketCapMM, changeColor, formatNewsTimestamp } from '@/lib/formatters'
 import type { EarningsRelease, StockPriceSnapshot } from '@/types'
@@ -459,7 +459,7 @@ export default function CompanyDetailPage() {
                       <p className="text-xs leading-snug font-medium" style={isHigh ? { color: '#fff' } : undefined}>{item.headline}</p>
                     </a>
                     <span className="flex items-center gap-1.5 shrink-0 whitespace-nowrap pt-px">
-                      <span className="ui-number text-[10px] font-mono" title={item.source} style={isHigh ? { color: '#fff' } : { color: 'var(--muted-fg)' }}>{getNewsSourceCode(item.source)}</span>
+                      <span className="ui-number text-[10px] font-mono font-semibold" title={item.source} style={isHigh ? { color: '#fff' } : { color: getNewsSourceColor(item.source) }}>{getNewsSourceCode(item.source)}</span>
                       <span className="ui-number text-xs" style={isHigh ? { color: '#fff' } : { color: 'var(--muted-fg)' }}>{formatNewsTimestamp(item.publishedAt)}</span>
                     </span>
                   </div>

@@ -84,6 +84,18 @@
   --negative:       #8B0E04;
   --warning:        #7A5200;
 
+  /* News source-code identity colors (institutional, non-signal — must NOT
+     reuse positive/negative/warning, which carry meaning). Used only for the
+     2-3 letter source code beside a news timestamp, so each outlet is
+     distinguishable at a glance (Bloomberg-NH style). Drawn from the GS
+     institutional palette; one per approved-universe source. */
+  --news-src-df:    #0E7FB8;  /* Diario Financiero — institutional blue */
+  --news-src-lt:    #5B6770;  /* La Tercera — institutional slate */
+  --news-src-em:    #0F6E6E;  /* Emol — teal (reserved) */
+  --news-src-de:    #3A5A8C;  /* Diario Estrategia — steel blue (reserved) */
+  --news-src-cmf:   #004A64;  /* CMF — deep navy (reserved, official) */
+  --news-src-bc:    #6B5B14;  /* BCCh — bronze (reserved, official) */
+
   /* Sidebar — always dark navy, even in light mode */
   --sidebar:        #004A64;
   --sidebar-fg:     #FFFFFF;
@@ -132,6 +144,14 @@
   --positive:       #3DAA60;
   --negative:       #D05050;
   --warning:        #CC9010;
+
+  /* News source-code identity colors — lightened for contrast on dark surface */
+  --news-src-df:    #4FB0E0;
+  --news-src-lt:    #9AA4AD;
+  --news-src-em:    #4FA8A8;
+  --news-src-de:    #8CA8D8;
+  --news-src-cmf:   #6FA8C4;
+  --news-src-bc:    #C0AA5A;
 
   /* Sidebar — deep institutional navy, distinct from #202324 page background */
   --sidebar:        #0B2437;

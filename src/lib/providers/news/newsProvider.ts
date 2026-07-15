@@ -7,6 +7,7 @@
 import type { NewsItem } from '@/types'
 import type { NewsProvider, NewsSourceStatus, RawNewsArticle } from './types'
 import { dfNewsProvider } from './dfNewsProvider.ts'
+import { laTerceraNewsProvider } from './laTerceraNewsProvider.ts'
 // Relative imports with explicit .ts extension (not the '@/lib' alias) — this
 // module is imported directly by unit tests running under Node's native test
 // runner, which resolves neither tsconfig path aliases nor extensionless
@@ -14,7 +15,7 @@ import { dfNewsProvider } from './dfNewsProvider.ts'
 import { mapAffectedEntities } from '../../news/tickerMapping.ts'
 import { classifyCategory, classifyImpact } from '../../news/newsClassification.ts'
 
-const PROVIDERS: NewsProvider[] = [dfNewsProvider]
+const PROVIDERS: NewsProvider[] = [dfNewsProvider, laTerceraNewsProvider]
 
 // News rolls off after 1 week rather than accumulating indefinitely — the
 // window is recomputed against Date.now() on every uncached fetch, so as
