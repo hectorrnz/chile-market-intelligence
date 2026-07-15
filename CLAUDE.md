@@ -214,18 +214,40 @@ docs/                 — Project documentation
 - Uses `aria-label` on the group and `title` on each button for accessibility.
 - Do NOT replace it with an icon-only button or text-only "Theme: Light" — the segmented pill is the current standard.
 
-## News Module Rule
+## News Module Rule (News Module Source Integrity phase, 2026-07-15)
 
-- Mock news data lives in `src/data/news_mock.ts` as a static `NewsItem[]` array.
-- Do NOT connect live news APIs, scrapers, or external fetches until explicitly instructed.
-- Future sources are documented in `docs/product_spec.md` — they are reference only.
+- **Live, source-backed only — no static/sample fallback.** `src/data/news.json` and `src/data/news_mock.ts`
+  (fully fabricated, including a fake "Bloomberg" source attribution) are **deleted**. Unlike every other
+  module in this app, News deliberately does NOT fall back to static content when live fetch fails — a fake
+  headline is materially different from a stale macro number. An unavailable fetch renders an honest empty
+  state (`t.home.newsEmpty`), never a sample row.
+- **Provider architecture:** `src/lib/providers/news/` (`types.ts`, `rssClient.ts` — dependency-free RSS 2.0
+  parser, `dfNewsProvider.ts`, `newsProvider.ts` orchestrator) + `src/lib/news/` (`tickerMapping.ts`,
+  `newsClassification.ts`, pure). `GET /api/news` (15-min server-side cache) is the only consumer-facing
+  route; `src/lib/data/newsLive.ts` is the client-safe fetch helper. Never add a new provider file that
+  imports the `@/` alias for a VALUE import if it needs to run under Node's native test runner directly —
+  use a relative import with an explicit `.ts` extension (see the existing provider files for the pattern);
+  JSON data must be loaded via `fs.readFileSync` + `import.meta.url` (see `tickerMapping.ts`), never a plain
+  `import ... from '....json'`, for the same reason.
+- **Implemented source:** Diario Financiero (df.cl) official RSS feed — a real `media` source, never labeled
+  `official`. **Deferred:** Emol (its own listed RSS endpoint fails TLS certificate validation), Diario
+  Estrategia (no discoverable feed), La Tercera/Pulso (no working feed at common paths), CMF (Hechos
+  Esenciales portal stays CAPTCHA-blocked; its separate "Comunicados de Prensa" page is a real, non-CAPTCHA
+  candidate but its DOM structure isn't confirmed yet — do not write a parser against unconfirmed structure),
+  BCCh (press-release feed not yet confirmed; BCCh macro *values* are already live elsewhere in the app). See
+  `docs/data_source_status.md`'s News section for the full discovery record.
+- `sourceType` is `'official'` ONLY for CMF/BCCh when actually implemented as such — never any media outlet,
+  and never "Bloomberg" unless this project ever has a real licensed Bloomberg relationship (it does not).
 - Module title is **NEWS** (English) / **NOTICIAS** (Spanish). Do NOT rename back to "Chilean News".
-- News items follow institutional monitoring format: headline (14px) → meta row (body font, timestamp mono) → summary → affected chips.
-- Materiality badge colors: High = `--negative` (red), Medium = `--warning` (amber), Low = `--accent` (blue).
-  - All use `color-mix(in oklab, var(--color) N%, var(--surface))` for theme-aware backgrounds.
+- News items follow institutional monitoring format: headline (14px, direct-linked to `sourceUrl`) → meta
+  row (source · timestamp · category) → summary (or an honest "no summary available" string) → affected
+  tickers/assets/tags chips.
+- Impact badge colors: High = `--negative` (red), Medium/Low = default styling (no badge color). Impact is
+  assigned deterministically by `classifyImpact` (see `src/lib/news/newsClassification.ts`) — never a bare
+  sentiment score, and never defaulted to High.
 - Ticker chips in "Affected:" row use `font-mono` (identifiers). The "Affected:" label itself does NOT use `font-mono`.
-- **News High-materiality highlight:** Bloomberg NH-style — `borderLeft: '3px solid var(--negative)'` + `backgroundColor: color-mix(in oklab, var(--negative) 5%, var(--surface))`. No badge text for any row.
-- **Only HIGH news gets the red stripe.** Medium and Low rows have `borderLeft: '3px solid transparent'` to preserve layout alignment.
+- **News High-impact highlight:** `borderLeft: '3px solid var(--negative)'` + `backgroundColor: color-mix(in oklab, var(--negative) 5%, var(--surface))`. No badge text for any row.
+- **Only HIGH-impact news gets the red stripe.** Medium and Low rows have `borderLeft: '3px solid transparent'` to preserve layout alignment.
 
 ## Number and Font Rules (Phase 2B)
 

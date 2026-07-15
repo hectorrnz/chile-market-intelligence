@@ -175,17 +175,37 @@ export interface HechoEsencial {
   url?: string
 }
 
+// Phase — Source-backed News module. Every NewsItem is a real, fetched article
+// (or an official disclosure listing) — never a fabricated/sample row. See
+// src/lib/providers/news/ for the provider architecture and
+// docs/data_source_status.md for the per-source implementation record.
+export type NewsCategory = 'Macro' | 'Company' | 'Regulation' | 'Earnings' | 'Market'
+export type NewsImpactLevel = 'Low' | 'Medium' | 'High'
+/** 'official' = CMF, BCCh, or another government/regulatory body. Every other source is 'media'. */
+export type NewsSourceType = 'official' | 'media'
+
 export interface NewsItem {
   id: string
   headline: string
+  /** Source-provided description/excerpt. Null (never a fabricated placeholder string) when unavailable. */
+  summary: string | null
+  /** Display name of the outlet, e.g. "Diario Financiero" — never a vendor name we have no relationship with. */
   source: string
-  timestamp: string
-  category: 'Macro' | 'Company' | 'Regulation' | 'Earnings' | 'Market'
-  summary: string
+  sourceType: NewsSourceType
+  /** Direct link to the original article/disclosure. Always non-empty for a real item. */
+  sourceUrl: string
+  /** ISO timestamp as reported by the source. */
+  publishedAt: string
+  /** ISO timestamp of when this app fetched the item. */
+  fetchedAt: string
+  category: NewsCategory
+  impactLevel: NewsImpactLevel
+  /** Short, deterministic explanation of why impactLevel was assigned — never vague sentiment. */
+  impactReason: string
   affectedTickers: string[]
-  affectedMacroVariables: string[]
-  materiality: 'Low' | 'Medium' | 'High'
-  url: string
+  affectedAssets: string[]
+  affectedTags: string[]
+  language: 'es' | 'en'
 }
 
 /**

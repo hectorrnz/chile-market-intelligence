@@ -1968,3 +1968,97 @@ errors.
 Scope limits (explicit): Chilean Rates panel only (Home + Macro page's own Rates block); no new BCCh series
 beyond the two newly-verified substitutions; no change to the yield curve (already lived on its own verified
 tenor set); FX/Earnings/Hechos untouched.
+
+
+---
+
+**News Module Source Integrity + Live Ingestion Task** ✓ COMPLETE (2026-07-15)
+
+Replaces the Home dashboard's fully-fabricated News section with a real, source-backed news module.
+
+**Audit result (before coding):** `src/data/news.json` (8 rows, consumed by both the Home page and the
+Company detail page's "Recent News" block via `src/lib/data/news.ts`) had **fabricated source attributions**
+on 2 of 8 rows ("Bloomberg / BCCh", "Bloomberg / LME" — this project has no Bloomberg relationship anywhere)
+and an **empty `url` field on all 8 rows** (no direct link ever existed). A second, entirely unused static
+array (`src/data/news_mock.ts`, not imported anywhere) contained 5 more fabricated rows. Both files, plus
+`src/lib/data/news.ts`, were deleted rather than kept as a "static fallback" — unlike every other module in
+this app, a fabricated news headline is materially misleading in a way a stale macro number isn't, so this
+module was deliberately designed to show an honest empty state on fetch failure instead of ever falling back
+to sample content.
+
+**Source discovery** (approved universe: Emol, df.cl, Diario Estrategia, La Tercera/Pulso, CMF, BCCh):
+- **Diario Financiero (df.cl) — implemented.** Official public RSS feed
+  (`https://www.df.cl/noticias/site/list/port/rss.xml`), no API key, no CAPTCHA, verified live with real,
+  current articles (title/link/pubDate/description).
+- **Emol — deferred.** The outlet's own official RSS index (`http://extras.emol.com/RSS20/index.asp`) lists
+  real feed URLs, but the endpoint (`rss.emol.com`) serves a TLS certificate for an unrelated domain
+  (`*.mediosregionales.cl`) — an HTTPS fetch fails certificate validation. No economy-specific feed found either.
+- **Diario Estrategia — deferred.** No `<link rel="alternate" type="application/rss+xml">` or discoverable feed.
+- **La Tercera / Pulso — deferred.** `/feed/`, `/canal/pulso/feed/`, and other common paths 404 or redirect
+  to the HTML homepage — no feed-exposing CMS at those paths.
+- **CMF — deferred, but a real candidate found.** The Hechos Esenciales filing portal stays CAPTCHA-blocked
+  (unchanged from Phase 5A.1). A separate page, CMF's own "Comunicados de Prensa"
+  (`cmfchile.cl/portal/prensa/625/...`), is public, requires no CAPTCHA/JS, and its raw HTML already contains
+  real, current, dated press-release headlines. Not implemented this phase — its exact per-item DOM structure
+  wasn't confirmed against real fetched HTML before the research session's tool budget ran out, and this
+  project's standing policy is to never write a parser against unconfirmed structure (mirrors the BCCh
+  "never guess a series ID" discipline). Documented as the strongest next candidate.
+- **BCCh — deferred.** A press-release/communicados feed wasn't reached before the same constraint; BCCh's
+  macro *values* are already live elsewhere in the app (unrelated to this specific *news feed* question).
+
+**Provider architecture** (`src/lib/providers/news/`): `NewsProvider` interface, a dependency-free RSS 2.0
+parser (`rssClient.ts` — regex-based, mirrors the project's existing hand-written XBRL/unzip parser
+precedent, no new dependency), `dfNewsProvider.ts`, and an orchestrator (`newsProvider.ts`) that queries every
+registered provider in parallel, isolates per-provider failures (`status: success/partial_success/
+unavailable`), deduplicates by normalized URL then by (normalized headline + publish day), sorts by impact
+tier first and publish date second, and caches the merged result for 15 minutes (module-scope, mirrors the
+FX/macro caching pattern — shorter TTL since news moves faster). `GET /api/news` never returns a raw RSS/HTML
+payload — only the normalized `NewsItem[]` + a sanitized per-source status list.
+
+**Impact classification** (`src/lib/news/newsClassification.ts`, pure, deterministic): `classifyCategory`
+infers Macro/Regulation/Earnings/Company/Market from keyword rules (since df.cl's feed isn't
+pre-categorized); `classifyImpact` assigns High only for a specific, explainable `impactReason` — a genuine
+CMF regulatory action or BCCh-relevant macro release (TPM/IPC/IMACEC/PIB), a copper/lithium shock combined
+with a shock verb, a bank capital/solvency/bond-issuance event, or a corporate action on a tracked ticker. A
+bare ticker mention alone is Medium; unmatched items are Low — never defaulted to High.
+
+**Affected ticker/tag mapping** (`src/lib/news/tickerMapping.ts`, pure): matches a company's full/legal/short
+name as a whole substring, or its bare ticker as an isolated case-sensitive all-caps token — never a single
+generic word. A denylist excludes `"Chile"` (a country name) and the bare ticker `CAP` (collides with the
+common word "cap") from risky matching; `"Banco de Chile"` (the full phrase) still correctly maps to `CHILE`.
+
+**A real bug found and fixed via live validation:** the RSS parser's entity decoder only handled named XML
+entities (`&amp;`, `&lt;`, etc.) — real df.cl content uses numeric character references (`&#38;` for `&`),
+which were passing through undecoded (e.g. "S&#38;P 500" instead of "S&P 500"). Fixed by adding decimal
+(`&#NNN;`) and hex (`&#xHHH;`) numeric-entity decoding, ordered before the `&amp;` pass so a literal `&amp;`
+is never double-decoded. Regression-tested.
+
+**UI (Home + Company detail):** both pages now fetch `/api/news` live (mount effect + the existing "Update
+Data" button), showing a Live/Partial/Unavailable status dot, the real headline as a direct link to
+`sourceUrl`, source name (with an `official`/`media` tooltip), publish timestamp, category, summary (or an
+honest "no summary available" string), and affected tickers/assets/tags. High-impact items keep the existing
+red left-stripe + tint convention (`impactLevel === 'High'`); the vague "future ingestion" footer is replaced
+with a real "Source: Diario Financiero (live RSS). Other configured sources ... are deferred" footnote. No
+UI redesign — same card/scroll-container structure as before.
+
+**Tests:** `tests/newsModule.test.ts` (new, 42 tests) — static/sample removal, RSS parsing (incl. the numeric-
+entity regression), ticker/asset/tag mapping (incl. the denylist false-positive guards), category/impact
+classification (incl. "never everything High"), the df.cl provider against a mocked `fetch` (success/
+non-200/network-error/empty-feed), and the orchestrator (dedup, sort, `partial_success`/`unavailable` status,
+no raw-payload leakage in `sourceStatuses`, caching). Full suite 1487 → **1529/1529**, lint 0, build 0 errors.
+
+**Local validation (dev server, real network):** `GET /api/news` returned `status: "success"` with real,
+current (15-Jul-2026) Diario Financiero headlines, direct links, real summaries, and correct category/impact/
+ticker classification (e.g. a real headline mentioning "BCI" and "Copec" correctly mapped to
+`['BCI', 'COPEC']`). Home page showed the "Live" badge, 50 real df.cl direct links, and 5 High-impact
+red-striped rows; the Company page's Recent News block correctly filtered to ticker-relevant items with a
+direct link. No console errors on Home, Company, or Macro pages (regression-checked).
+
+Scope limits (explicit): only Diario Financiero implemented this phase; no paid/vendor news API; no
+Bloomberg/Reuters/FactSet; no CAPTCHA bypass; no scraping behind paywalls; no cron (server-side cache only,
+refreshed on page load / Update-button click); macro/calendar/FX/financials/Structured Notes/auth/watchlist/
+portfolio untouched; no broad UI redesign.
+
+Next: confirm CMF's Comunicados de Prensa DOM structure and add it as a second, official-labeled source;
+periodically re-check Emol's feed TLS issue and La Tercera/Diario Estrategia for a stable feed; consider a
+BCCh press-release feed once one is confirmed.

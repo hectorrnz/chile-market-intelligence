@@ -251,7 +251,7 @@ fields on the same card have different sources — see notes).
 | Hechos Esenciales feed | `hechosEsenciales.json` only; live path exists but is CAPTCHA-blocked | `blocked` | "Source: CMF — blocked (CAPTCHA), static sample" | ✅ Accurate, now explains *why* | — | See Hechos page section — P2 pending a CAPTCHA-free path |
 | Sector heat map | `sectorPerformance.json` baseline → Supabase auto-load → Yahoo Finance on refresh | `hybrid` | `MarketDataSourceBadge` (dynamic; was wrongly using the BCCh-flavored `DataSourceBadge` until fixed same session) + footer names Yahoo Finance via BCS | ✅ Fixed 8A (was static_mvp-labeled while actually hybrid, and briefly mislabeled "BCCh persisted" from a badge-component mix-up) | `/api/market/sectors`, `/api/market/live-snapshot` | Done |
 | Markets / index changes | `indexPerformance.json` baseline → Supabase auto-load → Yahoo Finance on refresh | `hybrid` | `MarketDataSourceBadge` (dynamic) + footer now says Yahoo Finance, not the fabricated "Bloomberg" | ✅ Fixed 8A | `/api/market/indices`, `/api/market/live-snapshot` | Done |
-| News | `news.json` only | `static_mvp` | "Live ingestion available in a future phase · Sources: emol.com, df.cl, ..." | ✅ Already honest (names candidate sources, doesn't claim a specific phase) | — | See News section — P2/P3 |
+| News | Live Diario Financiero RSS via `fetchAllNews()`; never falls back to static/fabricated rows (removed) | `hybrid` (live/partial/unavailable badge) | Live/Partial/Unavailable badge + "Source: Diario Financiero (live RSS)... deferred sources — see docs" footer | ✅ Fixed (News Module Source Integrity phase) — was 100% fabricated (`news.json`, incl. fake "Bloomberg" attributions and empty URLs); now source-backed with a direct link per item | `GET /api/news` | Done (Emol/Estrategia/La Tercera/CMF/BCCh deferred — see News section) |
 
 ---
 
@@ -526,11 +526,88 @@ next phase, and priority — none is an open-ended "Static MVP" with no plan.
 - **Next phase:** **Phase 8E**.
 - **Priority:** P2 (manual upload workaround) / P3 (official API or vendor feed, unconfirmed to exist).
 
-### News
+### News — ✓ source-backed via Diario Financiero RSS (News Module Source Integrity phase, 2026-07-15)
 
-- **Current static fields:** `news.json` — all articles, including realistic wire-service attributions (e.g. "Bloomberg / LME") that are part of the mock content itself, not a claim about this app's own data infrastructure (see the News Module Rule in `CLAUDE.md`) — keep this convention for any future sample data, but do not confuse it with a live vendor relationship.
-- **Target source options:** (a) curated manual JSON updated periodically; (b) RSS feeds from named outlets (emol.com, df.cl, diarioestrategia.cl); (c) a licensed news API; (d) folding into the Hechos Esenciales pipeline once/if a CAPTCHA-free CMF path exists.
-- **Conversion path:** (a) is the zero-infrastructure starting point; (b) needs a scheduled fetch + dedup layer and a content-reproduction review (RSS excerpts only, per the copyright rule); (c) is a real vendor cost/relationship; (d) depends entirely on the Hechos Relevantes blocker above being resolved first.
-- **Blocker:** none for (a)/(b) — this is available whenever prioritized, just not started. No aggressive scraping in any option.
-- **Next phase:** **Phase 8E**.
-- **Priority:** P2 (manual/RSS) / P3 (licensed API).
+`src/data/news.json` and `src/data/news_mock.ts` (fully fabricated sample rows, including fake "Bloomberg /
+BCCh" and "Bloomberg / LME" source attributions and empty `url` fields on every row) were **deleted**, not
+left as a fallback — a fake news headline is materially different from a stale macro number, so this module
+deliberately never falls back to fabricated content. An unavailable/failed fetch renders an honest empty
+state instead.
+
+**Provider architecture** (`src/lib/providers/news/`): `NewsProvider` interface (`fetchLatest()` →
+`{ok, data, reason}`), a dependency-free RSS 2.0 parser (`rssClient.ts`, regex-based, mirrors the project's
+existing hand-written XBRL/unzip parser precedent — no new XML dependency), and an orchestrator
+(`newsProvider.ts`) that queries every registered provider in parallel, isolates per-provider failures,
+deduplicates by normalized URL then by (normalized headline + publish day), sorts by impact tier first and
+publish date second, and caches the merged result for 15 minutes (module-scope, mirrors the FX/macro caching
+pattern). `GET /api/news` never returns a raw RSS/HTML payload — only the normalized `NewsItem[]` plus a
+sanitized per-source `{source, sourceType, status, articleCount, reason?}` list.
+
+**Implemented source — Diario Financiero (df.cl), media source.** Official public RSS feed
+(`https://www.df.cl/noticias/site/list/port/rss.xml`), no API key, no CAPTCHA, no paywall on the feed itself.
+Verified live: real, current articles (headline/link/pubDate/description) refreshed continuously. Every
+`NewsItem` carries the real `sourceUrl` (direct link to the original df.cl article), the source-provided
+`description` as `summary` (never a fabricated one — `summary` is `null`, never an invented string, when a
+feed item has no description), and `sourceType: 'media'` (never `'official'`).
+
+**Deferred sources (discovery record):**
+- **Emol** — the outlet's own RSS index page (`http://extras.emol.com/RSS20/index.asp`) lists real feed URLs
+  (`http://rss.emol.com/rss.asp?canal=N`), but that endpoint's TLS certificate does not match its hostname
+  (serves a `*.mediosregionales.cl` certificate) — an HTTPS fetch fails certificate validation. No economy/
+  business-specific feed was found either. Deferred — not a legal/access-policy issue, a broken/stale feed
+  infrastructure issue on the source's side.
+- **Diario Estrategia** (diarioestrategia.cl) — no `<link rel="alternate" type="application/rss+xml">` feed
+  discoverable on the homepage, and no working feed found at common paths. Deferred — no stable structured
+  endpoint found this phase.
+- **La Tercera / Pulso** — `https://www.latercera.com/feed/`, `/canal/pulso/feed/`, and other common
+  WordPress-style feed paths all 404 or redirect to the HTML homepage (La Tercera does not run a
+  feed-exposing CMS at those paths). Deferred — no stable structured endpoint found this phase.
+- **CMF** (official) — the Hechos Esenciales filing portal remains CAPTCHA-blocked (unchanged, see the Hechos
+  Relevantes section above). A separate, genuinely promising surface was found this phase: CMF's own
+  "Comunicados de Prensa" page (`cmfchile.cl/portal/prensa/625/...`) is public, requires no CAPTCHA/login, and
+  its raw HTML already contains real, current, dated press-release headlines with no JavaScript rendering
+  required — a real candidate for a future conservative HTML parser. Not implemented this phase: the page's
+  exact per-item DOM structure (anchor hrefs, date markup) was not confirmed against real fetched HTML before
+  the research session's tool budget was exhausted, and writing a parser against unconfirmed structure would
+  violate this project's own "never guess" discipline. Documented here as the strongest next candidate.
+- **BCCh** (official) — a press-release/communicados page was not reached before the same tool-budget
+  constraint; BCCh's macro *values* are already live elsewhere in the app (BCCh BDE API) — this is specifically
+  about a *news/release* feed, which remains unconfirmed.
+
+**Impact classification** (`src/lib/news/newsClassification.ts`, pure, deterministic): `classifyCategory`
+infers Macro/Regulation/Earnings/Company/Market from keyword rules (never from the source, since df.cl's own
+feed isn't pre-categorized); `classifyImpact` assigns High only for a specific, explainable
+`impactReason` — a genuine CMF regulatory action, a major BCCh-relevant macro release (TPM/IPC/IMACEC/PIB),
+a copper/lithium price shock combined with a shock verb, a bank capital/solvency/bond-issuance event, or a
+corporate action (acquisition/dividend/buyback/capital increase) on a tracked ticker. A bare ticker mention
+alone is Medium; anything matching none of the above is Low — impact is never defaulted to High.
+
+**Affected ticker/tag mapping** (`src/lib/news/tickerMapping.ts`, pure): matches a company's full/legal/short
+name as a whole substring, or its bare ticker as an isolated case-sensitive all-caps token — never a single
+generic word. A small denylist excludes ambiguous matches (`"Chile"` alone is a country name, not a company
+reference; the ticker `CAP` is excluded from bare-token matching since it collides with the common Spanish
+word "cap" in some financial phrases). Verified against real live df.cl content during this phase (e.g. a
+real headline mentioning "BCI" and "Copec" correctly mapped to `['BCI', 'COPEC']`, unrelated sports headlines
+mapped to `[]`).
+
+**Cache/refresh:** 15-minute server-side cache (shorter than macro/FX's 6h TTL, since news moves faster);
+the Home/Company page "Update Data" button also triggers an immediate re-fetch (bypassing nothing — the
+server cache still applies, so a burst of manual refreshes doesn't hammer df.cl).
+
+- **Fields shown (Home + Company detail):** headline (direct-linked), source, publish timestamp, category,
+  summary (or an honest "no summary available" string), affected tickers/assets/tags, high-impact red
+  left-stripe + tint (identical visual language to the pre-existing Hechos Esenciales/materiality styling).
+- **Target source:** CMF's "Comunicados de Prensa" page (real, non-CAPTCHA, official) for a second,
+  `official`-labeled source; Emol/Diario Estrategia/La Tercera/BCCh remain candidates pending a stable feed
+  or confirmed page structure.
+- **Conversion path:** fetch and confirm CMF's Comunicados de Prensa per-item DOM structure (anchor hrefs,
+  date markup) against real HTML, then add a second `NewsProvider` implementation (`sourceType: 'official'`)
+  to the existing orchestrator — no architecture change needed, the provider list is already designed to
+  register more than one source.
+- **Blocker:** none for CMF Comunicados (page is public, no CAPTCHA) — only the DOM-structure confirmation
+  step remains; Emol is blocked by a TLS certificate mismatch on its own listed RSS endpoint; Diario
+  Estrategia and La Tercera have no discoverable feed at present.
+- **Next phase:** confirm CMF's Comunicados de Prensa DOM structure and add it as a second, official-labeled
+  source; periodically re-check Emol's feed infrastructure and La Tercera/Diario Estrategia for a stable feed.
+- **Priority:** P2 (CMF Comunicados — official source, real candidate) / P3 (re-check the three deferred
+  media sources periodically).

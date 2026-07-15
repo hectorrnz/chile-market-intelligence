@@ -17,7 +17,7 @@ import { getChileanRates } from '@/lib/data/chileanRates'
 import { getSeriesByStaticId } from '@/config/macroSeries'
 import { getRecentHechos } from '@/lib/data/hechos'
 import { getUpcomingEarnings, getRecentResults } from '@/lib/data/earnings'
-import { getAllNews } from '@/lib/data/news'
+import { fetchLiveNews, type NewsFetchResponse } from '@/lib/data/newsLive'
 import { getDocumentByRelatedId } from '@/lib/data/documents'
 import { getSectorPerformance } from '@/lib/data/sectorPerformance'
 import { getIndexPerformance } from '@/lib/data/indexPerformance'
@@ -108,7 +108,6 @@ export default function HomePage() {
   const recentHechos = getRecentHechos(8)
   const upcoming = getUpcomingEarnings().slice(0, 2)
   const recent = getRecentResults().slice(0, 2)
-  const news = getAllNews()
   const staticSectors = getSectorPerformance()
   const staticIndices = getIndexPerformance()
   const marketUpdated = formatMarketLastUpdated()
@@ -120,6 +119,11 @@ export default function HomePage() {
   const [supaSectors, setSupaSectors] = useState<SectorSnapshot[] | null>(null)
   const [supaIdxMap, setSupaIdxMap] = useState<Record<string, IndexSnapshot>>({})
 
+  // Source-backed News module (never a static fallback — see the News card
+  // below: an unavailable live fetch shows an honest empty state, not
+  // fabricated headlines).
+  const [newsResult, setNewsResult] = useState<NewsFetchResponse | null>(null)
+
   useEffect(() => {
     let mounted = true
     Promise.all([
@@ -127,7 +131,8 @@ export default function HomePage() {
       fetchSectorPerformance().catch(() => null),
       fetchIndexPerformance().catch(() => null),
       fetchLiveSnapshot().catch(() => null),
-    ]).then(([stRes, secRes, idxRes, liveRes]) => {
+      fetchLiveNews().catch(() => null),
+    ]).then(([stRes, secRes, idxRes, liveRes, newsRes]) => {
       if (!mounted) return
       if (stRes?.data.length) setSupaStockMap(Object.fromEntries(stRes.data.map(s => [s.ticker, s])))
       if (secRes?.data.length) setSupaSectors(secRes.data)
@@ -136,15 +141,17 @@ export default function HomePage() {
       // Update-click) so the sector/markets/watchlist badges read "Live"
       // straight away rather than sitting on "Persisted" until refreshed.
       if (liveRes) setLive(liveRes)
+      if (newsRes) setNewsResult(newsRes)
     })
     return () => { mounted = false }
   }, [])
 
   const doRefresh = useCallback(async () => {
-    const [data, clRes, usRes] = await Promise.all([
+    const [data, clRes, usRes, newsRes] = await Promise.all([
       fetchLiveSnapshot(),
       fetchMacroIndicators('CL'),
       fetchMacroIndicators('US'),
+      fetchLiveNews(),
     ])
     if (clRes) {
       setMacroStatus(clRes.metadata.status)
@@ -154,6 +161,7 @@ export default function HomePage() {
       setUsMacroStatus(usRes.metadata.status)
       setLiveIndicatorMap(prev => ({ ...prev, ...Object.fromEntries(usRes.data.map(i => [i.id, i])) }))
     }
+    if (newsRes) setNewsResult(newsRes)
     if (!data) throw new Error('unavailable')
     setLive(data)
   }, [])
@@ -618,14 +626,36 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* News — High-materiality red stripe, no tags */}
+      {/* News — source-backed (Diario Financiero live today; see
+          docs/data_source_status.md for the full per-source record). Never
+          falls back to fabricated headlines: an unavailable fetch shows an
+          honest empty state, not sample rows. High-impact red stripe only. */}
       <div className="bg-surface border border-border rounded overflow-hidden">
-        <div className="px-4 py-3 border-b border-border">
+        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
           <span className="ui-label text-muted-fg">{t.home.newsTitle}</span>
+          <span className="flex items-center gap-1 text-xs text-muted-fg whitespace-nowrap">
+            <span
+              className="w-1.5 h-1.5 rounded-full inline-block shrink-0"
+              style={{
+                backgroundColor:
+                  newsResult?.status === 'success' ? 'var(--positive)'
+                  : newsResult?.status === 'partial_success' ? 'var(--warning)'
+                  : newsResult ? 'var(--negative)' : 'var(--muted-fg)',
+              }}
+              aria-hidden
+            />
+            {newsResult?.status === 'success' ? t.home.newsLive
+              : newsResult?.status === 'partial_success' ? t.home.newsPartial
+              : newsResult?.status === 'unavailable' ? t.home.newsUnavailable
+              : t.home.newsLoading}
+          </span>
         </div>
         <div className="overflow-y-auto divide-y divide-border" style={{ maxHeight: '440px' }}>
-          {news.map(item => {
-            const isHigh = item.materiality === 'High'
+          {newsResult && newsResult.data.length === 0 && (
+            <div className="px-4 py-6 text-center text-xs text-muted-fg">{t.home.newsEmpty}</div>
+          )}
+          {newsResult?.data.map(item => {
+            const isHigh = item.impactLevel === 'High'
             return (
               <div
                 key={item.id}
@@ -635,22 +665,27 @@ export default function HomePage() {
                   backgroundColor: `color-mix(in oklab, var(--negative) 5%, var(--surface))`,
                 } : { borderLeft: '3px solid transparent' }}
               >
-                <p className={`text-xs leading-snug mb-1.5 ${isHigh ? 'font-semibold text-foreground' : 'font-medium text-foreground'}`}>{item.headline}</p>
+                <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                  <p className={`text-xs leading-snug mb-1.5 ${isHigh ? 'font-semibold text-foreground' : 'font-medium text-foreground'}`}>{item.headline}</p>
+                </a>
                 <div className="flex items-center gap-1.5 text-xs text-muted-fg mb-2">
-                  <span>{item.source}</span>
+                  <span title={item.sourceType === 'official' ? t.home.newsOfficialSource : t.home.newsMediaSource}>{item.source}</span>
                   <span>·</span>
-                  <span className="ui-number">{new Date(item.timestamp).toLocaleDateString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                  <span className="ui-number">{new Date(item.publishedAt).toLocaleDateString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
                   <span>·</span>
                   <span>{item.category}</span>
                 </div>
-                <p className="text-xs text-muted leading-relaxed mb-2">{item.summary}</p>
-                {(item.affectedTickers.length > 0 || item.affectedMacroVariables.length > 0) && (
+                <p className="text-xs text-muted leading-relaxed mb-2">{item.summary ?? t.home.newsNoSummary}</p>
+                {(item.affectedTickers.length > 0 || item.affectedAssets.length > 0 || item.affectedTags.length > 0) && (
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-xs text-muted-fg">{t.home.newsAffected}:</span>
                     {item.affectedTickers.map(ticker => (
                       <Link key={ticker} href={`/companies/${ticker}`} className="text-xs font-mono px-1.5 py-0.5 bg-surface-2 text-primary border border-border rounded hover:border-accent transition-colors">{ticker}</Link>
                     ))}
-                    {item.affectedMacroVariables.map(v => (
+                    {item.affectedAssets.map(v => (
+                      <span key={v} className="text-xs px-1.5 py-0.5 bg-surface-2 text-muted border border-border rounded">{v}</span>
+                    ))}
+                    {item.affectedTags.map(v => (
                       <span key={v} className="text-xs px-1.5 py-0.5 bg-surface-2 text-muted border border-border rounded">{v}</span>
                     ))}
                   </div>
@@ -660,7 +695,7 @@ export default function HomePage() {
           })}
         </div>
         <div className="px-4 py-2.5 border-t border-border">
-          <p className="text-xs text-muted-fg">{t.home.newsFutureNote}</p>
+          <p className="text-xs text-muted-fg">{t.home.newsFootnote}</p>
         </div>
       </div>
 

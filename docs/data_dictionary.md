@@ -130,24 +130,35 @@ Key series to track:
 
 ## Entity: NewsItem
 
-A Chilean market or macro news item with buyside-oriented AI summary.
+A source-backed Chilean market/macro news item (News Module Source Integrity phase). Every `NewsItem` is a
+real, fetched article or official disclosure listing — never a fabricated/sample row. See
+`src/lib/providers/news/` for the provider architecture and `docs/data_source_status.md` for the per-source
+implementation record (implemented: Diario Financiero RSS; deferred: Emol, Diario Estrategia, La Tercera/
+Pulso, CMF, BCCh).
 
 | Field | Type | Description | Source |
 |---|---|---|---|
-| `id` | string | Unique identifier | System / scraper |
-| `headline` | string | News headline | Source publication |
-| `source` | string | Publication or institution name (e.g., `df.cl`, `BCCh`, `CMF`) | Source |
-| `timestamp` | string (ISO 8601) | Publication datetime | Source |
-| `category` | enum | `Macro` \| `Company` \| `Regulation` \| `Earnings` \| `Market` | Classified |
-| `summary` | string | 2–3 sentence buyside summary: what happened · why it matters · what is affected | AI-generated (future) |
-| `affectedTickers` | string[] | Bolsa tickers directly referenced or likely affected | Analyst / AI |
-| `affectedMacroVariables` | string[] | Macro series codes affected (e.g., `TPM`, `UF`, `IPC_YOY`) | Analyst / AI |
-| `materiality` | enum | `High` \| `Medium` \| `Low` — investor relevance rating | Analyst / AI |
-| `url` | string | Source URL (may be placeholder in MVP) | Source |
+| `id` | string | Unique identifier (`<provider>-<index>-<normalized url>`) | Derived |
+| `headline` | string | Original headline, never rewritten | Source publication |
+| `summary` | string \| null | Source-provided description/excerpt; `null` (never an invented placeholder) when the source gave none | Source |
+| `source` | string | Display name of the outlet, e.g. `"Diario Financiero"` — never a vendor name with no real relationship | Source |
+| `sourceType` | enum | `'official'` (CMF/BCCh only) \| `'media'` (every other outlet) | Provider config |
+| `sourceUrl` | string | Direct link to the original article/disclosure — always non-empty for a real item | Source |
+| `publishedAt` | string (ISO 8601) | Publication datetime as reported by the source | Source |
+| `fetchedAt` | string (ISO 8601) | When this app fetched the item | System |
+| `category` | enum | `Macro` \| `Company` \| `Regulation` \| `Earnings` \| `Market` — inferred by deterministic keyword rules (`classifyCategory`), never from the source's own taxonomy | Classified |
+| `impactLevel` | enum | `High` \| `Medium` \| `Low` — deterministic (`classifyImpact`), never a bare sentiment score | Classified |
+| `impactReason` | string | Short, explainable reason for the assigned impact level (e.g. `"Major macro release reported (TPM/IPC/IMACEC/PIB)"`) | Classified |
+| `affectedTickers` | string[] | Bolsa tickers matched with high confidence (full/legal/short company name substring, or an isolated all-caps ticker token) — never guessed | `mapAffectedEntities` |
+| `affectedAssets` | string[] | Commodity/macro asset tags (e.g. `Copper`, `CPI`, `TPM`) matched by narrow keyword phrases | `mapAffectedEntities` |
+| `affectedTags` | string[] | Sector tags (e.g. `Banking`, `Retail`, `Utilities`) matched by narrow keyword phrases | `mapAffectedEntities` |
+| `language` | enum | `'es'` \| `'en'` | Provider config |
 
-**MVP status:** Populated from static mock array in `src/data/news_mock.ts`. Live ingestion is future work.
-
-**Future sources:** emol.com, df.cl, diarioestrategia.cl, CMF API, BCCh communications, company IR pages.
+**Status:** Live, source-backed via Diario Financiero's official RSS feed (`GET /api/news`, 15-minute
+server-side cache). The module never falls back to a static/fabricated row — an unavailable fetch shows an
+honest empty state on the Home/Company pages instead. The former `src/data/news.json` and
+`src/data/news_mock.ts` (100% fabricated sample content, including a fake "Bloomberg / BCCh" source
+attribution) have been deleted.
 
 ---
 

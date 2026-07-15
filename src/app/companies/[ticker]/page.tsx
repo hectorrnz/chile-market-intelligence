@@ -15,7 +15,7 @@ import { getCompanyByTicker, getAllCompanies } from '@/lib/data/companies'
 import { getSnapshotByTicker, getAllSnapshots } from '@/lib/data/stocks'
 import { getEarningsByTicker } from '@/lib/data/earnings'
 import { getHechosByTicker } from '@/lib/data/hechos'
-import { getNewsByTicker } from '@/lib/data/news'
+import { fetchLiveNews, type NewsFetchResponse } from '@/lib/data/newsLive'
 import { getStockHistoryForTimeframe } from '@/lib/data/stockHistory'
 import { formatCLP, formatPct, formatFx, formatMillionsCLP, formatEPS, formatNetDebt, formatMarketCapMM, changeColor, formatDateTime } from '@/lib/formatters'
 import type { EarningsRelease, StockPriceSnapshot } from '@/types'
@@ -51,6 +51,7 @@ export default function CompanyDetailPage() {
   const [live, setLive] = useState<LiveSnapshot | null>(null)
   // Supabase-persisted baseline (auto-loaded on mount, below live overlay in priority)
   const [supaSnap, setSupaSnap] = useState<StockSnapshot | null>(null)
+  const [newsResult, setNewsResult] = useState<NewsFetchResponse | null>(null)
 
   useEffect(() => {
     if (!sym) return
@@ -58,11 +59,15 @@ export default function CompanyDetailPage() {
     fetchStockSnapshot(sym).then(res => {
       if (mounted && res.data) setSupaSnap(res.data)
     }).catch(() => {})
+    fetchLiveNews().then(res => {
+      if (mounted && res) setNewsResult(res)
+    }).catch(() => {})
     return () => { mounted = false }
   }, [sym])
 
   const doRefresh = useCallback(async () => {
-    const data = await fetchLiveSnapshot()
+    const [data, newsRes] = await Promise.all([fetchLiveSnapshot(), fetchLiveNews()])
+    if (newsRes) setNewsResult(newsRes)
     if (!data) throw new Error('unavailable')
     setLive(data)
   }, [])
@@ -87,7 +92,7 @@ export default function CompanyDetailPage() {
     .sort((a, b) => b.reportDate.localeCompare(a.reportDate))
     .slice(0, 6)
   const hechos   = getHechosByTicker(sym).slice(0, 6)
-  const news     = getNewsByTicker(sym).slice(0, 4)
+  const news     = (newsResult?.data ?? []).filter(n => n.affectedTickers.includes(sym)).slice(0, 4)
   const stockHistory = getStockHistoryForTimeframe(sym, chartTimeframe)
     .map(p => ({ date: p.date, value: p.price }))
 
@@ -442,7 +447,7 @@ export default function CompanyDetailPage() {
           </div>
           <div className="divide-y divide-border">
             {news.map(item => {
-              const isHigh = item.materiality === 'High'
+              const isHigh = item.impactLevel === 'High'
               return (
                 <div
                   key={item.id}
@@ -452,11 +457,13 @@ export default function CompanyDetailPage() {
                     backgroundColor: `color-mix(in oklab, var(--negative) 5%, var(--surface))`,
                   } : { borderLeft: '3px solid transparent' }}
                 >
-                  <p className={`text-xs leading-snug mb-1 ${isHigh ? 'font-semibold text-foreground' : 'font-medium text-foreground'}`}>{item.headline}</p>
+                  <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                    <p className={`text-xs leading-snug mb-1 ${isHigh ? 'font-semibold text-foreground' : 'font-medium text-foreground'}`}>{item.headline}</p>
+                  </a>
                   <div className="flex items-center gap-1.5 text-xs text-muted-fg">
                     <span>{item.source}</span>
                     <span>·</span>
-                    <span className="ui-number">{formatDateTime(item.timestamp)}</span>
+                    <span className="ui-number">{formatDateTime(item.publishedAt)}</span>
                   </div>
                 </div>
               )
