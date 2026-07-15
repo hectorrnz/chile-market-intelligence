@@ -630,10 +630,14 @@ export default function HomePage() {
           docs/data_source_status.md for the full per-source record). Never
           falls back to fabricated headlines: an unavailable fetch shows an
           honest empty state, not sample rows. Rolls to the last 7 days only
-          (see NEWS_MAX_AGE_MS in newsProvider.ts). Compact NH/Bloomberg-style
-          rows: only the headline is highlighted for High impact (no block
-          tint/stripe), timestamp sits at the far right of the headline row —
-          time-only for today, DD/MM for older items. */}
+          (see NEWS_MAX_AGE_MS in newsProvider.ts), always sorted newest-first
+          (no impact-based reordering — matches a Bloomberg NH-style feed).
+          High-impact items get an edge-to-edge highlighted headline bar
+          (solid --negative background, like NH's alert rows) — everything
+          else on the row (meta/summary/chips) stays normal. affectedAssets/
+          affectedTags are used for classification only and are never
+          rendered as chips — only affectedTickers show, since those are the
+          directly actionable/linkable entities. */}
       <div className="bg-surface border border-border rounded overflow-hidden">
         <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
           <span className="ui-label text-muted-fg">{t.home.newsTitle}</span>
@@ -660,33 +664,29 @@ export default function HomePage() {
           )}
           {newsResult?.data.map(item => {
             const isHigh = item.impactLevel === 'High'
-            const hasChips = item.affectedTickers.length > 0 || item.affectedAssets.length > 0 || item.affectedTags.length > 0
             return (
-              <div key={item.id} className="px-4 py-1.5">
-                <div className="flex items-start justify-between gap-3">
+              <div key={item.id} className="py-1.5">
+                <div
+                  className={`flex items-start justify-between gap-3 px-4 ${isHigh ? 'py-1' : ''}`}
+                  style={isHigh ? { backgroundColor: 'var(--negative)' } : undefined}
+                >
                   <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="hover:underline min-w-0">
-                    <p className={`text-xs leading-snug ${isHigh ? 'text-negative font-semibold' : 'font-medium text-foreground'}`}>{item.headline}</p>
+                    <p className="text-xs leading-snug font-medium" style={isHigh ? { color: '#fff' } : undefined}>{item.headline}</p>
                   </a>
-                  <span className="ui-number text-xs text-muted-fg shrink-0 whitespace-nowrap pt-px">{formatNewsTimestamp(item.publishedAt)}</span>
+                  <span className="ui-number text-xs shrink-0 whitespace-nowrap pt-px" style={isHigh ? { color: '#fff' } : { color: 'var(--muted-fg)' }}>{formatNewsTimestamp(item.publishedAt)}</span>
                 </div>
-                <div className="flex items-center gap-1.5 text-xs text-muted-fg mt-0.5">
+                <div className="flex items-center gap-1.5 text-xs text-muted-fg mt-0.5 px-4">
                   <span title={item.sourceType === 'official' ? t.home.newsOfficialSource : t.home.newsMediaSource}>{item.source}</span>
                   <span>·</span>
                   <span>{item.category}</span>
                 </div>
                 {item.summary && (
-                  <p className="text-xs text-muted leading-snug mt-1 truncate">{item.summary}</p>
+                  <p className="text-xs text-muted leading-snug mt-1 truncate px-4">{item.summary}</p>
                 )}
-                {hasChips && (
-                  <div className="flex items-center gap-1 flex-wrap mt-1">
+                {item.affectedTickers.length > 0 && (
+                  <div className="flex items-center gap-1 flex-wrap mt-1 px-4">
                     {item.affectedTickers.map(ticker => (
                       <Link key={ticker} href={`/companies/${ticker}`} className="text-[11px] font-mono px-1 py-0.5 bg-surface-2 text-primary border border-accent/40 rounded hover:border-accent transition-colors">{ticker}</Link>
-                    ))}
-                    {item.affectedAssets.map(v => (
-                      <span key={v} className="text-[11px] px-1 py-0.5 text-muted-fg">{v}</span>
-                    ))}
-                    {item.affectedTags.map(v => (
-                      <span key={v} className="text-[11px] px-1 py-0.5 text-muted-fg">{v}</span>
                     ))}
                   </div>
                 )}

@@ -449,14 +449,17 @@ export default function CompanyDetailPage() {
             {news.map(item => {
               const isHigh = item.impactLevel === 'High'
               return (
-                <div key={item.id} className="px-4 py-1.5">
-                  <div className="flex items-start justify-between gap-3">
+                <div key={item.id} className="py-1.5">
+                  <div
+                    className={`flex items-start justify-between gap-3 px-4 ${isHigh ? 'py-1' : ''}`}
+                    style={isHigh ? { backgroundColor: 'var(--negative)' } : undefined}
+                  >
                     <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="hover:underline min-w-0">
-                      <p className={`text-xs leading-snug ${isHigh ? 'text-negative font-semibold' : 'font-medium text-foreground'}`}>{item.headline}</p>
+                      <p className="text-xs leading-snug font-medium" style={isHigh ? { color: '#fff' } : undefined}>{item.headline}</p>
                     </a>
-                    <span className="ui-number text-xs text-muted-fg shrink-0 whitespace-nowrap pt-px">{formatNewsTimestamp(item.publishedAt)}</span>
+                    <span className="ui-number text-xs shrink-0 whitespace-nowrap pt-px" style={isHigh ? { color: '#fff' } : { color: 'var(--muted-fg)' }}>{formatNewsTimestamp(item.publishedAt)}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 text-xs text-muted-fg mt-0.5">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-fg mt-0.5 px-4">
                     <span>{item.source}</span>
                     <span>·</span>
                     <span>{item.category}</span>

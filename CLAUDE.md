@@ -242,18 +242,30 @@ docs/                 — Project documentation
 - **Compact NH/Bloomberg-terminal row style (updated 2026-07-15):** headline (direct-linked to `sourceUrl`,
   `text-xs`) sits on one row with its timestamp pinned to the **far right of that same row** — NOT a separate
   meta line. Below it: a slim meta row (source · category, no timestamp), then a one-line truncated summary
-  (or the honest "no summary available" string), then affected tickers/assets/tags chips with **no visible
-  "Affected:" label** — tickers stay visually distinct (mono font, accent-tinted border) as the "more
-  relevant" entities; assets/tags render as plain muted text. Rows use tight vertical padding (`py-1.5`) —
-  this is a dense terminal feed, not a card list.
+  (or the honest "no summary available" string), then — **only if `affectedTickers` is non-empty** — a row of
+  ticker chips with **no visible "Affected:" label**. Rows use tight vertical padding (`py-1.5`) — this is a
+  dense terminal feed, not a card list.
+- **`affectedAssets`/`affectedTags` are classification-only — never rendered as chips.** They still feed
+  `classifyCategory`/`classifyImpact` (see `src/lib/news/newsClassification.ts`), but showing generic
+  macro/sector keywords ("CPI", "Copper", "GDP", "Banking"...) as visible tags reads as clutter in a
+  terminal-style feed. Only `affectedTickers` render — they're the "more relevant" entities: concretely
+  identified, actionable, and linked to `/companies/[ticker]`.
 - **Timestamp format** (`formatNewsTimestamp()` in `src/lib/formatters.ts`): today's items show **time only**
   (`HH:MM`, 24h/`hour12:false`); anything from a prior calendar day shows **`DD/MM`**. Always through this
   shared helper — never an inline `toLocaleDateString`/`toLocaleTimeString` call in a page component.
 - Impact is assigned deterministically by `classifyImpact` (see `src/lib/news/newsClassification.ts`) —
   never a bare sentiment score, and never defaulted to High.
-- **High-impact highlight applies ONLY to the headline text** (`text-negative font-semibold`) — never a
-  block-level `borderLeft`/background tint. This matches the NH/Bloomberg convention of coloring just the
-  headline, not tinting the whole row. Do not reintroduce the old red-stripe/tinted-block treatment.
+- **High-impact highlight is a real NH-style alert bar (updated 2026-07-15):** the headline+timestamp row
+  gets a **solid `var(--negative)` background** (edge-to-edge, via negative-margin-free full-bleed padding —
+  the outer item wrapper carries no horizontal padding so the highlighted row's own `px-4` reaches the card
+  edges) with white (`#fff`) text, matching the real Bloomberg NH function's alert-row look (solid color bar
+  across the whole line, not colored text on the normal background). The meta row/summary/chips below stay on
+  the normal surface — only that one line is highlighted. Do not revert to a headline-text-color-only
+  treatment or a `borderLeft`/tinted-block treatment; both were tried and superseded by this one.
+- **Sort is always strictly newest-first — impact never reorders the feed.** `newsProvider.ts` sorts purely
+  by `publishedAt` descending (no impact-rank comparator). A real Bloomberg NH feed is time-ordered; High-impact
+  items are called out by the highlighted headline bar above, never by bubbling them out of chronological
+  order. Do not reintroduce an impact-based sort comparator.
 - **Rolling 1-week window:** the orchestrator (`fetchAllNewsUncached` in `newsProvider.ts`) filters out any
   item older than `NEWS_MAX_AGE_MS` (7 days) before returning — News never accumulates indefinitely, and the
   window rolls forward automatically as the 15-min cache refreshes. This is enforced server-side, once, for

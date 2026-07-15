@@ -16,8 +16,6 @@ import { classifyCategory, classifyImpact } from '../../news/newsClassification.
 
 const PROVIDERS: NewsProvider[] = [dfNewsProvider]
 
-const IMPACT_RANK: Record<NewsItem['impactLevel'], number> = { High: 2, Medium: 1, Low: 0 }
-
 // News rolls off after 1 week rather than accumulating indefinitely — the
 // window is recomputed against Date.now() on every uncached fetch, so as
 // time passes the list keeps rolling forward instead of growing forever.
@@ -133,12 +131,11 @@ async function fetchAllNewsUncached(): Promise<NewsFetchResult> {
     }
   })
 
+  // Always strictly newest-first — a Bloomberg NH-style feed is time-ordered;
+  // High-impact items are called out visually (highlighted headline row) in
+  // the UI, never bubbled out of chronological order.
   const deduped = filterRecent(dedupe(allItems), Date.now())
-  deduped.sort((a, b) => {
-    const rankDiff = IMPACT_RANK[b.impactLevel] - IMPACT_RANK[a.impactLevel]
-    if (rankDiff !== 0) return rankDiff
-    return b.publishedAt.localeCompare(a.publishedAt)
-  })
+  deduped.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
 
   const status: NewsFetchResult['status'] =
     successCount === 0 ? 'unavailable' : successCount < PROVIDERS.length ? 'partial_success' : 'success'

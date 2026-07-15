@@ -320,15 +320,19 @@ describe('fetchAllNews — orchestration, dedup, sort, status', () => {
     assert.equal(result.data.length, 1)
   })
 
-  it('sorts High-impact items above Medium/Low even if published earlier', async () => {
+  it('sorts strictly newest-first, never bubbling High-impact items out of chronological order', async () => {
     const xml = `<rss><channel>
       <item><title>Selección chilena gana amistoso</title><link>https://www.df.cl/deporte</link><pubDate>Wed, 15 Jul 2026 14:00:00 GMT</pubDate></item>
       <item><title>CMF sanciona a un banco por infracción</title><link>https://www.df.cl/cmf</link><pubDate>Wed, 15 Jul 2026 10:00:00 GMT</pubDate></item>
     </channel></rss>`
     globalThis.fetch = (async () => ({ ok: true, text: async () => xml })) as unknown as typeof fetch
     const result = await fetchAllNews()
-    assert.equal(result.data[0].sourceUrl, 'https://www.df.cl/cmf')
-    assert.equal(result.data[0].impactLevel, 'High')
+    // The later (14:00) item comes first even though it is Low-impact and
+    // the earlier (10:00) item is High — a Bloomberg NH-style feed is always
+    // time-ordered; impact is signaled by the UI's highlighted headline, not
+    // by reordering.
+    assert.equal(result.data[0].sourceUrl, 'https://www.df.cl/deporte')
+    assert.equal(result.data[1].sourceUrl, 'https://www.df.cl/cmf')
   })
 
   it('caches results — a second call within the TTL makes no new fetch call', async () => {
