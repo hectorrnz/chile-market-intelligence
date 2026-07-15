@@ -238,6 +238,14 @@ export default function MacroPage() {
   const curveSource = curveOk ? liveCurve.source : staticCurve.source
   const curveAsOf = curveOk ? liveCurve.todayDate : null
   const curveStatus: DataSourceStatus = curveOk ? 'live' : 'static'
+  // The "year-end" comparison point is always the PRIOR calendar year — derived
+  // from the live result's own yearEndDate when available (e.g. "2025-12-31" →
+  // "2025"), otherwise computed the same way the provider does
+  // (new Date().getFullYear() - 1). Never a hardcoded year — that was a real
+  // bug (the legend read "Year-end 2024" even in 2026).
+  const curveYearEndYear = curveOk && liveCurve.yearEndDate
+    ? liveCurve.yearEndDate.slice(0, 4)
+    : String(new Date().getFullYear() - 1)
   const latestAsOf = indicators.reduce((max, i) => (i.lastUpdated > max ? i.lastUpdated : max), '')
 
   const openRow = (r: Row) => { if (r.histId) { setSelected(r); setTimeframe(5) } }
@@ -344,7 +352,7 @@ export default function MacroPage() {
             series={[
               { label: t.macro.curveToday, color: 'var(--primary)', values: curveToday },
               { label: t.macro.curveWeek, color: 'var(--accent)', values: curveWeekAgo },
-              { label: t.macro.curveYearEnd, color: 'var(--muted)', dashed: true, values: curveYearEnd },
+              { label: `${t.macro.curveYearEnd} ${curveYearEndYear}`, color: 'var(--muted)', dashed: true, values: curveYearEnd },
             ]}
             height={240}
           />

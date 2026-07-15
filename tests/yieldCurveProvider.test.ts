@@ -27,6 +27,29 @@ function restoreBcchEnv() {
   else process.env.BCCH_API_PASSWORD = ORIGINAL_BCCH_PASS
 }
 
+describe('yield curve legend label — never a hardcoded year (regression)', () => {
+  it('i18n.ts "Year-end"/"Cierre" labels carry no literal year — the year is appended dynamically in macro/page.tsx', async () => {
+    // Regression for a real bug: the legend read "Year-end 2024" verbatim even
+    // in 2026, because the year was baked into the i18n string instead of
+    // being derived from the actual yearEndDate/current year. Guards against
+    // it recurring by asserting the i18n strings never contain a 4-digit year.
+    const fs = await import('node:fs')
+    const src = fs.readFileSync(new URL('../src/lib/i18n.ts', import.meta.url), 'utf8')
+    const yearEndLines = src.split('\n').filter((l) => /curveYearEnd:/.test(l))
+    assert.ok(yearEndLines.length >= 2, 'expected both EN and ES curveYearEnd entries')
+    for (const line of yearEndLines) {
+      assert.ok(!/\b(19|20)\d{2}\b/.test(line), `curveYearEnd must not hardcode a year: ${line.trim()}`)
+    }
+  })
+
+  it('macro/page.tsx derives the year-end year dynamically (from yearEndDate or current year - 1), never a literal', async () => {
+    const fs = await import('node:fs')
+    const src = fs.readFileSync(new URL('../src/app/macro/page.tsx', import.meta.url), 'utf8')
+    assert.ok(src.includes('curveYearEndYear'), 'expected a dynamically-computed year-end year variable')
+    assert.ok(src.includes('getFullYear() - 1'), 'expected the fallback to derive from the current year, not a hardcoded literal')
+  })
+})
+
 describe('latestOnOrBefore', () => {
   it('picks the latest point with date <= cutoff', () => {
     const points = [
