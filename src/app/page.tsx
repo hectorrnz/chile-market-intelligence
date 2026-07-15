@@ -125,11 +125,16 @@ export default function HomePage() {
       fetchStockSnapshots().catch(() => null),
       fetchSectorPerformance().catch(() => null),
       fetchIndexPerformance().catch(() => null),
-    ]).then(([stRes, secRes, idxRes]) => {
+      fetchLiveSnapshot().catch(() => null),
+    ]).then(([stRes, secRes, idxRes, liveRes]) => {
       if (!mounted) return
       if (stRes?.data.length) setSupaStockMap(Object.fromEntries(stRes.data.map(s => [s.ticker, s])))
       if (secRes?.data.length) setSupaSectors(secRes.data)
       if (idxRes?.data.length) setSupaIdxMap(Object.fromEntries(idxRes.data.map(i => [i.id, i])))
+      // Fetch the live Yahoo snapshot on mount too (not just on manual
+      // Update-click) so the sector/markets/watchlist badges read "Live"
+      // straight away rather than sitting on "Persisted" until refreshed.
+      if (liveRes) setLive(liveRes)
     })
     return () => { mounted = false }
   }, [])
@@ -196,13 +201,45 @@ export default function HomePage() {
     })()
     return () => { cancelled = true }
   }, [])
-  const watchlistRows = watchlistTickers
-    .map(ticker => ({ ticker, company: companyMap[ticker], snap: snapshotMap[ticker] }))
-    .filter((r): r is { ticker: string; company: NonNullable<typeof r.company>; snap: typeof r.snap } => Boolean(r.company))
   const watchlistStatus: DataSourceStatus = live?.stocks && Object.keys(live.stocks).length ? 'live' : Object.keys(supaStockMap).length ? 'persisted' : 'static'
   const watchlistAsOf = live ? live.lastUpdated : (Object.values(supaStockMap)[0]?.lastUpdated ?? null)
 
-  // Drag-to-reorder Chilean rates (persisted to localStorage)
+  // Watchlist rows, sortable by Day Chg. or YTD % (click the column header to
+  // toggle asc/desc; default is the natural watchlist order).
+  const [watchlistSort, setWatchlistSort] = useState<{ key: 'dayChg' | 'ytd'; dir: 'asc' | 'desc' } | null>(null)
+  const toggleWatchlistSort = (key: 'dayChg' | 'ytd') => {
+    setWatchlistSort(prev => prev?.key === key ? { key, dir: prev.dir === 'desc' ? 'asc' : 'desc' } : { key, dir: 'desc' })
+  }
+  const watchlistRows = watchlistTickers
+    .map(ticker => {
+      const company = companyMap[ticker]
+      const s = snapshotMap[ticker]
+      const ls = live?.stocks[ticker]
+      const ss = supaStockMap[ticker]
+      const price = ls?.price ?? ss?.price ?? s?.price
+      const dayPct = ls?.dayChangePct ?? ss?.dayChangePct ?? s?.dayChangePct
+      const ytdPct = ss?.ytdChangePct ?? s?.ytdChangePct
+      return { ticker, company, price, dayPct, ytdPct }
+    })
+    .filter((r): r is typeof r & { company: NonNullable<typeof r.company> } => Boolean(r.company))
+  if (watchlistSort) {
+    const { key, dir } = watchlistSort
+    const field = key === 'dayChg' ? 'dayPct' : 'ytdPct'
+    watchlistRows.sort((a, b) => {
+      const av = a[field], bv = b[field]
+      if (av == null && bv == null) return 0
+      if (av == null) return 1
+      if (bv == null) return -1
+      return dir === 'desc' ? bv - av : av - bv
+    })
+  }
+  const sortArrow = (key: 'dayChg' | 'ytd') => watchlistSort?.key === key ? (watchlistSort.dir === 'desc' ? ' ▼' : ' ▲') : ''
+
+  // Drag-to-reorder Chilean rates (persisted to localStorage). Rows whose id
+  // matches a verified live BCCh series (btu10/btu5/swap2y/swap1y — the same
+  // instruments already used by the yield curve) overlay live value/change;
+  // the remaining rows (btp10/bcu5/pdbc90/tpm-tna) stay static — no live BCCh
+  // series exists for them (documented deferred, Phase 4B).
   const rates = getChileanRates()
   const [order, setOrder] = usePersistentState<string[]>('cmi.ratesOrder', rates.map(r => r.id))
   const orderedIds = [
@@ -210,6 +247,13 @@ export default function HomePage() {
     ...rates.filter(r => !order.includes(r.id)).map(r => r.id),
   ]
   const rateOrder = orderedIds.map(id => rates.find(r => r.id === id)!) as ChileanRate[]
+  const liveRateRows = rateOrder.map(r => {
+    const liveInd = liveIndicatorMap[r.id]
+    return liveInd ? { ...r, value: liveInd.value, change: liveInd.change, changeLabel: liveInd.changeLabel, _liveAsOf: liveInd.lastUpdated } : { ...r, _liveAsOf: undefined as string | undefined }
+  })
+  const ratesLiveCount = liveRateRows.filter(r => r._liveAsOf).length
+  const ratesStatus: DataSourceStatus = ratesLiveCount > 0 ? macroStatus : 'static'
+  const ratesAsOf = liveRateRows.reduce<string | null>((max, r) => (r._liveAsOf && (!max || r._liveAsOf > max) ? r._liveAsOf : max), null)
   const dragFrom = useRef<number | null>(null)
   const onDrop = (to: number) => {
     const from = dragFrom.current
@@ -312,8 +356,20 @@ export default function HomePage() {
                   <th className="text-left py-2 pl-4 pr-3 ui-table-header text-muted-fg">{t.home.ticker}</th>
                   <th className="text-left py-2 px-3 ui-table-header text-muted-fg">{t.home.company}</th>
                   <th className="text-right py-2 px-3 ui-table-header text-muted-fg">{t.home.price}</th>
-                  <th className="text-right py-2 px-3 ui-table-header text-muted-fg">{t.home.dayChg}</th>
-                  <th className="text-right py-2 px-3 pr-4 ui-table-header text-muted-fg">{t.home.ytd}</th>
+                  <th
+                    className="text-right py-2 px-3 ui-table-header text-muted-fg cursor-pointer select-none hover:text-foreground"
+                    onClick={() => toggleWatchlistSort('dayChg')}
+                    title="Sort by Day Chg."
+                  >
+                    {t.home.dayChg}{sortArrow('dayChg')}
+                  </th>
+                  <th
+                    className="text-right py-2 px-3 pr-4 ui-table-header text-muted-fg cursor-pointer select-none hover:text-foreground"
+                    onClick={() => toggleWatchlistSort('ytd')}
+                    title="Sort by YTD %"
+                  >
+                    {t.home.ytd}{sortArrow('ytd')}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -333,22 +389,15 @@ export default function HomePage() {
                   <tr><td colSpan={5} className="px-4 py-4 text-center text-muted-fg">
                     <Link href="/watchlist" className="text-primary hover:underline">{t.home.watchlistEmpty}</Link>
                   </td></tr>
-                ) : watchlistRows.map(({ ticker, company: c, snap: s }) => {
-                  const ls = live?.stocks[ticker]
-                  const ss = supaStockMap[ticker]
-                  const price = ls?.price ?? ss?.price ?? s?.price
-                  const dayPct = ls?.dayChangePct ?? ss?.dayChangePct ?? s?.dayChangePct
-                  const ytdPct = ss?.ytdChangePct ?? s?.ytdChangePct
-                  return (
-                    <tr key={ticker} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
-                      <td className="py-1.5 pl-4 pr-3"><Link href={`/companies/${ticker}`} className="font-mono text-primary hover:underline">{ticker}</Link></td>
-                      <td className="py-1.5 px-3 text-foreground truncate max-w-[110px]">{c.shortName}</td>
-                      <td className="py-1.5 px-3 text-right ui-number text-foreground">{price != null ? formatCLP(price) : '—'}</td>
-                      <td className={`py-1.5 px-3 text-right ui-number ${dayPct != null ? changeColor(dayPct) : 'text-muted-fg'}`}>{dayPct != null ? formatPct(dayPct) : '—'}</td>
-                      <td className={`py-1.5 px-3 pr-4 text-right ui-number ${ytdPct != null ? changeColor(ytdPct) : 'text-muted-fg'}`}>{ytdPct != null ? formatPct(ytdPct) : '—'}</td>
-                    </tr>
-                  )
-                })}
+                ) : watchlistRows.map(({ ticker, company: c, price, dayPct, ytdPct }) => (
+                  <tr key={ticker} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
+                    <td className="py-1.5 pl-4 pr-3"><Link href={`/companies/${ticker}`} className="font-mono text-primary hover:underline">{ticker}</Link></td>
+                    <td className="py-1.5 px-3 text-foreground truncate max-w-[110px]">{c.shortName}</td>
+                    <td className="py-1.5 px-3 text-right ui-number text-foreground">{price != null ? formatCLP(price) : '—'}</td>
+                    <td className={`py-1.5 px-3 text-right ui-number ${dayPct != null ? changeColor(dayPct) : 'text-muted-fg'}`}>{dayPct != null ? formatPct(dayPct) : '—'}</td>
+                    <td className={`py-1.5 px-3 pr-4 text-right ui-number ${ytdPct != null ? changeColor(ytdPct) : 'text-muted-fg'}`}>{ytdPct != null ? formatPct(ytdPct) : '—'}</td>
+                  </tr>
+                ))}
 
                 <tr>
                   <td colSpan={5} className="bg-surface-2 px-4 py-1.5" style={{ borderLeft: '2px solid var(--primary)' }}>
@@ -488,13 +537,17 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Chilean rates — drag to reorder, scrolls to match heat map height */}
+        {/* Chilean rates — drag to reorder, scrolls to match heat map height.
+            Rows with a verified live BCCh series (btu10/btu5/swap1y/swap2y)
+            show a live dot; the remaining rows (no BCCh series exists — see
+            docs/macro_market_source_coverage.md) stay static, never faked. */}
         <div className="bg-surface border border-border rounded overflow-hidden flex flex-col" style={{ height: heatH || undefined }}>
-          <div className="px-4 py-2.5 border-b border-border shrink-0">
+          <div className="px-4 py-2.5 border-b border-border shrink-0 flex items-center justify-between">
             <span className="ui-label text-muted-fg">{t.home.chileanRates}</span>
+            <DataSourceBadge status={ratesStatus} />
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto">
-            {rateOrder.map((r, i) => (
+            {liveRateRows.map((r, i) => (
               <div
                 key={r.id}
                 draggable
@@ -506,7 +559,10 @@ export default function HomePage() {
                 <span className="text-muted-fg select-none" title="Drag to reorder" style={{ fontSize: '11px' }}>⠿</span>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-xs font-medium text-foreground">{r.name}</span>
+                    <span className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                      {r._liveAsOf && <span className="inline-block rounded-full" style={{ width: 6, height: 6, background: 'var(--positive)' }} title="Live" />}
+                      {r.name}
+                    </span>
                     <div className="flex items-baseline gap-1.5">
                       <span className="text-sm ui-number text-foreground">{formatMacroValue(r.value, r.unit)}</span>
                       {r.changeLabel && (
@@ -520,7 +576,7 @@ export default function HomePage() {
             ))}
           </div>
           <div className="px-4 py-2 border-t border-border shrink-0">
-            <p className="text-xs text-muted-fg">{t.home.ratesSource}</p>
+            <TableSourceFooter source={t.home.ratesSource} asOf={ratesAsOf} />
           </div>
         </div>
 

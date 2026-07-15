@@ -1858,3 +1858,50 @@ static/blocked, already honestly labeled). No new dependency, no schema change.
 Next: consider extending the "Source: X as of Y" footer convention to the Chilean Rates panel if it ever
 gains a live/persisted backing; periodically revisit whether Market Cap should return as an optional column
 elsewhere (Stocks page already has it).
+
+---
+
+**Home Page Overhaul Follow-up — Live Chilean Rates, Sortable Watchlist, Live Badges on Load** (2026-07-15)
+
+Follow-up to the Home Page Overhaul above, addressing 4 more explicit gaps found using the merged
+Watchlist+FX table in practice.
+
+1. **Chilean Rates now overlay live BCCh values where a verified series exists.** The panel previously always
+   rendered the static `chileanRates.json` sample regardless of the fact that 4 of its 8 instruments — BTU 10,
+   BTU 5, Cámara Swap 2Y, Cámara Swap 1Y — already have verified live BCCh series wired into `macroSeries.ts`
+   (the same instruments the Macro page's own Rates section and the yield-curve chart already use). Each row
+   is now overlaid from the already-fetched `liveIndicatorMap` (populated by the existing
+   `fetchMacroIndicators('CL')` call — no new fetch) when a live entry exists for that id; a small green live
+   dot marks the overlaid rows. The remaining 4 (BTP 10, BCU 5, PDBC 90d, TPM/TNA) stay static — no BCCh
+   series exists for them (documented deferred since Phase 4B) — never faked. Panel badge (`DataSourceBadge`)
+   and footer (`TableSourceFooter`) now reflect the real live/static status and a real `asOf` date instead of
+   a bare "Static MVP sample" line.
+2. **Watchlist table is now sortable by Day Chg. or YTD %** — clicking either column header toggles
+   descending/ascending (default: watchlist's natural order), with a ▼/▲ arrow indicator on the active column.
+   Rows are pre-computed with price/dayPct/ytdPct before sort/render (previously computed inline per row).
+3. **Sector heat map, Markets, and Watchlist badges now say "Live" on first page load, not "Persisted" until
+   the Update button is clicked.** The mount-time effect that loads the Supabase-persisted baseline
+   (stocks/sectors/indices) now also fetches the live Yahoo snapshot in the same `Promise.all` — previously
+   `fetchLiveSnapshot()` only ran inside `doRefresh` (the manual Update-button handler), so every fresh page
+   load showed "Persisted" until the user clicked Update even though a live Yahoo read was one fetch away.
+4. **Update button already covers every data source on the tab** — verified rather than changed. `doRefresh`
+   already calls `fetchLiveSnapshot()` (stocks + sectors + indices) and `fetchMacroIndicators('CL'/'US')`
+   (which now also drives the Chilean Rates overlay via the shared `liveIndicatorMap`), so a manual refresh
+   updates macro, FX, rates, watchlist prices, sector heat map, and markets in one click — no data source on
+   the Home tab is left stale after Update.
+
+**Tests:** 8 new tests appended to `tests/homeWatchlistOverhaul.test.ts` — mount-effect live-fetch wiring,
+Chilean Rates live-overlay wiring (and a regression guard that no known-unverified rate id is ever
+hardcoded into the overlay), the corrected `ratesSource` i18n string, and the sortable-header wiring. Full
+suite 1472 → **1479/1479**, lint 0, build 0 errors.
+
+**Local validation (dev server):** confirmed Watchlist/Sector Heat Map/Markets badges all read "Live — Yahoo
+Finance" immediately on page load (no click needed); Chilean Rates badge/footer correctly mirrored the Macro
+Chile column's live/static status (both "Static MVP" locally, since BCCh credentials aren't present in local
+dev — expected, matches existing Macro-card behavior; both would read "Live" in Production where credentials
+are configured); clicking the Day Chg. column header toggled the sort arrow and re-ordered rows with no
+console errors.
+
+Scope limits (explicit): this Home-page follow-up only. Did not touch the Macro page's own Rates section
+(already live where verified), Earnings/Hechos footers (genuinely static/blocked), or add any new BCCh series
+— reused only the 4 already-verified rate series. No new dependency, no schema change.

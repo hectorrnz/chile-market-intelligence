@@ -111,3 +111,57 @@ describe('Home page — regression: badges still computed from already-fetched s
     assert.ok(src.includes('const indexAsOf ='))
   })
 })
+
+describe('Home page — badges show Live on initial load, not just after clicking Update', () => {
+  const src = readFileSync(HOME_PAGE, 'utf8')
+
+  it('fetches the live Yahoo snapshot in the mount-time Promise.all, not only inside doRefresh', () => {
+    const mountEffectMatch = src.match(/useEffect\(\(\) => \{\s*let mounted = true\s*\n\s*Promise\.all\(\[[\s\S]{0,400}?\]\)/)
+    assert.ok(mountEffectMatch, 'expected to find the mount-time Promise.all effect')
+    assert.ok(mountEffectMatch![0].includes('fetchLiveSnapshot()'), 'the mount effect must also fetch the live snapshot so badges read Live immediately')
+    assert.ok(src.includes('if (liveRes) setLive(liveRes)'))
+  })
+})
+
+describe('Home page — Chilean Rates overlay live BCCh values where a verified series exists', () => {
+  const src = readFileSync(HOME_PAGE, 'utf8')
+
+  it('overlays live values only for rate ids with a matching liveIndicatorMap entry', () => {
+    assert.ok(src.includes('const liveRateRows = rateOrder.map(r => {'))
+    assert.ok(src.includes('liveIndicatorMap[r.id]'))
+  })
+
+  it('renders a DataSourceBadge + TableSourceFooter for the rates panel (no longer a bare "Static MVP sample" line)', () => {
+    assert.ok(src.includes('<DataSourceBadge status={ratesStatus} />'))
+    assert.ok(src.includes('<TableSourceFooter source={t.home.ratesSource} asOf={ratesAsOf} />'))
+  })
+
+  it('i18n ratesSource no longer claims a bare static sample', () => {
+    const i18n = readFileSync(I18N, 'utf8')
+    const enHome = i18n.match(/home: \{[\s\S]*?\n {4}\},/)![0]
+    assert.ok(!/ratesSource:\s+'Source: Banco Central · BCS — Static MVP sample'/.test(enHome))
+  })
+
+  it('never wires a live overlay for the known-unverified rate ids (btp10, bcu5, pdbc90, tpm-tna)', () => {
+    // These ids have no verified BCCh series (see bcchSeriesManualMap.ts) — the
+    // overlay must only ever apply generically via liveIndicatorMap lookup,
+    // never a hardcoded special case for one of the unverified ids.
+    for (const uncoveredId of ['btp10', 'bcu5', 'pdbc90', 'tpm-tna']) {
+      assert.ok(!src.includes(`liveIndicatorMap['${uncoveredId}']`) && !src.includes(`liveIndicatorMap["${uncoveredId}"]`))
+    }
+  })
+})
+
+describe('Home page — Watchlist table is sortable by Day Chg. and YTD %', () => {
+  const src = readFileSync(HOME_PAGE, 'utf8')
+
+  it('has a sort-state toggle and clickable column headers for both sortable columns', () => {
+    assert.ok(src.includes("useState<{ key: 'dayChg' | 'ytd'; dir: 'asc' | 'desc' } | null>(null)"))
+    assert.ok(src.includes("toggleWatchlistSort('dayChg')"))
+    assert.ok(src.includes("toggleWatchlistSort('ytd')"))
+  })
+
+  it('sorts watchlistRows in place using the selected field before rendering', () => {
+    assert.ok(src.includes('watchlistRows.sort((a, b) => {'))
+  })
+})
