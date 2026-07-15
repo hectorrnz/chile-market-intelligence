@@ -239,15 +239,30 @@ docs/                 — Project documentation
 - `sourceType` is `'official'` ONLY for CMF/BCCh when actually implemented as such — never any media outlet,
   and never "Bloomberg" unless this project ever has a real licensed Bloomberg relationship (it does not).
 - Module title is **NEWS** (English) / **NOTICIAS** (Spanish). Do NOT rename back to "Chilean News".
-- News items follow institutional monitoring format: headline (14px, direct-linked to `sourceUrl`) → meta
-  row (source · timestamp · category) → summary (or an honest "no summary available" string) → affected
-  tickers/assets/tags chips.
-- Impact badge colors: High = `--negative` (red), Medium/Low = default styling (no badge color). Impact is
-  assigned deterministically by `classifyImpact` (see `src/lib/news/newsClassification.ts`) — never a bare
-  sentiment score, and never defaulted to High.
-- Ticker chips in "Affected:" row use `font-mono` (identifiers). The "Affected:" label itself does NOT use `font-mono`.
-- **News High-impact highlight:** `borderLeft: '3px solid var(--negative)'` + `backgroundColor: color-mix(in oklab, var(--negative) 5%, var(--surface))`. No badge text for any row.
-- **Only HIGH-impact news gets the red stripe.** Medium and Low rows have `borderLeft: '3px solid transparent'` to preserve layout alignment.
+- **Compact NH/Bloomberg-terminal row style (updated 2026-07-15):** headline (direct-linked to `sourceUrl`,
+  `text-xs`) sits on one row with its timestamp pinned to the **far right of that same row** — NOT a separate
+  meta line. Below it: a slim meta row (source · category, no timestamp), then a one-line truncated summary
+  (or the honest "no summary available" string), then affected tickers/assets/tags chips with **no visible
+  "Affected:" label** — tickers stay visually distinct (mono font, accent-tinted border) as the "more
+  relevant" entities; assets/tags render as plain muted text. Rows use tight vertical padding (`py-1.5`) —
+  this is a dense terminal feed, not a card list.
+- **Timestamp format** (`formatNewsTimestamp()` in `src/lib/formatters.ts`): today's items show **time only**
+  (`HH:MM`, 24h/`hour12:false`); anything from a prior calendar day shows **`DD/MM`**. Always through this
+  shared helper — never an inline `toLocaleDateString`/`toLocaleTimeString` call in a page component.
+- Impact is assigned deterministically by `classifyImpact` (see `src/lib/news/newsClassification.ts`) —
+  never a bare sentiment score, and never defaulted to High.
+- **High-impact highlight applies ONLY to the headline text** (`text-negative font-semibold`) — never a
+  block-level `borderLeft`/background tint. This matches the NH/Bloomberg convention of coloring just the
+  headline, not tinting the whole row. Do not reintroduce the old red-stripe/tinted-block treatment.
+- **Rolling 1-week window:** the orchestrator (`fetchAllNewsUncached` in `newsProvider.ts`) filters out any
+  item older than `NEWS_MAX_AGE_MS` (7 days) before returning — News never accumulates indefinitely, and the
+  window rolls forward automatically as the 15-min cache refreshes. This is enforced server-side, once, for
+  every consumer (Home and Company page both read the same pre-filtered list) — do not re-implement the
+  cutoff per-page.
+- **Sources footer is a plain list, not a sentence:** `"{t.home.newsSourcesLabel} {successful sources joined
+  by ', '}"` (e.g. "Sources: Diario Financiero"), built from `sourceStatuses` where `status === 'success'` —
+  never a hardcoded prose footnote naming deferred sources (that record lives in
+  `docs/data_source_status.md`, not the UI).
 
 ## Number and Font Rules (Phase 2B)
 

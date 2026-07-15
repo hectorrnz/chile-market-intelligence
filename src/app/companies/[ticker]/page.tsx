@@ -17,7 +17,7 @@ import { getEarningsByTicker } from '@/lib/data/earnings'
 import { getHechosByTicker } from '@/lib/data/hechos'
 import { fetchLiveNews, type NewsFetchResponse } from '@/lib/data/newsLive'
 import { getStockHistoryForTimeframe } from '@/lib/data/stockHistory'
-import { formatCLP, formatPct, formatFx, formatMillionsCLP, formatEPS, formatNetDebt, formatMarketCapMM, changeColor, formatDateTime } from '@/lib/formatters'
+import { formatCLP, formatPct, formatFx, formatMillionsCLP, formatEPS, formatNetDebt, formatMarketCapMM, changeColor, formatNewsTimestamp } from '@/lib/formatters'
 import type { EarningsRelease, StockPriceSnapshot } from '@/types'
 import { fetchLiveSnapshot, formatLiveTimestamp, type LiveSnapshot } from '@/lib/data/marketLiveData'
 import { fetchStockSnapshot } from '@/lib/data/marketData'
@@ -449,21 +449,17 @@ export default function CompanyDetailPage() {
             {news.map(item => {
               const isHigh = item.impactLevel === 'High'
               return (
-                <div
-                  key={item.id}
-                  className="px-4 py-3"
-                  style={isHigh ? {
-                    borderLeft: '3px solid var(--negative)',
-                    backgroundColor: `color-mix(in oklab, var(--negative) 5%, var(--surface))`,
-                  } : { borderLeft: '3px solid transparent' }}
-                >
-                  <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                    <p className={`text-xs leading-snug mb-1 ${isHigh ? 'font-semibold text-foreground' : 'font-medium text-foreground'}`}>{item.headline}</p>
-                  </a>
-                  <div className="flex items-center gap-1.5 text-xs text-muted-fg">
+                <div key={item.id} className="px-4 py-1.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="hover:underline min-w-0">
+                      <p className={`text-xs leading-snug ${isHigh ? 'text-negative font-semibold' : 'font-medium text-foreground'}`}>{item.headline}</p>
+                    </a>
+                    <span className="ui-number text-xs text-muted-fg shrink-0 whitespace-nowrap pt-px">{formatNewsTimestamp(item.publishedAt)}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs text-muted-fg mt-0.5">
                     <span>{item.source}</span>
                     <span>·</span>
-                    <span className="ui-number">{formatDateTime(item.publishedAt)}</span>
+                    <span>{item.category}</span>
                   </div>
                 </div>
               )

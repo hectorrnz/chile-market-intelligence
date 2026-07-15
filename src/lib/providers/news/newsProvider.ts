@@ -18,6 +18,19 @@ const PROVIDERS: NewsProvider[] = [dfNewsProvider]
 
 const IMPACT_RANK: Record<NewsItem['impactLevel'], number> = { High: 2, Medium: 1, Low: 0 }
 
+// News rolls off after 1 week rather than accumulating indefinitely — the
+// window is recomputed against Date.now() on every uncached fetch, so as
+// time passes the list keeps rolling forward instead of growing forever.
+export const NEWS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
+
+/** Keeps only items published within NEWS_MAX_AGE_MS of now; drops anything with an unparseable date. */
+function filterRecent(items: NewsItem[], now: number): NewsItem[] {
+  return items.filter(item => {
+    const publishedMs = new Date(item.publishedAt).getTime()
+    return Number.isFinite(publishedMs) && now - publishedMs <= NEWS_MAX_AGE_MS
+  })
+}
+
 function normalizeUrl(url: string): string {
   return url.trim().replace(/\/+$/, '').toLowerCase()
 }
@@ -120,7 +133,7 @@ async function fetchAllNewsUncached(): Promise<NewsFetchResult> {
     }
   })
 
-  const deduped = dedupe(allItems)
+  const deduped = filterRecent(dedupe(allItems), Date.now())
   deduped.sort((a, b) => {
     const rankDiff = IMPACT_RANK[b.impactLevel] - IMPACT_RANK[a.impactLevel]
     if (rankDiff !== 0) return rankDiff

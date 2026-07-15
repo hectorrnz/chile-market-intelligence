@@ -26,7 +26,7 @@ import { fetchLiveSnapshot, formatLiveTimestamp, type LiveSnapshot } from '@/lib
 import { fetchStockSnapshots, fetchSectorPerformance, fetchIndexPerformance } from '@/lib/data/marketData'
 import type { StockSnapshot, SectorSnapshot, IndexSnapshot } from '@/lib/providers/market/types'
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
-import { formatCLP, formatPct, formatMacroValue, formatMacroChange, changeColor } from '@/lib/formatters'
+import { formatCLP, formatPct, formatMacroValue, formatMacroChange, changeColor, formatNewsTimestamp } from '@/lib/formatters'
 import type { MacroIndicator, ChileanRate } from '@/types'
 import type { WatchlistItemRow } from '@/lib/db/repositories/watchlistRepository'
 
@@ -629,9 +629,13 @@ export default function HomePage() {
       {/* News — source-backed (Diario Financiero live today; see
           docs/data_source_status.md for the full per-source record). Never
           falls back to fabricated headlines: an unavailable fetch shows an
-          honest empty state, not sample rows. High-impact red stripe only. */}
+          honest empty state, not sample rows. Rolls to the last 7 days only
+          (see NEWS_MAX_AGE_MS in newsProvider.ts). Compact NH/Bloomberg-style
+          rows: only the headline is highlighted for High impact (no block
+          tint/stripe), timestamp sits at the far right of the headline row —
+          time-only for today, DD/MM for older items. */}
       <div className="bg-surface border border-border rounded overflow-hidden">
-        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+        <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
           <span className="ui-label text-muted-fg">{t.home.newsTitle}</span>
           <span className="flex items-center gap-1 text-xs text-muted-fg whitespace-nowrap">
             <span
@@ -652,41 +656,37 @@ export default function HomePage() {
         </div>
         <div className="overflow-y-auto divide-y divide-border" style={{ maxHeight: '440px' }}>
           {newsResult && newsResult.data.length === 0 && (
-            <div className="px-4 py-6 text-center text-xs text-muted-fg">{t.home.newsEmpty}</div>
+            <div className="px-4 py-5 text-center text-xs text-muted-fg">{t.home.newsEmpty}</div>
           )}
           {newsResult?.data.map(item => {
             const isHigh = item.impactLevel === 'High'
+            const hasChips = item.affectedTickers.length > 0 || item.affectedAssets.length > 0 || item.affectedTags.length > 0
             return (
-              <div
-                key={item.id}
-                className="px-4 py-3.5"
-                style={isHigh ? {
-                  borderLeft: '3px solid var(--negative)',
-                  backgroundColor: `color-mix(in oklab, var(--negative) 5%, var(--surface))`,
-                } : { borderLeft: '3px solid transparent' }}
-              >
-                <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                  <p className={`text-xs leading-snug mb-1.5 ${isHigh ? 'font-semibold text-foreground' : 'font-medium text-foreground'}`}>{item.headline}</p>
-                </a>
-                <div className="flex items-center gap-1.5 text-xs text-muted-fg mb-2">
+              <div key={item.id} className="px-4 py-1.5">
+                <div className="flex items-start justify-between gap-3">
+                  <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="hover:underline min-w-0">
+                    <p className={`text-xs leading-snug ${isHigh ? 'text-negative font-semibold' : 'font-medium text-foreground'}`}>{item.headline}</p>
+                  </a>
+                  <span className="ui-number text-xs text-muted-fg shrink-0 whitespace-nowrap pt-px">{formatNewsTimestamp(item.publishedAt)}</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-xs text-muted-fg mt-0.5">
                   <span title={item.sourceType === 'official' ? t.home.newsOfficialSource : t.home.newsMediaSource}>{item.source}</span>
-                  <span>·</span>
-                  <span className="ui-number">{new Date(item.publishedAt).toLocaleDateString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
                   <span>·</span>
                   <span>{item.category}</span>
                 </div>
-                <p className="text-xs text-muted leading-relaxed mb-2">{item.summary ?? t.home.newsNoSummary}</p>
-                {(item.affectedTickers.length > 0 || item.affectedAssets.length > 0 || item.affectedTags.length > 0) && (
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-xs text-muted-fg">{t.home.newsAffected}:</span>
+                {item.summary && (
+                  <p className="text-xs text-muted leading-snug mt-1 truncate">{item.summary}</p>
+                )}
+                {hasChips && (
+                  <div className="flex items-center gap-1 flex-wrap mt-1">
                     {item.affectedTickers.map(ticker => (
-                      <Link key={ticker} href={`/companies/${ticker}`} className="text-xs font-mono px-1.5 py-0.5 bg-surface-2 text-primary border border-border rounded hover:border-accent transition-colors">{ticker}</Link>
+                      <Link key={ticker} href={`/companies/${ticker}`} className="text-[11px] font-mono px-1 py-0.5 bg-surface-2 text-primary border border-accent/40 rounded hover:border-accent transition-colors">{ticker}</Link>
                     ))}
                     {item.affectedAssets.map(v => (
-                      <span key={v} className="text-xs px-1.5 py-0.5 bg-surface-2 text-muted border border-border rounded">{v}</span>
+                      <span key={v} className="text-[11px] px-1 py-0.5 text-muted-fg">{v}</span>
                     ))}
                     {item.affectedTags.map(v => (
-                      <span key={v} className="text-xs px-1.5 py-0.5 bg-surface-2 text-muted border border-border rounded">{v}</span>
+                      <span key={v} className="text-[11px] px-1 py-0.5 text-muted-fg">{v}</span>
                     ))}
                   </div>
                 )}
@@ -694,8 +694,11 @@ export default function HomePage() {
             )
           })}
         </div>
-        <div className="px-4 py-2.5 border-t border-border">
-          <p className="text-xs text-muted-fg">{t.home.newsFootnote}</p>
+        <div className="px-4 py-2 border-t border-border">
+          <p className="text-xs text-muted-fg">
+            {t.home.newsSourcesLabel}{' '}
+            {(newsResult?.sourceStatuses ?? []).filter(s => s.status === 'success').map(s => s.source).join(', ') || '—'}
+          </p>
         </div>
       </div>
 

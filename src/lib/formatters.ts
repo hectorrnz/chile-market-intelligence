@@ -89,6 +89,27 @@ export function formatDateTime(iso: string): string {
   })
 }
 
+/**
+ * Bloomberg/NH-terminal style timestamp for the News module: today's items
+ * show only the time (HH:MM); older items show DD/MM. Compares against the
+ * reader's local calendar day, not a 24h rolling window, so "today" matches
+ * what a reader expects regardless of what time of day they load the page.
+ */
+export function formatNewsTimestamp(iso: string): string {
+  const d = new Date(iso)
+  const now = new Date()
+  const isToday =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  if (isToday) {
+    return d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false })
+  }
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  return `${dd}/${mm}`
+}
+
 /** Returns a semantic Tailwind text color class based on numeric direction. */
 export function changeColor(value: number): string {
   if (value > 0) return 'text-positive'

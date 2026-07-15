@@ -11,7 +11,8 @@ import { parseRssItems } from '../src/lib/providers/news/rssClient.ts'
 import { mapAffectedEntities } from '../src/lib/news/tickerMapping.ts'
 import { classifyCategory, classifyImpact } from '../src/lib/news/newsClassification.ts'
 import { dfNewsProvider } from '../src/lib/providers/news/dfNewsProvider.ts'
-import { fetchAllNews, __resetNewsCacheForTests } from '../src/lib/providers/news/newsProvider.ts'
+import { fetchAllNews, __resetNewsCacheForTests, NEWS_MAX_AGE_MS } from '../src/lib/providers/news/newsProvider.ts'
+import { formatNewsTimestamp } from '../src/lib/formatters.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
@@ -336,6 +337,37 @@ describe('fetchAllNews — orchestration, dedup, sort, status', () => {
     await fetchAllNews()
     await fetchAllNews()
     assert.equal(calls, 1)
+  })
+
+  it('rolls off an item older than NEWS_MAX_AGE_MS (1 week)', async () => {
+    const stale = new Date(Date.now() - (NEWS_MAX_AGE_MS + 24 * 60 * 60 * 1000)).toUTCString()
+    const fresh = new Date(Date.now() - 60 * 60 * 1000).toUTCString()
+    const xml = `<rss><channel>
+      <item><title>Noticia vieja de hace mas de una semana</title><link>https://www.df.cl/vieja</link><pubDate>${stale}</pubDate></item>
+      <item><title>Noticia reciente</title><link>https://www.df.cl/reciente</link><pubDate>${fresh}</pubDate></item>
+    </channel></rss>`
+    globalThis.fetch = (async () => ({ ok: true, text: async () => xml })) as unknown as typeof fetch
+    const result = await fetchAllNews()
+    assert.ok(result.data.every(item => item.sourceUrl !== 'https://www.df.cl/vieja'))
+    assert.ok(result.data.some(item => item.sourceUrl === 'https://www.df.cl/reciente'))
+  })
+})
+
+// ── formatNewsTimestamp — NH/Bloomberg-terminal style (time today, DD/MM otherwise) ──
+
+describe('formatNewsTimestamp', () => {
+  it('shows only HH:MM for a timestamp from earlier today', () => {
+    const now = new Date()
+    const earlierToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 5).toISOString()
+    assert.match(formatNewsTimestamp(earlierToday), /^\d{2}:\d{2}$/)
+  })
+
+  it('shows DD/MM for a timestamp from a prior day', () => {
+    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)
+    const label = formatNewsTimestamp(threeDaysAgo.toISOString())
+    const dd = String(threeDaysAgo.getDate()).padStart(2, '0')
+    const mm = String(threeDaysAgo.getMonth() + 1).padStart(2, '0')
+    assert.equal(label, `${dd}/${mm}`)
   })
 })
 
