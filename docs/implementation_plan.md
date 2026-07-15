@@ -1810,3 +1810,51 @@ pending live verification of additional FRED series. No new dependency, no schem
 Next: verify + add the remaining FRED Treasury tenors (1M/6M/1Y/3Y/5Y/7Y) for a richer US yield curve;
 extend the footer convention to Home's sector/rates/index panels if a real as-of date becomes available;
 periodically re-check for a live Chile release-date source.
+
+---
+
+**Home Page Overhaul — Real Watchlist, Merged Watchlist+FX Table, Badge/Footer Wording** ✓ COMPLETE (2026-07-15)
+
+Four-part Home page fix requested directly by the user:
+
+1. **"Tracked Stocks" → "Watchlist", wired to the user's real `/watchlist` selection.** Previously the Home
+   card just sliced the first 8 companies from the static universe — unrelated to what the user actually
+   added on the authenticated `/watchlist` page (Phase 6A). Now fetches `GET /api/watchlists` +
+   `/api/watchlists/[id]/items` (Supabase-persisted, auth-gated by middleware) and renders those exact
+   tickers, merged with the same static→Supabase→Yahoo-live price cascade the rest of the app uses. A 401
+   (not signed in) renders a "Sign in to see your personalized watchlist" prompt linking to `/login` — never
+   an error; an authenticated-but-empty watchlist renders a prompt linking to `/watchlist` to add tickers.
+2. **Watchlist and FX merged into one table**, band-separated exactly like the Macro card's Chile/US bands
+   (`bg-surface-2` + accent-colored `borderLeft` divider rows) — replacing the previous two separate cards.
+   Each band carries its own source badge (`MarketDataSourceBadge` for the stock/Yahoo side, `DataSourceBadge`
+   for the BCCh FX side) since the two halves have genuinely different sources.
+3. **Watchlist columns are now Ticker / Company / Price / Day Chg. / YTD — Market Cap removed**, per explicit
+   instruction. FX rows reuse the same 5-column shape (pair name spans Ticker+Company, rate under Price, %
+   change under Day Chg., YTD shows `—` since BCCh FX indicators don't carry a YTD figure).
+4. **Badge/footer wording fixed.** `marketData.persisted` no longer reads the vague "Persisted market data" —
+   it (and `marketData.live`) now names the real source ("Live — Yahoo Finance" / "Persisted — Yahoo
+   Finance"), matching the "Live X" / "Persisted X" convention already used for BCCh/FRED/Frankfurter badges.
+   `home.sectorSource`/`home.indexSource` dropped "via Yahoo Finance"/"(index proxies noted on /stocks)"
+   verbosity — both now read a plain "Yahoo Finance" via the shared `TableSourceFooter`, with a real `asOf`
+   date computed from the already-fetched live/Supabase snapshot state (`sectorAsOf`/`indexAsOf`,
+   `watchlistAsOf`) rather than left blank.
+
+**Tests:** `tests/homeWatchlistOverhaul.test.ts` (new, 14 tests) — real-watchlist fetch wiring, 401/empty
+states, the merged single-table structure, column shape (Price present, Market Cap absent), the corrected
+badge/footer i18n strings, and a regression check that status/asOf values are still derived from
+already-fetched state (no new provider calls introduced). Full suite 1458 → **1472/1472**, lint 0, build 0
+errors.
+
+**Local validation (dev server, real Supabase/BCCh/Yahoo):** confirmed live — unauthenticated view shows
+"Sign in to see your personalized watchlist" in the Watchlist band; the FX band renders below it in the same
+table with the correct 5-column shape (YTD `—`); Macro card badges "Live BCCh"/"Live FRED" unaffected; sector
+heat map and Markets panels now show "Persisted — Yahoo Finance" (not "Persisted market data") with a real
+"Source: Yahoo Finance as of Jul/14/26" footer. No console errors.
+
+Scope limits (explicit): this Home-page task only. Did not touch the authenticated `/watchlist` page itself,
+Stocks/Company page badges (already correctly wired), or Chilean Rates/Earnings/Hechos footers (genuinely
+static/blocked, already honestly labeled). No new dependency, no schema change.
+
+Next: consider extending the "Source: X as of Y" footer convention to the Chilean Rates panel if it ever
+gains a live/persisted backing; periodically revisit whether Market Cap should return as an optional column
+elsewhere (Stocks page already has it).

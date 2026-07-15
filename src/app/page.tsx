@@ -27,6 +27,7 @@ import type { StockSnapshot, SectorSnapshot, IndexSnapshot } from '@/lib/provide
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
 import { formatCLP, formatPct, formatMacroValue, formatMacroChange, changeColor } from '@/lib/formatters'
 import type { MacroIndicator, ChileanRate } from '@/types'
+import type { WatchlistItemRow } from '@/lib/db/repositories/watchlistRepository'
 
 const qualityVariant = {
   Clean: 'positive', Mixed: 'warning', Weak: 'negative', Pending: 'neutral',
@@ -161,11 +162,45 @@ export default function HomePage() {
     return si ? { ...idx, value: si.value, dayChangePct: si.dayChangePct, ytdChangePct: si.ytdChangePct } : idx
   })
   const indexStatus: DataSourceStatus = live?.indices.length ? 'live' : Object.keys(supaIdxMap).length ? 'persisted' : 'static'
+  const sectorAsOf = live?.sectors ? live.lastUpdated : (supaSectors?.[0]?.lastUpdated ?? null)
+  const indexAsOf = live?.indices.length ? live.lastUpdated : (Object.values(supaIdxMap)[0]?.lastUpdated ?? null)
   const liveTimestamp = live ? formatLiveTimestamp(live.lastUpdated) : marketUpdated
   const maxSectorAbs = Math.max(...sectors.map(s => Math.abs(s.dayChangePct)))
 
   const snapshotMap = Object.fromEntries(snapshots.map(s => [s.ticker, s]))
-  const trackedRows = companies.slice(0, 8).map(c => ({ company: c, snap: snapshotMap[c.ticker] }))
+  const companyMap = Object.fromEntries(companies.map(c => [c.ticker, c]))
+
+  // Home's "Watchlist" table mirrors the user's real /watchlist selection
+  // (Supabase-persisted, per Phase 6A) rather than a hardcoded first-N
+  // companies list. `/api/watchlists*` is auth-gated by middleware — a 401
+  // here just means "not signed in", never an error to surface.
+  const [watchlistAuthed, setWatchlistAuthed] = useState<boolean | null>(null)
+  const [watchlistTickers, setWatchlistTickers] = useState<string[]>([])
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/watchlists', { cache: 'no-store' })
+        if (!res.ok) { if (!cancelled) setWatchlistAuthed(false); return }
+        const json = await res.json()
+        const wl = json.watchlists?.[0]
+        if (!wl) { if (!cancelled) { setWatchlistAuthed(true); setWatchlistTickers([]) }; return }
+        const itemsRes = await fetch(`/api/watchlists/${wl.id}/items`, { cache: 'no-store' })
+        if (!itemsRes.ok) { if (!cancelled) { setWatchlistAuthed(true); setWatchlistTickers([]) }; return }
+        const itemsJson = await itemsRes.json()
+        const items: WatchlistItemRow[] = itemsJson.items ?? []
+        if (!cancelled) { setWatchlistAuthed(true); setWatchlistTickers(items.map(i => i.ticker)) }
+      } catch {
+        if (!cancelled) setWatchlistAuthed(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+  const watchlistRows = watchlistTickers
+    .map(ticker => ({ ticker, company: companyMap[ticker], snap: snapshotMap[ticker] }))
+    .filter((r): r is { ticker: string; company: NonNullable<typeof r.company>; snap: typeof r.snap } => Boolean(r.company))
+  const watchlistStatus: DataSourceStatus = live?.stocks && Object.keys(live.stocks).length ? 'live' : Object.keys(supaStockMap).length ? 'persisted' : 'static'
+  const watchlistAsOf = live ? live.lastUpdated : (Object.values(supaStockMap)[0]?.lastUpdated ?? null)
 
   // Drag-to-reorder Chilean rates (persisted to localStorage)
   const rates = getChileanRates()
@@ -263,73 +298,82 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Column 2 — Tracked stocks (max 5, scroll) + FX (fill, scroll) */}
-        <div className="flex flex-col gap-4 min-h-0" style={{ height: macroH || undefined }}>
-          <div className="bg-surface border border-border rounded overflow-hidden shrink-0 flex flex-col">
-            <div className="px-4 py-2.5 border-b border-border flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2">
-                <span className="ui-label text-muted-fg">{t.home.trackedStocks}</span>
-              </div>
-              <Link href="/stocks" className="text-xs text-primary hover:underline">{t.stocks.title} →</Link>
-            </div>
-            <div className="overflow-y-auto" style={{ maxHeight: 190 }}>
-              <table className="w-full text-xs">
-                <thead className="sticky top-0 bg-surface-2 z-10">
-                  <tr className="border-b border-border">
-                    <th className="text-left py-2 pl-4 pr-3 ui-table-header text-muted-fg">{t.home.ticker}</th>
-                    <th className="text-left py-2 px-3 ui-table-header text-muted-fg">{t.home.company}</th>
-                    <th className="text-right py-2 px-3 ui-table-header text-muted-fg">{t.home.dayChg}</th>
-                    <th className="text-right py-2 px-3 ui-table-header text-muted-fg">{t.home.ytd}</th>
-                    <th className="text-right py-2 px-3 pr-4 ui-table-header text-muted-fg whitespace-nowrap">{t.home.marketCap} (MM)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {trackedRows.map(({ company: c, snap: s }) => {
-                    const ls = live?.stocks[c.ticker]
-                    const ss = supaStockMap[c.ticker]
-                    const dayPct = ls?.dayChangePct ?? ss?.dayChangePct ?? s?.dayChangePct
-                    const ytdPct = s?.ytdChangePct
-                    const mktCap = ls?.marketCapCLP ?? ss?.marketCapCLP ?? c.marketCapCLP
-                    return (
-                      <tr key={c.ticker} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
-                        <td className="py-1.5 pl-4 pr-3"><Link href={`/companies/${c.ticker}`} className="font-mono text-primary hover:underline">{c.ticker}</Link></td>
-                        <td className="py-1.5 px-3 text-foreground truncate max-w-[110px]">{c.shortName}</td>
-                        <td className={`py-1.5 px-3 text-right ui-number ${dayPct != null ? changeColor(dayPct) : 'text-muted-fg'}`}>{dayPct != null ? formatPct(dayPct) : '—'}</td>
-                        <td className={`py-1.5 px-3 text-right ui-number ${ytdPct != null ? changeColor(ytdPct) : 'text-muted-fg'}`}>{ytdPct != null ? formatPct(ytdPct) : '—'}</td>
-                        <td className="py-1.5 px-3 pr-4 text-right ui-number text-foreground">{mktCap ? formatCLP(mktCap) : '—'}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+        {/* Column 2 — one table, Watchlist + FX separated by highlighted bands
+            (same pattern as the Macro card's Chile/US bands) */}
+        <div className="bg-surface border border-border rounded flex flex-col overflow-hidden" style={{ height: macroH || undefined }}>
+          <div className="px-4 py-2.5 border-b border-border shrink-0 flex items-center justify-between">
+            <span className="ui-label text-muted-fg">{t.home.watchlistTitle}</span>
+            <Link href="/watchlist" className="text-xs text-primary hover:underline">{t.watchlist.title} →</Link>
           </div>
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-surface-2 z-10">
+                <tr className="border-b border-border">
+                  <th className="text-left py-2 pl-4 pr-3 ui-table-header text-muted-fg">{t.home.ticker}</th>
+                  <th className="text-left py-2 px-3 ui-table-header text-muted-fg">{t.home.company}</th>
+                  <th className="text-right py-2 px-3 ui-table-header text-muted-fg">{t.home.price}</th>
+                  <th className="text-right py-2 px-3 ui-table-header text-muted-fg">{t.home.dayChg}</th>
+                  <th className="text-right py-2 px-3 pr-4 ui-table-header text-muted-fg">{t.home.ytd}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td colSpan={5} className="bg-surface-2 px-4 py-1.5" style={{ borderLeft: '2px solid var(--accent)' }}>
+                    <div className="flex items-center justify-between">
+                      <span className="ui-label text-foreground">{t.home.watchlistTitle}</span>
+                      <MarketDataSourceBadge status={watchlistStatus} />
+                    </div>
+                  </td>
+                </tr>
+                {watchlistAuthed === false ? (
+                  <tr><td colSpan={5} className="px-4 py-4 text-center text-muted-fg">
+                    <Link href="/login" className="text-primary hover:underline">{t.home.watchlistSignIn}</Link>
+                  </td></tr>
+                ) : watchlistAuthed === true && watchlistRows.length === 0 ? (
+                  <tr><td colSpan={5} className="px-4 py-4 text-center text-muted-fg">
+                    <Link href="/watchlist" className="text-primary hover:underline">{t.home.watchlistEmpty}</Link>
+                  </td></tr>
+                ) : watchlistRows.map(({ ticker, company: c, snap: s }) => {
+                  const ls = live?.stocks[ticker]
+                  const ss = supaStockMap[ticker]
+                  const price = ls?.price ?? ss?.price ?? s?.price
+                  const dayPct = ls?.dayChangePct ?? ss?.dayChangePct ?? s?.dayChangePct
+                  const ytdPct = ss?.ytdChangePct ?? s?.ytdChangePct
+                  return (
+                    <tr key={ticker} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
+                      <td className="py-1.5 pl-4 pr-3"><Link href={`/companies/${ticker}`} className="font-mono text-primary hover:underline">{ticker}</Link></td>
+                      <td className="py-1.5 px-3 text-foreground truncate max-w-[110px]">{c.shortName}</td>
+                      <td className="py-1.5 px-3 text-right ui-number text-foreground">{price != null ? formatCLP(price) : '—'}</td>
+                      <td className={`py-1.5 px-3 text-right ui-number ${dayPct != null ? changeColor(dayPct) : 'text-muted-fg'}`}>{dayPct != null ? formatPct(dayPct) : '—'}</td>
+                      <td className={`py-1.5 px-3 pr-4 text-right ui-number ${ytdPct != null ? changeColor(ytdPct) : 'text-muted-fg'}`}>{ytdPct != null ? formatPct(ytdPct) : '—'}</td>
+                    </tr>
+                  )
+                })}
 
-          {/* FX table — BCCh-only, flat list, no subgroups (Phase 8D.1) */}
-          <div className="bg-surface border border-border rounded overflow-hidden flex flex-col flex-1 min-h-0">
-            <div className="px-4 py-2.5 border-b border-border shrink-0 flex items-center justify-between">
-              <span className="ui-label text-muted-fg">{t.home.fxTitle}</span>
-              <DataSourceBadge status={macroStatus} />
-            </div>
-            <div className="grid grid-cols-[1fr_88px_72px] gap-x-2 px-4 py-1.5 border-b border-border bg-surface-2 shrink-0">
-              <span className="ui-table-header text-muted-fg" />
-              <span className="ui-table-header text-muted-fg text-right">{t.home.last}</span>
-              <span className="ui-table-header text-muted-fg text-right">{t.home.dayChg}</span>
-            </div>
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              {fxRows.map(fx => (
-                <div key={fx.id} className="grid grid-cols-[1fr_88px_72px] gap-x-2 px-4 py-1.5 border-b border-border last:border-0">
-                  <span className="text-xs text-foreground">{fx.shortName}</span>
-                  <span className="text-xs ui-number text-foreground text-right">{formatMacroValue(fx.value, fx.unit)}</span>
-                  <span className={`text-xs ui-number text-right ${fx.change != null ? changeColor(fx.change) : 'text-muted-fg'}`}>
-                    {fx.changeLabel ? formatMacroChange(fx.changeLabel) : '—'}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <div className="px-4 py-2 border-t border-border shrink-0">
-              <TableSourceFooter source={t.home.fxSource} asOf={fxAsOf || null} />
-            </div>
+                <tr>
+                  <td colSpan={5} className="bg-surface-2 px-4 py-1.5" style={{ borderLeft: '2px solid var(--primary)' }}>
+                    <div className="flex items-center justify-between">
+                      <span className="ui-label text-foreground">{t.home.fxTitle}</span>
+                      <DataSourceBadge status={macroStatus} />
+                    </div>
+                  </td>
+                </tr>
+                {fxRows.map(fx => (
+                  <tr key={fx.id} className="border-b border-border last:border-0">
+                    <td className="py-1.5 pl-4 pr-3 text-foreground" colSpan={2}>{fx.shortName}</td>
+                    <td className="py-1.5 px-3 text-right ui-number text-foreground">{formatMacroValue(fx.value, fx.unit)}</td>
+                    <td className={`py-1.5 px-3 text-right ui-number ${fx.change != null ? changeColor(fx.change) : 'text-muted-fg'}`}>
+                      {fx.changeLabel ? formatMacroChange(fx.changeLabel) : '—'}
+                    </td>
+                    <td className="py-1.5 px-3 pr-4 text-right ui-number text-muted-fg">—</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="px-4 py-2 border-t border-border shrink-0 space-y-0.5">
+            <TableSourceFooter source={t.home.watchlistSource} asOf={watchlistAsOf} />
+            <TableSourceFooter source={t.home.fxSource} asOf={fxAsOf || null} />
           </div>
         </div>
 
@@ -435,7 +479,7 @@ export default function HomePage() {
             </div>
           </div>
           <div className="px-4 py-2 border-t border-border shrink-0 flex items-center justify-between gap-3">
-            <p className="text-xs text-muted-fg truncate">{t.home.sectorSource}</p>
+            <TableSourceFooter source={t.home.sectorSource} asOf={sectorAsOf} className="truncate" />
             <div className="flex items-center gap-1.5 shrink-0">
               <span className="text-xs text-negative">−</span>
               <span className="inline-block rounded" style={{ width: 56, height: 8, background: 'linear-gradient(to right, var(--negative), var(--surface-2), var(--positive))' }} />
@@ -507,7 +551,7 @@ export default function HomePage() {
             })}
           </div>
           <div className="px-4 py-2 border-t border-border shrink-0">
-            <p className="text-xs text-muted-fg">{t.home.indexSource}</p>
+            <TableSourceFooter source={t.home.indexSource} asOf={indexAsOf} />
           </div>
         </div>
       </div>
