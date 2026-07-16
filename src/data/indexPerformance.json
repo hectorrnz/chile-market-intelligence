@@ -8,7 +8,7 @@
     "currency": "CLP",
     "dayChangePct": 0.41,
     "ytdChangePct": 8.2,
-    "date": "2026-07-15",
+    "date": "2026-07-16",
     "source": "yfinance / Yahoo Finance"
   },
   {
@@ -16,11 +16,11 @@
     "name": "S&P 500",
     "country": "USA",
     "region": "North America",
-    "value": 7572.4,
+    "value": 7556.52,
     "currency": "USD",
-    "dayChangePct": 0.38,
-    "ytdChangePct": 10.41,
-    "date": "2026-07-15",
+    "dayChangePct": -0.21,
+    "ytdChangePct": 10.18,
+    "date": "2026-07-16",
     "source": "yfinance / Yahoo Finance"
   },
   {
@@ -28,11 +28,11 @@
     "name": "Ibovespa",
     "country": "Brazil",
     "region": "LatAm",
-    "value": 176010.91,
+    "value": 174830.56,
     "currency": "BRL",
-    "dayChangePct": -0.36,
-    "ytdChangePct": 9.64,
-    "date": "2026-07-15",
+    "dayChangePct": -0.67,
+    "ytdChangePct": 8.9,
+    "date": "2026-07-16",
     "source": "yfinance / Yahoo Finance"
   },
   {
@@ -40,11 +40,11 @@
     "name": "IPC México",
     "country": "Mexico",
     "region": "LatAm",
-    "value": 66399.71,
+    "value": 66505.82,
     "currency": "MXN",
-    "dayChangePct": -0.17,
-    "ytdChangePct": 3.52,
-    "date": "2026-07-15",
+    "dayChangePct": 0.16,
+    "ytdChangePct": 3.69,
+    "date": "2026-07-16",
     "source": "yfinance / Yahoo Finance"
   },
   {
@@ -52,11 +52,11 @@
     "name": "S&P Colombia (proxy)",
     "country": "Colombia",
     "region": "LatAm",
-    "value": 1566.02,
+    "value": 1550.57,
     "currency": "COP",
     "dayChangePct": -0.58,
     "ytdChangePct": -4.1,
-    "date": "2026-07-15",
+    "date": "2026-07-16",
     "source": "yfinance / Yahoo Finance"
   },
   {
@@ -64,11 +64,11 @@
     "name": "Peru ETF proxy (EPU)",
     "country": "Peru",
     "region": "LatAm",
-    "value": 86.7,
+    "value": 85.6,
     "currency": "USD",
-    "dayChangePct": -0.07,
-    "ytdChangePct": 21.21,
-    "date": "2026-07-15",
+    "dayChangePct": -1.27,
+    "ytdChangePct": 19.67,
+    "date": "2026-07-16",
     "source": "yfinance / Yahoo Finance"
   },
   {
@@ -76,11 +76,11 @@
     "name": "Euro Stoxx 50",
     "country": "Eurozone",
     "region": "Europe",
-    "value": 6280.19,
+    "value": 6258.39,
     "currency": "EUR",
-    "dayChangePct": 0.15,
-    "ytdChangePct": 6.02,
-    "date": "2026-07-15",
+    "dayChangePct": -0.11,
+    "ytdChangePct": 5.65,
+    "date": "2026-07-16",
     "source": "yfinance / Yahoo Finance"
   },
   {
@@ -88,11 +88,11 @@
     "name": "FTSE 100",
     "country": "UK",
     "region": "Europe",
-    "value": 10515.92,
+    "value": 10526.31,
     "currency": "GBP",
-    "dayChangePct": -0.13,
-    "ytdChangePct": 5.68,
-    "date": "2026-07-15",
+    "dayChangePct": 0.1,
+    "ytdChangePct": 5.78,
+    "date": "2026-07-16",
     "source": "yfinance / Yahoo Finance"
   },
   {
@@ -100,11 +100,11 @@
     "name": "Nikkei 225",
     "country": "Japan",
     "region": "Asia",
-    "value": 67743.5,
+    "value": 68751.51,
     "currency": "JPY",
-    "dayChangePct": 0.74,
-    "ytdChangePct": 30.7,
-    "date": "2026-07-15",
+    "dayChangePct": 1.49,
+    "ytdChangePct": 32.64,
+    "date": "2026-07-16",
     "source": "yfinance / Yahoo Finance"
   },
   {
@@ -112,11 +112,11 @@
     "name": "Hang Seng",
     "country": "Hong Kong",
     "region": "Asia",
-    "value": 24340.73,
+    "value": 25008.6,
     "currency": "HKD",
-    "dayChangePct": 0.52,
-    "ytdChangePct": -7.58,
-    "date": "2026-07-15",
+    "dayChangePct": 1.33,
+    "ytdChangePct": -5.05,
+    "date": "2026-07-16",
     "source": "yfinance / Yahoo Finance"
   },
   {
@@ -124,11 +124,11 @@
     "name": "KOSPI",
     "country": "South Korea",
     "region": "Asia",
-    "value": 6856.83,
+    "value": 7284.41,
     "currency": "KRW",
-    "dayChangePct": 0.73,
-    "ytdChangePct": 59.1,
-    "date": "2026-07-15",
+    "dayChangePct": 6.24,
+    "ytdChangePct": 69.03,
+    "date": "2026-07-16",
     "source": "yfinance / Yahoo Finance"
   }
 ]
