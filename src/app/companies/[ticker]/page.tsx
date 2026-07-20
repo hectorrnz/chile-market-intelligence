@@ -19,7 +19,8 @@ import { getStockHistoryForTimeframe } from '@/lib/data/stockHistory'
 import { formatCLP, formatPct, formatFx, formatMillionsCLP, formatEPS, formatNetDebt, formatMarketCapMM, changeColor, formatNewsTimestamp } from '@/lib/formatters'
 import type { EarningsRelease, StockPriceSnapshot } from '@/types'
 import { useMarketData } from '@/components/providers/MarketDataProvider'
-import { fetchStockSnapshot } from '@/lib/data/marketData'
+import { useGlobalRefresh } from '@/components/providers/useGlobalRefresh'
+import { fetchStockSnapshot, fetchStockHistory } from '@/lib/data/marketData'
 import type { StockSnapshot } from '@/lib/providers/market/types'
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
 import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
@@ -49,10 +50,25 @@ export default function CompanyDetailPage() {
   const [relative, setRelative] = usePersistentState<boolean>('cmi.chartRelative', false)
   // Live market snapshot is shared platform-wide (see MarketDataProvider) — Update
   // on any tab refreshes it, and it survives navigating away from this page.
-  const { live, refresh } = useMarketData()
+  const { live } = useMarketData()
+  // One Update refreshes every live domain, on every tab — see useGlobalRefresh.
+  const refresh = useGlobalRefresh()
   // Supabase-persisted baseline (auto-loaded on mount, below live overlay in priority)
   const [supaSnap, setSupaSnap] = useState<StockSnapshot | null>(null)
   const [newsResult, setNewsResult] = useState<NewsFetchResponse | null>(null)
+  // Real historical price data (live Yahoo Finance fetch, Supabase-persisted
+  // accumulation as fallback — see resolveStockHistory in marketProvider.ts),
+  // keyed by ticker so both the primary series and the IPSA benchmark can be
+  // held at once. Falls back to the static quarterly series (below) only when
+  // neither the live nor persisted tier came back with enough points for the
+  // selected timeframe.
+  type ChartHistoryEntry = { points: { date: string; value: number }[]; status: 'live' | 'persisted'; asOf: string | null }
+  // Partial<Record<...>> (not a bare Record) so indexed access is correctly
+  // typed 'ChartHistoryEntry | undefined' — a bare Record would tell
+  // TypeScript every key is always present, collapsing `liveStockHistory?.status
+  // ?? 'static'` to just 'live' | 'persisted' (the 'static' fallback treated
+  // as unreachable) and breaking the chartStatus !== 'static' check below.
+  const [chartHistory, setChartHistory] = useState<Partial<Record<string, ChartHistoryEntry>>>({})
 
   useEffect(() => {
     if (!sym) return
@@ -65,6 +81,34 @@ export default function CompanyDetailPage() {
     }).catch(() => {})
     return () => { mounted = false }
   }, [sym])
+
+  useEffect(() => {
+    if (!sym) return
+    let mounted = true
+    const tickers = relative ? [sym, 'IPSA'] : [sym]
+    Promise.all(tickers.map(tk => fetchStockHistory(tk, chartTimeframe).then(res => ({ tk, res }))))
+      .then(results => {
+        if (!mounted) return
+        setChartHistory(prev => {
+          const next = { ...prev }
+          for (const { tk, res } of results) {
+            const fetched = res.metadata.status === 'live' || res.metadata.status === 'persisted'
+            if (fetched && res.data.length >= 2) {
+              next[tk] = {
+                points: res.data.map(p => ({ date: p.date, value: p.close })),
+                status: res.metadata.status as 'live' | 'persisted',
+                asOf: res.metadata.lastUpdated || null,
+              }
+            } else {
+              delete next[tk]
+            }
+          }
+          return next
+        })
+      })
+      .catch(() => {})
+    return () => { mounted = false }
+  }, [sym, chartTimeframe, relative])
 
   const doRefresh = useCallback(async () => {
     const [, newsRes] = await Promise.all([refresh(), fetchLiveNews()])
@@ -91,8 +135,11 @@ export default function CompanyDetailPage() {
     .sort((a, b) => b.reportDate.localeCompare(a.reportDate))
     .slice(0, 6)
   const news     = (newsResult?.data ?? []).filter(n => n.affectedTickers.includes(sym)).slice(0, 4)
-  const stockHistory = getStockHistoryForTimeframe(sym, chartTimeframe)
-    .map(p => ({ date: p.date, value: p.price }))
+  const liveStockHistory = chartHistory[sym]
+  const stockHistory = liveStockHistory && liveStockHistory.points.length >= 2
+    ? liveStockHistory.points
+    : getStockHistoryForTimeframe(sym, chartTimeframe).map(p => ({ date: p.date, value: p.price }))
+  const chartStatus: 'live' | 'persisted' | 'static' = liveStockHistory?.status ?? 'static'
 
   const periodChange = stockHistory.length >= 2
     ? ((stockHistory[stockHistory.length - 1].value - stockHistory[0].value) / stockHistory[0].value) * 100
@@ -100,7 +147,10 @@ export default function CompanyDetailPage() {
   const lastPrice = stockHistory.length ? stockHistory[stockHistory.length - 1].value : snap?.price ?? null
 
   // Benchmark (IPSA) + rebased series for relative-performance mode
-  const ipsaHistory = getStockHistoryForTimeframe('IPSA', chartTimeframe).map(p => ({ date: p.date, value: p.price }))
+  const liveIpsaHistory = chartHistory['IPSA']
+  const ipsaHistory = relative && liveIpsaHistory && liveIpsaHistory.points.length >= 2
+    ? liveIpsaHistory.points
+    : getStockHistoryForTimeframe('IPSA', chartTimeframe).map(p => ({ date: p.date, value: p.price }))
   const rebase = (arr: { date: string; value: number }[]) => {
     const base = arr[0]?.value || 1
     return arr.map(p => ({ date: p.date, value: (p.value / base) * 100 }))
@@ -317,7 +367,10 @@ export default function CompanyDetailPage() {
           </div>
         )}
         <div className="flex items-center justify-between mt-2 gap-3 flex-wrap">
-          <TableSourceFooter source={t.company.stockChartSource} />
+          <TableSourceFooter
+            source={chartStatus !== 'static' ? t.stocks.footer : t.company.stockChartSource}
+            asOf={liveStockHistory?.asOf ?? null}
+          />
           <div className="flex items-center gap-3 text-xs text-muted-fg">
             <span className="flex items-center gap-1"><span style={{ color: 'var(--primary)' }}>▲</span>earnings</span>
           </div>

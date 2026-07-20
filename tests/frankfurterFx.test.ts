@@ -383,8 +383,16 @@ describe('Chile Macro-page FX depth table — removed from production', () => {
     assert.doesNotMatch(macroPageSrc, /CL_FX/)
   })
 
-  it('the CL region renders an integrity note instead of a static FX table', () => {
-    assert.match(macroPageSrc, /fxClDepthRemoved/)
+  it('the CL region renders no FX depth card at all — not even an explanatory placeholder', () => {
+    // Superseded by an explicit user request: the placeholder card ("A broader
+    // Chilean FX depth table is not shown here — verified BCCh-live pairs are
+    // in the table above") was itself clutter. Chile's two verified live pairs
+    // are already visible in the indicators table, so the card is simply not
+    // rendered and the yield curve takes the full width.
+    assert.doesNotMatch(macroPageSrc, /fxClDepthRemoved/)
+    assert.match(macroPageSrc, /region === 'CL' \? 'grid-cols-1' : 'grid-cols-2'/)
+    // The FX depth card must be US-only.
+    assert.match(macroPageSrc, /\{region === 'US' && \(/)
   })
 })
 

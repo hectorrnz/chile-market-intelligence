@@ -37,6 +37,35 @@ function subtractDays(date: string, days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
+// ─── Live-provider (Yahoo Finance chart) date range ────────────────────────────
+// Unlike resolveHistoryDateRange (which returns null for 3Y/5Y — those require
+// years of accumulated Supabase snapshots we don't have yet), a live Yahoo
+// Finance fetch genuinely has years of real daily history for any listed
+// ticker, so every timeframe resolves to a real range here — no null case.
+
+export function resolveLiveHistoryDateRange(
+  timeframe: StockTimeframe,
+  today?: string,
+): { from: string; to: string } {
+  const todayStr = today ?? new Date().toISOString().slice(0, 10)
+  const to = todayStr
+
+  let from: string
+  switch (timeframe) {
+    case '1D':  from = subtractDays(todayStr, 4);            break
+    case '5D':  from = subtractDays(todayStr, 10);           break
+    case '1M':  from = subtractDays(todayStr, 35);           break
+    case 'MTD': from = `${todayStr.slice(0, 7)}-01`;         break
+    case 'YTD': from = `${todayStr.slice(0, 4)}-01-01`;      break
+    case '1Y':  from = subtractDays(todayStr, 370);          break
+    case '3Y':  from = subtractDays(todayStr, 3 * 365 + 10); break
+    case '5Y':  from = subtractDays(todayStr, 5 * 365 + 15); break
+    default:    from = subtractDays(todayStr, 35);           break
+  }
+
+  return { from, to }
+}
+
 // ─── Sufficiency thresholds ───────────────────────────────────────────────────
 
 export const HISTORY_MIN_POINTS: Partial<Record<StockTimeframe, number>> = {

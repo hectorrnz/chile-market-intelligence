@@ -12,12 +12,19 @@ import { getAllCompanies } from '@/lib/data/companies'
 import { getFundamentals, type FundamentalRecord } from '@/lib/data/fundamentals'
 import { fetchFinancialStatements, type FinancialsSourceStatus, type FinancialsSourceType } from '@/lib/data/financialsData'
 import type { SourceKey } from '@/lib/dataSourceRegistry'
-import { formatCLP } from '@/lib/formatters'
+import { formatCLP, formatCompactMM } from '@/lib/formatters'
 import { exportCSV } from '@/lib/export'
 
 type Cat = 'income' | 'cash' | 'balance' | 'returns'
 type Agg = 'sum' | 'last' | 'margin' | 'yoy'
-type Freq = 'Q' | 'TTM' | 'A'
+// Quarterly was removed as a user-facing option: issuers that file a native
+// annual (FY) report have their Q4 folded into that FY row rather than
+// published as a discrete quarter, so a quarterly view rendered a visible gap
+// at Q4 with the value sitting in a separate FY bar beside it. TTM and Annual
+// both aggregate correctly across that mix. Quarterly records are still read
+// from the source — they are what TTM's rolling window and Annual's 4-quarter
+// sum are built from.
+type Freq = 'TTM' | 'A'
 interface Metric { key: keyof FundamentalRecord; cat: Cat; unit: string; type: 'bar' | 'line'; axis: 'left' | 'right'; agg: Agg }
 
 const METRICS: Metric[] = [
@@ -99,7 +106,10 @@ export default function ChartBuilderPage() {
   const [ticker, setTicker] = usePersistentState<string>('cmi.gfTicker', 'FALABELLA')
   const [selected, setSelected] = usePersistentState<string[]>('cmi.gfMetrics', ['revenue', 'ebitda'])
   const [mode, setMode] = usePersistentState<'abs' | 'idx'>('cmi.gfMode', 'abs')
-  const [freq, setFreq] = usePersistentState<Freq>('cmi.gfFreq', 'Q')
+  // New storage key: the old 'cmi.gfFreq' may hold 'Q', which is no longer a
+  // member of Freq — reusing the key would rehydrate a value the UI can no
+  // longer render.
+  const [freq, setFreq] = usePersistentState<Freq>('cmi.gfFreq2', 'TTM')
   const [chartType, setChartType] = usePersistentState<'auto' | 'lines' | 'bars'>('cmi.gfChartType', 'auto')
   const [legend, setLegend] = usePersistentState<boolean>('cmi.gfLegend', true)
   const [grid, setGrid] = usePersistentState<boolean>('cmi.gfGrid', true)
@@ -182,20 +192,29 @@ export default function ChartBuilderPage() {
   // one FY row per year) can never build a rolling window, so the toggle is
   // disabled rather than silently rendering an empty chart.
   const canTTM = recordsA.filter(r => isQuarterlyPeriod(r.period)).length >= 4
-  // If the ticker changes to one without quarterly history while TTM is
-  // selected, fall back to Quarterly (render-time previous-value pattern —
-  // matches the ticker-mirroring adjustment above, not an effect).
-  const [prevCanTTM, setPrevCanTTM] = useState(canTTM)
-  if (canTTM !== prevCanTTM) { setPrevCanTTM(canTTM); if (!canTTM && freq === 'TTM') setFreq('Q') }
+  // The frequency actually rendered. Derived rather than corrected-by-setState
+  // so an annual-only ticker can never momentarily render an empty TTM chart —
+  // including on first mount, where a previous-value guard would see no change
+  // and leave the unusable selection in place.
+  const effFreq: Freq = freq === 'TTM' && !canTTM ? 'A' : freq
 
   type Period = { label: string; rec?: FundamentalRecord; window?: FundamentalRecord[] }
   const buildPeriods = (recs: FundamentalRecord[]): Period[] => {
-    if (freq === 'Q') return recs.map(r => ({ label: qShort(r.period), rec: r }))
-    if (freq === 'TTM') {
-      // Needs 4 consecutive quarterly points to build a rolling window — an
-      // annual-only (CMF/XBRL) ticker never satisfies this; see canTTM below.
+    if (effFreq === 'TTM') {
+      // QUARTERLY RECORDS ONLY. Several issuers publish both discrete
+      // quarters and a native full-year FY row, and qIdx deliberately sorts
+      // FY at year-end — i.e. right next to Q4 of the same year. Rolling a
+      // 4-record window over the unfiltered list therefore summed a full year
+      // together with individual quarters, producing a bogus decaying series
+      // (4,59 B → 3,47 B → 2,34 B → 1,16 B for ITAUCL) and a nonsensical
+      // "FY'25 TTM" point. Filtering to quarters makes every window a true
+      // trailing four quarters. An annual-only ticker yields nothing here,
+      // which is exactly what canTTM gates on.
+      const quarters = recs.filter(r => isQuarterlyPeriod(r.period))
       const out: Period[] = []
-      for (let i = 3; i < recs.length; i++) out.push({ label: `${qShort(recs[i].period)} TTM`, window: recs.slice(i - 3, i + 1) })
+      for (let i = 3; i < quarters.length; i++) {
+        out.push({ label: `${qShort(quarters[i].period)} TTM`, window: quarters.slice(i - 3, i + 1) })
+      }
       return out
     }
     // Annual: a year that already has a native FY (annual) filing is used
@@ -240,9 +259,23 @@ export default function ChartBuilderPage() {
     }
   }
 
-  const fmtBar = (v: number) => `${formatCLP(v)} MM`
-  const fmtLine = (v: number, unit: string) => (unit === 'CLP' ? `${formatCLP(v, 2)} CLP` : unit === 'MM sh' ? `${formatCLP(v)} MM sh` : `${v}${unit}`)
-  const fmtCell = (m: Metric, v: number | null) => v == null ? '—' : m.unit === '%' ? `${v}%` : m.unit === 'CLP' ? formatCLP(v, 2) : formatCLP(v)
+  // All amount metrics are in MILLIONS of CLP (see resolveFinancials'
+  // normalization). formatCompactMM converts back to the true magnitude and
+  // picks a readable unit, so a 7-digit millions figure renders as "1,46 B"
+  // rather than "1.463.576" — applied identically to the axis, the tooltip and
+  // the underlying-data table so the three can never disagree.
+  const fmtBar = (v: number) => formatCompactMM(v)
+  const fmtAxis = (v: number) => formatCompactMM(v)
+  const fmtLine = (v: number, unit: string) =>
+    unit === 'CLP' ? `${formatCLP(v, 2)} CLP`
+    : unit === 'MM sh' ? `${formatCLP(v, 1)} MM sh`
+    : `${formatCLP(v, 1)}${unit}`
+  const fmtCell = (m: Metric, v: number | null) =>
+    v == null ? '—'
+    : m.unit === '%' ? `${formatCLP(v, 1)}%`
+    : m.unit === 'CLP' ? formatCLP(v, 2)
+    : m.unit === 'MM sh' ? `${formatCLP(v, 1)} MM sh`
+    : formatCompactMM(v)
 
   const handleExport = () => {
     exportCSV(
@@ -275,9 +308,8 @@ export default function ChartBuilderPage() {
         <div className="flex items-center gap-1"><Seg active={mode === 'abs'} onClick={() => setMode('abs')}>{t.charting.absolute}</Seg><Seg active={mode === 'idx'} onClick={() => setMode('idx')}>{t.charting.indexed}</Seg></div>
         <span className="w-px h-4 bg-border" />
         <div className="flex items-center gap-1">
-          <Seg active={freq === 'Q'} onClick={() => setFreq('Q')}>{t.charting.quarterly}</Seg>
-          <Seg active={freq === 'TTM'} onClick={() => setFreq('TTM')} disabled={!canTTM} title={canTTM ? undefined : t.charting.ttmUnavailable}>{t.charting.ttm}</Seg>
-          <Seg active={freq === 'A'} onClick={() => setFreq('A')}>{t.charting.annual}</Seg>
+          <Seg active={effFreq === 'TTM'} onClick={() => setFreq('TTM')} disabled={!canTTM} title={canTTM ? undefined : t.charting.ttmUnavailable}>{t.charting.ttm}</Seg>
+          <Seg active={effFreq === 'A'} onClick={() => setFreq('A')}>{t.charting.annual}</Seg>
         </div>
         <SourceStateBadge sourceKey={financialsBadgeKey} className="ml-auto" />
         <button onClick={() => setSettingsOpen(true)} className="flex items-center gap-1.5 h-6 px-2 rounded border border-border bg-surface-2 text-muted-fg hover:text-foreground hover:border-accent transition-colors"><span>⚙</span><span>{t.charting.settings}</span></button>
@@ -320,14 +352,12 @@ export default function ChartBuilderPage() {
           {labels.length === 0 || chosen.length === 0 ? (
             <div className="py-16 text-center text-xs text-muted-fg">{records.length === 0 ? t.charting.noData : t.charting.selectMetric}</div>
           ) : (
-            <FundamentalsChart labels={labels} series={series} height={360} indexed={mode === 'idx'} chartType={chartType} showLegend={legend} showGrid={grid} fmtBar={fmtBar} fmtLine={fmtLine} />
+            <FundamentalsChart labels={labels} series={series} height={360} indexed={mode === 'idx'} chartType={chartType} showLegend={legend} showGrid={grid} fmtBar={fmtBar} fmtLine={fmtLine} fmtAxis={fmtAxis} />
           )}
-          {(mode === 'idx' || freq !== 'Q') && (
-            <p className="text-xs text-muted-fg mt-2">
-              {[mode === 'idx' ? 'indexed = 100' : null, freq === 'TTM' ? 'TTM' : freq === 'A' ? t.charting.annual : null]
-                .filter(Boolean).join(' · ')}
-            </p>
-          )}
+          <p className="text-xs text-muted-fg mt-2">
+            {[mode === 'idx' ? 'indexed = 100' : null, effFreq === 'TTM' ? 'TTM' : t.charting.annual]
+              .filter(Boolean).join(' · ')}
+          </p>
           <TableSourceFooter
             source={sourceStatusA === 'persisted' ? persistedA!.source : t.charting.source}
             className="mt-2"

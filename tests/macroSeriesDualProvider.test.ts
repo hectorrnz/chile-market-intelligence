@@ -127,7 +127,13 @@ describe('FX panel — BCCh-only cleanup (Phase 8D.1)', () => {
     const fs = await import('node:fs')
     const pageSrc = fs.readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8')
     const doRefreshBody = pageSrc.slice(pageSrc.indexOf('const doRefresh = useCallback'), pageSrc.indexOf('const doRefresh = useCallback') + 400)
-    assert.ok(doRefreshBody.includes('refreshMacro()'), 'doRefresh must call the shared macro refresh')
+    // Home's Update now goes through useGlobalRefresh, which refreshes BOTH
+    // the market snapshot and the macro overlay (previously each page only
+    // refreshed the domain it happened to read, leaving the Macro tab stale).
+    assert.ok(doRefreshBody.includes('refreshAll()'), 'doRefresh must call the global refresh')
+    const hookSrc = fs.readFileSync(new URL('../src/components/providers/useGlobalRefresh.ts', import.meta.url), 'utf8')
+    assert.ok(hookSrc.includes('refreshMarket()') && hookSrc.includes('refreshMacro()'),
+      'useGlobalRefresh must refresh both the market and macro domains')
     const providerSrc = fs.readFileSync(new URL('../src/components/providers/MacroDataProvider.tsx', import.meta.url), 'utf8')
     assert.ok(providerSrc.includes("fetchMacroIndicators('CL')"), 'the shared refresh must re-fetch CL macro indicators')
     assert.ok(providerSrc.includes("fetchMacroIndicators('US')"), 'the shared refresh must re-fetch US macro indicators')

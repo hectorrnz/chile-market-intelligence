@@ -22,6 +22,7 @@ import { getSectorPerformance } from '@/lib/data/sectorPerformance'
 import { getIndexPerformance } from '@/lib/data/indexPerformance'
 import { useMarketData } from '@/components/providers/MarketDataProvider'
 import { useMacroData } from '@/components/providers/MacroDataProvider'
+import { useGlobalRefresh } from '@/components/providers/useGlobalRefresh'
 import { fetchStockSnapshots, fetchSectorPerformance, fetchIndexPerformance } from '@/lib/data/marketData'
 import type { StockSnapshot, SectorSnapshot, IndexSnapshot } from '@/lib/providers/market/types'
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
@@ -71,7 +72,9 @@ export default function HomePage() {
   // on any tab refreshes it, and it survives navigating away from this page.
   // CL/US are never merged into one status (BCCh only ever covers Chile — a
   // shared status would misstate US freshness).
-  const { liveIndicatorMap, clStatus: macroStatus, usStatus: usMacroStatus, refresh: refreshMacro } = useMacroData()
+  const { liveIndicatorMap, clStatus: macroStatus, usStatus: usMacroStatus } = useMacroData()
+  // One Update refreshes every live domain, on every tab — see useGlobalRefresh.
+  const refreshAll = useGlobalRefresh()
 
   const byId = (id: string) => liveIndicatorMap[id] ?? allIndicators.find(i => i.id === id)
   const macroChile = CHILE_MACRO_IDS.map(byId).filter(Boolean) as MacroIndicator[]
@@ -80,7 +83,11 @@ export default function HomePage() {
   // series (same 'FX' category the Macro page's live indicators use), never a
   // fabricated/unverified pair. Currently: USD/CLP, EUR/CLP.
   const fxRows = getByCategory('FX').map(fx => liveIndicatorMap[fx.id] ?? fx)
-  const macroAsOf = [...macroChile, ...macroUs].reduce((max, i) => (i.lastUpdated > max ? i.lastUpdated : max), '')
+  // One as-of per band, since each is backed by a different provider and they
+  // refresh independently — a shared max would let the fresher half mask the
+  // staler one.
+  const macroChileAsOf = macroChile.reduce((max, i) => (i.lastUpdated > max ? i.lastUpdated : max), '')
+  const macroUsAsOf = macroUs.reduce((max, i) => (i.lastUpdated > max ? i.lastUpdated : max), '')
   const fxAsOf = fxRows.reduce((max, i) => (i.lastUpdated > max ? i.lastUpdated : max), '')
   const upcoming = getUpcomingEarnings().slice(0, 2)
   const recent = getRecentResults().slice(0, 2)
@@ -89,7 +96,7 @@ export default function HomePage() {
 
   // Live market snapshot is shared platform-wide (see MarketDataProvider) — Update
   // on any tab refreshes it, and it survives navigating away from this page.
-  const { live, refresh } = useMarketData()
+  const { live } = useMarketData()
   // Supabase-persisted baseline (auto-loaded on mount, below live overlay in priority)
   const [supaStockMap, setSupaStockMap] = useState<Record<string, StockSnapshot>>({})
   const [supaSectors, setSupaSectors] = useState<SectorSnapshot[] | null>(null)
@@ -118,9 +125,9 @@ export default function HomePage() {
   }, [])
 
   const doRefresh = useCallback(async () => {
-    const [, , newsRes] = await Promise.all([refresh(), refreshMacro(), fetchLiveNews()])
+    const [, newsRes] = await Promise.all([refreshAll(), fetchLiveNews()])
     if (newsRes) setNewsResult(newsRes)
-  }, [refresh, refreshMacro])
+  }, [refreshAll])
 
   // Merge: static base → Supabase layer → live overlay (live always wins when present)
   const sectors = live?.sectors ?? supaSectors ?? staticSectors
@@ -294,14 +301,23 @@ export default function HomePage() {
               <DataSourceBadge status={macroStatus} />
             </div>
             <div className="px-4">{macroChile.map(ind => <MacroRow key={ind.id} ind={ind} />)}</div>
+            {/* Per-band footers. This card is really two stacked tables from
+                two different providers, so one shared footer could only name
+                the source by chaining every agency together — which the
+                footer convention forbids. Each band now carries the plain
+                name of the source that actually backs its rows, matching its
+                own badge directly above. */}
+            <div className="px-4 pt-1 pb-2">
+              <TableSourceFooter source={t.home.macroSourceCl} asOf={macroChileAsOf || null} />
+            </div>
             <div className="px-4 py-1.5 bg-surface-2 border-y border-border flex items-center justify-between" style={{ borderLeft: '2px solid var(--primary)' }}>
               <span className="ui-label text-foreground">{t.home.macroUsTitle.split('·')[1]?.trim() ?? 'US'}</span>
               <DataSourceBadge status={usMacroStatus} provider="FRED" />
             </div>
             <div className="px-4">{macroUs.map(ind => <MacroRow key={ind.id} ind={ind} />)}</div>
-          </div>
-          <div className="px-4 py-2 border-t border-border shrink-0">
-            <TableSourceFooter source={t.home.macroSource} asOf={macroAsOf || null} />
+            <div className="px-4 pt-1 pb-2">
+              <TableSourceFooter source={t.home.macroSourceUs} asOf={macroUsAsOf || null} />
+            </div>
           </div>
         </div>
 

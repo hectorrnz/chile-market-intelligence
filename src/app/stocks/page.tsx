@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import Link from 'next/link'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { SearchInput } from '@/components/ui/SearchInput'
@@ -10,6 +10,7 @@ import { getAllSnapshots } from '@/lib/data/stocks'
 import { formatCLP, formatPct, formatLargeCLP, changeColor } from '@/lib/formatters'
 import { exportCSV } from '@/lib/export'
 import { useMarketData } from '@/components/providers/MarketDataProvider'
+import { useGlobalRefresh } from '@/components/providers/useGlobalRefresh'
 import { fetchStockSnapshots } from '@/lib/data/marketData'
 import type { StockSnapshot } from '@/lib/providers/market/types'
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
@@ -27,11 +28,17 @@ export default function StocksPage() {
   const { t } = useLang()
   const [search,  setSearch]  = useState('')
   const [sector,  setSector]  = useState('')
-  const [sortKey, setSortKey] = useState<SortKey>('marketCapCLP')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  // The sort is DERIVED, not imperatively set. `userSort` is null until the
+  // user actually clicks a column header; while null the table falls back to
+  // "Day Chg. desc whenever live data is on screen". That ordering therefore
+  // applies even when the refresh happened on a different tab and this page
+  // mounted afterwards — the case a one-shot flag structurally cannot catch,
+  // since there is no mounted component to receive it at refresh time.
+  const [userSort, setUserSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' } | null>(null)
   // Live market snapshot is shared platform-wide (see MarketDataProvider) — Update
   // on any tab refreshes it, and it survives navigating away from this page.
-  const { live, refresh } = useMarketData()
+  const { live, refreshSeq } = useMarketData()
+  const refresh = useGlobalRefresh()
   // Supabase-persisted baseline (auto-loaded on mount, below live overlay in priority)
   const [supaSnapMap, setSupaSnapMap] = useState<Record<string, StockSnapshot>>({})
 
@@ -45,14 +52,20 @@ export default function StocksPage() {
     return () => { mounted = false }
   }, [])
 
-  const doRefresh = useCallback(async () => {
-    await refresh()
-    // A refresh is exactly when day-change figures actually move — surface
-    // the day's biggest movers immediately rather than leaving the table on
-    // whatever sort the user had before clicking Update.
-    setSortKey('dayChangePct')
-    setSortDir('desc')
-  }, [refresh])
+  // Render-time previous-value pattern (never an effect — see CLAUDE.md), and
+  // critically only ever setState on THIS component: the earlier version
+  // cleared a flag on MarketDataProvider from here, which React forbids
+  // (updating a parent while rendering a child) and which silently broke the
+  // auto-sort. A refresh landing while this page is open drops any manual
+  // sort so the day's biggest movers surface again.
+  const [seenSeq, setSeenSeq] = useState(refreshSeq)
+  if (refreshSeq !== seenSeq) {
+    setSeenSeq(refreshSeq)
+    setUserSort(null)
+  }
+
+  const sortKey: SortKey = userSort?.key ?? (live ? 'dayChangePct' : 'marketCapCLP')
+  const sortDir: 'asc' | 'desc' = userSort?.dir ?? 'desc'
 
   const priceStatus: DataSourceStatus = live ? 'live' : Object.keys(supaSnapMap).length ? 'persisted' : 'static'
   // One as-of for the page, always describing the data actually on screen:
@@ -106,8 +119,11 @@ export default function StocksPage() {
   }, [search, sector, sortKey, sortDir, snapMap, live, supaSnapMap])
 
   function toggleSort(key: SortKey) {
-    if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
-    else { setSortKey(key); setSortDir('desc') }
+    setUserSort(
+      sortKey === key
+        ? { key, dir: sortDir === 'asc' ? 'desc' : 'asc' }
+        : { key, dir: 'desc' },
+    )
   }
 
   const arrow = (key: SortKey) => sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''
@@ -144,7 +160,7 @@ export default function StocksPage() {
         tag={t.stocks.tag}
         title={t.stocks.title}
         subtitle={t.stocks.subtitle}
-        actions={<UpdateDataButton onRefresh={doRefresh} />}
+        actions={<UpdateDataButton onRefresh={refresh} />}
       />
 
       <div className="flex items-center gap-2.5 mb-4 flex-wrap">

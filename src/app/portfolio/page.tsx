@@ -19,6 +19,7 @@ import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
 import { getAllCompanies } from '@/lib/data/companies'
 import { formatCLP, formatPct, changeColor } from '@/lib/formatters'
 import { useMarketData } from '@/components/providers/MarketDataProvider'
+import { useGlobalRefresh } from '@/components/providers/useGlobalRefresh'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { valuePositions, calculatePortfolioTotals, calculateSectorExposure, type LatestPrice } from '@/lib/portfolio/valuation'
 import type { DataSourceStatus } from '@/lib/providers/types'
@@ -931,7 +932,9 @@ export default function PortfolioPage() {
   // on any tab refreshes it, and it survives navigating away from this page.
   // Manual live-price overlay (Yahoo Finance) on top of the Supabase-persisted
   // baseline the API already returns — same pattern as Stocks/Home/Company.
-  const { live, refresh: refreshLive } = useMarketData()
+  const { live } = useMarketData()
+  // One Update refreshes every live domain, on every tab — see useGlobalRefresh.
+  const refreshLive = useGlobalRefresh()
 
   const doRefresh = useCallback(async () => {
     await refreshLive()

@@ -24,6 +24,10 @@ interface FundamentalsChartProps {
   showGrid?: boolean
   fmtBar?: (v: number) => string
   fmtLine?: (v: number, unit: string) => string
+  /** Formats left-axis tick labels. Supplied by the caller so the axis uses
+   *  the same magnitude-adaptive units as the tooltip and the underlying data
+   *  table, instead of this component's own generic abbreviation. */
+  fmtAxis?: (v: number) => string
 }
 
 const num = (xs: (number | null)[]) => xs.filter((v): v is number => v != null)
@@ -35,7 +39,7 @@ function abbrev(v: number) {
 }
 
 export function FundamentalsChart({
-  labels, series, height = 340, indexed = false, chartType = 'auto', showLegend = true, showGrid = true, fmtBar, fmtLine,
+  labels, series, height = 340, indexed = false, chartType = 'auto', showLegend = true, showGrid = true, fmtBar, fmtLine, fmtAxis,
 }: FundamentalsChartProps) {
   const uid = useId().replace(/:/g, '')
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -69,7 +73,10 @@ export function FundamentalsChart({
   const useDual = leftSeries.length > 0 && rightSeries.length > 0
   const hasRight = useDual
 
-  const ML = 56
+  // Left gutter must fit the widest tick label (e.g. "1.463,58 MM") — the
+  // previous 56px clipped them, which is why the axis appeared to show
+  // truncated numbers like "53262.3M".
+  const ML = 76
   const MR = hasRight ? 50 : 18
   const MT = 14, MB = 28
   const H = height
@@ -131,7 +138,7 @@ export function FundamentalsChart({
             return (
               <g key={i}>
                 {showGrid && <line x1={ML} y1={y} x2={ML + chartW} y2={y} stroke="var(--border)" strokeWidth="1" opacity="0.4" />}
-                <text x={ML - 6} y={y} textAnchor="end" dominantBaseline="middle" fontSize="11" fill="var(--muted-fg)" fontFamily="var(--font-sans)">{indexed ? v.toFixed(0) : abbrev(v)}</text>
+                <text x={ML - 6} y={y} textAnchor="end" dominantBaseline="middle" fontSize="11" fill="var(--muted-fg)" fontFamily="var(--font-sans)">{indexed ? v.toFixed(0) : fmtAxis ? fmtAxis(v) : abbrev(v)}</text>
               </g>
             )
           })}

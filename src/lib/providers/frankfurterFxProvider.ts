@@ -177,8 +177,12 @@ let cached: { at: number; result: UsForexTableResult } | null = null
  * snapshot — a pair whose previous/YTD-base observation isn't found in its
  * bounded window simply reports that change as `null`.
  */
-export async function resolveUsForexTable(): Promise<UsForexTableResult> {
-  if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.result
+export async function resolveUsForexTable(opts?: { force?: boolean }): Promise<UsForexTableResult> {
+  // `force` skips the cache READ (never the write) and is set only by an
+  // explicit user Update Data click — with a 6h TTL an Update otherwise
+  // returned the identical cached table and appeared to do nothing. See the
+  // matching note in yieldCurveProvider.resolveLiveYieldCurve.
+  if (!opts?.force && cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.result
 
   if (!isFrankfurterConfigured()) {
     // Frankfurter needs no key — this path only exists for interface parity

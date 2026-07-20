@@ -77,13 +77,18 @@ export function normalizeCompareTickers(input: string[]): { valid: string[]; inv
 
 export function classifyPerformance(resp: StockHistoryResponse): ComparePerformanceMetric {
   const { data, metadata } = resp
+  // A live Yahoo Finance historical fetch (see yahooHistoryProvider.ts) is
+  // just as real as a Supabase-persisted snapshot series — both are genuine
+  // fetched data, not static fallback. Treat them identically here so a
+  // successful live fetch is never mislabeled as static_fallback.
+  const isFetched = metadata.status === 'live' || metadata.status === 'persisted'
 
   if (metadata.status === 'live-unavailable') {
     return { value: null, source: 'unavailable', fallbackReason: 'supabase_unavailable' }
   }
 
   if (data.length < 2) {
-    if (metadata.status === 'persisted') {
+    if (isFetched) {
       return { value: null, source: 'unavailable', fallbackReason: 'insufficient_supabase_history' }
     }
     return { value: null, source: 'static_fallback' }
@@ -93,7 +98,7 @@ export function classifyPerformance(resp: StockHistoryResponse): ComparePerforma
   const last = data[data.length - 1].close
   const value = first !== 0 ? safeNumber(((last / first) - 1) * 100) : null
 
-  if (metadata.status === 'persisted') {
+  if (isFetched) {
     return { value, source: 'persisted' }
   }
 
@@ -115,6 +120,12 @@ export interface PersistedFundamentalsInput {
   fcfMM?: number | null
   dividendsPaidMM?: number | null
   sharesOutMM?: number | null
+  /** Live, currency-corrected valuation ratios from Yahoo quoteSummary — the
+   *  only source for these three (no persisted financials carry book value or
+   *  a sales-per-share figure). See yahooRatiosProvider.ts. */
+  pbLive?: number | null
+  roeLivePct?: number | null
+  psTtmLive?: number | null
 }
 
 /**
@@ -167,15 +178,34 @@ export function buildFundamentals(
     if (v !== null) { dividendYield = v; derivedFields.push('dividendYield') }
   }
 
+  // P/S, ROE and P/B come from Yahoo or not at all. They deliberately do NOT
+  // fall back to the static sample snapshot: that sample is fabricated demo
+  // data, and silently showing it under a live-looking table is exactly the
+  // no-static-terminal-state violation this wiring exists to remove. A null
+  // renders as an honest "—".
+  //
+  // Note psFwd is populated from a TRAILING figure — Yahoo exposes no forward
+  // sales estimate and this project ingests no analyst estimates, so the UI
+  // label must read TTM. The field keeps its original name only to avoid
+  // churning the CompareFundamentals shape and its consumers.
+  const psTtm = safeNumber(persisted?.psTtmLive ?? null)
+  if (psTtm !== null) derivedFields.push('psFwd')
+
+  const roe = safeNumber(persisted?.roeLivePct ?? null)
+  if (roe !== null) derivedFields.push('roe')
+
+  const pb = safeNumber(persisted?.pbLive ?? null)
+  if (pb !== null) derivedFields.push('pb')
+
   return {
     pe,
-    psFwd: safeNumber(staticSnap?.psFwd),
+    psFwd: psTtm,
     evEbitda,
     opMargin,
     grossMargin,
-    roe: safeNumber(staticSnap?.roe),
+    roe,
     fcfYield,
-    pb: safeNumber(staticSnap?.pb),
+    pb,
     netDebtEbitda,
     dividendYield,
     derivedFields,

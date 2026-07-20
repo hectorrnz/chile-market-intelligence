@@ -1,12 +1,14 @@
 'use client'
 
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
 import { EconomicCalendarTable } from '@/components/macro/EconomicCalendarTable'
 import { useLang } from '@/components/providers/LangProvider'
+import { useMacroData } from '@/components/providers/MacroDataProvider'
+import { useGlobalRefresh } from '@/components/providers/useGlobalRefresh'
 import { usePersistentState } from '@/lib/usePersistentState'
 import { useEscape } from '@/lib/useEscape'
 import { getAllIndicators, fetchMacroIndicators } from '@/lib/data/macro'
@@ -78,6 +80,14 @@ export default function MacroPage() {
   // to avoid the "Live BCCh" label being shown for US/FRED-sourced data, a
   // real mislabeling bug found on this page and mirrored from the Home page's
   // already-correct per-region pattern.
+  // `macroRefreshSeq` increments whenever ANY Update Data button in the app
+  // refreshes macro data (see useGlobalRefresh / MacroDataProvider). Every
+  // fetch effect on this page keys on it, so this tab — indicators, yield
+  // curve, FX depth, release calendar — re-pulls even when the click happened
+  // on Home, Stocks, Company or Portfolio. Previously only this page's own
+  // Update button touched any of it.
+  const { refreshSeq: macroRefreshSeq } = useMacroData()
+
   const [macroAll, setMacroAll] = useState<MacroIndicator[]>(() => getAllIndicators())
   const [clStatus, setClStatus] = useState<DataSourceStatus>('static')
   const [usStatus, setUsStatus] = useState<DataSourceStatus>('static')
@@ -98,7 +108,7 @@ export default function MacroPage() {
       setMacroAll([...clData, ...usData])
     })
     return () => ac.abort()
-  }, [])
+  }, [macroRefreshSeq])
   const srcStatus = region === 'CL' ? clStatus : usStatus
   const srcProvider = region === 'CL' ? 'BCCh' : 'FRED'
 
@@ -145,9 +155,12 @@ export default function MacroPage() {
   const [liveCurve, setLiveCurve] = useState<LiveYieldCurveResult | null>(null)
   useEffect(() => {
     const ac = new AbortController()
-    fetchLiveYieldCurve(region, ac.signal).then(res => setLiveCurve(res))
+    // macroRefreshSeq > 0 means this run was triggered by an Update Data
+    // click rather than the initial mount, so bypass the provider's 6h cache
+    // — otherwise Update re-fetched and got the byte-identical cached curve.
+    fetchLiveYieldCurve(region, ac.signal, macroRefreshSeq > 0).then(res => setLiveCurve(res))
     return () => ac.abort()
-  }, [region])
+  }, [region, macroRefreshSeq])
 
   // FX Integrity Task — Macro / US forex table is Frankfurter (free, no key,
   // real 1D/YTD change), fetched lazily only when the US region is active and
@@ -159,9 +172,9 @@ export default function MacroPage() {
   useEffect(() => {
     if (region !== 'US') return
     const ac = new AbortController()
-    fetchUsForexTable(ac.signal).then(res => { if (res) setUsForex(res) })
+    fetchUsForexTable(ac.signal, macroRefreshSeq > 0).then(res => { if (res) setUsForex(res) })
     return () => ac.abort()
-  }, [region])
+  }, [region, macroRefreshSeq])
 
   // Current-month economic calendar embed (US region only — Chile has no
   // verified release-date source, see /macro/calendar's own deferred block).
@@ -173,34 +186,13 @@ export default function MacroPage() {
     const { start, end } = currentMonthRangeIso()
     fetchFredReleaseCalendarRange(start, end, ac.signal).then(res => setCalendar(res))
     return () => ac.abort()
-  }, [region])
+  }, [region, macroRefreshSeq])
 
-  // Update button: refreshes everything visible for the current region in one
-  // click. A standalone async function (not reused by any mount effect above)
-  // called only from the button's click handler — never invoked directly
-  // inside a useEffect body.
-  const doRefresh = useCallback(async () => {
-    const { start, end } = currentMonthRangeIso()
-    const [clRes, usRes, curveRes, forexRes, calRes] = await Promise.all([
-      fetchMacroIndicators('CL'),
-      fetchMacroIndicators('US'),
-      fetchLiveYieldCurve(region),
-      region === 'US' ? fetchUsForexTable() : Promise.resolve(null),
-      region === 'US' ? fetchFredReleaseCalendarRange(start, end) : Promise.resolve(null),
-    ])
-    if (clRes) setClStatus(clRes.metadata.status)
-    if (usRes) setUsStatus(usRes.metadata.status)
-    const clData = clRes?.metadata.liveAvailable && clRes.data.length
-      ? clRes.data
-      : getAllIndicators().filter(i => !i.region || i.region === 'CL')
-    const usData = usRes?.metadata.liveAvailable && usRes.data.length
-      ? usRes.data
-      : getAllIndicators().filter(i => i.region === 'US')
-    setMacroAll([...clData, ...usData])
-    setLiveCurve(curveRes)
-    if (forexRes) setUsForex(forexRes)
-    if (calRes) setCalendar(calRes)
-  }, [region])
+  // This page's Update button now goes through the same global refresh every
+  // other tab's button uses. Bumping the shared macroRefreshSeq re-runs all
+  // four fetch effects above, so there is no second, page-local copy of the
+  // fetch logic to drift out of sync with them.
+  const doRefresh = useGlobalRefresh()
 
   const catLabel: Record<string, string> = {
     Rates: t.macro.monetary, 'US Rates': t.macro.monetary,
@@ -277,28 +269,27 @@ export default function MacroPage() {
         }
       />
 
-      {/* Economic calendar — current month embedded directly; other months via
-          "View full calendar". US region shows the real FRED dates-only calendar
-          (enriched with actual/previous); Chile has no verified release-date
-          source (see /macro/calendar's own honest deferred block). */}
-      <div className="bg-surface border border-border rounded overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
-          <span className="ui-label text-muted-fg">{t.macro.calToday}</span>
-          <Link href="/macro/calendar" className="text-xs text-primary hover:underline">{t.macro.viewFull}</Link>
-        </div>
-        {region === 'CL' ? (
-          <div className="px-4 py-6 text-center text-xs text-muted-fg">{t.cal.chileUnavailable}</div>
-        ) : calendar && !calendar.configured ? (
-          <div className="px-4 py-6 text-center text-xs text-muted-fg">{t.cal.fredUnavailable}</div>
-        ) : (
-          <EconomicCalendarTable events={calendar?.events ?? []} emptyMessage={t.cal.fredEmpty} />
-        )}
-        {region === 'US' && (
+      {/* Economic calendar — US only. Chile has no verified official
+          release-date source, so rather than render an empty card with an
+          "unavailable" message on every Chile visit, the block is simply not
+          shown for that region (the deferred-source record lives in
+          docs/data_source_status.md and /macro/calendar). */}
+      {region === 'US' && (
+        <div className="bg-surface border border-border rounded overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
+            <span className="ui-label text-muted-fg">{t.macro.calToday}</span>
+            <Link href="/macro/calendar" className="text-xs text-primary hover:underline">{t.macro.viewFull}</Link>
+          </div>
+          {calendar && !calendar.configured ? (
+            <div className="px-4 py-6 text-center text-xs text-muted-fg">{t.cal.fredUnavailable}</div>
+          ) : (
+            <EconomicCalendarTable events={calendar?.events ?? []} emptyMessage={t.cal.fredEmpty} />
+          )}
           <div className="px-4 py-2 border-t border-border">
             <TableSourceFooter source="FRED (Federal Reserve Bank of St. Louis)" asOf={null} />
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* One indicators table with highlighted category bands */}
       <div className="bg-surface border border-border rounded overflow-hidden">
@@ -346,8 +337,12 @@ export default function MacroPage() {
         </div>
       </div>
 
-      {/* Fixed-income (yield curve) + FX depth */}
-      <div className="grid grid-cols-2 gap-4 items-start">
+      {/* Fixed-income (yield curve) + FX depth. Chile has no FX depth table
+          (only USD/CLP and EUR/CLP have verified live BCCh series, and both
+          already appear in the FX category of the indicators table above), so
+          the yield curve takes the full width there rather than sitting next
+          to a placeholder card explaining an absence. */}
+      <div className={`grid gap-4 items-start ${region === 'CL' ? 'grid-cols-1' : 'grid-cols-2'}`}>
         <div className="bg-surface border border-border rounded p-4">
           <div className="flex items-center justify-between gap-2 mb-1">
             <div className="ui-label text-muted-fg">{t.macro.yieldCurve}</div>
@@ -369,16 +364,7 @@ export default function MacroPage() {
           </div>
         </div>
 
-        {region === 'CL' ? (
-          // The Chile Macro-page FX depth table (static/sample data, no
-          // live/persisted backing) was removed from production per the FX
-          // integrity fix — never show a static table as if it were live.
-          // Chile's verified live BCCh FX pairs (USD/CLP, EUR/CLP) remain
-          // visible in the indicators table above (FX category).
-          <div className="bg-surface border border-border rounded p-4 flex items-center justify-center text-center">
-            <p className="text-xs text-muted-fg max-w-xs">{t.macro.fxClDepthRemoved}</p>
-          </div>
-        ) : (
+        {region === 'US' && (
           <div className="bg-surface border border-border rounded overflow-hidden">
             <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-2">
               <span className="ui-label text-muted-fg">{t.macro.fxDepth}</span>

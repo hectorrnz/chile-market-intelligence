@@ -145,6 +145,31 @@ describe('classifyPerformance', () => {
     assert.equal(m.fallbackReason, 'supabase_unavailable')
   })
 
+  it('treats a live Yahoo Finance fetch identically to persisted — real fetched data either way', () => {
+    const resp: StockHistoryResponse = {
+      data: [
+        { ticker: 'SQM-B', date: '2026-07-01', open: null, high: null, low: null, close: 100, volume: null, source: 'Yahoo Finance', provider: 'yahoo-finance' },
+        { ticker: 'SQM-B', date: '2026-07-02', open: null, high: null, low: null, close: 105, volume: null, source: 'Yahoo Finance', provider: 'yahoo-finance' },
+      ],
+      metadata: meta({ status: 'live' }),
+    }
+    const m = classifyPerformance(resp)
+    assert.equal(m.source, 'persisted')
+    assert.ok(m.value !== null && Math.abs(m.value - 5) < 1e-9)
+    assert.equal(m.fallbackReason, undefined)
+  })
+
+  it('flags insufficient_supabase_history when a live status has <2 points', () => {
+    const resp: StockHistoryResponse = {
+      data: [{ ticker: 'SQM-B', date: '2026-07-02', open: null, high: null, low: null, close: 100, volume: null, source: 'Yahoo Finance', provider: 'yahoo-finance' }],
+      metadata: meta({ status: 'live' }),
+    }
+    const m = classifyPerformance(resp)
+    assert.equal(m.value, null)
+    assert.equal(m.source, 'unavailable')
+    assert.equal(m.fallbackReason, 'insufficient_supabase_history')
+  })
+
   it('never returns NaN/Infinity even with a zero first-value edge case', () => {
     const resp: StockHistoryResponse = {
       data: [

@@ -7,6 +7,7 @@ import assert from 'node:assert/strict'
 
 import {
   resolveHistoryDateRange,
+  resolveLiveHistoryDateRange,
   isSufficientMarketHistory,
   normalizeStockSnapshotsToHistoryPoints,
   HISTORY_MIN_POINTS,
@@ -89,6 +90,49 @@ describe('resolveHistoryDateRange', () => {
     for (const tf of timeframes) {
       const r = resolveHistoryDateRange(tf, today)
       assert.ok(r, `expected range for ${tf}`)
+      assert.ok(r.from <= r.to, `from should be <= to for ${tf}`)
+    }
+  })
+})
+
+// ─── resolveLiveHistoryDateRange ───────────────────────────────────────────────
+// Unlike resolveHistoryDateRange, this never returns null — a live Yahoo
+// Finance fetch has real years of history for any listed ticker, so 3Y/5Y
+// resolve to a real range too.
+
+describe('resolveLiveHistoryDateRange', () => {
+  const today = '2026-07-01'
+
+  it('never returns null, for any timeframe', () => {
+    const timeframes = ['1D', '5D', '1M', 'MTD', 'YTD', '1Y', '3Y', '5Y'] as const
+    for (const tf of timeframes) {
+      assert.ok(resolveLiveHistoryDateRange(tf, today), `expected a range for ${tf}`)
+    }
+  })
+
+  it('3Y range starts a little over 3 years earlier', () => {
+    const r = resolveLiveHistoryDateRange('3Y', today)
+    assert.equal(r.to, today)
+    assert.equal(r.from, '2023-06-22')
+  })
+
+  it('5Y range starts a little over 5 years earlier', () => {
+    const r = resolveLiveHistoryDateRange('5Y', today)
+    assert.equal(r.to, today)
+    assert.equal(r.from, '2021-06-17')
+  })
+
+  it('short timeframes (1D..1Y) match resolveHistoryDateRange exactly', () => {
+    const timeframes = ['1D', '5D', '1M', 'MTD', 'YTD', '1Y'] as const
+    for (const tf of timeframes) {
+      assert.deepEqual(resolveLiveHistoryDateRange(tf, today), resolveHistoryDateRange(tf, today))
+    }
+  })
+
+  it('from < to for every timeframe', () => {
+    const timeframes = ['1D', '5D', '1M', 'MTD', 'YTD', '1Y', '3Y', '5Y'] as const
+    for (const tf of timeframes) {
+      const r = resolveLiveHistoryDateRange(tf, today)
       assert.ok(r.from <= r.to, `from should be <= to for ${tf}`)
     }
   })

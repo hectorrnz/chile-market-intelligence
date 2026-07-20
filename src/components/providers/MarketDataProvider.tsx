@@ -25,6 +25,12 @@ interface MarketDataContextValue {
    *  call from multiple pages concurrently — a refresh already in flight is
    *  reused rather than duplicated. */
   refresh: () => Promise<void>
+  /** Increments once per successful refresh. Pages derive "did the data just
+   *  change?" by comparing this against their own last-seen value, rather
+   *  than consuming a mutable flag — a consumer must never clear a flag on
+   *  this provider during its own render (React forbids updating a parent
+   *  while rendering a child, which silently broke the Stocks auto-sort). */
+  refreshSeq: number
 }
 
 const MarketDataContext = createContext<MarketDataContextValue | null>(null)
@@ -32,6 +38,7 @@ const MarketDataContext = createContext<MarketDataContextValue | null>(null)
 export function MarketDataProvider({ children }: { children: React.ReactNode }) {
   const [live, setLive] = useState<LiveSnapshot | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [refreshSeq, setRefreshSeq] = useState(0)
   const inFlight = useRef<Promise<void> | null>(null)
 
   const refresh = useCallback(() => {
@@ -41,6 +48,7 @@ export function MarketDataProvider({ children }: { children: React.ReactNode }) 
       .then((data) => {
         if (!data) throw new Error('live snapshot unavailable')
         setLive(data)
+        setRefreshSeq((n) => n + 1)
       })
       .finally(() => {
         setRefreshing(false)
@@ -56,7 +64,7 @@ export function MarketDataProvider({ children }: { children: React.ReactNode }) 
   useEffect(() => { refresh().catch(() => {}) }, [refresh])
 
   return (
-    <MarketDataContext.Provider value={{ live, refreshing, refresh }}>
+    <MarketDataContext.Provider value={{ live, refreshing, refresh, refreshSeq }}>
       {children}
     </MarketDataContext.Provider>
   )

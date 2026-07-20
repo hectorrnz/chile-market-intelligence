@@ -70,10 +70,24 @@ describe('every market-data page consumes the shared context, not its own local 
 })
 
 describe('the shared Update always refreshes the shared market snapshot', () => {
-  it('every UpdateDataButton onRefresh calls refresh() (directly or via a wrapping doRefresh)', () => {
+  it('every UpdateDataButton onRefresh routes through useGlobalRefresh', () => {
+    // Every page's Update now refreshes BOTH live domains (market snapshot and
+    // macro overlay) via useGlobalRefresh, so the user never has to find the
+    // "right" tab's button — previously Update on Stocks left Macro stale.
     for (const page of PAGES) {
       const src = readFileSync(page, 'utf8')
-      assert.ok(/\brefresh(?:Live)?\(\)/.test(src), `${page} onRefresh must call the shared refresh`)
+      assert.ok(
+        src.includes('useGlobalRefresh()'),
+        `${page} must obtain its refresh from useGlobalRefresh`,
+      )
     }
+  })
+
+  it('useGlobalRefresh fans out to both providers and only reports failure if both fail', () => {
+    const hook = readFileSync(join(ROOT, 'src/components/providers/useGlobalRefresh.ts'), 'utf8')
+    assert.ok(hook.includes('refreshMarket()'))
+    assert.ok(hook.includes('refreshMacro()'))
+    assert.ok(hook.includes('allSettled'), 'one domain failing must not abort the other')
+    assert.ok(hook.includes("results.every(r => r.status === 'rejected')"))
   })
 })

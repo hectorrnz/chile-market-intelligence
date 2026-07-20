@@ -12,7 +12,7 @@ import { getAllCompanies } from '@/lib/data/companies'
 import { getAllSnapshots } from '@/lib/data/stocks'
 import { getStockSeriesByPeriod } from '@/lib/data/stockHistory'
 import { totalAndAnnual, tfStart } from '@/lib/returns'
-import { formatCLP, formatLargeCLP, formatFx, formatPct, changeColor } from '@/lib/formatters'
+import { formatCLP, formatFx, formatPct, changeColor } from '@/lib/formatters'
 import { exportCSV } from '@/lib/export'
 import { fetchCompareData } from '@/lib/data/compareData'
 import { fetchCompareHistory, type CompareHistorySeries } from '@/lib/data/compareHistory'
@@ -25,7 +25,6 @@ const TF: CmpTf[] = ['1M', 'YTD', '1Y', '3Y', '5Y']
 // Institutional default palette — 6 distinct hues (no purple, no near-duplicates)
 const PRESET = ['#004A64', '#1A6630', '#8B0E04', '#B07A12', '#0E7FB8', '#5B6770']
 const SWATCHES = ['#004A64', '#7399C6', '#0E7FB8', '#1A6630', '#3DAA60', '#8B0E04', '#B07A12', '#5B6770', '#231F20', '#88CBDF']
-const BENCH_COLOR = 'var(--muted)'
 const DATA_END = '2025-06-17'
 const DATA_START = '2020-06-01'
 
@@ -42,7 +41,12 @@ export default function ComparePage() {
   const [slots, setSlots] = usePersistentState<string[]>('cmi.compareSlots', ['BSANTANDER', 'SQM-B', 'FALABELLA', '', '', ''])
   const [colors, setColors] = usePersistentState<string[]>('cmi.compareColors', [...PRESET])
   const [diffRef, setDiffRef] = usePersistentState<string>('cmi.compareDiffRef', '0')
-  const [benchmark, setBenchmark] = usePersistentState<boolean>('cmi.compareBenchmark', false)
+  // No IPSA benchmark: Yahoo Finance serves quote/metadata for ^IPSA but
+  // returns ZERO historical chart bars for it under every symbol variant
+  // tried (^IPSA, ^SPIPSA, IPSA.SN, ^SPCLXIPSA), and the persisted
+  // stock_snapshots universe only ever covers the 25 tracked equities. The
+  // static IPSA series that used to back this was sample data, so the toggle
+  // was removed rather than left as a fabricated benchmark line.
   const [tf, setTf] = usePersistentState<CmpTf>('cmi.compareTf', '1Y')
   const [period, setPeriod] = usePersistentState<Period>('cmi.comparePeriod', 'W')
   const [cStart, setCStart] = usePersistentState<string>('cmi.compareStart', '')
@@ -98,13 +102,13 @@ export default function ComparePage() {
   const end = usingCustom ? cEnd : DATA_END
   const start = usingCustom ? cStart : tfStart(end, tf)
 
-  // 2026-07-20 — persisted returns history (accumulated Supabase daily
-  // snapshots) where the selected timeframe is genuinely covered — see
-  // resolveCompareHistory.ts. A custom date range keeps the static path
-  // (persisted history is only ever queried for the 5 standard TF buttons);
-  // Period (Weekly/Monthly) also stays on the static path when persisted
-  // data is used, since ~weeks of daily history isn't meaningful to
-  // downsample yet — this upgrades automatically as more history accumulates.
+  // 2026-07-20 — real historical returns (live Yahoo Finance fetch, with
+  // Supabase-persisted-accumulation and static as resilience fallbacks — see
+  // resolveCompareHistory.ts) where the selected timeframe is genuinely
+  // covered. A custom date range keeps the static path (this history is only
+  // ever queried for the 5 standard TF buttons); Period (Weekly/Monthly) also
+  // stays on the static path when live/persisted data is used, since the
+  // fetched series is daily and downsampling it isn't wired up yet.
   const [persistedHistory, setPersistedHistory] = useState<Record<string, CompareHistorySeries>>({})
   useEffect(() => {
     // Stale persistedHistory from a prior selection is harmless to leave in
@@ -119,50 +123,45 @@ export default function ComparePage() {
     return () => { mounted = false }
   }, [validTickerKey, tf, usingCustom])
 
+  const isFetched = (s: CompareHistorySeries | undefined) => s?.status === 'live' || s?.status === 'persisted'
   const seriesFor = (tk: string) => {
-    const persisted = persistedHistory[tk]
-    if (!usingCustom && persisted?.status === 'persisted' && persisted.points.length >= 2) return persisted.points
+    const fetched = persistedHistory[tk]
+    if (!usingCustom && isFetched(fetched) && fetched!.points.length >= 2) return fetched!.points
     return getStockSeriesByPeriod(tk, period).filter(p => p.date >= start && p.date <= end).map(p => ({ date: p.date, value: p.price }))
   }
-  const sourceFor = (tk: string): 'persisted' | 'static' =>
-    !usingCustom && persistedHistory[tk]?.status === 'persisted' ? 'persisted' : 'static'
+  const sourceFor = (tk: string): 'live' | 'persisted' | 'static' => {
+    if (usingCustom) return 'static'
+    const status = persistedHistory[tk]?.status
+    return status === 'live' || status === 'persisted' ? status : 'static'
+  }
 
   const rowData = valids.map(({ slot, ticker }) => {
     const data = seriesFor(ticker)
     const m = totalAndAnnual(data)
     return { slot, ticker, color: colorForSlot(slot), data, tr: m?.tr ?? null, annual: m?.annual ?? null, source: sourceFor(ticker) }
   })
-  // The IPSA benchmark is never in the persisted stock_snapshots universe
-  // (confirmed live: only the 25 tracked equities are snapshotted) — always
-  // the static series.
-  const ipsaData = benchmark ? getStockSeriesByPeriod('IPSA', period).filter(p => p.date >= start && p.date <= end).map(p => ({ date: p.date, value: p.price })) : []
-  const ipsaM = benchmark ? totalAndAnnual(ipsaData) : null
-  const returnsStatus: 'persisted' | 'static' = rowData.some(r => r.source === 'persisted') ? 'persisted' : 'static'
+  const returnsStatus: 'live' | 'persisted' | 'static' =
+    rowData.some(r => r.source === 'live') ? 'live'
+    : rowData.some(r => r.source === 'persisted') ? 'persisted'
+    : 'static'
   const returnsAsOf = rowData
     .map(r => persistedHistory[r.ticker]?.asOfDate)
     .filter((d): d is string => !!d)
     .reduce((max, d) => (!max || d > max ? d : max), '') || null
-  // Persisted history was genuinely attempted for this timeframe but doesn't
-  // cover it yet (as opposed to never having been attempted at all) — say so
-  // rather than leave a bare "Static sample" that reads as permanent.
+  // History was genuinely attempted for this timeframe but doesn't cover it
+  // yet (as opposed to never having been attempted at all) — say so rather
+  // than leave a bare "Static sample" that reads as permanent.
   const historyAccumulating = !usingCustom && returnsStatus === 'static'
     && valids.some(({ ticker }) => persistedHistory[ticker]?.insufficientHistoryReason)
 
-  const refIsBench = diffRef === 'bench' && benchmark && !!ipsaM
-  let refTR: number | null = null
-  let refSlot = -1
-  if (refIsBench) refTR = ipsaM!.tr
-  else {
-    const slotIdx = diffRef === 'bench' ? -1 : parseInt(diffRef, 10)
-    const ref = rowData.find(r => r.slot === slotIdx) ?? rowData[0]
-    refTR = ref?.tr ?? null
-    refSlot = ref?.slot ?? -1
-  }
+  const slotIdx = parseInt(diffRef, 10)
+  const ref = rowData.find(r => r.slot === slotIdx) ?? rowData[0]
+  const refTR: number | null = ref?.tr ?? null
+  const refSlot = ref?.slot ?? -1
 
-  const chartSeries = [
-    ...rowData.filter(r => r.data.length >= 2).map(r => ({ ticker: r.ticker, color: r.color, data: r.data })),
-    ...(benchmark && ipsaData.length >= 2 ? [{ ticker: 'IPSA', color: BENCH_COLOR, dashed: true, data: ipsaData }] : []),
-  ]
+  const chartSeries = rowData
+    .filter(r => r.data.length >= 2)
+    .map(r => ({ ticker: r.ticker, color: r.color, data: r.data }))
 
   const setSlot = (i: number, v: string) => { const next = [...s6]; next[i] = v.toUpperCase().slice(0, 12); setSlots(next) }
   const setColor = (i: number, c: string) => { const next = [...c6]; next[i] = c; setColors(next) }
@@ -204,13 +203,16 @@ export default function ComparePage() {
     { label: t.company.kpis.lastPrice, dir: 0, get: e => num(e?.latestPrice), fmt: v => formatFx(v, v < 1000 ? 2 : 0) },
     { label: `${t.home.marketCap} (Bn)`, dir: 0, get: e => { const v = num(e?.marketCapCLP); return v != null ? v / 1000 : null }, fmt: v => formatCLP(v, 1) },
     { label: t.company.val.peFwd, key: 'pe', dir: -1, get: (e, s) => num(e?.fundamentals.pe ?? s?.peFwd), fmt: fmtX },
-    { label: t.company.val.psFwd, key: 'psFwd', dir: -1, get: (e, s) => num(e?.fundamentals.psFwd ?? s?.psFwd), fmt: fmtX },
+    // P/S, ROE and P/B read ONLY the resolved (live Yahoo) value — no static
+    // snapshot fallback. The static figures are fabricated sample data; an
+    // honest "—" is correct when Yahoo has nothing for a ticker.
+    { label: t.compare.psTtm, key: 'psFwd', dir: -1, get: e => num(e?.fundamentals.psFwd), fmt: fmtX },
     { label: t.company.val.evEbitda, key: 'evEbitda', dir: -1, get: (e, s) => num(e?.fundamentals.evEbitda ?? s?.evEbitda), fmt: fmtX },
     { label: t.company.val.opMargin, key: 'opMargin', dir: 1, get: (e, s) => num(e?.fundamentals.opMargin ?? s?.opMargin), fmt: fmtPctCell },
     { label: t.company.val.grossMargin, key: 'grossMargin', dir: 1, get: (e, s) => num(e?.fundamentals.grossMargin ?? s?.grossMargin), fmt: fmtPctCell },
-    { label: t.company.val.roe, key: 'roe', dir: 1, get: (e, s) => num(e?.fundamentals.roe ?? s?.roe), fmt: fmtPctCell },
+    { label: t.company.val.roe, key: 'roe', dir: 1, get: e => num(e?.fundamentals.roe), fmt: fmtPctCell },
     { label: t.company.val.fcfYield, key: 'fcfYield', dir: 1, get: (e, s) => num(e?.fundamentals.fcfYield ?? s?.fcfYield), fmt: fmtPctCell },
-    { label: t.company.val.pb, key: 'pb', dir: -1, get: (e, s) => num(e?.fundamentals.pb ?? s?.pb), fmt: fmtX },
+    { label: t.company.val.pb, key: 'pb', dir: -1, get: e => num(e?.fundamentals.pb), fmt: fmtX },
     { label: t.company.val.netDebtEbitda, key: 'netDebtEbitda', dir: -1, get: (e, s) => num(e?.fundamentals.netDebtEbitda ?? s?.netDebtEbitda), fmt: fmtX },
     { label: t.company.kpis.divYield, key: 'dividendYield', dir: 1, get: (e, s) => num(e?.fundamentals.dividendYield ?? s?.dividendYield), fmt: fmtPctCell },
   ]
@@ -257,7 +259,7 @@ export default function ComparePage() {
                 <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.compare.perf1m}</th>
                 <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.compare.perfYtd}</th>
                 <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.compare.perf1y}</th>
-                <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.stocks.cols.marketCap}</th>
+                <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{`${t.home.marketCap} (Bn)`}</th>
                 <th className="text-left py-2 px-2 pr-4 ui-table-header text-muted-fg">{t.common.sector}</th>
               </tr>
             </thead>
@@ -279,7 +281,11 @@ export default function ComparePage() {
                     <td className={`py-1.5 px-2 text-right ui-number ${p1m.className}`} title={p1m.title}>{p1m.label}</td>
                     <td className={`py-1.5 px-2 text-right ui-number ${pytd.className}`} title={pytd.title}>{pytd.label}</td>
                     <td className={`py-1.5 px-2 text-right ui-number ${p1y.className}`} title={p1y.title}>{p1y.label}</td>
-                    <td className="py-1.5 px-2 text-right ui-number text-foreground">{entry?.marketCapCLP != null ? formatLargeCLP(entry.marketCapCLP) : '—'}</td>
+                    {/* Same billions treatment as the Fundamentals table's
+                        "Mkt Cap (Bn)" row — the two sit on one screen and
+                        previously disagreed (4.5 MM here vs 4.499,9 there for
+                        the identical figure). */}
+                    <td className="py-1.5 px-2 text-right ui-number text-foreground">{entry?.marketCapCLP != null ? formatCLP(entry.marketCapCLP / 1000, 1) : '—'}</td>
                     <td className="py-1.5 px-2 pr-4 text-muted-fg whitespace-nowrap">{entry?.sector ?? compMap[ticker]?.sector ?? '—'}</td>
                   </tr>
                 )
@@ -303,10 +309,6 @@ export default function ComparePage() {
               {!usingCustom && <MarketDataSourceBadge status={returnsStatus} />}
             </div>
             <div className="flex items-center gap-3">
-              <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
-                <input type="checkbox" checked={benchmark} onChange={e => setBenchmark(e.target.checked)} className="accent-[var(--primary)]" />
-                <span className="text-foreground">{t.compare.addBenchmark}</span>
-              </label>
               <button onClick={() => setSettingsOpen(true)} className="flex items-center gap-1.5 h-6 px-2 rounded border border-border bg-surface-2 text-xs text-muted-fg hover:text-foreground hover:border-accent transition-colors">
                 <span>⚙</span><span>{t.compare.settings}</span>
               </button>
@@ -326,7 +328,7 @@ export default function ComparePage() {
               {s6.map((val, i) => {
                 const isValid = valids.some(v => v.slot === i)
                 const r = isValid ? rowData.find(x => x.slot === i) : undefined
-                const isRef = !refIsBench && r && r.slot === refSlot
+                const isRef = r && r.slot === refSlot
                 const diff = r && r.tr != null && refTR != null && !isRef ? r.tr - refTR : null
                 return (
                   <tr key={i} className="border-b border-border last:border-0">
@@ -338,30 +340,16 @@ export default function ComparePage() {
                           className="bg-transparent outline-none font-mono text-primary placeholder:text-muted-fg placeholder:font-sans w-28 border-b border-transparent focus:border-accent" />
                       </div>
                     </td>
-                    <td className={`py-1.5 px-2 text-right ui-number ${colored(r?.tr ?? null)}`} title={r?.source === 'persisted' ? t.compare.marketSource : undefined}>{r ? fmtPct(r.tr) : ''}</td>
+                    <td className={`py-1.5 px-2 text-right ui-number ${colored(r?.tr ?? null)}`} title={r?.source === 'live' || r?.source === 'persisted' ? t.compare.marketSource : undefined}>{r ? fmtPct(r.tr) : ''}</td>
                     <td className={`py-1.5 px-2 text-right ui-number ${isRef ? 'text-muted-fg' : colored(diff)}`}>{isValid ? (isRef ? '--' : fmtPct(diff)) : ''}</td>
                     <td className={`py-1.5 px-2 pr-4 text-right ui-number ${colored(r?.annual ?? null)}`}>{r ? fmtPct(r.annual) : ''}</td>
                   </tr>
                 )
               })}
-              {benchmark && (
-                <tr className="border-t-2 border-border-strong bg-surface-2">
-                  <td className="py-1.5 pl-4 pr-1 text-muted-fg">★</td>
-                  <td className="py-1.5 px-2">
-                    <div className="flex items-center gap-1.5">
-                      <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: BENCH_COLOR }} />
-                      <span className="font-mono text-foreground">IPSA</span>
-                    </div>
-                  </td>
-                  <td className={`py-1.5 px-2 text-right ui-number ${colored(ipsaM?.tr ?? null)}`}>{fmtPct(ipsaM?.tr ?? null)}</td>
-                  <td className="py-1.5 px-2 text-right ui-number text-muted-fg">{refIsBench ? '--' : fmtPct(ipsaM && refTR != null ? ipsaM.tr - refTR : null)}</td>
-                  <td className={`py-1.5 px-2 pr-4 text-right ui-number ${colored(ipsaM?.annual ?? null)}`}>{fmtPct(ipsaM?.annual ?? null)}</td>
-                </tr>
-              )}
             </tbody>
           </table>
           <div className="px-4 py-2 border-t border-border">
-            <TableSourceFooter source={returnsStatus === 'persisted' ? t.compare.marketSource : t.compare.source} asOf={returnsAsOf} />
+            <TableSourceFooter source={returnsStatus !== 'static' ? t.compare.marketSource : t.compare.source} asOf={returnsAsOf} />
             {historyAccumulating && <p className="text-xs text-muted-fg mt-0.5">{t.compare.historyAccumulating}</p>}
           </div>
         </div>
@@ -463,7 +451,7 @@ export default function ComparePage() {
           <div className="bg-surface border border-border rounded p-4">
             <div className="ui-label text-muted-fg mb-3">{t.compare.perfTitle}</div>
             <CompareChart series={chartSeries} height={340} showGrid={showGrid} lineWidth={lineW} legend={showLegend} />
-            <TableSourceFooter source={returnsStatus === 'persisted' ? t.compare.marketSource : t.compare.source} asOf={returnsAsOf} className="mt-2" />
+            <TableSourceFooter source={returnsStatus !== 'static' ? t.compare.marketSource : t.compare.source} asOf={returnsAsOf} className="mt-2" />
             {historyAccumulating && <p className="text-xs text-muted-fg mt-0.5">{t.compare.historyAccumulating}</p>}
           </div>
         </>
@@ -485,7 +473,6 @@ export default function ComparePage() {
                     const tk = norm(s6[i]); const valid = !!compMap[tk] && valids.some(v => v.slot === i)
                     return <option key={i} value={String(i)} disabled={!valid}>{`${t.compare.security} ${i + 1}${valid ? ` · ${tk}` : ''}`}</option>
                   })}
-                  {benchmark && <option value="bench">IPSA (Benchmark)</option>}
                 </select>
               </div>
               <div>

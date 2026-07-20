@@ -506,6 +506,74 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Most recent work (2026-07-20, fifth pass) — nine reported items; three turned out to be real
+data-correctness bugs rather than the cosmetic issues reported.**
+
+1. **Stocks still not sorting by Day Chg. after an Update on another tab (third attempt).** The
+   fourth-pass fix used a one-shot `stocksNeedsSort` flag on `MarketDataProvider`, consumed by the
+   Stocks page during render — which required setting state on a **parent while rendering a child**,
+   something React forbids, so it silently never applied on a real client-side navigation (the earlier
+   browser check only passed because it used a forced full reload, which remounts the provider). A flag
+   is also structurally unable to cover the reported case: when the refresh happens on Home there is no
+   mounted Stocks component to receive it. Replaced with a **derived** sort — `userSort` is null until
+   the user clicks a header, and while null the table falls back to Day Chg. desc whenever live data is
+   on screen; a refresh landing while the page is open clears `userSort` via the render-time
+   previous-value pattern on **self** state only. Provider now exposes a monotonic `refreshSeq` instead
+   of a consumable flag. Verified by clicking Update on Home then navigating via the sidebar link.
+2. **IPSA removed from Compare.** Yahoo serves quote/metadata for `^IPSA` but returns **zero** historical
+   chart bars under every symbol variant tried (`^IPSA`, `^SPIPSA`, `IPSA.SN`, `^SPCLXIPSA`); persisted
+   `stock_snapshots` only ever covers the 25 tracked equities. Home's "IPSA YTD" is a **hardcoded static
+   value** (the live overlay only replaces `value`/`dayChangePct`, never YTD), so there was no real
+   source to reuse. The benchmark toggle, returns row, chart series and diff-reference option are all
+   gone rather than left plotting sample data. With it gone every returns row resolves live, so the
+   "Static" label no longer appears (item 5 resolved by construction).
+3. **P/S, ROE and P/B are now live** via `yahooRatiosProvider.ts` (Yahoo `quoteSummary`). **Currency
+   correction is the reason this is a provider and not a passthrough**: Yahoo divides the CLP quote price
+   by a per-share figure from USD-reported financials for SQM-B, CAP, ENELAM, COLBUN and LTM, inflating
+   their ratios by the USD/CLP rate (SQM-B `priceToBook` 3096.9 → corrected 3.3, `P/S` 3419.6 → 3.7).
+   Price-based ratios are divided by the quote/financial FX rate; **ROE is never corrected** (both
+   operands come from the same statements, so the currency cancels). An unavailable rate yields null, never
+   the uncorrected figure. These three no longer fall back to the fabricated static snapshot — live or `—`.
+   P/S relabeled **TTM** (no free forward sales estimate exists; the old "P/S (fwd)" label was wrong).
+4. **Footer audit.** Home's macro card carried a six-source chain
+   ("Banco Central de Chile · INE · LME (Chile) · Federal Reserve · BLS · FRED (US)"). That card is really
+   two stacked tables from two providers, so it now has **one plain-source footer per band** with its own
+   as-of, matching the per-band badges. Deleted the dead `chartNote` keys (unused, citing "Phase 3") and
+   the orphaned `quarterly`/`fxClDepthRemoved` keys. Compare's Market Data market cap switched to the same
+   billions treatment as its Fundamentals row (they disagreed on screen: "4.5 MM" vs "4.499,9").
+5. **Macro not refreshing on Update — two independent root causes.** (a) Each page's Update refreshed only
+   the domain that page read, so Update on Stocks never touched macro. New `useGlobalRefresh()` fans out to
+   both providers (`Promise.allSettled`; only reports failure if **both** fail), and every Update button on
+   every tab now uses it. `MacroDataProvider` gained a `refreshSeq` that all four Macro fetch effects key
+   on. (b) **The yield curve and US FX table have 6-hour server-side caches**, so even a correct re-fetch
+   returned the byte-identical cached payload and the chart visibly never changed — exactly the symptom
+   reported ("check the yield curve for example"). Both resolvers now accept `force`, which skips the cache
+   **read** only (the write still happens, so ordinary navigation stays cached); routes read `?force=1` and
+   the Macro page sends it only when `macroRefreshSeq > 0`, i.e. a real Update rather than first mount.
+   Verified: 1.92s cold → 0.02s cached → 0.19s forced refetch.
+6. **Macro Chile cleanup** — the economic-calendar block (which only ever rendered an "unavailable"
+   message for Chile) and the FX-depth placeholder card ("A broader Chilean FX depth table is not shown
+   here…") are both gone; the yield curve now takes the full width on Chile.
+7. **Charting: Quarterly removed** (`Freq = 'TTM' | 'A'`). Issuers filing a native FY report fold Q4 into
+   it, so a quarterly view showed a gap at Q4 with the value in a separate FY bar. New storage key
+   `cmi.gfFreq2` (a persisted `'Q'` is no longer a valid member); `effFreq` derives Annual when a ticker
+   has no quarterly history, so TTM can never render an empty chart.
+8. **A real TTM bug found while testing item 7**: `qIdx` sorts a native FY row at year-end, i.e. adjacent
+   to Q4 of the same year, so the rolling 4-record window summed a **full year together with individual
+   quarters** — ITAUCL's TTM revenue decayed 4,59 B → 3,47 B → 2,34 B → 1,16 B and produced a nonsensical
+   "FY'25 TTM" point. TTM windows now filter to quarterly records only (1,16 B → 1,53 B → 1,58 B, stable).
+9. **A second real bug behind the "ugly axis"**: `resolveFinancials` returned values at each source's own
+   raw scale while Charting's `METRICS` table declares them `unit: 'MM'` — so every amount rendered
+   **1,000,000× too large** ("1.463.576.000.000 MM"). Now normalized via `toMillionsClp` (reads each row's
+   own `scale` column; falls back to a source_type rule for metrics), with per-share/percentage fields
+   deliberately left unscaled. New `formatCompactMM()` renders magnitude-adaptive units (`1,46 B` /
+   `153,3 MM`) on the axis, tooltip and Underlying Data table so all three agree; axis gutter widened
+   56 → 76px (labels were being clipped, which is what made them look truncated).
+
+Suite: 1606 → 1630 (`tests/thirdRoundFixes.test.ts`) · lint 0 · build 0 errors.
+
+---
+
 **Most recent work (2026-07-20, fourth pass) — a follow-up batch of six items on top of the third pass below.**
 
 1. **Structured Notes list page** — removed the SectionHeader subtitle ("Upload a term sheet — terms are

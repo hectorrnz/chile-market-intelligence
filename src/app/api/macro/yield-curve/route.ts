@@ -20,7 +20,10 @@ export async function GET(req: Request) {
   }
 
   try {
-    const result = await resolveLiveYieldCurve(region)
+    // ?force=1 comes only from an explicit Update Data click — see
+    // resolveLiveYieldCurve's note on why the 6h cache must be bypassed there.
+    const force = searchParams.get('force') === '1'
+    const result = await resolveLiveYieldCurve(region, { force })
     return NextResponse.json(result)
   } catch {
     return NextResponse.json(

@@ -67,11 +67,47 @@ describe('2. MacroDataProvider — Home macro/rates/FX status survives navigatio
 describe('3. Stocks — auto-sorts by Day Chg. (desc) after Update', () => {
   const src = read('src/app/stocks/page.tsx')
 
-  it('doRefresh sets sortKey to dayChangePct and sortDir to desc', () => {
-    const start = src.indexOf('const doRefresh = useCallback')
-    const body = src.slice(start, start + 400)
-    assert.ok(body.includes("setSortKey('dayChangePct')"))
-    assert.ok(body.includes("setSortDir('desc')"))
+  // Third attempt at this. A one-shot flag on the provider could not work:
+  // consuming it required the Stocks page to clear parent state during its own
+  // render, which React forbids (updating a parent while rendering a child) —
+  // so the sort silently never applied on a real client-side navigation. The
+  // sort is now DERIVED from live data + a null-until-clicked userSort, which
+  // also handles the case a flag structurally cannot: a refresh that happened
+  // on another tab before Stocks was ever mounted.
+  it('derives the sort instead of imperatively setting it', () => {
+    assert.ok(src.includes('userSort'))
+    assert.ok(src.includes("const sortKey: SortKey = userSort?.key ?? (live ? 'dayChangePct' : 'marketCapCLP')"))
+    assert.ok(src.includes("const sortDir: 'asc' | 'desc' = userSort?.dir ?? 'desc'"))
+  })
+
+  it('never sets state on the provider during render — only on itself', () => {
+    assert.ok(!src.includes('clearStocksSortFlag'), 'the cross-component render-phase update must be gone')
+    const start = src.indexOf('if (refreshSeq !== seenSeq)')
+    assert.ok(start >= 0, 'must use the render-time previous-value pattern on self-state')
+    const body = src.slice(start, start + 160)
+    assert.ok(body.includes('setSeenSeq(refreshSeq)'))
+    assert.ok(body.includes('setUserSort(null)'), 'a fresh refresh drops any manual sort')
+  })
+
+  it('a refresh from ANY page leaves Stocks sorted by Day Chg. desc once live data is present', () => {
+    // With userSort null (its state on mount, and after any refresh) and live
+    // data on screen, the derived sortKey is dayChangePct/desc regardless of
+    // which page triggered the refresh or whether Stocks was mounted for it.
+    assert.ok(src.includes("live ? 'dayChangePct' : 'marketCapCLP'"))
+  })
+})
+
+describe('3b. MarketDataProvider — exposes a refresh sequence, not a consumable flag', () => {
+  const src = read('src/components/providers/MarketDataProvider.tsx')
+
+  it('increments refreshSeq on every successful refresh', () => {
+    assert.ok(src.includes('setRefreshSeq((n) => n + 1)'))
+  })
+
+  it('exposes refreshSeq and no longer exposes a mutable sort flag', () => {
+    assert.ok(src.includes('refreshSeq'))
+    assert.ok(!src.includes('stocksNeedsSort'))
+    assert.ok(!src.includes('clearStocksSortFlag'))
   })
 })
 

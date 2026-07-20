@@ -13,9 +13,12 @@ import { resolveUsForexTable } from '@/lib/providers/frankfurterFxProvider'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const result = await resolveUsForexTable()
+    // ?force=1 comes only from an explicit Update Data click — see
+    // resolveUsForexTable's note on why the 6h cache must be bypassed there.
+    const force = new URL(req.url).searchParams.get('force') === '1'
+    const result = await resolveUsForexTable({ force })
     return NextResponse.json(result)
   } catch {
     return NextResponse.json(

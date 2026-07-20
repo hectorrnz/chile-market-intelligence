@@ -28,6 +28,11 @@ interface MacroDataContextValue {
   usStatus: DataSourceStatus
   refreshing: boolean
   refresh: () => Promise<void>
+  /** Increments once per successful refresh. The Macro page owns extra data
+   *  this provider doesn't hold (yield curve, US forex depth, release
+   *  calendar); it keys its own fetch effects on this so ANY Update button in
+   *  the app — not just the one on the Macro page — re-pulls them. */
+  refreshSeq: number
 }
 
 const MacroDataContext = createContext<MacroDataContextValue | null>(null)
@@ -37,6 +42,7 @@ export function MacroDataProvider({ children }: { children: React.ReactNode }) {
   const [clStatus, setClStatus] = useState<DataSourceStatus>('static')
   const [usStatus, setUsStatus] = useState<DataSourceStatus>('static')
   const [refreshing, setRefreshing] = useState(false)
+  const [refreshSeq, setRefreshSeq] = useState(0)
   const inFlight = useRef<Promise<void> | null>(null)
 
   const refresh = useCallback(() => {
@@ -53,6 +59,7 @@ export function MacroDataProvider({ children }: { children: React.ReactNode }) {
           setLiveIndicatorMap(prev => ({ ...prev, ...Object.fromEntries(usRes.data.map(i => [i.id, i])) }))
         }
         if (!clRes && !usRes) throw new Error('macro indicators unavailable')
+        setRefreshSeq(n => n + 1)
       })
       .finally(() => {
         setRefreshing(false)
@@ -65,7 +72,7 @@ export function MacroDataProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => { refresh().catch(() => {}) }, [refresh])
 
   return (
-    <MacroDataContext.Provider value={{ liveIndicatorMap, clStatus, usStatus, refreshing, refresh }}>
+    <MacroDataContext.Provider value={{ liveIndicatorMap, clStatus, usStatus, refreshing, refresh, refreshSeq }}>
       {children}
     </MacroDataContext.Provider>
   )

@@ -5,7 +5,7 @@
 export interface CompareHistorySeries {
   ticker: string
   points: { date: string; value: number }[]
-  status: 'persisted' | 'static_fallback'
+  status: 'live' | 'persisted' | 'static_fallback'
   source: string | null
   asOfDate: string | null
   insufficientHistoryReason: string | null

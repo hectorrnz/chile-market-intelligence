@@ -15,6 +15,7 @@
 // this split matters for unit-testability.
 
 import { resolveStockSnapshots, resolveStockHistory } from '../providers/market/marketProvider.ts'
+import { fetchYahooRatios } from '../providers/market/yahooRatiosProvider.ts'
 import type { StockTimeframe, MarketMode } from '../providers/market/types.ts'
 import { getLatestFinancialMetrics, getLatestStatementItems, getEpsForValuation, toMillionsClp } from '../db/repositories/financialsRepository.ts'
 import type { PersistedFundamentalsInput } from './compareStatic.ts'
@@ -63,6 +64,10 @@ export async function resolveCompareData(tickersInput: string[]): Promise<Compar
 
   const snapshotsResp = await resolveStockSnapshots()
   const snapMap = Object.fromEntries(snapshotsResp.data.map((s) => [s.ticker, s]))
+  // One batched Yahoo call for the whole comparison — supplies P/B, ROE and
+  // P/S TTM, the three fields no persisted financials source can provide.
+  // Never throws; a failure just leaves those cells null.
+  const ratiosByTicker = await fetchYahooRatios(validTickers)
 
   const data: CompareEntry[] = []
   for (const ticker of validTickers) {
@@ -103,6 +108,9 @@ export async function resolveCompareData(tickersInput: string[]): Promise<Compar
       // needed (and none is safe to add without also converting the other).
       dividendsPaidMM: itemsByCode.get('dividends_paid')?.value ?? null,
       sharesOutMM: itemsByCode.get('shares_out')?.value ?? null,
+      pbLive: ratiosByTicker.get(ticker)?.pb ?? null,
+      roeLivePct: ratiosByTicker.get(ticker)?.roe ?? null,
+      psTtmLive: ratiosByTicker.get(ticker)?.psTtm ?? null,
     }
 
     data.push({

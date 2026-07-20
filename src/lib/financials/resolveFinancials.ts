@@ -6,6 +6,7 @@
 import {
   getStatementItems,
   getFinancialMetrics,
+  toMillionsClp,
   type StatementItemRecord,
   type FinancialMetricRecord,
 } from '../db/repositories/financialsRepository.ts'
@@ -117,32 +118,60 @@ export async function resolveFinancialStatements(ticker: string): Promise<Financ
     .map(([key, meta]) => {
       const codeMap = itemsByPeriod.get(key) ?? new Map()
       const metricMap = metricsByPeriod.get(key) ?? new Map()
+      /** Raw stored value — for fields whose unit is NOT a currency amount
+       *  (eps in CLP/share, margins in %), which must never be rescaled. */
       const get = (code: string) => codeMap.get(code)?.value ?? null
+      /**
+       * Amount fields, normalized to MILLIONS.
+       *
+       * financial_statement_items / financial_metrics each store their own
+       * source's raw scale: every live provider (Yahoo, CMF/XBRL, CMF bank)
+       * writes true raw CLP (scale 'units'), while the manual-CSV template
+       * convention is already millions. Charting's METRICS table declares
+       * these fields as unit 'MM', so returning the raw value made every
+       * amount render 1,000,000x too large — Revenue showed as
+       * "1.463.576.000.000 MM" instead of "1.463.576 MM", and the chart axis
+       * inherited the same inflation. toMillionsClp reads each row's own
+       * `scale` column (or falls back to a source_type rule for metrics,
+       * which have no scale column), so mixed-source data normalizes
+       * correctly rather than assuming one convention.
+       */
+      const getMM = (code: string) => {
+        const rec = codeMap.get(code)
+        return rec?.value != null ? toMillionsClp(rec.value, rec) : null
+      }
+      const metricMM = (code: string) => {
+        const rec = metricMap.get(code)
+        return rec?.value != null ? toMillionsClp(rec.value, rec) : null
+      }
       return {
         ticker: upperTicker,
         period: periodLabel(meta.fiscalPeriod, meta.fiscalYear),
         reportDate: meta.periodEndDate,
-        revenue: num(get('revenue')),
-        ebitda: numOrNull(get('ebitda')),
-        grossProfit: num(get('gross_profit')),
-        operatingIncome: num(get('operating_income')),
-        netIncome: num(get('net_income')),
-        rdExpense: num(get('rd_expense')),
-        sgaExpense: num(get('sga_expense')),
-        sbcExpense: num(get('sbc_expense')),
-        depAmort: num(get('dep_amort')),
+        revenue: num(getMM('revenue')),
+        ebitda: numOrNull(getMM('ebitda')),
+        grossProfit: num(getMM('gross_profit')),
+        operatingIncome: num(getMM('operating_income')),
+        netIncome: num(getMM('net_income')),
+        rdExpense: num(getMM('rd_expense')),
+        sgaExpense: num(getMM('sga_expense')),
+        sbcExpense: num(getMM('sbc_expense')),
+        depAmort: num(getMM('dep_amort')),
+        // Per-share and percentage fields carry no currency scale.
         eps: numOrNull(get('eps')),
         ebitdaMargin: numOrNull(metricMap.get('ebitda_margin')?.value),
         revenueYoY: null,
         netIncomeYoY: null,
-        fcf: num(metricMap.get('fcf')?.value),
-        ocf: num(get('ocf')),
-        capex: num(get('capex')),
-        cash: num(get('cash')),
-        ltDebt: num(get('total_debt')),
-        sharesOut: numOrNull(get('shares_out')),
-        dividendsPaid: num(get('dividends_paid')),
-        buybacks: num(get('buybacks')),
+        fcf: num(metricMM('fcf')),
+        ocf: num(getMM('ocf')),
+        capex: num(getMM('capex')),
+        cash: num(getMM('cash')),
+        ltDebt: num(getMM('total_debt')),
+        // Displayed as "MM sh" — a raw share COUNT needs the same
+        // units-to-millions normalization as the currency amounts.
+        sharesOut: numOrNull(getMM('shares_out')),
+        dividendsPaid: num(getMM('dividends_paid')),
+        buybacks: num(getMM('buybacks')),
       }
     })
 

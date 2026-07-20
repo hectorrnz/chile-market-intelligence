@@ -164,10 +164,25 @@ async function fetchLiveYieldCurve(region: 'CL' | 'US'): Promise<LiveYieldCurveR
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000
 const cache = new Map<string, { result: LiveYieldCurveResult; fetchedAt: number }>()
 
-/** Resolves the live yield curve for a region, using a 6h server-side cache. Never throws; a partial/total failure returns `ok:false` and the caller falls back to the static curve. */
-export async function resolveLiveYieldCurve(region: 'CL' | 'US'): Promise<LiveYieldCurveResult> {
+/**
+ * Resolves the live yield curve for a region, using a 6h server-side cache.
+ * Never throws; a partial/total failure returns `ok:false` and the caller
+ * falls back to the static curve.
+ *
+ * `force` skips the cache READ (the result is still cached afterwards). It is
+ * set only when the user explicitly clicks Update Data: with a 6h TTL, an
+ * Update otherwise returned the byte-identical cached curve and the chart
+ * visibly never changed — reported as "the macro tab is not being updated
+ * when one of the Update Data is clicked ... check the yield curve for
+ * example". Ordinary navigation still hits the cache, so browsing between
+ * tabs does not hammer BCCh/FRED.
+ */
+export async function resolveLiveYieldCurve(
+  region: 'CL' | 'US',
+  opts?: { force?: boolean },
+): Promise<LiveYieldCurveResult> {
   const cached = cache.get(region)
-  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) return cached.result
+  if (!opts?.force && cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) return cached.result
 
   const result = await fetchLiveYieldCurve(region)
   if (result.ok) cache.set(region, { result, fetchedAt: Date.now() })

@@ -14,6 +14,7 @@ import type {
 import { getMarketDataMode, decideMarketSource } from './marketDataMode.ts'
 import { staticMarketProvider } from './staticMarketProvider.ts'
 import { supabaseMarketProvider, isSnapshotStale } from './supabaseMarketProvider.ts'
+import { getYahooStockHistory } from './yahooHistoryProvider.ts'
 
 const STATIC_FALLBACK_META = (requested: MarketMode, reason?: string): MarketDataMeta => ({
   dataModeRequested: requested,
@@ -152,7 +153,31 @@ export async function resolveStockHistory(ticker: string, timeframe: StockTimefr
     return staticResult()
   }
 
-  // supabase or hybrid — try persisted snapshot history first
+  // supabase or hybrid — try a direct live Yahoo Finance historical fetch
+  // first. Unlike the Supabase-accumulation tier below, this has real years
+  // of daily bars available immediately for any listed ticker (no cron
+  // accumulation wait, and it genuinely covers 3Y/5Y too).
+  const liveHistory = await getYahooStockHistory(ticker, timeframe)
+  if (liveHistory.ok) {
+    return {
+      data: liveHistory.data,
+      metadata: {
+        dataModeRequested: requested,
+        dataModeUsed: requested,
+        liveAvailable: true,
+        status: 'live',
+        source: liveHistory.source,
+        lastUpdated: liveHistory.lastUpdated,
+        provider: 'yahoo-finance',
+        marketDataModeRequested: requested,
+        marketDataModeUsed: requested,
+        persistedAvailable: false,
+        snapshotCount: liveHistory.data.length,
+      },
+    }
+  }
+
+  // Yahoo unreachable/insufficient — fall back to persisted snapshot history
   const prov = await supabaseMarketProvider.getStockHistory(ticker, timeframe)
 
   if (prov.ok) {

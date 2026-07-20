@@ -8,6 +8,39 @@ export function formatCLP(value: number, decimals = 0): string {
   })
 }
 
+/**
+ * Compact, magnitude-adaptive rendering of a CLP amount stored in MILLIONS —
+ * the scale every Charting fundamentals metric uses.
+ *
+ * A large issuer's revenue in millions is a 7-digit number (1.463.576 MM),
+ * which is unreadable as a chart axis label and was being clipped by the axis
+ * gutter. This converts back to the true amount and picks the largest unit
+ * that keeps the number short, so an axis reads "1,46 B" / "153,3 MM" instead
+ * of a wall of digits. Suffixes are the Chilean/Spanish short forms used for
+ * currency magnitudes in this app: M (millón), MM (millardo/mil millones),
+ * B (billón = 10^12) — NOT the English "B = billion", which would be a
+ * factor-1000 misread for a Chilean audience.
+ *
+ * Returns e.g. "1,46 B" · "153,3 MM" · "45,2 M" · "820" (thousands of CLP and
+ * below are shown in full, since they are already short).
+ */
+export function formatCompactMM(valueInMillions: number): string {
+  if (!Number.isFinite(valueInMillions)) return '—'
+  const raw = valueInMillions * 1_000_000
+  const abs = Math.abs(raw)
+  const sign = raw < 0 ? '-' : ''
+  const scaled = (divisor: number, suffix: string) => {
+    const n = abs / divisor
+    // Two decimals below 10 keeps small magnitudes informative (1,46 B);
+    // one decimal above keeps long ones short (153,3 MM).
+    return `${sign}${formatCLP(n, n < 10 ? 2 : 1)} ${suffix}`
+  }
+  if (abs >= 1e12) return scaled(1e12, 'B')
+  if (abs >= 1e9) return scaled(1e9, 'MM')
+  if (abs >= 1e6) return scaled(1e6, 'M')
+  return `${sign}${formatCLP(abs, 0)}`
+}
+
 /** Format a percentage with sign prefix: +3,2% or -1,5%. */
 export function formatPercent(value: number, decimals = 1): string {
   const sign = value > 0 ? '+' : ''

@@ -3,9 +3,15 @@
 
 import type { LiveYieldCurveResult } from '@/lib/providers/yieldCurveProvider'
 
-export async function fetchLiveYieldCurve(region: 'CL' | 'US', signal?: AbortSignal): Promise<LiveYieldCurveResult | null> {
+export async function fetchLiveYieldCurve(
+  region: 'CL' | 'US',
+  signal?: AbortSignal,
+  /** Set only for an explicit Update Data click — bypasses the 6h server-side
+   *  cache that otherwise made Update appear to do nothing. */
+  force = false,
+): Promise<LiveYieldCurveResult | null> {
   try {
-    const res = await fetch(`/api/macro/yield-curve?region=${region}`, { signal })
+    const res = await fetch(`/api/macro/yield-curve?region=${region}${force ? '&force=1' : ''}`, { signal })
     if (!res.ok) return null
     return (await res.json()) as LiveYieldCurveResult
   } catch {
