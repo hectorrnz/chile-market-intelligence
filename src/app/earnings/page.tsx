@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { StatusPill } from '@/components/ui/StatusPill'
-import { SourceNote } from '@/components/ui/SourceNote'
+import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { SourceStateBadge } from '@/components/ui/SourceStateBadge'
 import { useLang } from '@/components/providers/LangProvider'
 import { getUpcomingEarnings, getRecentResults } from '@/lib/data/earnings'
@@ -158,6 +158,9 @@ export default function EarningsPage() {
               ))}
             </tbody>
           </table>
+          <div className="px-4 py-2 border-t border-border">
+            <TableSourceFooter source={t.common.staticSample} />
+          </div>
         </div>
       )}
 
@@ -254,12 +257,11 @@ export default function EarningsPage() {
           </tbody>
         </table>
         <div className="px-4 py-2.5 border-t border-border bg-surface flex items-center justify-between">
-          <p className="text-xs text-muted-fg">{t.earnings.footer}</p>
+          <TableSourceFooter source={coveredTickers.size > 0 ? t.earnings.footer : t.common.staticSample} />
           <span className="text-xs ui-number text-muted-fg">{results.length} {t.common.records}</span>
         </div>
       </div>
 
-      <SourceNote>{t.common.mvpNote}</SourceNote>
     </div>
   )
 }

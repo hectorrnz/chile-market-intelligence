@@ -9,6 +9,7 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useLang } from '@/components/providers/LangProvider'
 import { SectionHeader } from '@/components/ui/SectionHeader'
+import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { DEFAULT_ENTITIES } from '@/lib/structuredNotes/types'
 import { dedupeObservationsByDate } from '@/lib/structuredNotes/pdf/extractStructuredNoteTerms'
 import type { StructuredNote, UnderlyingPrice, RiskStatus } from '@/lib/structuredNotes/types'
@@ -133,10 +134,10 @@ export default function StructuredNoteDetailPage() {
         </Card>
 
         {/* Current levels & distance to barrier */}
-        <Card title={t.sn.currentPrices} note={t.sn.sourceMarket}>
+        <Card title={t.sn.currentPrices}>
           <table className="w-full text-sm">
             <thead><tr className="border-b border-border">
-              {[t.sn.colUnderlyings, 'Level', t.sn.distanceCoupon, t.sn.distanceKnockIn, t.sn.monitoring.lastRun].map((h) => <th key={h} className="text-center py-1.5 px-2 ui-table-header text-muted-fg">{h}</th>)}
+              {[t.sn.colUnderlyings, 'Level', t.sn.distanceCoupon, t.sn.distanceKnockIn, t.sn.monitoring.lastMonitored].map((h) => <th key={h} className="text-center py-1.5 px-2 ui-table-header text-muted-fg">{h}</th>)}
             </tr></thead>
             <tbody>
               {data.metrics.distances.map((d) => (
@@ -154,7 +155,12 @@ export default function StructuredNoteDetailPage() {
               ))}
             </tbody>
           </table>
-          <p className="mt-2 text-xs text-muted-fg italic">{t.sn.monitoring.estimateDisclaimer}</p>
+          <TableSourceFooter
+            source={t.sn.sourceMarket}
+            asOf={data.prices.reduce<string | null>((max, p) => (p.asOf && (!max || p.asOf > max) ? p.asOf : max), null)}
+            className="mt-2"
+          />
+          <p className="text-xs text-muted-fg">{t.sn.monitoring.estimateDisclaimer}</p>
         </Card>
 
         {/* Underlyings */}

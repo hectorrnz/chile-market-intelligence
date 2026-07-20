@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useLang } from '@/components/providers/LangProvider'
 import { SectionHeader } from '@/components/ui/SectionHeader'
+import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { getAllCompanies } from '@/lib/data/companies'
 import { getAllSnapshots } from '@/lib/data/stocks'
 import { formatCLP, formatPct, changeColor } from '@/lib/formatters'
@@ -197,7 +198,7 @@ function WatchlistTable({
         </tbody>
       </table>
       <div className="px-4 py-2 border-t border-border bg-surface">
-        <p className="text-xs text-muted-fg">{t.watchlist.source}</p>
+        <TableSourceFooter source={t.watchlist.source} />
       </div>
     </div>
   )

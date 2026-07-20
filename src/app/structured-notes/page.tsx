@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useLang } from '@/components/providers/LangProvider'
 import { SectionHeader } from '@/components/ui/SectionHeader'
+import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { ARCHIVED_STATUSES } from '@/lib/structuredNotes/types'
 import type { StructuredNote } from '@/lib/structuredNotes/types'
 import type { NoteDashboardMetrics, BookSummary } from '@/lib/structuredNotes/dashboard'
@@ -252,22 +253,19 @@ export default function StructuredNotesPage() {
           )}
         </div>
       )}
-      {summary?.pricesAsOf && <div className="text-xs text-muted-fg">{t.sn.pricesAsOf} {new Date(summary.pricesAsOf).toLocaleString()}</div>}
-
-      {/* Scheduled monitoring status — Update above stays an immediate on-demand
-          refresh; this line reports the automated background job separately. */}
-      {monitoring && (
+      {/* Scheduled monitoring warnings — Update above stays an immediate on-demand
+          refresh; this line reports only actionable exceptions from the automated
+          background job. The source/as-of itself lives in the table footer below. */}
+      {monitoring && (monitoring.staleNoteCount > 0 || monitoring.unsupportedUnderlyingCount > 0
+        || monitoring.dueSoonCount > 0 || monitoring.reviewRequiredCount > 0
+        || monitoring.fallbackProviderUsed || monitoring.providerDisagreement) && (
         <div className="mb-4 text-xs text-muted-fg flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span>
-            {t.sn.monitoring.lastRun}: {monitoring.latestRun ? `${new Date(monitoring.latestRun.startedAt).toLocaleString()} (${monitoring.latestRun.status})` : t.sn.monitoring.never}
-          </span>
           {monitoring.staleNoteCount > 0 && <span className="text-warning">{monitoring.staleNoteCount} {t.sn.monitoring.stale}</span>}
           {monitoring.unsupportedUnderlyingCount > 0 && <span className="text-warning">{monitoring.unsupportedUnderlyingCount} {t.sn.monitoring.unsupported}</span>}
           {monitoring.dueSoonCount > 0 && <span style={{ color: 'var(--accent)' }}>{monitoring.dueSoonCount} {t.sn.monitoring.dueSoon}</span>}
           {monitoring.reviewRequiredCount > 0 && <span className="text-negative">{monitoring.reviewRequiredCount} {t.sn.monitoring.reviewRequired}</span>}
           {monitoring.fallbackProviderUsed && <span style={{ color: 'var(--accent)' }}>{t.sn.monitoring.fallbackUsed}</span>}
           {monitoring.providerDisagreement && <span className="text-warning">{t.sn.monitoring.providerDisagreement}</span>}
-          <span className="italic">{t.sn.monitoring.providerLabel} · {t.sn.monitoring.estimateDisclaimer}</span>
         </div>
       )}
 
@@ -394,7 +392,8 @@ export default function StructuredNotesPage() {
           </table>
         </div>
       )}
-      <p className="mt-3 text-xs text-muted-fg">{t.sn.allocationsNote} · {t.sn.sourceMarket}</p>
+      <TableSourceFooter source={t.sn.sourceMarket} asOf={summary?.pricesAsOf ?? null} className="mt-3" />
+      <p className="text-xs text-muted-fg">{t.sn.monitoring.estimateDisclaimer}</p>
     </div>
   )
 }

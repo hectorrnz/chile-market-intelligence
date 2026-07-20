@@ -6,7 +6,6 @@ import { useLang } from '@/components/providers/LangProvider'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { StatusPill } from '@/components/ui/StatusPill'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { SourceNote } from '@/components/ui/SourceNote'
 import { getDocumentById } from '@/lib/data/documents'
 import { getAllEarnings } from '@/lib/data/earnings'
 import { formatMillionsCLP, formatPct, changeColor } from '@/lib/formatters'
@@ -191,7 +190,6 @@ export default function DocumentPage() {
         </div>
       </div>
 
-      <SourceNote>{t.documents.mvpNote}</SourceNote>
     </div>
   )
 }

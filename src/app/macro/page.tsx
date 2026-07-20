@@ -3,7 +3,6 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { SectionHeader } from '@/components/ui/SectionHeader'
-import { SourceNote } from '@/components/ui/SourceNote'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
 import { EconomicCalendarTable } from '@/components/macro/EconomicCalendarTable'
@@ -417,8 +416,11 @@ export default function MacroPage() {
                   </tbody>
                 </table>
                 <div className="px-4 py-2 border-t border-border space-y-0.5">
-                  <p className="text-xs text-muted-fg">{t.macro.fxUnofficial}</p>
-                  <TableSourceFooter source={`${usForex.providerAttribution} · † ${t.macro.fxDerived}`} asOf={usForex.currentDate} />
+                  {/* Source line stays a plain provider name (platform convention);
+                      the unofficial-rate caveat and the † derived-column marker are
+                      their own notes, not part of the source string. */}
+                  <TableSourceFooter source="Frankfurter" asOf={usForex.currentDate} />
+                  <p className="text-xs text-muted-fg">{t.macro.fxUnofficial} · † {t.macro.fxDerived}</p>
                 </div>
               </>
             ) : (
@@ -428,7 +430,6 @@ export default function MacroPage() {
         )}
       </div>
 
-      <SourceNote>{t.common.mvpNote}</SourceNote>
 
       {/* Chart popup modal (monthly frequency) */}
       {selected && (

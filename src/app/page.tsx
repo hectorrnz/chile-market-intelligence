@@ -20,8 +20,7 @@ import { getNewsSourceCode, getNewsSourceColor } from '@/lib/news/sourceCodes'
 import { getDocumentByRelatedId } from '@/lib/data/documents'
 import { getSectorPerformance } from '@/lib/data/sectorPerformance'
 import { getIndexPerformance } from '@/lib/data/indexPerformance'
-import { formatMarketLastUpdated } from '@/lib/data/marketMeta'
-import { fetchLiveSnapshot, formatLiveTimestamp, type LiveSnapshot } from '@/lib/data/marketLiveData'
+import { fetchLiveSnapshot, type LiveSnapshot } from '@/lib/data/marketLiveData'
 import { fetchStockSnapshots, fetchSectorPerformance, fetchIndexPerformance } from '@/lib/data/marketData'
 import type { StockSnapshot, SectorSnapshot, IndexSnapshot } from '@/lib/providers/market/types'
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
@@ -108,7 +107,6 @@ export default function HomePage() {
   const recent = getRecentResults().slice(0, 2)
   const staticSectors = getSectorPerformance()
   const staticIndices = getIndexPerformance()
-  const marketUpdated = formatMarketLastUpdated()
 
   // Live market data state — null until user hits Refresh
   const [live, setLive] = useState<LiveSnapshot | null>(null)
@@ -176,7 +174,6 @@ export default function HomePage() {
   const indexStatus: DataSourceStatus = live?.indices.length ? 'live' : Object.keys(supaIdxMap).length ? 'persisted' : 'static'
   const sectorAsOf = live?.sectors ? live.lastUpdated : (supaSectors?.[0]?.lastUpdated ?? null)
   const indexAsOf = live?.indices.length ? live.lastUpdated : (Object.values(supaIdxMap)[0]?.lastUpdated ?? null)
-  const liveTimestamp = live ? formatLiveTimestamp(live.lastUpdated) : marketUpdated
   const maxSectorAbs = Math.max(...sectors.map(s => Math.abs(s.dayChangePct)))
 
   const snapshotMap = Object.fromEntries(snapshots.map(s => [s.ticker, s]))
@@ -318,9 +315,6 @@ export default function HomePage() {
           <UpdateDataButton onRefresh={doRefresh} />
         </div>
       </div>
-      {liveTimestamp && (
-        <p className="text-xs text-muted-fg ui-number -mt-2">{liveTimestamp}</p>
-      )}
 
       {/* ── Top region: Macro · (Tracked stocks + FX) · Earnings ── */}
       {/* Macro card (natural height) drives the region; the other columns match it and scroll. */}
@@ -471,7 +465,7 @@ export default function HomePage() {
             )}
           </div>
           <div className="px-4 py-2 border-t border-border shrink-0">
-            <p className="text-xs text-muted-fg">{t.home.earningsSource}</p>
+            <TableSourceFooter source={t.home.earningsSource} />
           </div>
         </div>
       </div>

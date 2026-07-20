@@ -9,12 +9,12 @@ import { getAllCompanies, getSectors } from '@/lib/data/companies'
 import { getAllSnapshots } from '@/lib/data/stocks'
 import { formatCLP, formatPct, formatLargeCLP, changeColor } from '@/lib/formatters'
 import { exportCSV } from '@/lib/export'
-import { formatMarketLastUpdated } from '@/lib/data/marketMeta'
-import { fetchLiveSnapshot, formatLiveTimestamp, type LiveSnapshot } from '@/lib/data/marketLiveData'
+import { fetchLiveSnapshot, type LiveSnapshot } from '@/lib/data/marketLiveData'
 import { fetchStockSnapshots } from '@/lib/data/marketData'
 import type { StockSnapshot } from '@/lib/providers/market/types'
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
 import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
+import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import type { DataSourceStatus } from '@/lib/providers/types'
 
 type SortKey = 'ticker' | 'dayChangePct' | 'ytdChangePct' | 'marketCapCLP' | 'pe' | 'dividendYield'
@@ -22,7 +22,6 @@ type SortKey = 'ticker' | 'dayChangePct' | 'ytdChangePct' | 'marketCapCLP' | 'pe
 const companies    = getAllCompanies()
 const snapshots    = getAllSnapshots()
 const sectors      = getSectors()
-const marketUpdated = formatMarketLastUpdated()
 
 export default function StocksPage() {
   const { t } = useLang()
@@ -50,8 +49,10 @@ export default function StocksPage() {
     setLive(data)
   }, [])
 
-  const liveTimestamp = live ? formatLiveTimestamp(live.lastUpdated) : marketUpdated
   const priceStatus: DataSourceStatus = live ? 'live' : Object.keys(supaSnapMap).length ? 'persisted' : 'static'
+  // One as-of for the page, always describing the data actually on screen:
+  // the live snapshot when refreshed, otherwise the persisted snapshot's own date.
+  const priceAsOf = live ? live.lastUpdated : (Object.values(supaSnapMap)[0]?.lastUpdated ?? null)
 
   const snapMap = useMemo(
     () => Object.fromEntries(snapshots.map(s => [s.ticker, s])),
@@ -151,14 +152,7 @@ export default function StocksPage() {
           <option value="">{t.stocks.allSectors}</option>
           {sectors.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <div className="flex items-center gap-1.5">
-          <MarketDataSourceBadge status={priceStatus} />
-          {liveTimestamp && (
-            <span className="text-xs text-muted-fg ui-number whitespace-nowrap">
-              {t.common.marketUpdated} {liveTimestamp}
-            </span>
-          )}
-        </div>
+        <MarketDataSourceBadge status={priceStatus} />
         <button
           onClick={handleExport}
           className="ml-auto flex items-center gap-1.5 h-7 px-2.5 rounded border border-border bg-surface text-xs text-muted-fg hover:text-foreground hover:border-accent transition-colors"
@@ -226,7 +220,7 @@ export default function StocksPage() {
           </tbody>
         </table>
         <div className="px-4 py-2.5 border-t border-border flex items-center justify-between bg-surface">
-          <p className="text-xs text-muted-fg">{t.stocks.footer}</p>
+          <TableSourceFooter source={t.stocks.footer} asOf={priceAsOf} />
           <span className="text-xs ui-number text-muted-fg">{rows.length} {t.common.companies}</span>
         </div>
       </div>

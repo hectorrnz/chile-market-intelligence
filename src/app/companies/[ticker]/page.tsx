@@ -8,7 +8,7 @@ import { usePersistentState } from '@/lib/usePersistentState'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { StatusPill } from '@/components/ui/StatusPill'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { SourceNote } from '@/components/ui/SourceNote'
+import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { LineChart, type ChartMarker } from '@/components/charts/LineChart'
 import { getCompanyByTicker, getAllCompanies } from '@/lib/data/companies'
 import { getSnapshotByTicker, getAllSnapshots } from '@/lib/data/stocks'
@@ -18,7 +18,7 @@ import { getNewsSourceCode, getNewsSourceColor } from '@/lib/news/sourceCodes'
 import { getStockHistoryForTimeframe } from '@/lib/data/stockHistory'
 import { formatCLP, formatPct, formatFx, formatMillionsCLP, formatEPS, formatNetDebt, formatMarketCapMM, changeColor, formatNewsTimestamp } from '@/lib/formatters'
 import type { EarningsRelease, StockPriceSnapshot } from '@/types'
-import { fetchLiveSnapshot, formatLiveTimestamp, type LiveSnapshot } from '@/lib/data/marketLiveData'
+import { fetchLiveSnapshot, type LiveSnapshot } from '@/lib/data/marketLiveData'
 import { fetchStockSnapshot } from '@/lib/data/marketData'
 import type { StockSnapshot } from '@/lib/providers/market/types'
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
@@ -150,8 +150,8 @@ export default function CompanyDetailPage() {
   const lv = live?.stocks[sym]
   const livePrice  = lv?.price        ?? supaSnap?.price        ?? snap?.price
   const liveDayPct = lv?.dayChangePct ?? supaSnap?.dayChangePct ?? snap?.dayChangePct
-  const liveTimestamp = live ? formatLiveTimestamp(live.lastUpdated) : null
   const priceStatus: DataSourceStatus = live ? 'live' : supaSnap ? 'persisted' : 'static'
+  const priceAsOf = live ? live.lastUpdated : (supaSnap?.lastUpdated ?? null)
 
   const kpis = [
     { label: t.company.kpis.lastPrice, value: livePrice != null ? formatCLP(livePrice) : '—',       unit: 'CLP', color: '' },
@@ -179,12 +179,7 @@ export default function CompanyDetailPage() {
         actions={
           <>
             <UpdateDataButton onRefresh={doRefresh} />
-            <div className="flex items-center gap-1.5">
-              <MarketDataSourceBadge status={priceStatus} />
-              {liveTimestamp && (
-                <span className="text-xs text-muted-fg ui-number whitespace-nowrap">{liveTimestamp}</span>
-              )}
-            </div>
+            <MarketDataSourceBadge status={priceStatus} />
             <button
               onClick={() => window.print()}
               className="no-print flex items-center gap-1.5 h-7 px-2.5 rounded border border-border bg-surface text-xs text-muted-fg hover:text-foreground hover:border-accent transition-colors"
@@ -213,6 +208,7 @@ export default function CompanyDetailPage() {
           </div>
         ))}
       </div>
+      <TableSourceFooter source={t.stocks.footer} asOf={priceAsOf} className="-mt-2" />
 
       {/* Business summary */}
       {company.businessSummary && (
@@ -321,7 +317,7 @@ export default function CompanyDetailPage() {
           </div>
         )}
         <div className="flex items-center justify-between mt-2 gap-3 flex-wrap">
-          <p className="text-xs text-muted-fg">{t.company.stockChartSource}</p>
+          <TableSourceFooter source={t.company.stockChartSource} />
           <div className="flex items-center gap-3 text-xs text-muted-fg">
             <span className="flex items-center gap-1"><span style={{ color: 'var(--primary)' }}>▲</span>earnings</span>
           </div>
@@ -376,6 +372,7 @@ export default function CompanyDetailPage() {
             <p className="px-4 py-3 text-xs text-muted-fg">{t.company.noData}</p>
           )}
           <div className="px-4 py-2 border-t border-border shrink-0">
+            <TableSourceFooter source={t.company.earningsSource} />
             <p className="text-xs text-muted-fg">{t.company.earningsFootnote}</p>
           </div>
         </div>
@@ -429,7 +426,6 @@ export default function CompanyDetailPage() {
         </div>
       )}
 
-      <SourceNote>{t.common.mvpNote}</SourceNote>
     </div>
   )
 }

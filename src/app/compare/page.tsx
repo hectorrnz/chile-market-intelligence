@@ -5,7 +5,7 @@ import { useLang } from '@/components/providers/LangProvider'
 import { usePersistentState } from '@/lib/usePersistentState'
 import { useEscape } from '@/lib/useEscape'
 import { SectionHeader } from '@/components/ui/SectionHeader'
-import { SourceNote } from '@/components/ui/SourceNote'
+import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
 import { CompareChart } from '@/components/charts/CompareChart'
 import { getAllCompanies } from '@/lib/data/companies'
@@ -167,6 +167,12 @@ export default function ComparePage() {
     { label: t.company.val.netDebtEbitda, key: 'netDebtEbitda', dir: -1, get: (e, s) => num(e?.fundamentals.netDebtEbitda ?? s?.netDebtEbitda), fmt: v => `${v}x` },
     { label: t.company.kpis.divYield, key: 'dividendYield', dir: 1, get: (e, s) => num(e?.fundamentals.dividendYield ?? s?.dividendYield), fmt: v => `${v}%` },
   ]
+  // Whether ANY shown ticker has at least one field derived from persisted
+  // financials — drives the fundamentals footer's source name.
+  const hasDerivedFundamentals = valids.some(
+    ({ ticker }) => (compareData[ticker]?.fundamentals.derivedFields.length ?? 0) > 0,
+  )
+
   const cellStyle = (row: Row, value: number | null, values: (number | null)[]) => {
     if (!highlight || row.dir === 0 || value == null) return {}
     const nums = values.filter((v): v is number => v != null)
@@ -191,12 +197,7 @@ export default function ComparePage() {
         <div className="bg-surface border border-border rounded overflow-x-auto">
           <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-3 flex-wrap">
             <span className="ui-label text-muted-fg">{t.compare.marketDataTitle}</span>
-            <div className="flex items-center gap-2">
-              <MarketDataSourceBadge status={marketStatus} />
-              {compareMetaStatus?.latestSnapshotDate && (
-                <span className="text-xs text-muted-fg ui-number">{t.common.asOf} {compareMetaStatus.latestSnapshotDate}</span>
-              )}
-            </div>
+            <MarketDataSourceBadge status={marketStatus} />
           </div>
           <table className="w-full text-xs">
             <thead>
@@ -238,6 +239,9 @@ export default function ComparePage() {
               })}
             </tbody>
           </table>
+          <div className="px-4 py-2 border-t border-border">
+            <TableSourceFooter source={t.compare.marketSource} asOf={compareMetaStatus?.latestSnapshotDate ?? null} />
+          </div>
         </div>
       )}
 
@@ -306,6 +310,9 @@ export default function ComparePage() {
               )}
             </tbody>
           </table>
+          <div className="px-4 py-2 border-t border-border">
+            <TableSourceFooter source={t.compare.source} />
+          </div>
         </div>
 
         {/* Fundamentals — centered data */}
@@ -315,10 +322,7 @@ export default function ComparePage() {
           ) : (
             <div className="bg-surface border border-border rounded overflow-x-auto">
               <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-3 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <span className="ui-label text-muted-fg">{t.compare.fundamentals}</span>
-                  <span className="text-xs text-muted-fg" title={t.compare.fundamentalsNote}>({t.compare.fundamentalsNote})</span>
-                </div>
+                <span className="ui-label text-muted-fg">{t.compare.fundamentals}</span>
                 <button
                   onClick={handleExportFund}
                   className="flex items-center gap-1.5 h-6 px-2 rounded border border-border bg-surface text-xs text-muted-fg hover:text-foreground hover:border-accent transition-colors"
@@ -360,6 +364,9 @@ export default function ComparePage() {
                   })}
                 </tbody>
               </table>
+              <div className="px-4 py-2 border-t border-border">
+                <TableSourceFooter source={hasDerivedFundamentals ? t.compare.fundamentalsSource : t.common.staticSample} />
+              </div>
             </div>
           )}
         </div>
@@ -405,9 +412,8 @@ export default function ComparePage() {
           <div className="bg-surface border border-border rounded p-4">
             <div className="ui-label text-muted-fg mb-3">{t.compare.perfTitle}</div>
             <CompareChart series={chartSeries} height={340} showGrid={showGrid} lineWidth={lineW} legend={showLegend} />
+            <TableSourceFooter source={t.compare.source} className="mt-2" />
           </div>
-
-          <SourceNote>{t.compare.source}</SourceNote>
         </>
       )}
 

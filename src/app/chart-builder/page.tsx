@@ -5,7 +5,7 @@ import { useLang } from '@/components/providers/LangProvider'
 import { usePersistentState } from '@/lib/usePersistentState'
 import { useEscape } from '@/lib/useEscape'
 import { SectionHeader } from '@/components/ui/SectionHeader'
-import { SourceNote } from '@/components/ui/SourceNote'
+import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { SourceStateBadge } from '@/components/ui/SourceStateBadge'
 import { FundamentalsChart, type FundSeries } from '@/components/charts/FundamentalsChart'
 import { getAllCompanies } from '@/lib/data/companies'
@@ -322,10 +322,16 @@ export default function ChartBuilderPage() {
           ) : (
             <FundamentalsChart labels={labels} series={series} height={360} indexed={mode === 'idx'} chartType={chartType} showLegend={legend} showGrid={grid} fmtBar={fmtBar} fmtLine={fmtLine} />
           )}
-          <p className="text-xs text-muted-fg mt-2">
-            {sourceStatusA === 'persisted' ? `${t.common.source}: ${persistedA!.source}` : t.charting.source}
-            {mode === 'idx' ? ' · indexed = 100' : ''}{freq !== 'Q' ? ` · ${freq === 'TTM' ? 'TTM' : t.charting.annual}` : ''}
-          </p>
+          {(mode === 'idx' || freq !== 'Q') && (
+            <p className="text-xs text-muted-fg mt-2">
+              {[mode === 'idx' ? 'indexed = 100' : null, freq === 'TTM' ? 'TTM' : freq === 'A' ? t.charting.annual : null]
+                .filter(Boolean).join(' · ')}
+            </p>
+          )}
+          <TableSourceFooter
+            source={sourceStatusA === 'persisted' ? persistedA!.source : t.charting.source}
+            className="mt-2"
+          />
         </div>
       </div>
 
@@ -359,10 +365,11 @@ export default function ChartBuilderPage() {
               ))}
             </tbody>
           </table>
+          <div className="px-4 py-2 border-t border-border">
+            <TableSourceFooter source={sourceStatusA === 'persisted' ? persistedA!.source : t.charting.source} />
+          </div>
         </div>
       )}
-
-      <SourceNote>{t.common.mvpNote}</SourceNote>
 
       {/* Settings modal */}
       {settingsOpen && (

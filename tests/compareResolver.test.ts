@@ -259,10 +259,18 @@ describe('Phase 8B no-static-terminal-state policy docs', () => {
     assert.ok(!en.includes('Comparative returns and valuation — static MVP sample'))
   })
 
-  it('Compare fundamentals table is explicitly labeled temporary static with a conversion path', () => {
+  it('Compare fundamentals table names its resolved source in a standard table footer', () => {
+    // 2026-07-20: the old inline "(Static unless marked • — derived from persisted
+    // financials (manual CSV interim bridge; …))" header caption was replaced by the
+    // platform-standard TableSourceFooter, which names whichever source actually
+    // resolved. The interim-bridge caveat now lives in the derived-marker tooltip.
     const pageSrc = readFileSync(COMPARE_PAGE, 'utf8')
-    assert.ok(pageSrc.includes('fundamentalsNote'))
+    assert.ok(pageSrc.includes('TableSourceFooter'))
+    assert.ok(pageSrc.includes('hasDerivedFundamentals'))
+    assert.ok(pageSrc.includes('t.compare.fundamentalsSource'))
+    assert.ok(!pageSrc.includes('fundamentalsNote'), 'the old inline caption must be gone')
     const i18nSrc = readFileSync(I18N, 'utf8')
+    assert.ok(i18nSrc.includes('derivedFieldTitle'))
     assert.ok(i18nSrc.includes('interim bridge') || i18nSrc.includes('automated') && i18nSrc.includes('ingestion planned'))
   })
 

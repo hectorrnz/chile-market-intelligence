@@ -237,6 +237,26 @@ docs/                 — Project documentation
   bare date-only string (no time-of-day component, e.g. a BCCh/FRED release date) is never run through
   `new Date()` and never shown as a fabricated time — it always renders `DD-MM`, parsed directly off the
   string, even when that date happens to be today.
+- **Every table on every tab ends with exactly one `TableSourceFooter`** (enforced by
+  `tests/tableSourceFooterConvention.test.ts`). The `source` value is a **plain source name only** —
+  `Yahoo Finance`, `Banco Central de Chile (BCCh)`, `FRED (Federal Reserve Bank of St. Louis)`,
+  `Frankfurter`, `Persisted financials`, `Static sample` (`t.common.staticSample`). Never a multi-clause
+  chain ("Baseline: static sample · Persisted via Supabase · Live overlay via Yahoo Finance on refresh"),
+  never a phase citation, never "see the badge above", and never its own `Source:`/`Fuente:` prefix (the
+  component adds it). Genuine caveats that are **not** the source — an unofficial-rate warning, a `†`
+  derived-column marker, unit notes ("MM CLP · EPS in CLP"), the structured-notes monitoring-estimate
+  disclaimer — go on their **own line** next to the footer, never inside the source string.
+- **One as-of per surface.** The page-level `formatLiveTimestamp`/`formatMarketLastUpdated` "Updated
+  Jul 17, 18:24 SCL" chip that used to sit beside the badge on Home/Stocks/Company/Portfolio is
+  **removed** — it duplicated the footer's as-of in a different format and, being fed by the static
+  `marketMeta.json` commit timestamp, reverted to a stale date after navigating away from a page whose
+  data had just been refreshed. Each page now derives ONE `asOf` from the data actually on screen
+  (`live ? live.lastUpdated : persistedSnapshot.lastUpdated ?? null`) and passes it to the footer, so
+  the badge word and the as-of can never disagree. `src/lib/data/marketMeta.ts` is retained only because
+  the GitHub Actions refresh script still writes `marketMeta.json`; nothing reads it.
+- The page-level `SourceNote` component and `common.mvpNote` ("Data sourcing varies by section — see the
+  source label/badge above") are **deleted** — per-table footers make them redundant. Do not reintroduce
+  a page-bottom catch-all source note.
 - Do not reintroduce a source name into any badge's visible text — this was an explicit, deliberate reversal
   of the earlier Phase 8A/8B convention (which required the source name in the badge); the earlier tests
   asserting that are updated (`tests/homeWatchlistOverhaul.test.ts`), not still-valid history to restore.
@@ -499,7 +519,17 @@ component's marker system dropped the now-unused `'filing'` kind. Do not re-add 
 surface without a genuinely new, CAPTCHA-free official/free source — re-check `docs/cmf_provider_discovery.md`
 first rather than rebuilding the CAPTCHA-blocked path.
 
-**Same-day: source badge / footer convention rewritten — see "Source Badge Rule" below.** Every
+**Same-day follow-up (2026-07-20) — footer convention applied platform-wide.** The badge/footer rule
+below was written the same day but had only been applied to the pages touched by the Hechos removal. A
+sweep of every tab found the old hand-written footers still live on Stocks, Compare (Fundamentals +
+Comparative Returns + Market Data), Charting, Earnings, Company, Watchlist, Portfolio, Macro (FX depth)
+and Structured Notes. All of them now render through `TableSourceFooter` with a plain source name; the
+duplicated "Updated … SCL" timestamp chip and the page-level `SourceNote`/`common.mvpNote` catch-all were
+removed. Structured Notes' four overlapping source/monitoring lines collapsed to one footer + one
+disclaimer, and its exception-count row now only renders when an exception actually exists. Guarded by
+`tests/tableSourceFooterConvention.test.ts` (suite 1497 → 1532).
+
+**Source badge / footer convention — see "Source Badge Rule" below.** Every
 `DataSourceBadge`/`MarketDataSourceBadge`/`SourceStateBadge` now renders only a bare status word next to
 its dot (`Live`/`Persisted`/`Static`/etc.) — never a provider/source name inline. The provider still
 surfaces via the hover `title`. `formatSourceDate()` (`src/lib/formatters.ts`) now renders `HH:MM` (Chile

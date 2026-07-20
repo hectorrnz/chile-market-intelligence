@@ -18,7 +18,8 @@ import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
 import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
 import { getAllCompanies } from '@/lib/data/companies'
 import { formatCLP, formatPct, changeColor } from '@/lib/formatters'
-import { fetchLiveSnapshot, formatLiveTimestamp, type LiveSnapshot } from '@/lib/data/marketLiveData'
+import { fetchLiveSnapshot, type LiveSnapshot } from '@/lib/data/marketLiveData'
+import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { valuePositions, calculatePortfolioTotals, calculateSectorExposure, type LatestPrice } from '@/lib/portfolio/valuation'
 import type { DataSourceStatus } from '@/lib/providers/types'
 
@@ -506,7 +507,7 @@ function PositionsTable({
         </tbody>
       </table>
       <div className="px-4 py-2 border-t border-border bg-surface">
-        <p className="text-xs text-muted-fg">{t.portfolio.source}</p>
+        <TableSourceFooter source={t.portfolio.source} />
       </div>
     </div>
   )
@@ -937,7 +938,6 @@ export default function PortfolioPage() {
   }, [])
 
   const priceStatus: DataSourceStatus = live ? 'live' : 'persisted'
-  const liveTimestamp = live ? formatLiveTimestamp(live.lastUpdated) : null
 
   const displayed = useMemo(() => {
     if (!detail) return null
@@ -1045,11 +1045,6 @@ export default function PortfolioPage() {
       {!loading && detail && (
         <div className="flex items-center gap-1.5">
           <MarketDataSourceBadge status={priceStatus} />
-          {liveTimestamp && (
-            <span className="text-xs text-muted-fg ui-number whitespace-nowrap">
-              {t.common.marketUpdated} {liveTimestamp}
-            </span>
-          )}
         </div>
       )}
 
