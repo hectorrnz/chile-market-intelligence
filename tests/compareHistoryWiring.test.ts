@@ -39,7 +39,8 @@ describe('resolveCompareHistory.ts — reuses the existing resolver, no new prov
   })
 
   it('never fabricates points for a non-persisted ticker — points stays empty, caller uses its own static series', () => {
-    assert.ok(src.includes("points: [], status: 'static_fallback'"))
+    assert.ok(src.includes("points: [],"))
+    assert.ok(src.includes("status: 'static_fallback',"))
   })
 
   it('is server-only (no "use client")', () => {

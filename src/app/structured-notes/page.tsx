@@ -216,7 +216,7 @@ export default function StructuredNotesPage() {
 
   return (
     <div className="w-full">
-      <SectionHeader tag={t.sn.tag} title={t.sn.tag} subtitle={t.sn.subtitle} />
+      <SectionHeader tag={t.sn.tag} title={t.sn.tag} />
 
       {/* Dashboard summary — click a status card to jump to Live filtered to it */}
       {summary && summary.totalNotes > 0 && (
@@ -393,7 +393,6 @@ export default function StructuredNotesPage() {
         </div>
       )}
       <TableSourceFooter source={t.sn.sourceMarket} asOf={summary?.pricesAsOf ?? null} className="mt-3" />
-      <p className="text-xs text-muted-fg">{t.sn.monitoring.estimateDisclaimer}</p>
     </div>
   )
 }

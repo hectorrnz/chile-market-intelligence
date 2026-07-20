@@ -47,6 +47,11 @@ export default function StocksPage() {
 
   const doRefresh = useCallback(async () => {
     await refresh()
+    // A refresh is exactly when day-change figures actually move — surface
+    // the day's biggest movers immediately rather than leaving the table on
+    // whatever sort the user had before clicking Update.
+    setSortKey('dayChangePct')
+    setSortDir('desc')
   }, [refresh])
 
   const priceStatus: DataSourceStatus = live ? 'live' : Object.keys(supaSnapMap).length ? 'persisted' : 'static'

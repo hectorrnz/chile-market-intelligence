@@ -8,6 +8,7 @@ export interface CompareHistorySeries {
   status: 'persisted' | 'static_fallback'
   source: string | null
   asOfDate: string | null
+  insufficientHistoryReason: string | null
 }
 
 export interface CompareHistoryResult {

@@ -19,7 +19,6 @@ export const dict = {
     },
     sn: {
       tag: 'Structured Notes',
-      subtitle: 'Upload a term sheet — terms are extracted automatically; manual entry is only a fallback',
       upload: 'Upload term sheet (PDF)',
       extracting: 'Extracting…',
       importNote: 'Import note',
@@ -239,6 +238,7 @@ export const dict = {
       empty:        'Type a ticker in a row to start comparing.',
       source:       'Static sample',
       marketSource: 'Yahoo Finance',
+      historyAccumulating: 'Persisted history is accumulating — check back in a few days for this timeframe',
       settings:     'Settings',
       diffRef:      'Difference vs',
       seriesColors: 'Series colors',
@@ -263,7 +263,6 @@ export const dict = {
       language:      'Language',
       switchToDark:  'Switch to dark mode',
       switchToLight: 'Switch to light mode',
-      disclaimer:    'Not investment advice · Data sourcing varies by module — see source badges',
     },
     common: {
       search:       'Search company or ticker...',
@@ -792,7 +791,6 @@ export const dict = {
     },
     sn: {
       tag: 'Notas Estructuradas',
-      subtitle: 'Sube un term sheet — los términos se extraen automáticamente; la carga manual es solo un respaldo',
       upload: 'Subir term sheet (PDF)',
       extracting: 'Extrayendo…',
       importNote: 'Importar nota',
@@ -1012,6 +1010,7 @@ export const dict = {
       empty:        'Escribe un ticker en una fila para comenzar.',
       source:       'Muestra estática',
       marketSource: 'Yahoo Finance',
+      historyAccumulating: 'El historial persistido se está acumulando — vuelve en unos días para este período',
       settings:     'Configuración',
       diffRef:      'Diferencia vs',
       seriesColors: 'Colores de series',
@@ -1036,7 +1035,6 @@ export const dict = {
       language:      'Idioma',
       switchToDark:  'Cambiar a modo oscuro',
       switchToLight: 'Cambiar a modo claro',
-      disclaimer:    'No constituye recomendación de inversión · La fuente de datos varía según el módulo — ver etiquetas de fuente',
     },
     common: {
       search:       'Buscar empresa o ticker...',

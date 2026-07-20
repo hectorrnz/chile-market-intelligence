@@ -142,6 +142,11 @@ export default function ComparePage() {
     .map(r => persistedHistory[r.ticker]?.asOfDate)
     .filter((d): d is string => !!d)
     .reduce((max, d) => (!max || d > max ? d : max), '') || null
+  // Persisted history was genuinely attempted for this timeframe but doesn't
+  // cover it yet (as opposed to never having been attempted at all) — say so
+  // rather than leave a bare "Static sample" that reads as permanent.
+  const historyAccumulating = !usingCustom && returnsStatus === 'static'
+    && valids.some(({ ticker }) => persistedHistory[ticker]?.insufficientHistoryReason)
 
   const refIsBench = diffRef === 'bench' && benchmark && !!ipsaM
   let refTR: number | null = null
@@ -197,7 +202,7 @@ export default function ComparePage() {
   const fmtPctCell = (v: number) => `${v.toFixed(1)}%`
   const fund: Row[] = [
     { label: t.company.kpis.lastPrice, dir: 0, get: e => num(e?.latestPrice), fmt: v => formatFx(v, v < 1000 ? 2 : 0) },
-    { label: `${t.home.marketCap} (MM)`, dir: 0, get: e => num(e?.marketCapCLP), fmt: v => formatCLP(v) },
+    { label: `${t.home.marketCap} (Bn)`, dir: 0, get: e => { const v = num(e?.marketCapCLP); return v != null ? v / 1000 : null }, fmt: v => formatCLP(v, 1) },
     { label: t.company.val.peFwd, key: 'pe', dir: -1, get: (e, s) => num(e?.fundamentals.pe ?? s?.peFwd), fmt: fmtX },
     { label: t.company.val.psFwd, key: 'psFwd', dir: -1, get: (e, s) => num(e?.fundamentals.psFwd ?? s?.psFwd), fmt: fmtX },
     { label: t.company.val.evEbitda, key: 'evEbitda', dir: -1, get: (e, s) => num(e?.fundamentals.evEbitda ?? s?.evEbitda), fmt: fmtX },
@@ -357,6 +362,7 @@ export default function ComparePage() {
           </table>
           <div className="px-4 py-2 border-t border-border">
             <TableSourceFooter source={returnsStatus === 'persisted' ? t.compare.marketSource : t.compare.source} asOf={returnsAsOf} />
+            {historyAccumulating && <p className="text-xs text-muted-fg mt-0.5">{t.compare.historyAccumulating}</p>}
           </div>
         </div>
 
@@ -458,6 +464,7 @@ export default function ComparePage() {
             <div className="ui-label text-muted-fg mb-3">{t.compare.perfTitle}</div>
             <CompareChart series={chartSeries} height={340} showGrid={showGrid} lineWidth={lineW} legend={showLegend} />
             <TableSourceFooter source={returnsStatus === 'persisted' ? t.compare.marketSource : t.compare.source} asOf={returnsAsOf} className="mt-2" />
+            {historyAccumulating && <p className="text-xs text-muted-fg mt-0.5">{t.compare.historyAccumulating}</p>}
           </div>
         </>
       )}

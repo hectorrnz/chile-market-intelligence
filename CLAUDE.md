@@ -506,7 +506,46 @@ docs/                 — Project documentation
 
 ## Current Phase
 
-**Most recent work (2026-07-20, third pass) — live-status persistence, Compare fundamentals correctness,
+**Most recent work (2026-07-20, fourth pass) — a follow-up batch of six items on top of the third pass below.**
+
+1. **Structured Notes list page** — removed the SectionHeader subtitle ("Upload a term sheet — terms are
+   extracted automatically; manual entry is only a fallback") and the "Monitoring estimate — not an
+   official calculation-agent determination" line from the table footer. Scoped to the list page only —
+   the detail page (`/structured-notes/[id]`) keeps its own copy of the same disclaimer under its
+   current-levels table; not requested, left alone.
+2. **Home's macro (Chile/US), Chilean Rates, and FX badges still reverted to "Static" after Update + tab
+   switch** — the exact same root cause as the third-pass live-snapshot bug, just for a different data
+   source: `liveIndicatorMap`/`macroStatus`/`usMacroStatus` were page-local `useState`, refetched from
+   scratch (starting blank) on every Home mount. New `MacroDataProvider`
+   (`src/components/providers/MacroDataProvider.tsx`), mounted once in `AppShell` alongside
+   `MarketDataProvider`, holds the merged live-indicator map + separate CL/US statuses in a context that
+   survives navigation. Home's Update button and mount-time fetch both now go through
+   `useMacroData().refresh()`.
+3. **Stocks — Update Data now auto-sorts by Day Chg. (desc).** A refresh is exactly when day-change figures
+   actually move; `doRefresh` sets `sortKey='dayChangePct'`/`sortDir='desc'` after the shared refresh
+   resolves, rather than leaving the table on whatever sort the user had before.
+4. **Deleted the global "Not investment advice · Data sourcing varies by module — see source badges"
+   footer** — `AppDisclaimer.tsx` component removed, `AppShell` no longer renders it, `topbar.disclaimer`
+   i18n key removed (EN+ES).
+5. **Compare fundamentals Market Cap now shown in billions** (`Mkt Cap (Bn)`), not raw millions-CLP figures
+   with 7-8 digits — `marketCapCLP / 1000`, `formatCLP(v, 1)`.
+6. **Cumulative Return chart / Comparative Returns table still show "Static sample"** — re-verified live:
+   this is not a new bug. As of this pass, persisted 1M history covers ~57% of the requested 35-day window
+   (real accumulation started 2026-06-30) — still under the 70% coverage threshold from the third pass, so
+   it correctly falls back to static. It will start showing "Persisted" once real elapsed time crosses that
+   threshold (~late July 2026 for 1M), with zero further code changes — this is the intended, self-correcting
+   design. Added a small honest touch so this doesn't read as permanently broken:
+   `resolveCompareHistory.ts`'s `CompareHistorySeries` gained `insufficientHistoryReason` — set only when a
+   ticker's persisted history was genuinely attempted for the timeframe but doesn't cover it yet (never for
+   any other static reason, e.g. Supabase not configured). When present, both the Returns table and chart
+   footers show an additional muted line ("Persisted history is accumulating — check back in a few days for
+   this timeframe") instead of leaving a bare "Static sample" that reads as a dead end.
+
+Suite: 1573 → 1592 (this pass) · lint 0 · build 0 errors.
+
+---
+
+**Same-day (2026-07-20, third pass) — live-status persistence, Compare fundamentals correctness,
 Comparative Returns wired to persisted history.** Five real, distinct bugs reported/found and fixed in one
 session:
 

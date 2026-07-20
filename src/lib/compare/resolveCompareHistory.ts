@@ -32,6 +32,12 @@ export interface CompareHistorySeries {
   status: CompareHistoryStatus
   source: string | null
   asOfDate: string | null
+  /** Set only when static_fallback was reached because persisted history
+   *  exists but doesn't yet cover the requested window (never for any other
+   *  static reason) — lets the UI say "still accumulating" instead of a bare
+   *  "Static sample" that reads as permanent. See resolveStockHistory's
+   *  fallbackReason / isSufficientMarketHistory in marketHistory.ts. */
+  insufficientHistoryReason: string | null
 }
 
 export interface CompareHistoryResult {
@@ -59,9 +65,18 @@ export async function resolveCompareHistory(
           status: 'persisted',
           source: resp.metadata.source || null,
           asOfDate: resp.metadata.lastUpdated || null,
+          insufficientHistoryReason: null,
         }
       }
-      return { ticker, points: [], status: 'static_fallback', source: null, asOfDate: null }
+      const reason = resp.metadata.fallbackReason
+      return {
+        ticker,
+        points: [],
+        status: 'static_fallback',
+        source: null,
+        asOfDate: null,
+        insufficientHistoryReason: reason && /insufficient/i.test(reason) ? reason : null,
+      }
     }),
   )
 

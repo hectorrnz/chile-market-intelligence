@@ -114,15 +114,23 @@ describe('FX panel — BCCh-only cleanup (Phase 8D.1)', () => {
     // getAllIndicators()/getByCategory() baseline alone.
     assert.ok(src.includes('liveIndicatorMap[fx.id]'), 'FX rows must prefer the live-fetched value per id')
     assert.ok(src.includes('liveIndicatorMap[id] ?? allIndicators.find'), 'Chile/US macro rows must prefer the live-fetched value per id')
-    assert.ok(src.includes("setLiveIndicatorMap"), 'the live fetch effect must actually populate the merged-value map, not only setMacroStatus/setUsMacroStatus')
+    // 2026-07-20: the fetch + setLiveIndicatorMap machinery moved into
+    // MacroDataProvider (shared platform-wide, survives navigation — see
+    // marketDataProvider.test.ts's sibling MacroDataProvider checks); Home now
+    // just reads the merged map from that context.
+    assert.ok(src.includes('useMacroData()'), 'Home must read the merged live-indicator map from the shared context')
+    const providerSrc = fs.readFileSync(new URL('../src/components/providers/MacroDataProvider.tsx', import.meta.url), 'utf8')
+    assert.ok(providerSrc.includes('setLiveIndicatorMap'), 'the provider must populate the merged-value map, not only clStatus/usStatus')
   })
 
   it('the Update Data button (doRefresh) also refreshes macro, not just market data', async () => {
     const fs = await import('node:fs')
-    const src = fs.readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8')
-    const doRefreshBody = src.slice(src.indexOf('const doRefresh = useCallback'), src.indexOf('const doRefresh = useCallback') + 800)
-    assert.ok(doRefreshBody.includes("fetchMacroIndicators('CL')"), 'doRefresh must also re-fetch CL macro indicators')
-    assert.ok(doRefreshBody.includes("fetchMacroIndicators('US')"), 'doRefresh must also re-fetch US macro indicators')
+    const pageSrc = fs.readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8')
+    const doRefreshBody = pageSrc.slice(pageSrc.indexOf('const doRefresh = useCallback'), pageSrc.indexOf('const doRefresh = useCallback') + 400)
+    assert.ok(doRefreshBody.includes('refreshMacro()'), 'doRefresh must call the shared macro refresh')
+    const providerSrc = fs.readFileSync(new URL('../src/components/providers/MacroDataProvider.tsx', import.meta.url), 'utf8')
+    assert.ok(providerSrc.includes("fetchMacroIndicators('CL')"), 'the shared refresh must re-fetch CL macro indicators')
+    assert.ok(providerSrc.includes("fetchMacroIndicators('US')"), 'the shared refresh must re-fetch US macro indicators')
   })
 
   it('i18n no longer defines the removed FX section-grouping labels', async () => {

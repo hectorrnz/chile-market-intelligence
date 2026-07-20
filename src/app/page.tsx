@@ -11,7 +11,7 @@ import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
 import type { DataSourceStatus } from '@/lib/providers/types'
 import { getAllCompanies } from '@/lib/data/companies'
 import { getAllSnapshots } from '@/lib/data/stocks'
-import { getAllIndicators, getByCategory, fetchMacroIndicators } from '@/lib/data/macro'
+import { getAllIndicators, getByCategory } from '@/lib/data/macro'
 import { getChileanRates } from '@/lib/data/chileanRates'
 import { getSeriesByStaticId } from '@/config/macroSeries'
 import { getUpcomingEarnings, getRecentResults } from '@/lib/data/earnings'
@@ -21,6 +21,7 @@ import { getDocumentByRelatedId } from '@/lib/data/documents'
 import { getSectorPerformance } from '@/lib/data/sectorPerformance'
 import { getIndexPerformance } from '@/lib/data/indexPerformance'
 import { useMarketData } from '@/components/providers/MarketDataProvider'
+import { useMacroData } from '@/components/providers/MacroDataProvider'
 import { fetchStockSnapshots, fetchSectorPerformance, fetchIndexPerformance } from '@/lib/data/marketData'
 import type { StockSnapshot, SectorSnapshot, IndexSnapshot } from '@/lib/providers/market/types'
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
@@ -66,33 +67,11 @@ export default function HomePage() {
   const snapshots = getAllSnapshots()
   const allIndicators = getAllIndicators()
 
-  // Live macro overlay: fetched (CL/US separately, since BCCh only ever covers
-  // Chile — a shared status would misstate US freshness) and merged by id over
-  // the static baseline. Previously this only updated the status badge while
-  // the displayed numbers stayed frozen on the static fallback — a real bug
-  // (a "Live BCCh" badge could sit next to a stale value). Now the merged
-  // live values are what's actually rendered below.
-  const [liveIndicatorMap, setLiveIndicatorMap] = useState<Record<string, MacroIndicator>>({})
-  const [macroStatus, setMacroStatus] = useState<DataSourceStatus>('static')
-  const [usMacroStatus, setUsMacroStatus] = useState<DataSourceStatus>('static')
-
-  useEffect(() => {
-    const ac = new AbortController()
-    Promise.all([
-      fetchMacroIndicators('CL', ac.signal),
-      fetchMacroIndicators('US', ac.signal),
-    ]).then(([clRes, usRes]) => {
-      if (clRes) {
-        setMacroStatus(clRes.metadata.status)
-        setLiveIndicatorMap(prev => ({ ...prev, ...Object.fromEntries(clRes.data.map(i => [i.id, i])) }))
-      }
-      if (usRes) {
-        setUsMacroStatus(usRes.metadata.status)
-        setLiveIndicatorMap(prev => ({ ...prev, ...Object.fromEntries(usRes.data.map(i => [i.id, i])) }))
-      }
-    })
-    return () => ac.abort()
-  }, [])
+  // Live macro overlay is shared platform-wide (see MacroDataProvider) — Update
+  // on any tab refreshes it, and it survives navigating away from this page.
+  // CL/US are never merged into one status (BCCh only ever covers Chile — a
+  // shared status would misstate US freshness).
+  const { liveIndicatorMap, clStatus: macroStatus, usStatus: usMacroStatus, refresh: refreshMacro } = useMacroData()
 
   const byId = (id: string) => liveIndicatorMap[id] ?? allIndicators.find(i => i.id === id)
   const macroChile = CHILE_MACRO_IDS.map(byId).filter(Boolean) as MacroIndicator[]
@@ -139,22 +118,9 @@ export default function HomePage() {
   }, [])
 
   const doRefresh = useCallback(async () => {
-    const [, clRes, usRes, newsRes] = await Promise.all([
-      refresh(),
-      fetchMacroIndicators('CL'),
-      fetchMacroIndicators('US'),
-      fetchLiveNews(),
-    ])
-    if (clRes) {
-      setMacroStatus(clRes.metadata.status)
-      setLiveIndicatorMap(prev => ({ ...prev, ...Object.fromEntries(clRes.data.map(i => [i.id, i])) }))
-    }
-    if (usRes) {
-      setUsMacroStatus(usRes.metadata.status)
-      setLiveIndicatorMap(prev => ({ ...prev, ...Object.fromEntries(usRes.data.map(i => [i.id, i])) }))
-    }
+    const [, , newsRes] = await Promise.all([refresh(), refreshMacro(), fetchLiveNews()])
     if (newsRes) setNewsResult(newsRes)
-  }, [refresh])
+  }, [refresh, refreshMacro])
 
   // Merge: static base → Supabase layer → live overlay (live always wins when present)
   const sectors = live?.sectors ?? supaSectors ?? staticSectors
