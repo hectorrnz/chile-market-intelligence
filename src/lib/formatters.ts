@@ -53,21 +53,52 @@ export function formatMarketCapMM(valueInMillions: number): string {
   return `${formatCLP(valueInMillions)} MM CLP`
 }
 
-const SOURCE_DATE_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+function santiagoDateParts(d: Date): { year: string; month: string; day: string } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Santiago', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(d)
+  const get = (t: string) => parts.find(p => p.type === t)?.value ?? ''
+  return { year: get('year'), month: get('month'), day: get('day') }
+}
 
 /**
- * Formats a YYYY-MM-DD (or ISO datetime) string as "Mon/DD/YY" for the
- * standardized "Source: X as of Mon/DD/YY" table footnote convention. Parses
- * the date components directly (never via `new Date()`) so the result can
- * never shift by a day depending on the reader's/server's timezone.
+ * Formats a YYYY-MM-DD (or ISO datetime) string for the standardized
+ * "Source: X as of ..." table footnote convention — "HH:MM" (Chile local
+ * time) for a timestamp from earlier today, "DD-MM" (Chile local date)
+ * otherwise. Mirrors `formatNewsTimestamp`'s today/prior-day split.
+ *
+ * A bare date-only value (no time-of-day component, e.g. "2026-07-20") is
+ * never run through `new Date()` — that parses as UTC midnight and can
+ * render as the prior day once converted to a negative-UTC-offset timezone
+ * like Chile's, and there is no real time-of-day to show for it anyway — it
+ * always renders as DD-MM, read directly off the string. A full ISO
+ * datetime (real instant, e.g. from `new Date().toISOString()`) is
+ * genuinely convertible and is shown in Chile local time.
  */
 export function formatSourceDate(isoDate: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(isoDate)
-  if (!m) return isoDate
-  const [, y, mo, d] = m
-  const mi = Number(mo) - 1
-  if (mi < 0 || mi > 11) return isoDate
-  return `${SOURCE_DATE_MONTHS[mi]}/${d}/${y.slice(-2)}`
+  const m = /^(\d{4})-(\d{2})-(\d{2})(T\d{2}:\d{2})/.exec(isoDate)
+  if (!m) {
+    // No time-of-day component — date-only string, never a fabricated time.
+    const dateOnly = /^(\d{4})-(\d{2})-(\d{2})/.exec(isoDate)
+    if (!dateOnly) return isoDate
+    const [, , mo, d] = dateOnly
+    if (Number(mo) < 1 || Number(mo) > 12) return isoDate
+    return `${d}-${mo}`
+  }
+
+  const dt = new Date(isoDate)
+  if (isNaN(dt.getTime())) return isoDate
+
+  const { year, month, day } = santiagoDateParts(dt)
+  const today = santiagoDateParts(new Date())
+  const isToday = year === today.year && month === today.month && day === today.day
+
+  if (isToday) {
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'America/Santiago', hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(dt)
+  }
+  return `${day}-${month}`
 }
 
 /** Format ISO date string as DD MMM YYYY (es-CL short month). */

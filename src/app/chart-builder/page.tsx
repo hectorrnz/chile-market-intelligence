@@ -127,14 +127,14 @@ export default function ChartBuilderPage() {
   // Phase 8C — persisted financials (manual CSV import) take precedence over
   // the static fundamentals.json fallback, per ticker. Falls back silently
   // (and is labeled honestly via the source badge) when nothing is imported.
-  const [persistedA, setPersistedA] = useState<{ records: FundamentalRecord[]; status: FinancialsSourceStatus; sourceType?: FinancialsSourceType } | null>(null)
+  const [persistedA, setPersistedA] = useState<{ records: FundamentalRecord[]; status: FinancialsSourceStatus; sourceType?: FinancialsSourceType; source: string } | null>(null)
   const [persistedB, setPersistedB] = useState<{ records: FundamentalRecord[]; status: FinancialsSourceStatus } | null>(null)
   const overlay = !!tickerB && !!compMap[tickerB] && tickerB !== ticker
 
   useEffect(() => {
     let mounted = true
     fetchFinancialStatements(ticker).then(res => {
-      if (mounted) setPersistedA({ records: res.records, status: res.status, sourceType: res.sourceType })
+      if (mounted) setPersistedA({ records: res.records, status: res.status, sourceType: res.sourceType, source: res.source })
     }).catch(() => { if (mounted) setPersistedA(null) })
     return () => { mounted = false }
   }, [ticker])
@@ -322,7 +322,10 @@ export default function ChartBuilderPage() {
           ) : (
             <FundamentalsChart labels={labels} series={series} height={360} indexed={mode === 'idx'} chartType={chartType} showLegend={legend} showGrid={grid} fmtBar={fmtBar} fmtLine={fmtLine} />
           )}
-          <p className="text-xs text-muted-fg mt-2">{t.charting.source}{mode === 'idx' ? ' · indexed = 100' : ''}{freq !== 'Q' ? ` · ${freq === 'TTM' ? 'TTM' : t.charting.annual}` : ''}</p>
+          <p className="text-xs text-muted-fg mt-2">
+            {sourceStatusA === 'persisted' ? `${t.common.source}: ${persistedA!.source}` : t.charting.source}
+            {mode === 'idx' ? ' · indexed = 100' : ''}{freq !== 'Q' ? ` · ${freq === 'TTM' ? 'TTM' : t.charting.annual}` : ''}
+          </p>
         </div>
       </div>
 

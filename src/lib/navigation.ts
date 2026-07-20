@@ -1,7 +1,7 @@
 import type { Lang, Translation } from '@/lib/i18n'
 
 export interface NavItem {
-  key: 'home' | 'stocks' | 'compare' | 'charting' | 'macro' | 'earnings' | 'hechos' | 'watchlist' | 'portfolio' | 'structuredNotes'
+  key: 'home' | 'stocks' | 'compare' | 'charting' | 'macro' | 'earnings' | 'watchlist' | 'portfolio' | 'structuredNotes'
   href: string
   icon: string
   soon?: boolean
@@ -14,7 +14,6 @@ export const navItems: NavItem[] = [
   { key: 'charting',        href: '/chart-builder',      icon: 'gf' },
   { key: 'macro',           href: '/macro',              icon: 'trending' },
   { key: 'earnings',        href: '/earnings',           icon: 'document' },
-  { key: 'hechos',          href: '/hechos-esenciales',  icon: 'alert' },
   { key: 'watchlist',       href: '/watchlist',          icon: 'star' },
   { key: 'portfolio',       href: '/portfolio',          icon: 'portfolio' },
   { key: 'structuredNotes', href: '/structured-notes',   icon: 'notes' },

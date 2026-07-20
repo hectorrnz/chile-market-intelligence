@@ -8,7 +8,7 @@
 // place for macro/market/CMF call sites already wired to their own i18n keys.
 
 import { useLang } from '@/components/providers/LangProvider'
-import { SOURCE_REGISTRY, getSourceLabel, type SourceKey, type SourceState } from '@/lib/dataSourceRegistry'
+import { SOURCE_REGISTRY, getSourceLabel, getStateWord, type SourceKey, type SourceState } from '@/lib/dataSourceRegistry'
 
 const DOT_STYLE: Record<SourceState, { background: string; border?: string }> = {
   live:             { background: 'var(--positive)' },
@@ -35,20 +35,25 @@ export function SourceStateBadge({
   className?: string
 }) {
   const { lang } = useLang()
-  const label = getSourceLabel(sourceKey, lang)
-  const dot = DOT_STYLE[SOURCE_STATE_LOOKUP[sourceKey]]
+  const state = SOURCE_STATE_LOOKUP[sourceKey]
+  // Visible text is always the bare status word — never a source/provider
+  // name (see getStateWord's doc comment). The full descriptive registry
+  // label is still available on hover.
+  const word = getStateWord(state, lang)
+  const fullLabel = getSourceLabel(sourceKey, lang)
+  const dot = DOT_STYLE[state]
 
   return (
     <span
       className={`inline-flex items-center gap-1 text-xs text-muted-fg whitespace-nowrap ${className}`}
-      title={label}
+      title={fullLabel}
     >
       <span
         className="w-1.5 h-1.5 rounded-full inline-block shrink-0"
         style={{ backgroundColor: dot.background, border: dot.border }}
         aria-hidden
       />
-      {label}
+      {word}
     </span>
   )
 }

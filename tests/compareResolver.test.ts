@@ -237,7 +237,6 @@ describe('Phase 8B no-static-terminal-state policy docs', () => {
       'Economic calendar',
       'Fundamentals / Charting',
       'Earnings',
-      'Hechos Relevantes',
       'News',
     ]
     for (const mod of requiredModules) {

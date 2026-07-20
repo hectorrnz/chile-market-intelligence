@@ -20,8 +20,10 @@ const DOT_COLOR: Record<DataSourceStatus, string> = {
 }
 
 /**
- * Compact market data source chip (Phase 4C). Mirrors DataSourceBadge styling
- * but uses marketData i18n keys so labels reference Bolsa de Santiago, not BCCh.
+ * Compact market data source chip (Phase 4C). Mirrors DataSourceBadge styling.
+ * Visible text is always the bare status word (e.g. "Live", never "Live —
+ * Yahoo Finance") — the source name belongs in the table's "Source: X as of
+ * ..." footer, not the badge; it still surfaces via the hover tooltip.
  */
 export function MarketDataSourceBadge({
   status,
@@ -32,10 +34,11 @@ export function MarketDataSourceBadge({
 }) {
   const { t } = useLang()
   const label = t.marketData[STATUS_KEY[status]]
+  const title = (status === 'live' || status === 'persisted') ? `${label} — Yahoo Finance` : label
   return (
     <span
       className={`inline-flex items-center gap-1 text-xs text-muted-fg whitespace-nowrap ${className}`}
-      title={label}
+      title={title}
     >
       <span
         className="w-1.5 h-1.5 rounded-full inline-block shrink-0"

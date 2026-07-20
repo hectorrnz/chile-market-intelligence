@@ -160,21 +160,6 @@ export interface EarningsRelease {
   source: string
 }
 
-export interface HechoEsencial {
-  id: string
-  ticker: string
-  companyName: string
-  date: string
-  category: 'Dividend' | 'Capital Increase' | 'Debt Issuance' | 'M&A' | 'Management Change' | 'Regulation' | 'Related-Party Transaction' | 'Litigation' | 'Guidance' | 'Asset Sale' | 'Other'
-  filingType: 'HE' | 'II'
-  title: string
-  summary: string
-  materiality: 'Low' | 'Medium' | 'High'
-  stockImpact?: 'Positive' | 'Negative' | 'Neutral' | 'Unknown'
-  source: string
-  url?: string
-}
-
 // Phase — Source-backed News module. Every NewsItem is a real, fetched article
 // (or an official disclosure listing) — never a fabricated/sample row. See
 // src/lib/providers/news/ for the provider architecture and
@@ -215,7 +200,7 @@ export interface NewsItem {
  */
 export interface DocumentRecord {
   id: string
-  type: 'hecho_esencial' | 'earnings_release' | 'financial_statement' | 'news_source'
+  type: 'earnings_release' | 'financial_statement' | 'news_source'
   ticker: string
   companyName: string
   title: string

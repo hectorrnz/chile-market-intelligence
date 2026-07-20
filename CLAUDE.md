@@ -214,6 +214,33 @@ docs/                 — Project documentation
 - Uses `aria-label` on the group and `title` on each button for accessibility.
 - Do NOT replace it with an icon-only button or text-only "Theme: Light" — the segmented pill is the current standard.
 
+## Source Badge Rule (2026-07-20)
+
+- Every source/status badge (`DataSourceBadge`, `MarketDataSourceBadge`, `SourceStateBadge`) renders **only
+  a bare status word** next to its colored dot — `Live`, `Persisted`, `Static`, `Static fallback`, `Hybrid
+  fallback`, `Blocked`, `Unavailable`. **Never** a provider/source/vendor name inline (no "Live BCCh", no
+  "Persisted — Yahoo Finance", no "Persisted financials via CMF XBRL" as the visible badge text).
+- The provider/source detail is not lost — it moves to the badge's `title` hover tooltip (e.g. "Persisted —
+  Yahoo Finance"), built in the component (`DataSourceBadge`'s `provider` prop, `MarketDataSourceBadge`'s
+  hardcoded "Yahoo Finance", `SourceStateBadge`'s full `dataSourceRegistry.ts` label). Registry label
+  strings themselves are **not** shortened — they stay full descriptions, used only as tooltips now via
+  `getStateWord()` (bare word) vs `getSourceLabel()` (full description).
+  Adding a new state to `dataSourceRegistry.ts`'s `SourceState` union must also add it to `STATE_WORD`.
+- **The real source name belongs at the bottom of the table**, via `TableSourceFooter` —
+  `"{t.common.source}: {source}{ ' ' + t.common.asOf + ' ' + formatSourceDate(asOf) if asOf }"`. If a table's
+  *only* existing source indication was its badge (true for `chart-builder`'s chart before this rule), add a
+  real footer naming the actual resolved source rather than leave the badge as the sole indicator — see
+  `chart-builder/page.tsx`'s chart-area `<p>` for the pattern (resolves to `persistedA.source` when
+  persisted, the existing static-fallback sentence otherwise).
+- `formatSourceDate()` (`src/lib/formatters.ts`) renders **`HH:MM` (Chile local time)** for a timestamp from
+  earlier today, **`DD-MM`** (no year) otherwise — mirrors `formatNewsTimestamp`'s today/prior-day split. A
+  bare date-only string (no time-of-day component, e.g. a BCCh/FRED release date) is never run through
+  `new Date()` and never shown as a fabricated time — it always renders `DD-MM`, parsed directly off the
+  string, even when that date happens to be today.
+- Do not reintroduce a source name into any badge's visible text — this was an explicit, deliberate reversal
+  of the earlier Phase 8A/8B convention (which required the source name in the badge); the earlier tests
+  asserting that are updated (`tests/homeWatchlistOverhaul.test.ts`), not still-valid history to restore.
+
 ## News Module Rule (News Module Source Integrity phase, 2026-07-15)
 
 - **Live, source-backed only — no static/sample fallback.** `src/data/news.json` and `src/data/news_mock.ts`
@@ -458,6 +485,28 @@ docs/                 — Project documentation
 - Build: `npm run build` passes 0 errors (12 routes); `npm test` 13/13 pass; `npm run lint` 0 problems. Runtime-verified (dev server): home/compare/charting render, persistence round-trips, command palette filters, **no console errors or hydration warnings**.
 
 ## Current Phase
+
+**Most recent work (2026-07-20) — Hechos Esenciales module removed; source badges/footers simplified.**
+Full record in `docs/data_source_status.md` (search "REMOVED"). Summary: the Hechos Esenciales feature
+(dedicated `/hechos-esenciales` tab, Home dashboard panel, company-page Filings card, and all supporting
+CMF infrastructure — `src/lib/providers/cmf/`, `cmfRepository.ts`, `cmfEntityMap.ts`, `/api/cmf/*` routes,
+`MaterialityBadge`, `CmfDataSourceBadge`, the `HechoEsencial` type, and every related i18n key) was
+**deleted outright**, at the user's explicit request, rather than kept as a permanently static/CAPTCHA-blocked
+module — no free/official workaround was ever found for it (`docs/cmf_provider_discovery.md`, kept as a
+historical discovery record). The Document Viewer (`/documents/[id]`) is now earnings-only. The Company
+detail page's Recent Results/Valuation row is now 2 columns (Filings card removed); the `LineChart`
+component's marker system dropped the now-unused `'filing'` kind. Do not re-add a CMF Hechos Esenciales
+surface without a genuinely new, CAPTCHA-free official/free source — re-check `docs/cmf_provider_discovery.md`
+first rather than rebuilding the CAPTCHA-blocked path.
+
+**Same-day: source badge / footer convention rewritten — see "Source Badge Rule" below.** Every
+`DataSourceBadge`/`MarketDataSourceBadge`/`SourceStateBadge` now renders only a bare status word next to
+its dot (`Live`/`Persisted`/`Static`/etc.) — never a provider/source name inline. The provider still
+surfaces via the hover `title`. `formatSourceDate()` (`src/lib/formatters.ts`) now renders `HH:MM` (Chile
+local time) for a same-day timestamp or `DD-MM` otherwise, replacing the old always-`Mon/DD/YY` format —
+never fabricates a time for a date-only value. `chart-builder`'s chart footer was upgraded from a static
+sentence to the real resolved financials source (`persistedA.source`), since its badge no longer carries
+that text. See `docs/data_source_status.md` for the full record.
 
 **Most recent work (2026-07-15) — News Module Source Integrity + Live Ingestion Task** ✓ COMPLETE. Full
 detail in `docs/implementation_plan.md` (search "News Module Source Integrity"). Summary: `src/data/news.json`

@@ -12,9 +12,9 @@
 //   /api/notifications/*, /api/notification-recipients/* → 401 JSON
 //
 // Public routes (no auth required):
-//   /, /stocks, /macro, /companies/*, /earnings, /hechos-esenciales,
+//   /, /stocks, /macro, /companies/*, /earnings,
 //   /documents/*, /compare, /chart-builder, /login, /auth/*,
-//   /api/macro/*, /api/market/*, /api/cmf/*, /api/health/*
+//   /api/macro/*, /api/market/*, /api/health/*
 //
 // Cron routes (/api/cron/*) carry their own CRON_SECRET bearer auth — the
 // middleware leaves them untouched so Vercel can call them without a session.

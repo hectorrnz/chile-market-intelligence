@@ -14,7 +14,6 @@ import { getAllSnapshots } from '@/lib/data/stocks'
 import { getAllIndicators, getByCategory, fetchMacroIndicators } from '@/lib/data/macro'
 import { getChileanRates } from '@/lib/data/chileanRates'
 import { getSeriesByStaticId } from '@/config/macroSeries'
-import { getRecentHechos } from '@/lib/data/hechos'
 import { getUpcomingEarnings, getRecentResults } from '@/lib/data/earnings'
 import { fetchLiveNews, type NewsFetchResponse } from '@/lib/data/newsLive'
 import { getNewsSourceCode, getNewsSourceColor } from '@/lib/news/sourceCodes'
@@ -105,7 +104,6 @@ export default function HomePage() {
   const fxRows = getByCategory('FX').map(fx => liveIndicatorMap[fx.id] ?? fx)
   const macroAsOf = [...macroChile, ...macroUs].reduce((max, i) => (i.lastUpdated > max ? i.lastUpdated : max), '')
   const fxAsOf = fxRows.reduce((max, i) => (i.lastUpdated > max ? i.lastUpdated : max), '')
-  const recentHechos = getRecentHechos(8)
   const upcoming = getUpcomingEarnings().slice(0, 2)
   const recent = getRecentResults().slice(0, 2)
   const staticSectors = getSectorPerformance()
@@ -278,7 +276,7 @@ export default function HomePage() {
     setOrder(ids)
   }
 
-  // Macro card drives the top region's height; tracked/FX and earnings/hechos
+  // Macro card drives the top region's height; tracked/FX and earnings
   // columns match it and scroll internally.
   const macroRef = useRef<HTMLDivElement>(null)
   const [macroH, setMacroH] = useState(0)
@@ -324,7 +322,7 @@ export default function HomePage() {
         <p className="text-xs text-muted-fg ui-number -mt-2">{liveTimestamp}</p>
       )}
 
-      {/* ── Top region: Macro · (Tracked stocks + FX) · (Earnings + Hechos) ── */}
+      {/* ── Top region: Macro · (Tracked stocks + FX) · Earnings ── */}
       {/* Macro card (natural height) drives the region; the other columns match it and scroll. */}
       <div className="grid grid-cols-3 gap-4 items-start">
 
@@ -437,10 +435,12 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Column 3 — Earnings + Hechos recent */}
-        <div className="flex flex-col gap-4 min-h-0" style={{ height: macroH || undefined }}>
-          <div className="bg-surface border border-border rounded p-4 shrink-0">
-            <div className="ui-label text-muted-fg mb-2">{t.home.upcomingEarnings}</div>
+        {/* Column 3 — Earnings (fills to macroH and scrolls, matching columns 1/2) */}
+        <div className="bg-surface border border-border rounded overflow-hidden flex flex-col" style={{ height: macroH || undefined }}>
+          <div className="px-4 py-2.5 border-b border-border shrink-0">
+            <span className="ui-label text-muted-fg">{t.home.upcomingEarnings}</span>
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto p-4">
             {upcoming.length > 0 && (
               <div className="mb-2">
                 <div className="ui-label text-muted-fg mb-1">{t.home.upcoming}</div>
@@ -469,32 +469,9 @@ export default function HomePage() {
                 })}
               </div>
             )}
-            <p className="text-xs text-muted-fg mt-2">{t.home.earningsSource}</p>
           </div>
-
-          <div className="bg-surface border border-border rounded overflow-hidden flex flex-col flex-1 min-h-0">
-            <div className="px-4 py-2.5 border-b border-border shrink-0">
-              <span className="ui-label text-muted-fg">{t.home.hechosFeed}</span>
-            </div>
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              {recentHechos.map(h => {
-                const doc = getDocumentByRelatedId(h.id)
-                return (
-                  <div key={h.id} className="px-4 py-2.5 border-b border-border last:border-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs ui-number text-muted-fg">{h.date}</span>
-                      <Link href={`/companies/${h.ticker}`} className="text-xs font-mono text-primary hover:underline">{h.ticker}</Link>
-                      <StatusPill label={h.filingType} variant={h.filingType === 'HE' ? 'info' : 'neutral'} />
-                      {doc && <Link href={`/documents/${doc.id}`} className="ml-auto text-xs text-muted-fg hover:text-primary transition-colors" title={t.documents.viewSummary}>→</Link>}
-                    </div>
-                    <p className="text-xs text-muted leading-snug line-clamp-2">{h.title}</p>
-                  </div>
-                )
-              })}
-            </div>
-            <div className="px-4 py-2 border-t border-border shrink-0">
-              <p className="text-xs text-muted-fg">{t.home.hechosSource}</p>
-            </div>
+          <div className="px-4 py-2 border-t border-border shrink-0">
+            <p className="text-xs text-muted-fg">{t.home.earningsSource}</p>
           </div>
         </div>
       </div>

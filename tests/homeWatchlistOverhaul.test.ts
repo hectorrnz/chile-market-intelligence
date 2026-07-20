@@ -70,7 +70,7 @@ describe('Home page — Watchlist table columns: Ticker/Company/Price/Day Chg/YT
   })
 })
 
-describe('Home page — badge/footer wording: "Live"/"Persisted — Yahoo Finance", never "Persisted market data"', () => {
+describe('Home page — badge wording: bare status word only, never a source/provider name', () => {
   const i18n = readFileSync(I18N, 'utf8')
 
   it('marketData.persisted no longer reads the vague "Persisted market data"', () => {
@@ -78,16 +78,17 @@ describe('Home page — badge/footer wording: "Live"/"Persisted — Yahoo Financ
     assert.ok(!i18n.includes("persisted:       'Datos de mercado persistidos'"))
   })
 
-  it('marketData.live explicitly includes the word "Live" (EN) / "En vivo" (ES)', () => {
+  it('marketData.live is the bare word "Live" (EN) / "En vivo" (ES) — no source name in the badge', () => {
     const enMatch = i18n.match(/marketData: \{[\s\S]{0,300}?live:\s+'([^']+)'/)
     assert.ok(enMatch, 'expected an EN marketData.live entry')
-    assert.match(enMatch![1], /Live/)
+    assert.equal(enMatch![1], 'Live')
   })
 
-  it('marketData.persisted explicitly names the real source (Yahoo Finance), not a vague generic phrase', () => {
+  it('marketData.persisted is the bare word "Persisted" — the real source (Yahoo Finance) lives in the table footer, not the badge', () => {
     const enMatch = i18n.match(/marketData: \{[\s\S]{0,300}?persisted:\s+'([^']+)'/)
     assert.ok(enMatch, 'expected an EN marketData.persisted entry')
-    assert.match(enMatch![1], /Yahoo Finance/)
+    assert.equal(enMatch![1], 'Persisted')
+    assert.ok(!/Yahoo Finance/.test(enMatch![1]), 'the badge label itself must not name a source')
   })
 
   it('home.sectorSource / home.indexSource are plain source names — no "via", "proxies", or parenthetical caveats', () => {

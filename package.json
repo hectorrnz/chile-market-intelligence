@@ -10,7 +10,6 @@
         "test": "node --test \"tests/*.test.ts\"",
         "bcch:search": "node scripts/bcch/searchSeries.ts",
         "bcch:validate": "node scripts/bcch/validateSeries.ts",
-        "cmf:discover-hechos": "node scripts/cmf/discoverHechos.ts",
         "supabase:check": "node scripts/supabase/checkConnection.ts",
         "supabase:generate-seed": "node scripts/supabase/generateSeed.ts",
         "supabase:seed": "node scripts/supabase/applySeed.ts",

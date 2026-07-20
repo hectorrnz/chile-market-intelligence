@@ -64,11 +64,6 @@ describe('Phase 8A dataSourceRegistry', () => {
     assert.match(SOURCE_REGISTRY.financialsPersistedYahoo.labelEs, /no oficial/i)
   })
 
-  it('the CMF entry does not claim CMF ingestion is live', () => {
-    const cmf = getSourceEntry('cmfBlocked')
-    assert.equal(cmf.state, 'blocked')
-    assert.ok(!/live ingestion active|CMF live$/i.test(cmf.labelEn))
-  })
 })
 
 // ─── SourceStateBadge: no hardcoded colors, uses semantic tokens ─────────────
@@ -119,23 +114,6 @@ describe('Phase 8A — no stale phase/future-source promises in i18n', () => {
     // separately caught above) resurfacing with different wording, e.g.
     // "planned for Phase N" or "coming in Phase N".
     assert.ok(!/planned for Phase [4-9]|coming in Phase [4-9]|planificad[oa].{0,10}Fase [4-9]|próxima.{0,10}Fase [4-9]/i.test(src))
-  })
-})
-
-// ─── CMF wording: precise "blocked" language, never a confirmed promise ───────
-
-describe('Phase 8A — CMF blocked wording is precise everywhere it appears', () => {
-  const src = readFileSync(I18N, 'utf8')
-
-  it('at least one CMF-related label explains the CAPTCHA block', () => {
-    assert.ok(/CAPTCHA/.test(src), 'CMF labels should explain the CAPTCHA block, not just say "static"')
-  })
-
-  it('CMF-related "static" labels do not claim live ingestion is active', () => {
-    // Every occurrence of "CMF" near "live" must also be near "not active" / "blocked" / "no activa" / "bloqueado".
-    const cmfLiveClaims = src.match(/CMF[^\n]{0,40}live(?!\s*ingestion not active)/gi) ?? []
-    const falseClaims = cmfLiveClaims.filter((m) => !/not active|blocked|bloqueado|no activa/i.test(m))
-    assert.equal(falseClaims.length, 0, `found CMF text implying live ingestion: ${JSON.stringify(falseClaims)}`)
   })
 })
 
@@ -195,8 +173,10 @@ describe('Phase 8A — Stocks and Company pages show a live-price status badge',
 describe('Phase 8A regression — existing badge i18n namespaces unaffected', () => {
   const src = readFileSync(I18N, 'utf8')
 
-  it('dataSource, marketData, and cmfData namespaces still define all 5 DataSourceStatus keys', () => {
-    for (const ns of ['dataSource', 'marketData', 'cmfData']) {
+  it('dataSource and marketData namespaces still define all 5 DataSourceStatus keys', () => {
+    // cmfData was the CMF Hechos Esenciales badge namespace — removed along
+    // with the whole Hechos module (2026-07-20); no longer expected to exist.
+    for (const ns of ['dataSource', 'marketData']) {
       const block = src.match(new RegExp(`${ns}:\\s*\\{[^}]*\\}`, 's'))
       assert.ok(block, `${ns} block not found`)
       for (const key of ['static', 'live', 'hybridFallback', 'liveUnavailable', 'persisted']) {

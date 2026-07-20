@@ -36,12 +36,6 @@ function NavIcon({ name }: { name: string }) {
         <path strokeLinecap="round" d="M7 10h6M7 13h4" />
       </svg>
     ),
-    alert: (
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-4 h-4">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M10 2a5.5 5.5 0 015.5 5.5c0 3 1.2 4.2 1.8 5H2.7c.6-.8 1.8-2 1.8-5A5.5 5.5 0 0110 2z" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M8.5 16.5a1.5 1.5 0 003 0" />
-      </svg>
-    ),
     star: (
       <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-4 h-4">
         <path strokeLinecap="round" strokeLinejoin="round" d="M10 2l2 5.5h5.5l-4.5 3.5 1.5 5.5L10 13.5 5.5 16.5 7 11 2.5 7.5H8L10 2z" />

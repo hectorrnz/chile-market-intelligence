@@ -84,12 +84,6 @@ export const SOURCE_REGISTRY = {
   },
 
   // ── Situation-specific entries (compose a base label with detail) ────────
-  cmfBlocked: {
-    id: 'cmf-blocked',
-    state: 'blocked',
-    labelEn: 'CMF live ingestion not active · static MVP sample',
-    labelEs: 'Ingesta CMF en vivo no activa · muestra MVP estática',
-  },
   fundamentalsStatic: {
     id: 'fundamentals-static',
     state: 'static_fallback',
@@ -199,4 +193,25 @@ export function getSourceLabel(key: SourceKey, lang: 'en' | 'es'): string {
 
 export function getSourceState(key: SourceKey): SourceState {
   return SOURCE_REGISTRY[key].state
+}
+
+/**
+ * Bare status word shown next to a badge's colored dot — never a source/
+ * provider name (e.g. "Live", never "Live BCCh" or "Live — Yahoo Finance").
+ * The full descriptive registry label is still available via `getSourceLabel`
+ * for use as a tooltip; the specific source name belongs in a table's
+ * "Source: X as of ..." footer (`TableSourceFooter`), not the badge itself.
+ */
+const STATE_WORD: Record<SourceState, { en: string; es: string }> = {
+  live:            { en: 'Live',             es: 'En vivo' },
+  persisted:       { en: 'Persisted',         es: 'Persistido' },
+  hybrid:          { en: 'Hybrid',            es: 'Híbrido' },
+  static_fallback: { en: 'Static fallback',   es: 'Respaldo estático' },
+  static_mvp:      { en: 'Static',            es: 'Estático' },
+  blocked:         { en: 'Blocked',           es: 'Bloqueado' },
+  unavailable:     { en: 'Unavailable',       es: 'No disponible' },
+}
+
+export function getStateWord(state: SourceState, lang: 'en' | 'es'): string {
+  return lang === 'es' ? STATE_WORD[state].es : STATE_WORD[state].en
 }

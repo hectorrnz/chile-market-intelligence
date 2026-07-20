@@ -327,24 +327,19 @@ estimates source for imported data, and the UI explicitly renders `—` rather t
 
 ---
 
-## Hechos Esenciales (`/hechos-esenciales`)
+## Hechos Esenciales — REMOVED (2026-07-20)
 
-| Module | Current source | Status | UI label (after 8A) | Accuracy | API route | Priority |
-|---|---|---|---|---|---|---|
-| Filings table | `hechosEsenciales.json` only; live provider is a shell (`cmfHechosProvider.getHechos()` always returns `ok:false`) | `blocked` | Subtitle: "Material disclosures filed with CMF" (dropped "future source: CMF API"). Footer: "CMF live ingestion not active (public portal requires CAPTCHA) · static MVP sample" (was "Phase 4 will connect CMF API" — a confirmed-sounding promise for something that is architecturally blocked, not just pending) | ✅ Fixed 8A — this was the clearest P0 in the whole audit | `GET /api/cmf/hechos` (returns static via the orchestrator) | Blocked — see CMF section below |
+The Hechos Esenciales module (`/hechos-esenciales` tab, Home dashboard panel, company-page Filings
+card, and its supporting CMF infrastructure — `src/lib/providers/cmf/`, `cmfRepository.ts`,
+`cmfEntityMap.ts`, `/api/cmf/*` routes, `MaterialityBadge`, `CmfDataSourceBadge`) was **deleted from
+the app**, at the user's explicit request, rather than kept as a permanently static/blocked module.
+Rationale: the CMF Hechos Esenciales public portal requires an image CAPTCHA (confirmed structurally
+blocked, `docs/cmf_provider_discovery.md`, Phase 5A.1) with no free/official workaround ever found —
+so the module could only ever show a static sample with no path to real data, which no longer earned
+its place in the app. `docs/cmf_provider_discovery.md` is kept as a historical discovery record.
+Earnings' own CMF FECU references and the Document Viewer (now earnings-only) are unaffected.
 
 ---
-
-## CMF Live Ingestion — Current State (all consumers)
-
-Confirmed directly from `docs/cmf_provider_discovery.md` (Phase 5A.1 discovery run):
-
-- The CMF Hechos Esenciales public search form (`hechos.php` → `hechos2.php`) requires an **image CAPTCHA** (`/biblioteca/captcha2/captcha_hechos.php`) before returning any results.
-- Automated CAPTCHA bypass is prohibited by project rules — this is a **structural block**, not a temporary one.
-- `src/lib/providers/cmf/cmfHechosProvider.ts` is an explicit shell: every method returns `{ ok: false, reason: 'NOT_IMPLEMENTED' }`.
-- All CMF-sourced UI (Hechos Esenciales page, Home's Hechos feed, Earnings' CMF FECU references, Document Viewer) is static by necessity, not by an unfulfilled "will connect" promise.
-- **Do not** phrase any CMF label as "Phase N will connect CMF API" — always use "CMF live ingestion not active" / "blocked (CAPTCHA)" wording (fixed everywhere in 8A).
-- Documented future paths (`docs/cmf_provider_discovery.md` §Phase 5A.2-alt), none confirmed: official `api.cmf.cl` (banking/insurance-focused, HE coverage unconfirmed), a licensed CMF data feed, a broker/aggregator feed that might include CMF HE, or manual CSV/PDF ingestion if documents are supplied directly.
 
 ---
 
@@ -516,15 +511,6 @@ next phase, and priority — none is an open-ended "Static MVP" with no plan.
 - **Blocker:** none technical for the earnings-events schema itself; no analyst-estimates vendor in scope (unchanged).
 - **Next phase:** **Phase 8D+** (CSV coverage growth) / continue CMF/XBRL automation / not planned (real consensus estimates — explicitly out of scope per project rules).
 - **Priority:** P1 (more CSV imports) / P2 (CMF/XBRL automation) / not planned (real consensus).
-
-### Hechos Relevantes (Hechos Esenciales)
-
-- **Current static fields:** `hechosEsenciales.json` — all filings.
-- **Target source options** (none confirmed): (a) an official CMF API if one is ever published (banking/insurance APIs exist at `api.cmf.cl`; HE coverage unconfirmed); (b) a licensed/vendor data feed that redistributes CMF filings; (c) manual upload of filings as they're published; (d) email/PDF ingestion if CMF or the companies themselves can be a direct source.
-- **Conversion path:** discovery first for options (a)/(b) — confirm whether either actually covers Hechos Esenciales before building anything; (c)/(d) need no discovery, just a manual intake workflow + a `cmf_filings` table already compatible with the existing `hechosEsenciales.json` shape.
-- **Blocker:** the CMF public HTML portal requires an image CAPTCHA — confirmed structurally blocked via a real discovery run (`docs/cmf_provider_discovery.md`, Phase 5A.1). This is a **blocked-with-workaround** state, not a plain static-MVP state — the workaround options above exist and are documented, none implemented yet.
-- **Next phase:** **Phase 8E**.
-- **Priority:** P2 (manual upload workaround) / P3 (official API or vendor feed, unconfirmed to exist).
 
 ### News — ✓ source-backed via Diario Financiero + La Tercera RSS (News Module Source Integrity phase, 2026-07-15; La Tercera added 2026-07-15)
 

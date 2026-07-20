@@ -6,16 +6,27 @@ import {
   formatMarketCapMM, surprisePct, changeColor, formatSourceDate,
 } from '../src/lib/formatters.ts'
 
-test('formatSourceDate renders "Mon/DD/YY" for the standardized table footnote', () => {
-  assert.equal(formatSourceDate('2026-07-14'), 'Jul/14/26')
-  assert.equal(formatSourceDate('2026-01-05'), 'Jan/05/26')
-  assert.equal(formatSourceDate('2026-12-31T10:15:00.000Z'), 'Dec/31/26')
+test('formatSourceDate renders "DD-MM" for a date-only string (no time to show)', () => {
+  assert.equal(formatSourceDate('2026-07-14'), '14-07')
+  assert.equal(formatSourceDate('2026-01-05'), '05-01')
 })
 
-test('formatSourceDate never shifts by a day regardless of timezone (no Date() parsing)', () => {
+test('formatSourceDate never shifts by a day regardless of timezone (no Date() parsing for date-only input)', () => {
   // A naive `new Date('2026-01-01')` + toLocaleDateString in a negative-UTC-offset
   // timezone can render Dec 31 — formatSourceDate must not reproduce that bug.
-  assert.equal(formatSourceDate('2026-01-01'), 'Jan/01/26')
+  assert.equal(formatSourceDate('2026-01-01'), '01-01')
+})
+
+test('formatSourceDate renders "HH:MM" (Chile local time) for a timestamp from earlier today', () => {
+  const now = new Date()
+  const earlierToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 5).toISOString()
+  assert.match(formatSourceDate(earlierToday), /^\d{2}:\d{2}$/)
+})
+
+test('formatSourceDate renders "DD-MM" (Chile local date) for a timestamp from a prior day', () => {
+  const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)
+  const label = formatSourceDate(threeDaysAgo.toISOString())
+  assert.match(label, /^\d{2}-\d{2}$/)
 })
 
 test('formatSourceDate returns the input unchanged for a malformed date', () => {

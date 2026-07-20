@@ -5,12 +5,10 @@ import { useParams } from 'next/navigation'
 import { useLang } from '@/components/providers/LangProvider'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { StatusPill } from '@/components/ui/StatusPill'
-import { MaterialityBadge } from '@/components/ui/MaterialityBadge'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SourceNote } from '@/components/ui/SourceNote'
 import { getDocumentById } from '@/lib/data/documents'
 import { getAllEarnings } from '@/lib/data/earnings'
-import { getAllHechos } from '@/lib/data/hechos'
 import { formatMillionsCLP, formatPct, changeColor } from '@/lib/formatters'
 
 const syncVariant: Record<string, 'positive' | 'warning' | 'neutral'> = {
@@ -22,10 +20,6 @@ const syncVariant: Record<string, 'positive' | 'warning' | 'neutral'> = {
 const qualityVariant: Record<string, 'positive' | 'warning' | 'negative' | 'neutral'> = {
   Clean: 'positive', Mixed: 'warning', Weak: 'negative', Pending: 'neutral',
 }
-const impactVariant: Record<string, 'positive' | 'negative' | 'neutral'> = {
-  Positive: 'positive', Negative: 'negative', Neutral: 'neutral', Unknown: 'neutral',
-}
-
 export default function DocumentPage() {
   const { id } = useParams<{ id: string }>()
   const { t } = useLang()
@@ -36,7 +30,7 @@ export default function DocumentPage() {
     return (
       <div className="w-full space-y-4">
         <div className="text-xs text-muted-fg flex items-center gap-1.5">
-          <Link href="/hechos-esenciales" className="hover:text-foreground transition-colors">{t.hechos.tag}</Link>
+          <Link href="/earnings" className="hover:text-foreground transition-colors">{t.earnings.tag}</Link>
           <span>/</span>
           <span className="text-foreground">{id}</span>
         </div>
@@ -53,16 +47,13 @@ export default function DocumentPage() {
   const docTypeLabel = t.documents.docType[doc.type as keyof typeof t.documents.docType] ?? doc.type
   const fileTypeLabel = t.documents.fileType[doc.fileType as keyof typeof t.documents.fileType] ?? doc.fileType
 
-  const backHref  = doc.type === 'earnings_release' ? '/earnings' : '/hechos-esenciales'
-  const backLabel = doc.type === 'earnings_release' ? t.earnings.tag : t.hechos.tag
+  const backHref  = '/earnings'
+  const backLabel = t.earnings.tag
 
   // Cross-link the underlying record so the viewer can show structured facts +
   // an assessment chip (derived from existing static data — no external calls).
   const earningsRec = doc.type === 'earnings_release'
     ? getAllEarnings().find(e => e.id === doc.relatedRecordId)
-    : undefined
-  const hechoRec = doc.type === 'hecho_esencial'
-    ? getAllHechos().find(h => h.id === doc.relatedRecordId)
     : undefined
 
   const assessment = earningsRec
@@ -71,13 +62,6 @@ export default function DocumentPage() {
              : earningsRec.resultQuality === 'Weak'  ? t.documents.assessWeak
              : t.documents.assessMixed,
         variant: qualityVariant[earningsRec.resultQuality] ?? 'neutral',
-      }
-    : hechoRec?.stockImpact
-    ? {
-        label: hechoRec.stockImpact === 'Positive' ? t.documents.assessPositive
-             : hechoRec.stockImpact === 'Negative' ? t.documents.assessNegative
-             : t.documents.assessNeutral,
-        variant: impactVariant[hechoRec.stockImpact] ?? 'neutral',
       }
     : null
 
@@ -102,7 +86,7 @@ export default function DocumentPage() {
       <div className="bg-surface border border-border rounded p-4">
         <div className="grid grid-cols-4 gap-4">
           <div>
-            <div className="ui-label text-muted-fg mb-1">{t.hechos.cols.ticker}</div>
+            <div className="ui-label text-muted-fg mb-1">{t.earnings.calCols.ticker}</div>
             <Link href={`/companies/${doc.ticker}`} className="text-xs font-mono text-primary hover:underline">{doc.ticker}</Link>
           </div>
           <div>
@@ -134,7 +118,7 @@ export default function DocumentPage() {
       </div>
 
       {/* At a glance — structured facts from the related record + assessment */}
-      {(earningsRec || hechoRec) && (
+      {earningsRec && (
         <div className="bg-surface border border-border rounded p-4">
           <div className="flex items-center justify-between gap-3 mb-3">
             <span className="ui-label text-muted-fg">{t.documents.atAGlance}</span>
@@ -162,26 +146,6 @@ export default function DocumentPage() {
               <div>
                 <div className="ui-label text-muted-fg mb-1">{t.company.cols.ebitda}</div>
                 <span className="text-xs ui-number text-foreground">{earningsRec.ebitda != null ? formatMillionsCLP(earningsRec.ebitda) : '—'}</span>
-              </div>
-            </div>
-          )}
-          {hechoRec && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <div className="ui-label text-muted-fg mb-1">{t.hechos.cols.category}</div>
-                <span className="text-xs text-foreground">{hechoRec.category}</span>
-              </div>
-              <div>
-                <div className="ui-label text-muted-fg mb-1">{t.hechos.cols.type}</div>
-                <StatusPill label={hechoRec.filingType} variant={hechoRec.filingType === 'HE' ? 'info' : 'neutral'} />
-              </div>
-              <div>
-                <div className="ui-label text-muted-fg mb-1">{t.hechos.cols.materiality}</div>
-                <MaterialityBadge materiality={hechoRec.materiality} />
-              </div>
-              <div>
-                <div className="ui-label text-muted-fg mb-1">{t.hechos.cols.impact}</div>
-                <span className="text-xs text-foreground">{hechoRec.stockImpact ?? '—'}</span>
               </div>
             </div>
           )}
@@ -215,7 +179,7 @@ export default function DocumentPage() {
         <div className="ui-label text-muted-fg mb-2">{docTypeLabel}</div>
         <div className="flex items-center gap-2">
           <Link
-            href={doc.type === 'earnings_release' ? '/earnings' : '/hechos-esenciales'}
+            href={backHref}
             className="text-xs text-primary hover:underline"
           >
             ← {backLabel}

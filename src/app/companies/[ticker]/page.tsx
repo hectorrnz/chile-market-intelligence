@@ -7,14 +7,12 @@ import { useLang } from '@/components/providers/LangProvider'
 import { usePersistentState } from '@/lib/usePersistentState'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { StatusPill } from '@/components/ui/StatusPill'
-import { MaterialityBadge } from '@/components/ui/MaterialityBadge'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SourceNote } from '@/components/ui/SourceNote'
 import { LineChart, type ChartMarker } from '@/components/charts/LineChart'
 import { getCompanyByTicker, getAllCompanies } from '@/lib/data/companies'
 import { getSnapshotByTicker, getAllSnapshots } from '@/lib/data/stocks'
 import { getEarningsByTicker } from '@/lib/data/earnings'
-import { getHechosByTicker } from '@/lib/data/hechos'
 import { fetchLiveNews, type NewsFetchResponse } from '@/lib/data/newsLive'
 import { getNewsSourceCode, getNewsSourceColor } from '@/lib/news/sourceCodes'
 import { getStockHistoryForTimeframe } from '@/lib/data/stockHistory'
@@ -92,7 +90,6 @@ export default function CompanyDetailPage() {
   const earnings = [...getEarningsByTicker(sym)]
     .sort((a, b) => b.reportDate.localeCompare(a.reportDate))
     .slice(0, 6)
-  const hechos   = getHechosByTicker(sym).slice(0, 6)
   const news     = (newsResult?.data ?? []).filter(n => n.affectedTickers.includes(sym)).slice(0, 4)
   const stockHistory = getStockHistoryForTimeframe(sym, chartTimeframe)
     .map(p => ({ date: p.date, value: p.price }))
@@ -111,12 +108,9 @@ export default function CompanyDetailPage() {
   const chartData = relative ? rebase(stockHistory) : stockHistory
   const compareData = relative && ipsaHistory.length >= 2 ? rebase(ipsaHistory) : undefined
 
-  // Event markers: earnings + filings overlaid on the price line
-  const markers: ChartMarker[] = [
-    ...getEarningsByTicker(sym).filter(e => e.resultQuality !== 'Pending')
-      .map(e => ({ date: e.reportDate, label: `${e.period} earnings`, kind: 'earnings' as const })),
-    ...getHechosByTicker(sym).map(h => ({ date: h.date, label: `${h.filingType}: ${h.title}`, kind: 'filing' as const })),
-  ]
+  // Event markers: earnings overlaid on the price line
+  const markers: ChartMarker[] = getEarningsByTicker(sym).filter(e => e.resultQuality !== 'Pending')
+    .map(e => ({ date: e.reportDate, label: `${e.period} earnings` }))
 
   // Valuation context: sector medians
   const sectorOf = Object.fromEntries(getAllCompanies().map(c => [c.ticker, c.sector]))
@@ -330,13 +324,12 @@ export default function CompanyDetailPage() {
           <p className="text-xs text-muted-fg">{t.company.stockChartSource}</p>
           <div className="flex items-center gap-3 text-xs text-muted-fg">
             <span className="flex items-center gap-1"><span style={{ color: 'var(--primary)' }}>▲</span>earnings</span>
-            <span className="flex items-center gap-1"><span style={{ color: 'var(--warning)' }}>▲</span>filing</span>
           </div>
         </div>
       </div>
 
-      {/* Recent results · Valuation · Filings — Valuation drives height, others scroll to match */}
-      <div className="grid grid-cols-3 gap-4 items-start">
+      {/* Recent results · Valuation — Valuation drives height, Results scrolls to match */}
+      <div className="grid grid-cols-2 gap-4 items-start">
 
         {/* Recent results — shows ~3 rows, scroll for the rest */}
         <div className="bg-surface border border-border rounded flex flex-col overflow-hidden" style={{ height: valH || undefined }}>
@@ -403,39 +396,6 @@ export default function CompanyDetailPage() {
               ))}
             </div>
           </div>
-        </div>
-
-        {/* Filings — centered columns, scroll */}
-        <div className="bg-surface border border-border rounded flex flex-col overflow-hidden" style={{ height: valH || undefined }}>
-          <div className="px-4 py-2.5 border-b border-border shrink-0">
-            <span className="ui-label text-muted-fg">{t.company.relatedHechos}</span>
-          </div>
-          {hechos.length > 0 ? (
-            <div className="flex-1 min-h-0 overflow-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-border bg-surface-2">
-                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.company.cols.date}</th>
-                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.company.cols.type}</th>
-                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.hechos.cols.materiality}</th>
-                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.company.cols.desc}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {hechos.map(h => (
-                    <tr key={h.id} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
-                      <td className="py-2 px-2 text-center ui-number text-muted-fg whitespace-nowrap">{h.date}</td>
-                      <td className="py-2 px-2 text-center"><StatusPill label={h.filingType} variant={h.filingType === 'HE' ? 'info' : 'neutral'} /></td>
-                      <td className="py-2 px-2 text-center"><MaterialityBadge materiality={h.materiality} /></td>
-                      <td className="py-2 px-2 text-center max-w-[160px]"><span className="block truncate text-foreground" title={h.title}>{h.title}</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="px-4 py-3 text-xs text-muted-fg">{t.common.noData}</p>
-          )}
         </div>
       </div>
 

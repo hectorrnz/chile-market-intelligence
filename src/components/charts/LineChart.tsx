@@ -10,7 +10,6 @@ interface DataPoint {
 export interface ChartMarker {
   date: string
   label: string
-  kind?: 'earnings' | 'filing'
 }
 
 interface LineChartProps {
@@ -136,7 +135,7 @@ export function LineChart({
     .map(m => {
       let idx = data.findIndex(d => d.date >= m.date)
       if (idx < 0) idx = data.length - 1
-      return { x: toX(idx, data.length), label: m.label, kind: m.kind ?? 'filing' }
+      return { x: toX(idx, data.length), label: m.label }
     })
 
   const onMove = (e: React.MouseEvent) => {
@@ -199,7 +198,7 @@ export function LineChart({
           <path
             key={i}
             d={`M${m.x.toFixed(1)},${(baseline - 7).toFixed(1)} L${(m.x - 4).toFixed(1)},${baseline.toFixed(1)} L${(m.x + 4).toFixed(1)},${baseline.toFixed(1)} Z`}
-            fill={m.kind === 'earnings' ? 'var(--primary)' : 'var(--warning)'}
+            fill="var(--primary)"
           >
             <title>{m.label}</title>
           </path>
