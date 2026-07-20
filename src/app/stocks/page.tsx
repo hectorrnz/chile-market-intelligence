@@ -68,15 +68,27 @@ export default function StocksPage() {
         c.name.toLowerCase().includes(q) ||
         c.shortName.toLowerCase().includes(q),
       )
-      .map(c => ({ c, s: snapMap[c.ticker] }))
+      .map(c => {
+        const s = snapMap[c.ticker]
+        const lv = live?.stocks[c.ticker]
+        const ss = supaSnapMap[c.ticker]
+        return {
+          c,
+          s,
+          // Mirror the same live → persisted → static merge used for display below,
+          // so sorting these two columns matches what's actually on screen.
+          dayChangePct: lv?.dayChangePct ?? ss?.dayChangePct ?? s?.dayChangePct,
+          marketCapCLP: lv?.marketCapCLP ?? ss?.marketCapCLP ?? c.marketCapCLP,
+        }
+      })
       .sort((a, b) => {
         if (sortKey === 'ticker') {
           const cmp = a.c.ticker.localeCompare(b.c.ticker)
           return sortDir === 'asc' ? cmp : -cmp
         }
-        if (sortKey === 'marketCapCLP') {
-          const av = a.c.marketCapCLP ?? 0
-          const bv = b.c.marketCapCLP ?? 0
+        if (sortKey === 'dayChangePct' || sortKey === 'marketCapCLP') {
+          const av = a[sortKey] ?? -Infinity
+          const bv = b[sortKey] ?? -Infinity
           return sortDir === 'asc' ? av - bv : bv - av
         }
         const av = a.s != null ? ((a.s as unknown as Record<string, number | null | undefined>)[sortKey] ?? -Infinity) : -Infinity
@@ -85,7 +97,7 @@ export default function StocksPage() {
         const bn = bv == null ? -Infinity : (bv as number)
         return sortDir === 'asc' ? an - bn : bn - an
       })
-  }, [search, sector, sortKey, sortDir, snapMap])
+  }, [search, sector, sortKey, sortDir, snapMap, live, supaSnapMap])
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
@@ -126,7 +138,6 @@ export default function StocksPage() {
         tag={t.stocks.tag}
         title={t.stocks.title}
         subtitle={t.stocks.subtitle}
-        asOf
         actions={<UpdateDataButton onRefresh={doRefresh} />}
       />
 

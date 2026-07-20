@@ -254,7 +254,7 @@ export default function ChartBuilderPage() {
 
   return (
     <div className="w-full space-y-4">
-      <SectionHeader tag={t.charting.tag} title={t.charting.title} subtitle={t.charting.subtitle} asOf />
+      <SectionHeader tag={t.charting.tag} title={t.charting.title} subtitle={t.charting.subtitle} />
 
       <datalist id="gf-tickers">{companies.map(c => <option key={c.ticker} value={c.ticker}>{c.shortName}</option>)}</datalist>
 

@@ -128,7 +128,6 @@ export default function EarningsPage() {
         tag={t.earnings.tag}
         title={t.earnings.title}
         subtitle={t.earnings.subtitle}
-        asOf
       />
 
       {/* Upcoming calendar */}

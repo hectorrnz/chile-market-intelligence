@@ -67,7 +67,6 @@ export default function HechosEsencialesPage() {
         tag={t.hechos.tag}
         title={t.hechos.title}
         subtitle={t.hechos.subtitle}
-        asOf
       />
 
       <div className="flex items-center gap-2.5 flex-wrap">

@@ -180,7 +180,7 @@ export default function ComparePage() {
 
   return (
     <div className="w-full space-y-4">
-      <SectionHeader tag={t.compare.tag} title={t.compare.title} subtitle={t.compare.subtitle} asOf />
+      <SectionHeader tag={t.compare.tag} title={t.compare.title} subtitle={t.compare.subtitle} />
 
       <datalist id="cmp-tickers">
         {companies.map(c => <option key={c.ticker} value={c.ticker}>{c.shortName}</option>)}

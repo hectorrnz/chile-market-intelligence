@@ -182,7 +182,6 @@ export default function CompanyDetailPage() {
         tag={sym}
         title={company.name}
         subtitle={`${company.sector} · ${company.industry} · ${company.exchange}`}
-        asOf
         actions={
           <>
             <UpdateDataButton onRefresh={doRefresh} />

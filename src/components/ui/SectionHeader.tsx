@@ -1,15 +1,11 @@
-import { AsOfBadge } from './AsOfBadge'
-
 interface SectionHeaderProps {
   title: string
   subtitle?: string
   tag?: string
   actions?: React.ReactNode
-  /** Show the "as of <date>" data-freshness chip in the header. */
-  asOf?: boolean
 }
 
-export function SectionHeader({ title, subtitle, tag, actions, asOf }: SectionHeaderProps) {
+export function SectionHeader({ title, subtitle, tag, actions }: SectionHeaderProps) {
   return (
     <div className="flex items-start justify-between mb-5">
       <div>
@@ -23,9 +19,8 @@ export function SectionHeader({ title, subtitle, tag, actions, asOf }: SectionHe
           <p className="text-xs text-muted mt-0.5">{subtitle}</p>
         )}
       </div>
-      {(actions || asOf) && (
+      {actions && (
         <div className="flex items-center gap-2 shrink-0 ml-4">
-          {asOf && <AsOfBadge />}
           {actions}
         </div>
       )}

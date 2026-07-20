@@ -269,7 +269,6 @@ export default function MacroPage() {
         tag={t.macro.tag}
         title={t.macro.title}
         subtitle={region === 'CL' ? t.macro.clSubtitle : t.macro.usSubtitle}
-        asOf
         actions={
           <div className="flex items-center gap-2.5">
             <UpdateDataButton onRefresh={doRefresh} />

@@ -68,10 +68,6 @@ export function TopBar() {
         <LangToggle />
         <ThemeToggle />
         <span className="text-sm text-muted-fg font-mono tabular-nums">{today}</span>
-        <span className="flex items-center gap-1.5 text-sm text-muted-fg">
-          <span className="w-1.5 h-1.5 rounded-full bg-warning inline-block" />
-          {t.topbar.mvp}
-        </span>
       </div>
     </header>
   )

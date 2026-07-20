@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { useLang } from '@/components/providers/LangProvider'
 import { usePersistentState } from '@/lib/usePersistentState'
 import { StatusPill } from '@/components/ui/StatusPill'
-import { AsOfBadge } from '@/components/ui/AsOfBadge'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { DataSourceBadge } from '@/components/ui/DataSourceBadge'
 import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
@@ -319,8 +318,6 @@ export default function HomePage() {
         </div>
         <div className="flex items-center gap-2 shrink-0 ml-4">
           <UpdateDataButton onRefresh={doRefresh} />
-          <AsOfBadge />
-          <StatusPill label={t.topbar.mvp} variant="warning" />
         </div>
       </div>
       {liveTimestamp && (

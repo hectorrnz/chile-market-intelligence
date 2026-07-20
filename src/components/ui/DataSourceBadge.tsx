@@ -5,7 +5,7 @@ import type { DataSourceStatus } from '@/lib/providers/types'
 
 /**
  * Compact source/status chip (Phase 4A). Subtle by design — a small dot + label
- * so a static fallback never looks like an error. Mirrors AsOfBadge styling.
+ * so a static fallback never looks like an error.
  *
  * `provider` disambiguates which live provider actually backs the data —
  * without it, `live`/`persisted` defaulted to BCCh-flavored wording

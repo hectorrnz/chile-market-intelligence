@@ -459,6 +459,45 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Most recent work (2026-07-15) — News Module Source Integrity + Live Ingestion Task** ✓ COMPLETE. Full
+detail in `docs/implementation_plan.md` (search "News Module Source Integrity"). Summary: `src/data/news.json`
+and `src/data/news_mock.ts` (fabricated sample rows, fake "Bloomberg" attributions, empty URLs) were deleted,
+not kept as a fallback — News deliberately never falls back to fabricated content, showing an honest empty
+state instead. Replaced with a live provider architecture (`src/lib/providers/news/`) fetching **Diario
+Financiero** RSS live; `GET /api/news`, 15-min server cache, Live/Partial/Unavailable status. Deterministic
+impact/category classification and ticker mapping, never defaulted to High. Full rules in the "News Module
+Rule" section of this file. Full suite reached **1529/1529** at this task; test count has grown further since
+(see below). La Tercera (Pulso RSS) was added as a second live source the same day — see the "News Module
+Rule" section above, which is the living reference (this history entry describes the state as first shipped).
+
+Three more same-day tasks preceded News (all ✓ COMPLETE, all 2026-07-15, all in `docs/implementation_plan.md`):
+- **Home Page Overhaul** — "Tracked Stocks" replaced with a real, auth-gated `/watchlist`-backed Watchlist
+  card; Watchlist + FX merged into one band-separated table (Market Cap column dropped); badge/footer wording
+  fixed to name the real source ("Live — Yahoo Finance" etc).
+- **Home Page Overhaul Follow-up** — Chilean Rates panel gained a live BCCh overlay for the 4 instruments with
+  verified series; Watchlist table made sortable by Day Chg./YTD; sector/markets/watchlist badges now read
+  "Live" immediately on page load instead of only after clicking Update.
+- **Home Page Follow-up 2** — fixed a real latent bug: the live BCCh overlay looked up `liveIndicatorMap[id]`
+  directly, which silently never matched two rows (`btu10`→`btu10-ref`, `tpm-tna`→`tpm` are different keys) —
+  fixed via `getSeriesByStaticId(...).fallbackStaticId`. Also ran the BCCh discovery tool live and promoted
+  PDBC 14d and BTP 2Y (relabeled from stale tenors) to live; removed BCU 5 entirely (zero live observations
+  exist at any tenor — not faked).
+
+And one 2026-07-14 task preceded those:
+- **Macro UX Task** — live yield curves (US: 5 FRED tenors; CL: 5 BCCh tenors) via a new
+  `GET /api/macro/yield-curve`; an Update Data button on the Macro page; the current-month economic calendar
+  embedded on the Macro main tab; a region-aware subtitle bug fix (was showing Chile agency names on the US
+  tab); the editorial "Market Implication" column removed. Preceded by the **FX Integrity Task** (also
+  2026-07-14) which replaced CurrencyFreaks with **Frankfurter** for the Macro US FX depth table (real 1D/YTD
+  change, never fabricated) and removed the Chile FX depth table from production (no live/persisted backing
+  existed for it).
+
+These five tasks are the actual most-recent work — newer than the Phase 8D.3 entry below, which is kept as
+the last *numbered* phase for historical continuity. When starting a new numbered phase, treat this block as
+the true "last completed work" baseline, not Phase 8D.3.
+
+---
+
 **Phase 8D.3 — Economic Calendar Actual/Previous Enrichment from Primary Official Sources** ✓ COMPLETE (2026-07-13)
 
 Builds on Phase 8D.1's dates-only FRED release calendar and the 8D.2 integrity fix: `/macro/calendar` release
