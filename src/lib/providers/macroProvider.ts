@@ -13,6 +13,7 @@ import { bcchMacroProvider } from './bcchMacroProvider'
 import { fredMacroProvider } from './fredMacroProvider'
 import { getSeriesByStaticId } from '@/config/macroSeries'
 import { applyMacroFrequency } from './macroFrequency'
+import { pickFreshestMacroSource } from './macroHistorySource'
 import { getDbMode, decideDbSource } from '@/lib/db/dbMode'
 import {
   getMacroObservationsForTimeframe,
@@ -99,10 +100,14 @@ export async function resolveMacroHistory(
   const dbMode   = getDbMode()
   const dbSource = decideDbSource(dbMode)
 
-  // ─── Layer 1: Supabase persisted observations ────────────────────────────
-  const persistedDef = getSeriesByStaticId(indicatorId)
-  const persistedProviderLabel = persistedDef?.sourceProvider === 'FRED' ? FRED_PROVIDER : BCCH_PROVIDER
-  if (dbSource === 'supabase') {
+  const def = getSeriesByStaticId(indicatorId)
+  const providerLabel = def?.sourceProvider === 'FRED' ? FRED_PROVIDER : BCCH_PROVIDER
+  const provider = def?.sourceProvider === 'FRED' ? fredMacroProvider : bcchMacroProvider
+
+  // ─── Strict Supabase mode (DB_MODE=supabase, not hybrid) ─────────────────
+  // By design, never touches BCCh/FRED regardless of freshness — unchanged
+  // from before this fix.
+  if (dbSource === 'supabase' && dbMode === 'supabase') {
     const persisted = await getMacroObservationsForTimeframe(indicatorId, years)
     if (persisted.source === 'supabase' && isSufficientHistory(persisted.data, years)) {
       const latest = persisted.data[persisted.data.length - 1]
@@ -113,9 +118,9 @@ export async function resolveMacroHistory(
           dataModeUsed: dataMode,
           liveAvailable: false,
           status: 'persisted',
-          source: `Persisted via Supabase (${persistedProviderLabel})`,
+          source: `Persisted via Supabase (${providerLabel})`,
           lastUpdated: latest?.date ?? '',
-          provider: persistedProviderLabel,
+          provider: providerLabel,
           persistedAvailable: true,
           observationCount: persisted.data.length,
           latestObservationDate: latest?.date,
@@ -124,54 +129,55 @@ export async function resolveMacroHistory(
         },
       }
     }
-
-    // Pure supabase mode: no BCCh or static fallback
-    if (dbMode === 'supabase') {
-      return {
-        data: [],
-        metadata: {
-          dataModeRequested: dataMode,
-          dataModeUsed: 'static',
-          liveAvailable: false,
-          status: 'live-unavailable',
-          source: 'Supabase',
-          lastUpdated: '',
-          persistedAvailable: false,
-          fallbackReason: 'Insufficient observations in Supabase for this indicator/timeframe',
-          dbModeRequested: dbMode,
-          dbModeUsed: 'supabase',
-        },
-      }
+    return {
+      data: [],
+      metadata: {
+        dataModeRequested: dataMode,
+        dataModeUsed: 'static',
+        liveAvailable: false,
+        status: 'live-unavailable',
+        source: 'Supabase',
+        lastUpdated: '',
+        persistedAvailable: false,
+        fallbackReason: 'Insufficient observations in Supabase for this indicator/timeframe',
+        dbModeRequested: dbMode,
+        dbModeUsed: 'supabase',
+      },
     }
-    // DB_MODE=hybrid: fall through to BCCh live or static
   }
 
-  // ─── Layer 2: live (BCCh for CL series, FRED for US series) ─────────────
-  const def = getSeriesByStaticId(indicatorId)
-  const provider = def?.sourceProvider === 'FRED' ? fredMacroProvider : bcchMacroProvider
-  const providerLabel = def?.sourceProvider === 'FRED' ? FRED_PROVIDER : BCCH_PROVIDER
+  // ─── Hybrid / static DB mode: prefer whichever source is FRESHER ─────────
+  // Point-count sufficiency alone isn't enough — a persisted series can clear
+  // isSufficientHistory's coverage/6-month-staleness bar while a materially
+  // newer observation has since been published live (verified 2026-07-20:
+  // FRED's own CPIAUCSL series already had a 2026-06-01 print while the
+  // persisted store, well inside the 6-month window, was still serving
+  // 2026-05-01 for every timeframe). Fetching both and comparing their actual
+  // latest dates — rather than trusting persisted just because it passed its
+  // own bar — is what "the popup chart must be updating" actually requires.
+  const [persistedResult, liveResult] = await Promise.all([
+    dbSource === 'supabase' ? getMacroObservationsForTimeframe(indicatorId, years) : Promise.resolve(null),
+    dataMode !== 'static' ? provider.getHistory(indicatorId, years) : Promise.resolve(null),
+  ])
 
-  let liveOk = false
-  let liveReason: string | undefined
-  let liveData = null as Awaited<ReturnType<typeof provider.getHistory>> | null
-  if (dataMode !== 'static') {
-    liveData = await provider.getHistory(indicatorId, years)
-    if (liveData.ok) liveOk = true
-    else liveReason = liveData.reason
-  }
+  const persistedOk = !!persistedResult && persistedResult.source === 'supabase' && isSufficientHistory(persistedResult.data, years)
+  const liveOk = !!liveResult && liveResult.ok
+  const persistedLatestDate = persistedOk ? (persistedResult!.data[persistedResult!.data.length - 1]?.date ?? '') : ''
+  const liveLatestDate = liveOk ? (liveResult!.data[liveResult!.data.length - 1]?.date ?? '') : ''
 
-  const decision = decideSource(dataMode, liveOk, liveReason)
+  const winner = pickFreshestMacroSource({ persistedOk, persistedLatestDate, liveOk, liveLatestDate })
 
-  if (decision.liveAvailable && liveData && liveData.ok) {
+  if (winner === 'live' && liveResult && liveResult.ok) {
     // Live providers return their series at native cadence (daily for Treasury
     // yields, monthly for CPI, etc.). Apply the same category-aware frequency
     // policy the persisted and static paths use so the popup chart's density is
     // identical regardless of which layer served the data.
     const points: MacroChartPoint[] = applyMacroFrequency(
-      liveData.data.map(p => ({ date: p.date, value: p.value })),
+      liveResult.data.map((p) => ({ date: p.date, value: p.value })),
       indicatorId,
       years,
     )
+    const decision = decideSource(dataMode, true, undefined)
     const seriesId = def?.providerSeriesCode ?? undefined
     return {
       data: points,
@@ -180,18 +186,40 @@ export async function resolveMacroHistory(
         dataModeUsed: decision.dataModeUsed,
         liveAvailable: true,
         status: decision.status,
-        source: liveData.source,
-        lastUpdated: liveData.lastUpdated,
+        source: liveResult.source,
+        lastUpdated: liveResult.lastUpdated,
         provider: providerLabel,
         seriesId: seriesId ?? undefined,
-        persistedAvailable: false,
+        persistedAvailable: persistedOk,
         dbModeRequested: dbMode,
-        dbModeUsed: 'static',
+        dbModeUsed: dbSource,
       },
     }
   }
 
-  // ─── Layer 3: Static fallback ────────────────────────────────────────────
+  if (winner === 'persisted') {
+    const latest = persistedResult!.data[persistedResult!.data.length - 1]
+    return {
+      data: persistedResult!.data,
+      metadata: {
+        dataModeRequested: dataMode,
+        dataModeUsed: dataMode,
+        liveAvailable: false,
+        status: 'persisted',
+        source: `Persisted via Supabase (${providerLabel})`,
+        lastUpdated: latest?.date ?? '',
+        provider: providerLabel,
+        persistedAvailable: true,
+        observationCount: persistedResult!.data.length,
+        latestObservationDate: latest?.date,
+        dbModeRequested: dbMode,
+        dbModeUsed: 'supabase',
+      },
+    }
+  }
+
+  // ─── Neither persisted nor live produced usable data — static fallback ──
+  const decision = decideSource(dataMode, false, liveResult && !liveResult.ok ? liveResult.reason : undefined)
   const stat = await staticMacroProvider.getHistory(indicatorId, years)
   const points: MacroChartPoint[] = stat.ok ? stat.data.map(p => ({ date: p.date, value: p.value })) : []
   const fallbackReason = dataMode === 'static'

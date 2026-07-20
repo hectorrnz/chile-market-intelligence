@@ -403,10 +403,10 @@ export default function MacroPage() {
                 </table>
                 <div className="px-4 py-2 border-t border-border space-y-0.5">
                   {/* Source line stays a plain provider name (platform convention);
-                      the unofficial-rate caveat and the † derived-column marker are
-                      their own notes, not part of the source string. */}
+                      the † derived-column marker is its own note, not part of
+                      the source string. */}
                   <TableSourceFooter source="Frankfurter" asOf={usForex.currentDate} />
-                  <p className="text-xs text-muted-fg">{t.macro.fxUnofficial} · † {t.macro.fxDerived}</p>
+                  <p className="text-xs text-muted-fg">† {t.macro.fxDerived}</p>
                 </div>
               </>
             ) : (

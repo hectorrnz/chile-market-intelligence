@@ -10,6 +10,7 @@
 
 import { fetchFredReleaseDates, isFredCalendarConfigured } from './fredReleaseCalendarClient.ts'
 import { FRED_RELEASE_ALLOWLIST, type FredReleaseCategory } from '../../config/fredReleaseAllowlist.ts'
+import { FOMC_MEETING_DATES } from '../../config/fomcMeetingCalendar.ts'
 
 export interface FredCalendarEvent {
   id: string
@@ -50,6 +51,39 @@ function addDaysIso(days: number): string {
 }
 
 /**
+ * FOMC meeting dates (see fomcMeetingCalendar.ts) as calendar events. A
+ * genuinely separate, always-available source from the rest of this file —
+ * a static curated list, not a FRED fetch — so it's built independently of
+ * `isFredCalendarConfigured()` and merged into both entry points below.
+ */
+function buildFomcCalendarEvents(startIso: string, endIso: string): FredCalendarEvent[] {
+  const today = todayIso()
+  return FOMC_MEETING_DATES
+    .filter((m) => m.date >= startIso && m.date <= endIso)
+    .map((m) => ({
+      id: `fomc-${m.date}`,
+      date: m.date,
+      // Kept for cross-reference only — the dates themselves are NOT fetched
+      // via FRED's release/dates endpoint for this id (see the module header).
+      releaseId: 101,
+      releaseName: 'FOMC Press Release',
+      name: m.hasProjections
+        ? 'FOMC Meeting (Policy Rate Decision + Projections)'
+        : 'FOMC Meeting (Policy Rate Decision)',
+      category: 'Monetary Policy' as FredReleaseCategory,
+      region: 'US' as const,
+      importance: 'High' as const,
+      source: 'Federal Reserve Board of Governors (official FOMC calendar)',
+      sourceUrl: 'https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm',
+      status: (m.date >= today ? 'scheduled' : 'past') as 'scheduled' | 'past',
+      datesOnly: true as const,
+      actual: null,
+      consensus: null,
+      prior: null,
+    }))
+}
+
+/**
  * Resolves the dates-only FRED release calendar for an explicit [startIso, endIso]
  * window — used directly by the "current month" embed on the Macro page so
  * past-in-month releases (before today) still show, not just a fixed 7-day
@@ -57,8 +91,16 @@ function addDaysIso(days: number): string {
  * rolling-window convenience wrapper used by /macro/calendar.
  */
 export async function resolveFredReleaseCalendarRange(startIso: string, endIso: string): Promise<FredCalendarResult> {
+  // FOMC meeting dates are a static curated list (see fomcMeetingCalendar.ts)
+  // and need no FRED key at all — built regardless of the FRED-configured
+  // check below, so the policy-rate calendar still works even if FRED_API_KEY
+  // is ever unset.
+  const fomcEvents = buildFomcCalendarEvents(startIso, endIso)
+
   if (!isFredCalendarConfigured()) {
-    return { ok: false, events: [], reason: 'FRED_API_KEY not configured', configured: false }
+    return fomcEvents.length > 0
+      ? { ok: true, events: fomcEvents, configured: false }
+      : { ok: false, events: [], reason: 'FRED_API_KEY not configured', configured: false }
   }
 
   const today = todayIso()
@@ -70,8 +112,8 @@ export async function resolveFredReleaseCalendarRange(startIso: string, endIso: 
     }),
   )
 
-  const events: FredCalendarEvent[] = []
-  let anySucceeded = false
+  const events: FredCalendarEvent[] = [...fomcEvents]
+  let anySucceeded = fomcEvents.length > 0
   for (const { entry, res } of perRelease) {
     if (!res.ok) continue
     anySucceeded = true

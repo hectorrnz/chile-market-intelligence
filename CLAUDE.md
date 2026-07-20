@@ -506,7 +506,60 @@ docs/                 — Project documentation
 
 ## Current Phase
 
-**Most recent work (2026-07-20, fifth pass) — nine reported items; three turned out to be real
+**Most recent work (2026-07-20, sixth pass) — seven reported items; two turned out to be real
+data bugs (a stale/never-refreshing macro chart source, and a genuine Yahoo data gap behind a
+permanently-blank column) rather than the cosmetic issues reported.**
+
+1. **Compare tab had no Update button at all.** Added one via `useGlobalRefresh()` (the same hook
+   every other tab's Update button uses). The shared live Yahoo snapshot (`useMarketData()`) now
+   overlays price/market-cap on Compare's Market Data table, so an Update clicked on **any** tab
+   updates Compare immediately with no extra fetch — and a new `compareRefreshSeq` counter (mirrors
+   Macro page's `macroRefreshSeq` pattern) forces Compare's own `/api/compare` +
+   `/api/compare/history` fetches to re-run too, refreshing fundamentals/returns history.
+2. **Day Chg. column removed from Compare's Market Data table** — it duplicated 1D. Root cause of
+   1D's permanent blank: `getYahooStockHistory`'s 1D window (4 calendar days) can return only 1 point
+   when Yahoo has a genuine data gap beyond weekends — confirmed live: `CHILE.SN` has no bar at all
+   for 2026-07-16 (a Tuesday, no holiday reason found). Fixed by fetching 1D through a wider 5D buffer
+   and trimming to the most recent 2 points — the real "most recent day vs the day before" comparison,
+   not "however many days the buffer took to find 2 points."
+3. Removed "Free third-party reference, not an official rate" from the Macro US FX table footer
+   (the † derived-column note stays; the caveat sentence and its now-orphaned `fxUnofficial` i18n key
+   are gone).
+4. **FOMC meeting dates added to the US economic calendar.** FRED has no clean source for these —
+   release_id 101 ("FOMC Press Release") returns a release-date entry for essentially every calendar
+   day (confirmed live again: 199 "dates" in one year even with
+   `include_release_dates_with_no_data=false`), and no other FOMC-specific release exists in FRED's
+   catalog. Dates are instead a small manually-curated list (`src/config/fomcMeetingCalendar.ts`),
+   transcribed from the Fed's own official calendar
+   (federalreserve.gov/monetarypolicy/fomccalendars.htm, fetched live 2026-07-20 for this one-time
+   research read — never a runtime scrape, per this project's standing no-scraping policy) covering
+   2025–2027. Same periodic-manual-refresh pattern as `FRED_RELEASE_ALLOWLIST`/
+   `bcchSeriesManualMap.ts`. Merged into `resolveFredReleaseCalendarRange` independently of
+   `isFredCalendarConfigured()` — FOMC dates need no FRED key, so they still appear even if
+   `FRED_API_KEY` is ever unset.
+5. **Verified, not a bug**: ITAUCL's ~4.5 trillion CLP market cap. Checked directly against Yahoo's
+   raw quote (`price × sharesOutstanding = marketCap` exactly, 216.3M shares × ~CLP 21,000) — fully
+   self-consistent live data, not a currency-mismatch or scale bug like the P/B/P/S issue fixed in the
+   fifth pass. The static reference snapshot (1.15 trillion) was simply outdated.
+6. **Macro US popup charts didn't match Chile's frequency, and looked outdated (e.g. still showing
+   April/May inflation after June was already out) — one real underlying bug, not two.**
+   `isSufficientHistory`'s point-count + flat 6-month staleness gate accepted a persisted observation
+   as "good enough" even when the live source already had a materially newer print — verified directly
+   against FRED's own CSV endpoint: `CPIAUCSL` already had a 2026-06-01 value while the persisted store
+   (well inside the 6-month window) was still serving 2026-05-01 for every timeframe, for both Chile
+   and US indicators. `resolveMacroHistory` now fetches persisted AND live in parallel (in hybrid/static
+   DB mode — strict `DB_MODE=supabase` is untouched by design) and picks whichever is genuinely
+   **fresher** via a new pure helper, `pickFreshestMacroSource` (`macroHistorySource.ts`), rather than
+   trusting persisted just because it cleared its own bar. Fixing this made the "frequency mismatch"
+   symptom disappear too — verified live: `fed-funds` and `tpm` now match exactly (13/37/61/121 points,
+   same end date) at every timeframe, confirming there was never a separate frequency-logic bug.
+
+Suite: 1630 → 1643 (`tests/macroHistorySource.test.ts` + FOMC additions to
+`tests/fredReleaseCalendar.test.ts`) · lint 0 · build 0 errors.
+
+---
+
+**Previous work (2026-07-20, fifth pass) — nine reported items; three turned out to be real
 data-correctness bugs rather than the cosmetic issues reported.**
 
 1. **Stocks still not sorting by Day Chg. after an Update on another tab (third attempt).** The

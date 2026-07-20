@@ -7,12 +7,15 @@ import { useEscape } from '@/lib/useEscape'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
+import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
+import { useMarketData } from '@/components/providers/MarketDataProvider'
+import { useGlobalRefresh } from '@/components/providers/useGlobalRefresh'
 import { CompareChart } from '@/components/charts/CompareChart'
 import { getAllCompanies } from '@/lib/data/companies'
 import { getAllSnapshots } from '@/lib/data/stocks'
 import { getStockSeriesByPeriod } from '@/lib/data/stockHistory'
 import { totalAndAnnual, tfStart } from '@/lib/returns'
-import { formatCLP, formatFx, formatPct, changeColor } from '@/lib/formatters'
+import { formatCLP, formatFx, changeColor } from '@/lib/formatters'
 import { exportCSV } from '@/lib/export'
 import { fetchCompareData } from '@/lib/data/compareData'
 import { fetchCompareHistory, type CompareHistorySeries } from '@/lib/data/compareHistory'
@@ -67,6 +70,23 @@ export default function ComparePage() {
   const valids: { slot: number; ticker: string }[] = []
   s6.forEach((v, i) => { const tk = norm(v); if (tk && compMap[tk] && !seen.has(tk)) { seen.add(tk); valids.push({ slot: i, ticker: tk }) } })
 
+  // Update Data — Compare previously had no Update button at all, and its own
+  // /api/compare + /api/compare/history fetches only ran on mount/ticker/tf
+  // change, so nothing on this page ever responded to Update. `live` is the
+  // shared platform-wide Yahoo snapshot (see MarketDataProvider) — overlaying
+  // it on the Market Data table below means clicking Update on ANY tab
+  // updates Compare's price/day-change/market-cap immediately via the shared
+  // context, with no extra fetch needed here. `compareRefreshSeq` additionally
+  // forces Compare's OWN data (fundamentals, performance, returns history) to
+  // re-fetch — the shared live snapshot doesn't carry those.
+  const { live } = useMarketData()
+  const refreshShared = useGlobalRefresh()
+  const [compareRefreshSeq, setCompareRefreshSeq] = useState(0)
+  const doRefresh = async () => {
+    await refreshShared()
+    setCompareRefreshSeq(n => n + 1)
+  }
+
   // Phase 8B — market fields (price, day change, market cap, short-term
   // performance) wired to persisted/live Supabase data via /api/compare.
   // Historical returns + fundamentals below remain static (see compare.source).
@@ -90,8 +110,11 @@ export default function ComparePage() {
     }
     run()
     return () => { mounted = false }
-  }, [validTickerKey])
-  const marketStatus = Object.values(compareData)[0]?.marketDataStatus ?? 'static'
+  }, [validTickerKey, compareRefreshSeq])
+  // 'live' beats whatever /api/compare itself reported, mirroring the
+  // live→persisted→static priority every other page uses.
+  const marketStatus: 'live' | 'persisted' | 'static' | 'hybrid-fallback' | 'live-unavailable' =
+    valids.some(({ ticker }) => live?.stocks[ticker]) ? 'live' : (Object.values(compareData)[0]?.marketDataStatus ?? 'static')
   const perfCell = (m: ComparePerformanceMetric | undefined) => ({
     label: m?.value != null ? fmtPct(m.value) : '—',
     title: m && m.source !== 'persisted' ? (m.fallbackReason ?? m.source) : undefined,
@@ -121,7 +144,7 @@ export default function ComparePage() {
       .then(res => { if (mounted) setPersistedHistory(Object.fromEntries(res.series.map(s => [s.ticker, s]))) })
       .catch(() => { if (mounted) setPersistedHistory({}) })
     return () => { mounted = false }
-  }, [validTickerKey, tf, usingCustom])
+  }, [validTickerKey, tf, usingCustom, compareRefreshSeq])
 
   const isFetched = (s: CompareHistorySeries | undefined) => s?.status === 'live' || s?.status === 'persisted'
   const seriesFor = (tk: string) => {
@@ -235,7 +258,7 @@ export default function ComparePage() {
 
   return (
     <div className="w-full space-y-4">
-      <SectionHeader tag={t.compare.tag} title={t.compare.title} subtitle={t.compare.subtitle} />
+      <SectionHeader tag={t.compare.tag} title={t.compare.title} subtitle={t.compare.subtitle} actions={<UpdateDataButton onRefresh={doRefresh} />} />
 
       <datalist id="cmp-tickers">
         {companies.map(c => <option key={c.ticker} value={c.ticker}>{c.shortName}</option>)}
@@ -253,7 +276,9 @@ export default function ComparePage() {
               <tr className="border-b border-border bg-surface-2">
                 <th className="text-left py-2 px-3 pl-4 ui-table-header text-muted-fg">{t.compare.security}</th>
                 <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.stocks.cols.price}</th>
-                <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.stocks.cols.dayChg}</th>
+                {/* Day Chg. removed — it duplicated 1D (both are the 1-day
+                    change; 1D is the one wired to a real computed return,
+                    see resolveCompareData.ts's classifyPerformance). */}
                 <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.compare.perf1d}</th>
                 <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.compare.perf5d}</th>
                 <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.compare.perf1m}</th>
@@ -266,6 +291,14 @@ export default function ComparePage() {
             <tbody>
               {valids.map(({ ticker }) => {
                 const entry = compareData[ticker]
+                // The shared live Yahoo snapshot (see MarketDataProvider)
+                // overlays price/market-cap on top of whatever /api/compare
+                // itself last returned — this is what makes an Update
+                // clicked on ANY tab show up here immediately, with no extra
+                // fetch from this page.
+                const lv = live?.stocks[ticker]
+                const price = lv?.price ?? entry?.latestPrice
+                const marketCapCLP = lv?.marketCapCLP ?? entry?.marketCapCLP
                 const p1d = perfCell(entry?.performance.oneDay)
                 const p5d = perfCell(entry?.performance.fiveDay)
                 const p1m = perfCell(entry?.performance.oneMonth)
@@ -274,8 +307,7 @@ export default function ComparePage() {
                 return (
                   <tr key={ticker} className="border-b border-border last:border-0">
                     <td className="py-1.5 px-3 pl-4 font-mono text-primary">{ticker}</td>
-                    <td className="py-1.5 px-2 text-right ui-number text-foreground">{entry?.latestPrice != null ? formatFx(entry.latestPrice, entry.latestPrice < 1000 ? 2 : 0) : '—'}</td>
-                    <td className={`py-1.5 px-2 text-right ui-number ${entry?.dayChangePct != null ? colored(entry.dayChangePct) : 'text-muted-fg'}`}>{entry?.dayChangePct != null ? formatPct(entry.dayChangePct) : '—'}</td>
+                    <td className="py-1.5 px-2 text-right ui-number text-foreground">{price != null ? formatFx(price, price < 1000 ? 2 : 0) : '—'}</td>
                     <td className={`py-1.5 px-2 text-right ui-number ${p1d.className}`} title={p1d.title}>{p1d.label}</td>
                     <td className={`py-1.5 px-2 text-right ui-number ${p5d.className}`} title={p5d.title}>{p5d.label}</td>
                     <td className={`py-1.5 px-2 text-right ui-number ${p1m.className}`} title={p1m.title}>{p1m.label}</td>
@@ -285,7 +317,7 @@ export default function ComparePage() {
                         "Mkt Cap (Bn)" row — the two sit on one screen and
                         previously disagreed (4.5 MM here vs 4.499,9 there for
                         the identical figure). */}
-                    <td className="py-1.5 px-2 text-right ui-number text-foreground">{entry?.marketCapCLP != null ? formatCLP(entry.marketCapCLP / 1000, 1) : '—'}</td>
+                    <td className="py-1.5 px-2 text-right ui-number text-foreground">{marketCapCLP != null ? formatCLP(marketCapCLP / 1000, 1) : '—'}</td>
                     <td className="py-1.5 px-2 pr-4 text-muted-fg whitespace-nowrap">{entry?.sector ?? compMap[ticker]?.sector ?? '—'}</td>
                   </tr>
                 )

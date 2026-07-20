@@ -151,15 +151,21 @@ describe('fetchFredReleaseDates — mocked success/failure (no live network)', (
 describe('resolveFredReleaseCalendar', () => {
   afterEach(() => { restoreEnv(); restoreFetch() })
 
-  it('returns configured:false and an empty event list when FRED_API_KEY is unset (no network attempted)', async () => {
+  it('returns configured:false when FRED_API_KEY is unset, and never calls FRED (no network attempted)', async () => {
+    // FOMC meeting dates (fomcMeetingCalendar.ts) are a static curated list —
+    // they need no FRED key and can legitimately appear here even when FRED
+    // itself is unconfigured. Only a NON-FOMC (FRED-sourced) event would mean
+    // this path wrongly reached the network, so assert on THAT rather than an
+    // exact empty array, which would be a timing-dependent assumption (an FOMC
+    // meeting may or may not fall in the current 60-day window depending on
+    // when this test happens to run).
     delete process.env.FRED_API_KEY
     let fetchCalled = false
     globalThis.fetch = (async () => { fetchCalled = true; throw new Error('should not be called') }) as typeof fetch
     const result = await resolveFredReleaseCalendar(60)
     assert.equal(result.configured, false)
-    assert.equal(result.ok, false)
-    assert.deepEqual(result.events, [])
     assert.equal(fetchCalled, false)
+    for (const e of result.events) assert.ok(e.id.startsWith('fomc-'), `unexpected non-FOMC event without FRED configured: ${e.id}`)
   })
 
   it('every returned event is dates-only: actual/consensus/prior are always null', async () => {
@@ -204,9 +210,13 @@ describe('resolveFredReleaseCalendar', () => {
   })
 
   it('reports ok:false when every release lookup fails (all HTTP errors)', async () => {
+    // Uses the explicit-range resolver with a window verified to contain no
+    // FOMC meeting date (fomcMeetingCalendar.ts — Feb 2026 has none), so the
+    // FOMC merge can never accidentally make this "succeed" regardless of
+    // when the test happens to run.
     process.env.FRED_API_KEY = 'fake-test-key-not-real'
     globalThis.fetch = (async () => ({ ok: false, status: 500 })) as unknown as typeof fetch
-    const result = await resolveFredReleaseCalendar(60)
+    const result = await resolveFredReleaseCalendarRange('2026-02-01', '2026-02-28')
     assert.equal(result.configured, true)
     assert.equal(result.ok, false)
     assert.deepEqual(result.events, [])
@@ -217,14 +227,31 @@ describe('resolveFredReleaseCalendarRange — explicit window (Macro page curren
   afterEach(() => { restoreEnv(); restoreFetch() })
 
   it('returns configured:false with no network call when FRED_API_KEY is unset', async () => {
+    // Feb 2026 is verified FOMC-free (fomcMeetingCalendar.ts) so this stays a
+    // clean "nothing available at all" case, distinct from the
+    // FOMC-dates-still-work case covered separately below.
     delete process.env.FRED_API_KEY
     let fetchCalled = false
     globalThis.fetch = (async () => { fetchCalled = true; throw new Error('should not be called') }) as typeof fetch
-    const result = await resolveFredReleaseCalendarRange('2026-07-01', '2026-07-31')
+    const result = await resolveFredReleaseCalendarRange('2026-02-01', '2026-02-28')
     assert.equal(result.configured, false)
     assert.equal(result.ok, false)
     assert.deepEqual(result.events, [])
     assert.equal(fetchCalled, false)
+  })
+
+  it('FOMC meeting dates still appear even when FRED_API_KEY is unset — they need no key', async () => {
+    delete process.env.FRED_API_KEY
+    let fetchCalled = false
+    globalThis.fetch = (async () => { fetchCalled = true; throw new Error('should not be called') }) as typeof fetch
+    // July 2026 contains exactly one curated FOMC date: 2026-07-29.
+    const result = await resolveFredReleaseCalendarRange('2026-07-01', '2026-07-31')
+    assert.equal(result.configured, false)
+    assert.equal(result.ok, true)
+    assert.equal(fetchCalled, false)
+    assert.deepEqual(result.events.map((e) => e.date), ['2026-07-29'])
+    assert.equal(result.events[0].datesOnly, true)
+    assert.equal(result.events[0].actual, null)
   })
 
   it('only requests the exact [start, end] window passed in (not a fixed rolling window)', async () => {
@@ -257,6 +284,55 @@ describe('resolveFredReleaseCalendarRange — explicit window (Macro page curren
     const expected = new Date()
     expected.setDate(expected.getDate() - 7)
     assert.equal(seenStart, expected.toISOString().slice(0, 10))
+  })
+})
+
+describe('FOMC meeting dates — merged in from the static curated list, not FRED', () => {
+  afterEach(() => { restoreEnv(); restoreFetch() })
+
+  it('appears alongside FRED events, correctly sorted, when FRED is configured and succeeds', async () => {
+    // The mocked fetch below responds identically for every allowlist entry
+    // (it doesn't branch on the requested release_id), so every one of
+    // FRED_RELEASE_ALLOWLIST's entries independently reports a same-dated
+    // 2026-07-14 event — a quirk of this simple mock, not something to assert
+    // an exact count of. What matters here: the FOMC date is present, dated
+    // correctly, sorted after the FRED dates, and NOT itself fetched via FRED.
+    process.env.FRED_API_KEY = 'fake-test-key-not-real'
+    globalThis.fetch = (async () => ({
+      ok: true,
+      json: async () => ({ release_dates: [{ release_id: 10, date: '2026-07-14' }] }),
+    })) as unknown as typeof fetch
+
+    const result = await resolveFredReleaseCalendarRange('2026-07-01', '2026-07-31')
+    assert.equal(result.ok, true)
+    const dates = result.events.map((e) => e.date)
+    assert.deepEqual([...dates].sort(), dates, 'events must be sorted ascending by date')
+    assert.equal(dates[dates.length - 1], '2026-07-29', 'FOMC (07-29) must sort after every 07-14 FRED event')
+    const fomc = result.events.find((e) => e.id === 'fomc-2026-07-29')
+    assert.ok(fomc)
+    assert.equal(fomc!.category, 'Monetary Policy')
+    assert.equal(fomc!.importance, 'High')
+    assert.match(fomc!.source, /Federal Reserve/)
+    assert.ok(!/fred\.stlouisfed\.org/.test(fomc!.sourceUrl), 'FOMC dates are not fetched via FRED — the source URL must point to the official Fed calendar')
+  })
+
+  it('still appears even when every FRED release lookup fails', async () => {
+    process.env.FRED_API_KEY = 'fake-test-key-not-real'
+    globalThis.fetch = (async () => ({ ok: false, status: 500 })) as unknown as typeof fetch
+    const result = await resolveFredReleaseCalendarRange('2026-07-01', '2026-07-31')
+    assert.equal(result.ok, true, 'FOMC alone should still make this succeed even if every FRED release lookup failed')
+    assert.deepEqual(result.events.map((e) => e.date), ['2026-07-29'])
+  })
+
+  it('a two-day-meeting date range only reports the SECOND (decision) day', async () => {
+    // 2026-07-28-29 is a two-day meeting; only 07-29 (the announcement date)
+    // should appear — never a separate entry for the first day.
+    process.env.FRED_API_KEY = 'fake-test-key-not-real'
+    globalThis.fetch = (async () => ({ ok: true, json: async () => ({ release_dates: [] }) })) as unknown as typeof fetch
+    const result = await resolveFredReleaseCalendarRange('2026-07-28', '2026-07-28')
+    assert.deepEqual(result.events, [])
+    const result2 = await resolveFredReleaseCalendarRange('2026-07-29', '2026-07-29')
+    assert.equal(result2.events.length, 1)
   })
 })
 

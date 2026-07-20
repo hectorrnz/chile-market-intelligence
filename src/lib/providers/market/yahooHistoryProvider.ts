@@ -38,7 +38,15 @@ export async function getYahooStockHistory(
   const symbol = yahooSymbolFor(ticker)
   if (!symbol) return { ok: false, reason: `No Yahoo Finance symbol mapped for ${ticker}` }
 
-  const range = resolveLiveHistoryDateRange(timeframe)
+  // '1D' needs real years fetched with a WIDER buffer than its own narrow
+  // window: Yahoo has genuine data gaps beyond weekends (verified live —
+  // CHILE.SN has no bar at all for 2026-07-16, a Tuesday, for no holiday
+  // reason found), so a plain 4-calendar-day lookback can return just 1
+  // point and leave the "1D" column permanently blank. '5D's wider window is
+  // used as a search buffer here, then trimmed below to the most recent 2
+  // points — the real "most recent day vs the day before" comparison the UI
+  // wants, not everything the buffer happened to catch.
+  const range = timeframe === '1D' ? resolveLiveHistoryDateRange('5D') : resolveLiveHistoryDateRange(timeframe)
 
   try {
     const YahooFinance = (await import('yahoo-finance2')).default
@@ -74,15 +82,20 @@ export async function getYahooStockHistory(
       })
     }
 
-    if (!isSufficientMarketHistory(points, timeframe)) {
-      return { ok: false, reason: `Yahoo Finance returned insufficient bars for ${timeframe} (${points.length} point(s))` }
+    // Trim the wider '1D' search buffer down to exactly the most recent 2
+    // trading days — a genuine 1-day change, not "however many days it took
+    // the buffer to find 2 points".
+    const trimmed = timeframe === '1D' && points.length > 2 ? points.slice(-2) : points
+
+    if (!isSufficientMarketHistory(trimmed, timeframe)) {
+      return { ok: false, reason: `Yahoo Finance returned insufficient bars for ${timeframe} (${trimmed.length} point(s))` }
     }
 
     return {
       ok: true,
-      data: points,
+      data: trimmed,
       source: SOURCE,
-      lastUpdated: points[points.length - 1].date,
+      lastUpdated: trimmed[trimmed.length - 1].date,
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
