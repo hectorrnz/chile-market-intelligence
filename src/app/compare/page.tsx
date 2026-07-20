@@ -15,6 +15,7 @@ import { totalAndAnnual, tfStart } from '@/lib/returns'
 import { formatCLP, formatLargeCLP, formatFx, formatPct, changeColor } from '@/lib/formatters'
 import { exportCSV } from '@/lib/export'
 import { fetchCompareData } from '@/lib/data/compareData'
+import { fetchCompareHistory, type CompareHistorySeries } from '@/lib/data/compareHistory'
 import type { CompareEntry, CompareFundamentalKey, ComparePerformanceMetric } from '@/lib/compare/compareTypes'
 import type { StockPriceSnapshot, Company } from '@/types'
 
@@ -96,16 +97,51 @@ export default function ComparePage() {
   const usingCustom = !!(cStart && cEnd)
   const end = usingCustom ? cEnd : DATA_END
   const start = usingCustom ? cStart : tfStart(end, tf)
-  const seriesFor = (tk: string) =>
-    getStockSeriesByPeriod(tk, period).filter(p => p.date >= start && p.date <= end).map(p => ({ date: p.date, value: p.price }))
+
+  // 2026-07-20 — persisted returns history (accumulated Supabase daily
+  // snapshots) where the selected timeframe is genuinely covered — see
+  // resolveCompareHistory.ts. A custom date range keeps the static path
+  // (persisted history is only ever queried for the 5 standard TF buttons);
+  // Period (Weekly/Monthly) also stays on the static path when persisted
+  // data is used, since ~weeks of daily history isn't meaningful to
+  // downsample yet — this upgrades automatically as more history accumulates.
+  const [persistedHistory, setPersistedHistory] = useState<Record<string, CompareHistorySeries>>({})
+  useEffect(() => {
+    // Stale persistedHistory from a prior selection is harmless to leave in
+    // place here — seriesFor/sourceFor both gate on `!usingCustom` before
+    // ever reading it, so it's simply never consulted while true, and the
+    // next non-custom fetch below overwrites it once relevant again.
+    if (usingCustom || validTickerKey === '') return
+    let mounted = true
+    fetchCompareHistory(validTickerKey.split(','), tf)
+      .then(res => { if (mounted) setPersistedHistory(Object.fromEntries(res.series.map(s => [s.ticker, s]))) })
+      .catch(() => { if (mounted) setPersistedHistory({}) })
+    return () => { mounted = false }
+  }, [validTickerKey, tf, usingCustom])
+
+  const seriesFor = (tk: string) => {
+    const persisted = persistedHistory[tk]
+    if (!usingCustom && persisted?.status === 'persisted' && persisted.points.length >= 2) return persisted.points
+    return getStockSeriesByPeriod(tk, period).filter(p => p.date >= start && p.date <= end).map(p => ({ date: p.date, value: p.price }))
+  }
+  const sourceFor = (tk: string): 'persisted' | 'static' =>
+    !usingCustom && persistedHistory[tk]?.status === 'persisted' ? 'persisted' : 'static'
 
   const rowData = valids.map(({ slot, ticker }) => {
     const data = seriesFor(ticker)
     const m = totalAndAnnual(data)
-    return { slot, ticker, color: colorForSlot(slot), data, tr: m?.tr ?? null, annual: m?.annual ?? null }
+    return { slot, ticker, color: colorForSlot(slot), data, tr: m?.tr ?? null, annual: m?.annual ?? null, source: sourceFor(ticker) }
   })
-  const ipsaData = benchmark ? seriesFor('IPSA') : []
+  // The IPSA benchmark is never in the persisted stock_snapshots universe
+  // (confirmed live: only the 25 tracked equities are snapshotted) — always
+  // the static series.
+  const ipsaData = benchmark ? getStockSeriesByPeriod('IPSA', period).filter(p => p.date >= start && p.date <= end).map(p => ({ date: p.date, value: p.price })) : []
   const ipsaM = benchmark ? totalAndAnnual(ipsaData) : null
+  const returnsStatus: 'persisted' | 'static' = rowData.some(r => r.source === 'persisted') ? 'persisted' : 'static'
+  const returnsAsOf = rowData
+    .map(r => persistedHistory[r.ticker]?.asOfDate)
+    .filter((d): d is string => !!d)
+    .reduce((max, d) => (!max || d > max ? d : max), '') || null
 
   const refIsBench = diffRef === 'bench' && benchmark && !!ipsaM
   let refTR: number | null = null
@@ -153,19 +189,25 @@ export default function ComparePage() {
     get: (e?: CompareEntry, s?: StockPriceSnapshot, c?: Company) => number | null
     fmt: (v: number) => string
   }
+  // Defensive rounding at display time — a derived ratio (persisted financials
+  // ÷ live price/market cap) is a raw float with many decimals; never render
+  // one unrounded, regardless of which upstream field happened to already be
+  // clean. 1 decimal for both "x" multiples and "%" throughout this table.
+  const fmtX = (v: number) => `${v.toFixed(1)}x`
+  const fmtPctCell = (v: number) => `${v.toFixed(1)}%`
   const fund: Row[] = [
     { label: t.company.kpis.lastPrice, dir: 0, get: e => num(e?.latestPrice), fmt: v => formatFx(v, v < 1000 ? 2 : 0) },
     { label: `${t.home.marketCap} (MM)`, dir: 0, get: e => num(e?.marketCapCLP), fmt: v => formatCLP(v) },
-    { label: t.company.val.peFwd, key: 'pe', dir: -1, get: (e, s) => num(e?.fundamentals.pe ?? s?.peFwd), fmt: v => `${v}x` },
-    { label: t.company.val.psFwd, key: 'psFwd', dir: -1, get: (e, s) => num(e?.fundamentals.psFwd ?? s?.psFwd), fmt: v => `${v}x` },
-    { label: t.company.val.evEbitda, key: 'evEbitda', dir: -1, get: (e, s) => num(e?.fundamentals.evEbitda ?? s?.evEbitda), fmt: v => `${v}x` },
-    { label: t.company.val.opMargin, key: 'opMargin', dir: 1, get: (e, s) => num(e?.fundamentals.opMargin ?? s?.opMargin), fmt: v => `${v}%` },
-    { label: t.company.val.grossMargin, key: 'grossMargin', dir: 1, get: (e, s) => num(e?.fundamentals.grossMargin ?? s?.grossMargin), fmt: v => `${v}%` },
-    { label: t.company.val.roe, key: 'roe', dir: 1, get: (e, s) => num(e?.fundamentals.roe ?? s?.roe), fmt: v => `${v}%` },
-    { label: t.company.val.fcfYield, key: 'fcfYield', dir: 1, get: (e, s) => num(e?.fundamentals.fcfYield ?? s?.fcfYield), fmt: v => `${v}%` },
-    { label: t.company.val.pb, key: 'pb', dir: -1, get: (e, s) => num(e?.fundamentals.pb ?? s?.pb), fmt: v => `${v}x` },
-    { label: t.company.val.netDebtEbitda, key: 'netDebtEbitda', dir: -1, get: (e, s) => num(e?.fundamentals.netDebtEbitda ?? s?.netDebtEbitda), fmt: v => `${v}x` },
-    { label: t.company.kpis.divYield, key: 'dividendYield', dir: 1, get: (e, s) => num(e?.fundamentals.dividendYield ?? s?.dividendYield), fmt: v => `${v}%` },
+    { label: t.company.val.peFwd, key: 'pe', dir: -1, get: (e, s) => num(e?.fundamentals.pe ?? s?.peFwd), fmt: fmtX },
+    { label: t.company.val.psFwd, key: 'psFwd', dir: -1, get: (e, s) => num(e?.fundamentals.psFwd ?? s?.psFwd), fmt: fmtX },
+    { label: t.company.val.evEbitda, key: 'evEbitda', dir: -1, get: (e, s) => num(e?.fundamentals.evEbitda ?? s?.evEbitda), fmt: fmtX },
+    { label: t.company.val.opMargin, key: 'opMargin', dir: 1, get: (e, s) => num(e?.fundamentals.opMargin ?? s?.opMargin), fmt: fmtPctCell },
+    { label: t.company.val.grossMargin, key: 'grossMargin', dir: 1, get: (e, s) => num(e?.fundamentals.grossMargin ?? s?.grossMargin), fmt: fmtPctCell },
+    { label: t.company.val.roe, key: 'roe', dir: 1, get: (e, s) => num(e?.fundamentals.roe ?? s?.roe), fmt: fmtPctCell },
+    { label: t.company.val.fcfYield, key: 'fcfYield', dir: 1, get: (e, s) => num(e?.fundamentals.fcfYield ?? s?.fcfYield), fmt: fmtPctCell },
+    { label: t.company.val.pb, key: 'pb', dir: -1, get: (e, s) => num(e?.fundamentals.pb ?? s?.pb), fmt: fmtX },
+    { label: t.company.val.netDebtEbitda, key: 'netDebtEbitda', dir: -1, get: (e, s) => num(e?.fundamentals.netDebtEbitda ?? s?.netDebtEbitda), fmt: fmtX },
+    { label: t.company.kpis.divYield, key: 'dividendYield', dir: 1, get: (e, s) => num(e?.fundamentals.dividendYield ?? s?.dividendYield), fmt: fmtPctCell },
   ]
   // Whether ANY shown ticker has at least one field derived from persisted
   // financials — drives the fundamentals footer's source name.
@@ -251,7 +293,10 @@ export default function ComparePage() {
         {/* Returns table */}
         <div className="col-span-12 xl:col-span-5 bg-surface border border-border rounded overflow-hidden">
           <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-3 flex-wrap">
-            <span className="ui-label text-muted-fg">{t.compare.returnsTitle}</span>
+            <div className="flex items-center gap-2">
+              <span className="ui-label text-muted-fg">{t.compare.returnsTitle}</span>
+              {!usingCustom && <MarketDataSourceBadge status={returnsStatus} />}
+            </div>
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
                 <input type="checkbox" checked={benchmark} onChange={e => setBenchmark(e.target.checked)} className="accent-[var(--primary)]" />
@@ -288,7 +333,7 @@ export default function ComparePage() {
                           className="bg-transparent outline-none font-mono text-primary placeholder:text-muted-fg placeholder:font-sans w-28 border-b border-transparent focus:border-accent" />
                       </div>
                     </td>
-                    <td className={`py-1.5 px-2 text-right ui-number ${colored(r?.tr ?? null)}`}>{r ? fmtPct(r.tr) : ''}</td>
+                    <td className={`py-1.5 px-2 text-right ui-number ${colored(r?.tr ?? null)}`} title={r?.source === 'persisted' ? t.compare.marketSource : undefined}>{r ? fmtPct(r.tr) : ''}</td>
                     <td className={`py-1.5 px-2 text-right ui-number ${isRef ? 'text-muted-fg' : colored(diff)}`}>{isValid ? (isRef ? '--' : fmtPct(diff)) : ''}</td>
                     <td className={`py-1.5 px-2 pr-4 text-right ui-number ${colored(r?.annual ?? null)}`}>{r ? fmtPct(r.annual) : ''}</td>
                   </tr>
@@ -311,7 +356,7 @@ export default function ComparePage() {
             </tbody>
           </table>
           <div className="px-4 py-2 border-t border-border">
-            <TableSourceFooter source={t.compare.source} />
+            <TableSourceFooter source={returnsStatus === 'persisted' ? t.compare.marketSource : t.compare.source} asOf={returnsAsOf} />
           </div>
         </div>
 
@@ -412,7 +457,7 @@ export default function ComparePage() {
           <div className="bg-surface border border-border rounded p-4">
             <div className="ui-label text-muted-fg mb-3">{t.compare.perfTitle}</div>
             <CompareChart series={chartSeries} height={340} showGrid={showGrid} lineWidth={lineW} legend={showLegend} />
-            <TableSourceFooter source={t.compare.source} className="mt-2" />
+            <TableSourceFooter source={returnsStatus === 'persisted' ? t.compare.marketSource : t.compare.source} asOf={returnsAsOf} className="mt-2" />
           </div>
         </>
       )}

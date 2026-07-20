@@ -18,7 +18,7 @@ import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
 import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
 import { getAllCompanies } from '@/lib/data/companies'
 import { formatCLP, formatPct, changeColor } from '@/lib/formatters'
-import { fetchLiveSnapshot, type LiveSnapshot } from '@/lib/data/marketLiveData'
+import { useMarketData } from '@/components/providers/MarketDataProvider'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { valuePositions, calculatePortfolioTotals, calculateSectorExposure, type LatestPrice } from '@/lib/portfolio/valuation'
 import type { DataSourceStatus } from '@/lib/providers/types'
@@ -927,15 +927,15 @@ export default function PortfolioPage() {
   const [cashEntries, setCashEntries] = useState<CashEntryOut[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('positions')
+  // Live market snapshot is shared platform-wide (see MarketDataProvider) — Update
+  // on any tab refreshes it, and it survives navigating away from this page.
   // Manual live-price overlay (Yahoo Finance) on top of the Supabase-persisted
   // baseline the API already returns — same pattern as Stocks/Home/Company.
-  const [live, setLive] = useState<LiveSnapshot | null>(null)
+  const { live, refresh: refreshLive } = useMarketData()
 
   const doRefresh = useCallback(async () => {
-    const data = await fetchLiveSnapshot()
-    if (!data) throw new Error('unavailable')
-    setLive(data)
-  }, [])
+    await refreshLive()
+  }, [refreshLive])
 
   const priceStatus: DataSourceStatus = live ? 'live' : 'persisted'
 

@@ -506,6 +506,77 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Most recent work (2026-07-20, third pass) — live-status persistence, Compare fundamentals correctness,
+Comparative Returns wired to persisted history.** Five real, distinct bugs reported/found and fixed in one
+session:
+
+1. **"Live" reverted to "Static" on tab switch; Update only refreshed the one open tab.** Root cause: Home,
+   Stocks, Company, and Portfolio each held their own `useState<LiveSnapshot | null>`, which Next.js
+   discards on route change (the page component unmounts). New `MarketDataProvider`
+   (`src/components/providers/MarketDataProvider.tsx`), mounted once in `AppShell` above the router outlet,
+   holds the snapshot in a context that survives navigation; `refresh()` is the one function every page's
+   Update button now calls, so clicking Update anywhere updates every page reading `useMarketData()`.
+   Reuses an in-flight fetch rather than duplicating it; still auto-fetches once on app load. Guarded by
+   `tests/marketDataProvider.test.ts`.
+2. **Compare fundamentals showed absurd numbers** (P/E fwd 70.5x/47.9x/65x for banks that should be
+   ~8-16x; FCF Yield in the millions of percent, e.g. -4,980,212.8%). Two distinct real bugs, both in
+   `resolveCompareData.ts`: (a) P/E used the single latest quarter's EPS as if it were annual/TTM —
+   `CHILE: 187.62 / Q1'26 eps 2.66 = 70.53x`, an exact match. Fixed by `getEpsForValuation()`
+   (`financialsRepository.ts`) — prefers the latest annual eps, else sums the last 4 *consecutive*
+   quarterly eps values, never a single quarter; returns null (no derivation, honest static fallback)
+   rather than fabricate when 4 consecutive quarters aren't available (e.g. CHILE has a null-eps gap at
+   Q3'25 — correctly stays static). (b) `financial_statement_items`/`financial_metrics` store each source's
+   own raw scale — every live provider (Yahoo, CMF/XBRL, CMF bank) writes true raw CLP (`scale: 'units'`);
+   only the old manual-CSV template convention was millions-scale. `marketCapCLP` is always millions.
+   Combining a raw-CLP `fcf` metric with a millions-scale market cap produced the 1,000,000× error. Fixed by
+   `toMillionsClp()` (`financialsRepository.ts`), which reads the item's own `scale` column (statement
+   items) or falls back to a source_type rule (metrics, which have no scale column). A latent third bug was
+   found and fixed alongside: a quarterly and an annual reporting period can share the same
+   `period_end_date` (a Q4 quarter and the full FY both end 12-31) and both stay canonical — the old
+   `getLatestStatementItems`/`getLatestFinancialMetrics` merged items from *both* periods when this
+   happened; fixed to pick the single period with the highest `source_priority` instead
+   (`pickLatestReportingPeriodId`). All Compare fundamentals cells also gained defensive `.toFixed(1)`
+   rounding — a derived ratio is a raw float regardless of which upstream field happened to already be
+   clean. Guarded by `tests/compareFundamentalsScaleFix.test.ts`, which reproduces the exact live numbers.
+3. **Comparative Returns table + Cumulative Return chart always said "Static sample"** — not a bug: genuinely
+   never wired (Phase 8B explicitly deferred it pending accumulated Supabase snapshot history). User chose
+   to wire it now. New `resolveCompareHistory.ts` reuses `resolveStockHistory()` (the same resolver the
+   Company-page chart and Compare's own Market Data 1D/5D/1M/YTD/1Y columns already use) — no new provider.
+   `GET /api/compare/history?tickers=&timeframe=` + `src/lib/data/compareHistory.ts` client helper. Wired
+   for the 5 standard TF buttons (1M/YTD/1Y/3Y/5Y); a custom date range and Weekly/Monthly Period keep the
+   static path (persisted daily history isn't meaningful to downsample at ~weeks of depth yet — revisit once
+   more accumulates). **IPSA benchmark stays static unconditionally** — confirmed live: `stock_snapshots`
+   only ever holds the 25 tracked equities, never an index. Dynamic `MarketDataSourceBadge` + real as-of on
+   both the Returns table and the chart footer, suppressed for a custom range. Guarded by
+   `tests/compareHistoryWiring.test.ts`.
+4. **A real, currently-live bug found while building #3**: production's Compare Market Data panel showed
+   an *identical* YTD and 1M % for every ticker. Root cause: accumulated `stock_snapshots` history only
+   starts 2026-06-30 (the ingestion cron's start date); a "YTD" query (`from: 2026-01-01`) clears the
+   existing ≥5-point sufficiency floor easily, but the earliest point actually returned is 2026-06-30 — a
+   ~3-week window silently labeled "YTD" and marked `persisted`. Fixed in `isSufficientMarketHistory()`
+   (`marketHistory.ts`), the single shared gate used by every consumer of `resolveStockHistory` (Company
+   chart, Compare Market Data, and the new Comparative Returns): now also requires the series to cover at
+   least 70% of the requested window (`MIN_COVERAGE_RATIO`), not just clear a point-count floor. The new
+   `requestedRange` param is optional and defaults to the original point-count-only check when omitted;
+   `supabaseMarketProvider.getStockHistory` (the one real caller) now always passes it. Self-correcting:
+   every timeframe will start showing "Persisted" as more real daily history accumulates, with no further
+   code changes. Guarded by new tests in `tests/marketSnapshotHistory.test.ts` reproducing the exact live
+   collision.
+5. Per-page live-timestamp chips (`formatLiveTimestamp`/`formatMarketLastUpdated`, fed by the static
+   `marketMeta.json` commit timestamp) removed from Home/Stocks/Company/Portfolio — they duplicated the
+   `TableSourceFooter`'s own as-of in a different format and could show a stale date after navigating away
+   from a page whose data had just been refreshed (the exact bug in item 1, compounded). Each page now
+   derives one `asOf` from the data actually on screen and passes it to the footer.
+
+Local dev note: `MARKET_DATA_MODE` defaults to `'static'` when unset in `.env.local` (by design — the app
+must run with zero market-data env vars), so items 2-4 above only visibly exercise their Supabase path when
+`MARKET_DATA_MODE=hybrid` is set locally to match production. Verified directly against the live production
+Supabase data (read-only queries) rather than guessed.
+
+Suite: 1497 → 1573 (this pass) · lint 0 · build 0 errors.
+
+---
+
 **Most recent work (2026-07-20) — Hechos Esenciales module removed; source badges/footers simplified.**
 Full record in `docs/data_source_status.md` (search "REMOVED"). Summary: the Hechos Esenciales feature
 (dedicated `/hechos-esenciales` tab, Home dashboard panel, company-page Filings card, and all supporting

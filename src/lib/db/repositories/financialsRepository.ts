@@ -367,11 +367,21 @@ export interface StatementItemRecord {
   fiscalPeriod: string
   periodType: string
   periodEndDate: string
+  /** The owning reporting period's own source_priority — lets a "latest" reader
+   *  pick a single period when two periods of different granularity (e.g. an
+   *  annual filing and a Q4 filing) share the same period_end_date, instead of
+   *  merging line items from both. See getLatestStatementItems. */
+  reportingPeriodSourcePriority: number
   statementType: string
   lineItemCode: string
   lineItemName: string
   value: number | null
   unit: string
+  /** 'millions' (the manual-CSV template convention) or 'units' (raw CLP —
+   *  every live provider: Yahoo, CMF/XBRL, CMF bank) — read this before
+   *  combining `value` with a millions-denominated figure like marketCapCLP.
+   *  Never assume; both conventions coexist in this table. */
+  scale: string | null
   sourceType: string
 }
 
@@ -382,12 +392,32 @@ export interface FinancialMetricRecord {
   fiscalPeriod: string
   periodType: string
   periodEndDate: string
+  reportingPeriodSourcePriority: number
   metricCode: string
   metricName: string
   value: number | null
   unit: string | null
   sourceType: string
   calculationMethod: string | null
+}
+
+/**
+ * Normalizes a CLP-denominated statement-item or metric value to millions —
+ * the scale every downstream consumer that also uses marketCapCLP (always
+ * millions) expects. `financial_statement_items` carries its own `scale`
+ * column and is trusted directly; `financial_metrics` has no scale column
+ * (a real schema gap), so falls back to a source_type rule: every live
+ * provider (Yahoo, CMF/XBRL, CMF bank) writes raw CLP, and only the
+ * manual-CSV template convention (source_type 'manual_csv'/'derived') is
+ * already millions-scale. A 2026-07-20 bug — this normalization not existing
+ * at all — let a raw-CLP FCF value get divided by a millions-scale market
+ * cap, producing FCF Yield figures in the millions of percent. Never skip
+ * this when combining a persisted financials value with marketCapCLP.
+ */
+export function toMillionsClp(value: number, opts: { scale?: string | null; sourceType: string }): number {
+  if (opts.scale === 'units') return value / 1_000_000
+  if (opts.scale === 'millions') return value
+  return opts.sourceType === 'manual_csv' || opts.sourceType === 'derived' ? value : value / 1_000_000
 }
 
 export interface EarningsEventRecord {
@@ -469,7 +499,7 @@ export async function getStatementItems(ticker: string): Promise<StatementItemRe
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const res = await (db as any)
     .from('financial_statement_items')
-    .select('ticker, reporting_period_id, statement_type, line_item_code, line_item_name, value, unit, source_type')
+    .select('ticker, reporting_period_id, statement_type, line_item_code, line_item_name, value, unit, scale, source_type')
     .eq('ticker', ticker.toUpperCase())
     .eq('is_superseded', false)
   if (res.error || !res.data) return []
@@ -485,11 +515,13 @@ export async function getStatementItems(ticker: string): Promise<StatementItemRe
       fiscalPeriod: period.fiscalPeriod,
       periodType: period.periodType,
       periodEndDate: period.periodEndDate,
+      reportingPeriodSourcePriority: period.sourcePriority,
       statementType: r.statement_type as string,
       lineItemCode: r.line_item_code as string,
       lineItemName: r.line_item_name as string,
       value: (r.value as number) ?? null,
       unit: r.unit as string,
+      scale: (r.scale as string) ?? null,
       sourceType: r.source_type as string,
     }
     return record
@@ -526,6 +558,7 @@ export async function getFinancialMetrics(ticker: string): Promise<FinancialMetr
       fiscalPeriod: period.fiscalPeriod,
       periodType: period.periodType,
       periodEndDate: period.periodEndDate,
+      reportingPeriodSourcePriority: period.sourcePriority,
       metricCode: r.metric_code as string,
       metricName: r.metric_name as string,
       value: (r.value as number) ?? null,
@@ -543,12 +576,22 @@ export async function getFinancialMetrics(ticker: string): Promise<FinancialMetr
  * Latest reporting period's metrics for a ticker, keyed by metric_code.
  * Within the same (canonical) period, a manually-supplied value takes
  * precedence over a derived one for the same metric_code.
+ *
+ * A quarterly filing and an annual filing can legitimately share the same
+ * period_end_date (e.g. a Q4 quarter and the full FY both end 12-31) and both
+ * stay canonical, since supersession only dedupes within the same
+ * (fiscal_year, fiscal_period, period_type) — different period types are
+ * never grouped together. Picking "every item whose date matches the max
+ * date" would silently mix line items from two unrelated filings (e.g. an
+ * annual net_income next to a single quarter's EPS). Instead, among periods
+ * sharing the latest date, only the single reporting_period_id with the
+ * highest source_priority is used — never merged across periods.
  */
 export async function getLatestFinancialMetrics(ticker: string): Promise<Map<string, FinancialMetricRecord>> {
   const all = await getFinancialMetrics(ticker)
   if (all.length === 0) return new Map()
-  const latestPeriodEnd = all[0].periodEndDate
-  const latest = all.filter((m) => m.periodEndDate === latestPeriodEnd)
+  const latestPeriodId = pickLatestReportingPeriodId(all)
+  const latest = all.filter((m) => m.reportingPeriodId === latestPeriodId)
   const byCode = new Map<string, FinancialMetricRecord>()
   for (const m of latest) {
     const existing = byCode.get(m.metricCode)
@@ -563,12 +606,48 @@ export async function getLatestFinancialMetrics(ticker: string): Promise<Map<str
 export async function getLatestStatementItems(ticker: string): Promise<Map<string, StatementItemRecord>> {
   const all = await getStatementItems(ticker)
   if (all.length === 0) return new Map()
-  const latestPeriodEnd = all[0].periodEndDate
+  const latestPeriodId = pickLatestReportingPeriodId(all)
   const byCode = new Map<string, StatementItemRecord>()
   for (const item of all) {
-    if (item.periodEndDate === latestPeriodEnd) byCode.set(item.lineItemCode, item)
+    if (item.reportingPeriodId === latestPeriodId) byCode.set(item.lineItemCode, item)
   }
   return byCode
+}
+
+/** Shared by getLatestStatementItems/getLatestFinancialMetrics — see their doc comments. */
+function pickLatestReportingPeriodId(
+  rows: { reportingPeriodId: string; periodEndDate: string; reportingPeriodSourcePriority: number }[],
+): string {
+  const latestPeriodEnd = rows.reduce((max, r) => (r.periodEndDate > max ? r.periodEndDate : max), rows[0].periodEndDate)
+  let best = rows.find((r) => r.periodEndDate === latestPeriodEnd)!
+  for (const r of rows) {
+    if (r.periodEndDate === latestPeriodEnd && r.reportingPeriodSourcePriority > best.reportingPeriodSourcePriority) best = r
+  }
+  return best.reportingPeriodId
+}
+
+/**
+ * The EPS figure Compare's derived P/E should use: the latest ANNUAL period's
+ * eps if that's what's most recent, otherwise the sum of the last 4
+ * CONSECUTIVE quarterly eps values (a trailing-twelve-months figure) — never
+ * a single quarter's EPS treated as if it were annual. Returns null when
+ * neither is available (fewer than 4 quarters and no annual figure) rather
+ * than falling back to a misleading single-quarter number.
+ */
+export async function getEpsForValuation(ticker: string): Promise<{ value: number; asOfDate: string } | null> {
+  const all = await getStatementItems(ticker)
+  const epsRows = all.filter((r) => r.lineItemCode === 'eps' && r.value != null)
+  if (epsRows.length === 0) return null
+  // `all` (and therefore epsRows) is already sorted newest-first.
+  const latest = epsRows[0]
+  if (latest.periodType === 'annual') {
+    return { value: latest.value as number, asOfDate: latest.periodEndDate }
+  }
+  const quarterly = epsRows.filter((r) => r.periodType === 'quarterly')
+  if (quarterly.length < 4) return null
+  const last4 = quarterly.slice(0, 4)
+  const sum = last4.reduce((s, r) => s + (r.value as number), 0)
+  return { value: sum, asOfDate: last4[0].periodEndDate }
 }
 
 /**

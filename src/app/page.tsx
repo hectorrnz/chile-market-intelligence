@@ -20,7 +20,7 @@ import { getNewsSourceCode, getNewsSourceColor } from '@/lib/news/sourceCodes'
 import { getDocumentByRelatedId } from '@/lib/data/documents'
 import { getSectorPerformance } from '@/lib/data/sectorPerformance'
 import { getIndexPerformance } from '@/lib/data/indexPerformance'
-import { fetchLiveSnapshot, type LiveSnapshot } from '@/lib/data/marketLiveData'
+import { useMarketData } from '@/components/providers/MarketDataProvider'
 import { fetchStockSnapshots, fetchSectorPerformance, fetchIndexPerformance } from '@/lib/data/marketData'
 import type { StockSnapshot, SectorSnapshot, IndexSnapshot } from '@/lib/providers/market/types'
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
@@ -108,8 +108,9 @@ export default function HomePage() {
   const staticSectors = getSectorPerformance()
   const staticIndices = getIndexPerformance()
 
-  // Live market data state — null until user hits Refresh
-  const [live, setLive] = useState<LiveSnapshot | null>(null)
+  // Live market snapshot is shared platform-wide (see MarketDataProvider) — Update
+  // on any tab refreshes it, and it survives navigating away from this page.
+  const { live, refresh } = useMarketData()
   // Supabase-persisted baseline (auto-loaded on mount, below live overlay in priority)
   const [supaStockMap, setSupaStockMap] = useState<Record<string, StockSnapshot>>({})
   const [supaSectors, setSupaSectors] = useState<SectorSnapshot[] | null>(null)
@@ -126,25 +127,20 @@ export default function HomePage() {
       fetchStockSnapshots().catch(() => null),
       fetchSectorPerformance().catch(() => null),
       fetchIndexPerformance().catch(() => null),
-      fetchLiveSnapshot().catch(() => null),
       fetchLiveNews().catch(() => null),
-    ]).then(([stRes, secRes, idxRes, liveRes, newsRes]) => {
+    ]).then(([stRes, secRes, idxRes, newsRes]) => {
       if (!mounted) return
       if (stRes?.data.length) setSupaStockMap(Object.fromEntries(stRes.data.map(s => [s.ticker, s])))
       if (secRes?.data.length) setSupaSectors(secRes.data)
       if (idxRes?.data.length) setSupaIdxMap(Object.fromEntries(idxRes.data.map(i => [i.id, i])))
-      // Fetch the live Yahoo snapshot on mount too (not just on manual
-      // Update-click) so the sector/markets/watchlist badges read "Live"
-      // straight away rather than sitting on "Persisted" until refreshed.
-      if (liveRes) setLive(liveRes)
       if (newsRes) setNewsResult(newsRes)
     })
     return () => { mounted = false }
   }, [])
 
   const doRefresh = useCallback(async () => {
-    const [data, clRes, usRes, newsRes] = await Promise.all([
-      fetchLiveSnapshot(),
+    const [, clRes, usRes, newsRes] = await Promise.all([
+      refresh(),
       fetchMacroIndicators('CL'),
       fetchMacroIndicators('US'),
       fetchLiveNews(),
@@ -158,9 +154,7 @@ export default function HomePage() {
       setLiveIndicatorMap(prev => ({ ...prev, ...Object.fromEntries(usRes.data.map(i => [i.id, i])) }))
     }
     if (newsRes) setNewsResult(newsRes)
-    if (!data) throw new Error('unavailable')
-    setLive(data)
-  }, [])
+  }, [refresh])
 
   // Merge: static base → Supabase layer → live overlay (live always wins when present)
   const sectors = live?.sectors ?? supaSectors ?? staticSectors

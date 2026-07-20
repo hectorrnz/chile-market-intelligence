@@ -139,7 +139,7 @@ export const supabaseMarketProvider: MarketProvider = {
     if (!res.configured) return unavailable('Supabase not configured')
     if (!res.available) return unavailable(res.error ?? 'No persisted stock snapshot history available')
     const points = normalizeStockSnapshotsToHistoryPoints(res.data)
-    if (!isSufficientMarketHistory(points, timeframe)) {
+    if (!isSufficientMarketHistory(points, timeframe, range)) {
       return unavailable(
         `Insufficient snapshot history for ${timeframe} (${points.length} point(s) available)`,
       )

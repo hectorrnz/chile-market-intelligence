@@ -18,7 +18,7 @@ import { getNewsSourceCode, getNewsSourceColor } from '@/lib/news/sourceCodes'
 import { getStockHistoryForTimeframe } from '@/lib/data/stockHistory'
 import { formatCLP, formatPct, formatFx, formatMillionsCLP, formatEPS, formatNetDebt, formatMarketCapMM, changeColor, formatNewsTimestamp } from '@/lib/formatters'
 import type { EarningsRelease, StockPriceSnapshot } from '@/types'
-import { fetchLiveSnapshot, type LiveSnapshot } from '@/lib/data/marketLiveData'
+import { useMarketData } from '@/components/providers/MarketDataProvider'
 import { fetchStockSnapshot } from '@/lib/data/marketData'
 import type { StockSnapshot } from '@/lib/providers/market/types'
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
@@ -47,7 +47,9 @@ export default function CompanyDetailPage() {
   const sym = (ticker ?? '').toUpperCase()
   const [chartTimeframe, setChartTimeframe] = usePersistentState<StockTimeframe>('cmi.chartTimeframe', '1Y')
   const [relative, setRelative] = usePersistentState<boolean>('cmi.chartRelative', false)
-  const [live, setLive] = useState<LiveSnapshot | null>(null)
+  // Live market snapshot is shared platform-wide (see MarketDataProvider) — Update
+  // on any tab refreshes it, and it survives navigating away from this page.
+  const { live, refresh } = useMarketData()
   // Supabase-persisted baseline (auto-loaded on mount, below live overlay in priority)
   const [supaSnap, setSupaSnap] = useState<StockSnapshot | null>(null)
   const [newsResult, setNewsResult] = useState<NewsFetchResponse | null>(null)
@@ -65,11 +67,9 @@ export default function CompanyDetailPage() {
   }, [sym])
 
   const doRefresh = useCallback(async () => {
-    const [data, newsRes] = await Promise.all([fetchLiveSnapshot(), fetchLiveNews()])
+    const [, newsRes] = await Promise.all([refresh(), fetchLiveNews()])
     if (newsRes) setNewsResult(newsRes)
-    if (!data) throw new Error('unavailable')
-    setLive(data)
-  }, [])
+  }, [refresh])
 
   // Valuation card (natural height) drives the Results · Valuation · Filings row;
   // the other two cards match it and scroll (replaces the old fixed 300px).

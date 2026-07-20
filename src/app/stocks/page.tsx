@@ -9,7 +9,7 @@ import { getAllCompanies, getSectors } from '@/lib/data/companies'
 import { getAllSnapshots } from '@/lib/data/stocks'
 import { formatCLP, formatPct, formatLargeCLP, changeColor } from '@/lib/formatters'
 import { exportCSV } from '@/lib/export'
-import { fetchLiveSnapshot, type LiveSnapshot } from '@/lib/data/marketLiveData'
+import { useMarketData } from '@/components/providers/MarketDataProvider'
 import { fetchStockSnapshots } from '@/lib/data/marketData'
 import type { StockSnapshot } from '@/lib/providers/market/types'
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
@@ -29,7 +29,9 @@ export default function StocksPage() {
   const [sector,  setSector]  = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('marketCapCLP')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
-  const [live, setLive] = useState<LiveSnapshot | null>(null)
+  // Live market snapshot is shared platform-wide (see MarketDataProvider) — Update
+  // on any tab refreshes it, and it survives navigating away from this page.
+  const { live, refresh } = useMarketData()
   // Supabase-persisted baseline (auto-loaded on mount, below live overlay in priority)
   const [supaSnapMap, setSupaSnapMap] = useState<Record<string, StockSnapshot>>({})
 
@@ -44,10 +46,8 @@ export default function StocksPage() {
   }, [])
 
   const doRefresh = useCallback(async () => {
-    const data = await fetchLiveSnapshot()
-    if (!data) throw new Error('unavailable')
-    setLive(data)
-  }, [])
+    await refresh()
+  }, [refresh])
 
   const priceStatus: DataSourceStatus = live ? 'live' : Object.keys(supaSnapMap).length ? 'persisted' : 'static'
   // One as-of for the page, always describing the data actually on screen:

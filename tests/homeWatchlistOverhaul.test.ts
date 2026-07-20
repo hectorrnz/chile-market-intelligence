@@ -117,11 +117,14 @@ describe('Home page — regression: badges still computed from already-fetched s
 describe('Home page — badges show Live on initial load, not just after clicking Update', () => {
   const src = readFileSync(HOME_PAGE, 'utf8')
 
-  it('fetches the live Yahoo snapshot in the mount-time Promise.all, not only inside doRefresh', () => {
-    const mountEffectMatch = src.match(/useEffect\(\(\) => \{\s*let mounted = true\s*\n\s*Promise\.all\(\[[\s\S]{0,400}?\]\)/)
-    assert.ok(mountEffectMatch, 'expected to find the mount-time Promise.all effect')
-    assert.ok(mountEffectMatch![0].includes('fetchLiveSnapshot()'), 'the mount effect must also fetch the live snapshot so badges read Live immediately')
-    assert.ok(src.includes('if (liveRes) setLive(liveRes)'))
+  // 2026-07-20: the live Yahoo snapshot fetch moved out of Home's own mount
+  // effect and into MarketDataProvider (mounted once in AppShell, above the
+  // router) — see marketDataProvider.test.ts. It still auto-fetches once on
+  // app load, so badges still read Live immediately without a manual Update;
+  // the mechanism is now shared across every page instead of duplicated.
+  it('reads the live snapshot from the shared MarketDataProvider context, not its own fetch', () => {
+    assert.ok(src.includes('useMarketData()'))
+    assert.ok(!src.includes('fetchLiveSnapshot()'), 'Home must not fetch its own copy — the provider already does')
   })
 })
 

@@ -152,6 +152,60 @@ describe('isSufficientMarketHistory', () => {
     const pts = Array.from({ length: 60 }, (_, i) => makePoint('SQM-B', `2025-${String(Math.floor(i / 28) + 1).padStart(2, '0')}-01`, 1000))
     assert.equal(isSufficientMarketHistory(pts, '1Y'), true)
   })
+
+  // 2026-07-20 real bug: Compare's YTD and 1M figures were IDENTICAL for
+  // every ticker. Root cause — accumulated snapshot history only starts
+  // 2026-06-30 (the ingestion cron's start date). A "YTD" query
+  // (from: 2026-01-01) clears the 5-point floor easily but the earliest
+  // point actually returned is 2026-06-30 — a ~3-week window silently
+  // presented as if it were "since January 1". These tests pass the
+  // `requestedRange` param (previously never passed anywhere) that makes
+  // isSufficientMarketHistory check date coverage, not just point count.
+  describe('date-coverage check (requestedRange param) — the 2026-07-20 fix', () => {
+    it('clears the point-count floor but is rejected: real YTD/1M-collision reproduction', () => {
+      // A realistic 15-trading-day run from 2026-06-30 (real cron start date)
+      // to 2026-07-20 — clears YTD's ≥5-point floor easily.
+      const dates = ['2026-06-30', '2026-07-01', '2026-07-02', '2026-07-03', '2026-07-06', '2026-07-07', '2026-07-08', '2026-07-09', '2026-07-10', '2026-07-13', '2026-07-14', '2026-07-15', '2026-07-16', '2026-07-17', '2026-07-20']
+      const pts = dates.map(d => makePoint('SQM-B', d, 1000))
+      const ytdRange = resolveHistoryDateRange('YTD', '2026-07-20')! // { from: '2026-01-01', to: '2026-07-20' }
+      assert.equal(isSufficientMarketHistory(pts, 'YTD'), true, 'point-count-only check still passes (this is the trap)')
+      assert.equal(isSufficientMarketHistory(pts, 'YTD', ytdRange), false, 'date-coverage check correctly rejects the truncated window')
+    })
+
+    it('a genuinely full YTD window (covers from ~Jan) is accepted', () => {
+      const dates = ['2026-01-05', '2026-02-10', '2026-03-15', '2026-04-20', '2026-05-25', '2026-06-30', '2026-07-20']
+      const pts = dates.map(d => makePoint('SQM-B', d, 1000))
+      const ytdRange = resolveHistoryDateRange('YTD', '2026-07-20')!
+      assert.equal(isSufficientMarketHistory(pts, 'YTD', ytdRange), true)
+    })
+
+    it('omitting requestedRange preserves the original point-count-only behavior', () => {
+      const dates = ['2026-06-30', '2026-07-06', '2026-07-10', '2026-07-15', '2026-07-20']
+      const pts = dates.map(d => makePoint('SQM-B', d, 1000))
+      assert.equal(isSufficientMarketHistory(pts, 'YTD'), true)
+      assert.equal(isSufficientMarketHistory(pts, 'YTD', null), true)
+    })
+
+    it('1Y is rejected the same way when history only covers a few weeks', () => {
+      const dates = Array.from({ length: 60 }, (_, i) => `2026-0${6 + Math.floor(i / 25)}-${String(1 + (i % 25)).padStart(2, '0')}`)
+      const pts = dates.map(d => makePoint('SQM-B', d, 1000))
+      const range1y = resolveHistoryDateRange('1Y', '2026-07-20')!
+      assert.equal(isSufficientMarketHistory(pts, '1Y'), true, 'point-count floor (60) is met')
+      assert.equal(isSufficientMarketHistory(pts, '1Y', range1y), false, 'but the window only spans ~2 months, not a year')
+    })
+
+    it('3Y/5Y have no requestedRange (resolveHistoryDateRange returns null) — never applies the coverage check', () => {
+      assert.equal(resolveHistoryDateRange('3Y', '2026-07-20'), null)
+      assert.equal(resolveHistoryDateRange('5Y', '2026-07-20'), null)
+    })
+
+    it('a short window (1M) genuinely covered end-to-end is accepted', () => {
+      const dates = ['2026-06-16', '2026-06-23', '2026-06-30', '2026-07-07', '2026-07-14', '2026-07-20']
+      const pts = dates.map(d => makePoint('SQM-B', d, 1000))
+      const range1m = resolveHistoryDateRange('1M', '2026-07-20')!
+      assert.equal(isSufficientMarketHistory(pts, '1M', range1m), true)
+    })
+  })
 })
 
 // ─── HISTORY_MIN_POINTS ───────────────────────────────────────────────────────
