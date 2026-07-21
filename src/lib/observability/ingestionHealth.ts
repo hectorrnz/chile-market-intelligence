@@ -86,6 +86,13 @@ const MONTHLY_INDICATORS = new Set([
 ])
 const MONTHLY_STALE_DAYS = 100  // ~3.5 months: IPC lags 1m, IMACEC/Desempleo 2m — alert only if genuinely missing
 
+// Quarterly series — an observation dated at the quarter start is ~3-6 months
+// behind the wall clock even when perfectly current (Q1's GDP print carries
+// observation_date 2026-01-01 and is released in late April), so even the
+// monthly allowance chronically false-flags it (2026-07-21 audit).
+const QUARTERLY_INDICATORS = new Set(['us-gdp'])
+const QUARTERLY_STALE_DAYS = 210
+
 // Macro BCCh thresholds (business days since last successful run)
 const MACRO_HEALTHY_DAYS  = 2
 const MACRO_WARNING_DAYS  = 4
@@ -200,7 +207,9 @@ export function evaluateMacroIngestionHealth(input: MacroHealthInput): MacroHeal
     const obsDate = new Date(obs.maxDate + 'T00:00:00Z')
     if (isNaN(obsDate.getTime())) { staleIndicators.push(obs.indicatorId); continue }
     const calDays = calendarDaysBetween(obsDate, todayDate)
-    const threshold = MONTHLY_INDICATORS.has(obs.indicatorId) ? MONTHLY_STALE_DAYS : MACRO_WARNING_DAYS * 1.5 * 7 / 5  // ~5.6 cal days
+    const threshold = QUARTERLY_INDICATORS.has(obs.indicatorId) ? QUARTERLY_STALE_DAYS
+      : MONTHLY_INDICATORS.has(obs.indicatorId) ? MONTHLY_STALE_DAYS
+      : MACRO_WARNING_DAYS * 1.5 * 7 / 5  // ~5.6 cal days
     if (calDays > Math.max(threshold, 7)) {
       staleIndicators.push(obs.indicatorId)
     }
