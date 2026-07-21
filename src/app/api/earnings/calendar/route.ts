@@ -12,6 +12,9 @@ import {
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+// CMF's full-table response is genuinely slow (~15 s); allow the function room
+// to fetch both years in parallel. Only a rare cache-miss ever runs this long.
+export const maxDuration = 60
 
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000
 

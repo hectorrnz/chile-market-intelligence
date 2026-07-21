@@ -431,7 +431,7 @@ export default function HomePage() {
                   <span className="text-xs ui-number text-muted-fg text-right">{`${e.reportDate.slice(8, 10)}/${e.reportDate.slice(5, 7)}`}</span>
                 </div>
               )) : (
-                <div className="text-xs text-muted-fg py-1">{t.home.noUpcoming}</div>
+                <div className="text-xs text-muted-fg py-1">{earningsCal === null ? t.common.loading : t.home.noUpcoming}</div>
               )}
             </div>
             {recent.length > 0 && (

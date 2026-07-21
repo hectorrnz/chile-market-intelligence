@@ -97,17 +97,18 @@ export async function resolveEarningsCalendar(opts?: {
   const now = opts?.now ?? new Date()
   const years = opts?.years ?? [now.getUTCFullYear(), now.getUTCFullYear() + 1]
 
+  // Fetch the years in parallel so total latency ≈ a single request (keeps well
+  // under a serverless function's max duration). Any year that fails is skipped;
+  // only if ALL fail is the result 'unavailable'.
+  const results = await Promise.allSettled(
+    years.map((year) => fetchCmfEarningsYear(year, opts?.fetcher)),
+  )
   let allRows: CmfEarningsRow[] = []
   let anyOk = false
-  for (const year of years) {
-    try {
-      const rows = await fetchCmfEarningsYear(year, opts?.fetcher)
-      if (rows.length > 0) {
-        allRows = allRows.concat(rows)
-        anyOk = true
-      }
-    } catch {
-      // Skip a year that failed to fetch/parse; other years may still succeed.
+  for (const r of results) {
+    if (r.status === 'fulfilled' && r.value.length > 0) {
+      allRows = allRows.concat(r.value)
+      anyOk = true
     }
   }
 

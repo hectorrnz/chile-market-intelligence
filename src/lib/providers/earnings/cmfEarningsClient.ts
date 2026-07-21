@@ -72,23 +72,43 @@ export function parseCmfEarningsTable(html: string): CmfEarningsRow[] {
 
 export type CmfFetcher = (year: number) => Promise<string>
 
-/** Default network fetcher — POSTs aaaa=<year> and returns the response HTML. */
+// A full, realistic desktop-browser UA + headers. CMF's edge (like FRED's and
+// the Atlanta Fed's Akamai WAF) rejects/stalls requests with a bare or
+// "compatible; bot" UA — verified live: Yahoo and the Atlanta Fed workbook both
+// succeed from Vercel with a real browser UA, while a "compatible" UA failed
+// against CMF specifically. Match the pattern that works.
+const BROWSER_HEADERS = {
+  'Content-Type': 'application/x-www-form-urlencoded',
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'es-CL,es;q=0.9,en;q=0.8',
+  Referer: CMF_EARNINGS_URL,
+} as const
+
+/** Default network fetcher — POSTs aaaa=<year> and returns the response HTML. Retries once. */
 export async function defaultCmfFetch(year: number): Promise<string> {
-  const res = await fetch(CMF_EARNINGS_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      // A descriptive UA — Node's default (empty) UA is silently stalled by
-      // some government edges (the same fix used for FRED, see fredClient).
-      'User-Agent': 'Mozilla/5.0 (compatible; ChileMarketIntelligence/1.0)',
-      Accept: 'text/html',
-    },
-    body: `aaaa=${encodeURIComponent(String(year))}`,
-    // Give the (large ~200KB) page room; never hang a request forever.
-    signal: AbortSignal.timeout(15_000),
-  })
-  if (!res.ok) throw new Error(`CMF earnings calendar HTTP ${res.status}`)
-  return res.text()
+  let lastErr: unknown
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(CMF_EARNINGS_URL, {
+        method: 'POST',
+        headers: BROWSER_HEADERS,
+        body: `aaaa=${encodeURIComponent(String(year))}`,
+        // CMF's full-table response is large (~230 KB) and genuinely slow
+        // (~15 s observed live), so allow real time; the two years are fetched
+        // in parallel and the route's maxDuration is raised to match, and the
+        // 6h server cache means only the rare cache-miss ever waits this long.
+        signal: AbortSignal.timeout(22_000),
+        cache: 'no-store',
+      })
+      if (!res.ok) throw new Error(`CMF earnings calendar HTTP ${res.status}`)
+      return await res.text()
+    } catch (err) {
+      lastErr = err
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('CMF earnings calendar fetch failed')
 }
 
 /** Fetches and parses one year's CMF earnings calendar. */
