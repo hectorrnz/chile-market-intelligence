@@ -21,6 +21,8 @@ import type { EarningsRelease, StockPriceSnapshot } from '@/types'
 import { useMarketData } from '@/components/providers/MarketDataProvider'
 import { useGlobalRefresh } from '@/components/providers/useGlobalRefresh'
 import { fetchStockSnapshot, fetchStockHistory } from '@/lib/data/marketData'
+import { fetchValuation } from '@/lib/data/valuation'
+import type { ValuationResult, CompareFundamentalKey } from '@/lib/compare/compareTypes'
 import type { StockSnapshot } from '@/lib/providers/market/types'
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
 import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
@@ -47,7 +49,6 @@ export default function CompanyDetailPage() {
   const { t } = useLang()
   const sym = (ticker ?? '').toUpperCase()
   const [chartTimeframe, setChartTimeframe] = usePersistentState<StockTimeframe>('cmi.chartTimeframe', '1Y')
-  const [relative, setRelative] = usePersistentState<boolean>('cmi.chartRelative', false)
   // Live market snapshot is shared platform-wide (see MarketDataProvider) — Update
   // on any tab refreshes it, and it survives navigating away from this page.
   const { live } = useMarketData()
@@ -55,6 +56,10 @@ export default function CompanyDetailPage() {
   const refresh = useGlobalRefresh()
   // Supabase-persisted baseline (auto-loaded on mount, below live overlay in priority)
   const [supaSnap, setSupaSnap] = useState<StockSnapshot | null>(null)
+  // Live valuation (price, market cap, P/E, P/S, margins, ROE, …) from Yahoo —
+  // same resolver Compare uses, so the two agree. Drives the Valuation table +
+  // the P/E / Div Yield / Market Cap / YTD KPIs for EVERY ticker.
+  const [valuation, setValuation] = useState<ValuationResult | null>(null)
   const [newsResult, setNewsResult] = useState<NewsFetchResponse | null>(null)
   // Real historical price data (live Yahoo Finance fetch, Supabase-persisted
   // accumulation as fallback — see resolveStockHistory in marketProvider.ts),
@@ -82,33 +87,40 @@ export default function CompanyDetailPage() {
     return () => { mounted = false }
   }, [sym])
 
+  // Live valuation — re-fetched when the shared snapshot refreshes (an Update on
+  // any tab) so the Valuation table + KPIs stay current for every ticker.
   useEffect(() => {
     if (!sym) return
     let mounted = true
-    const tickers = relative ? [sym, 'IPSA'] : [sym]
-    Promise.all(tickers.map(tk => fetchStockHistory(tk, chartTimeframe).then(res => ({ tk, res }))))
-      .then(results => {
+    fetchValuation(sym).then(res => { if (mounted) setValuation(res) }).catch(() => {})
+    return () => { mounted = false }
+  }, [sym, live?.lastUpdated])
+
+  useEffect(() => {
+    if (!sym) return
+    let mounted = true
+    fetchStockHistory(sym, chartTimeframe)
+      .then(res => {
         if (!mounted) return
+        const fetched = res.metadata.status === 'live' || res.metadata.status === 'persisted'
         setChartHistory(prev => {
           const next = { ...prev }
-          for (const { tk, res } of results) {
-            const fetched = res.metadata.status === 'live' || res.metadata.status === 'persisted'
-            if (fetched && res.data.length >= 2) {
-              next[tk] = {
-                points: res.data.map(p => ({ date: p.date, value: p.close })),
-                status: res.metadata.status as 'live' | 'persisted',
-                asOf: res.metadata.lastUpdated || null,
-              }
-            } else {
-              delete next[tk]
+          if (fetched && res.data.length >= 2) {
+            next[sym] = {
+              points: res.data.map(p => ({ date: p.date, value: p.close })),
+              status: res.metadata.status as 'live' | 'persisted',
+              asOf: res.metadata.lastUpdated || null,
             }
+          } else {
+            delete next[sym]
           }
           return next
         })
       })
       .catch(() => {})
     return () => { mounted = false }
-  }, [sym, chartTimeframe, relative])
+    // live?.lastUpdated: keep the chart current when Update is clicked anywhere.
+  }, [sym, chartTimeframe, live?.lastUpdated])
 
   const doRefresh = useCallback(async () => {
     const [, newsRes] = await Promise.all([refresh(), fetchLiveNews()])
@@ -145,18 +157,7 @@ export default function CompanyDetailPage() {
     ? ((stockHistory[stockHistory.length - 1].value - stockHistory[0].value) / stockHistory[0].value) * 100
     : null
   const lastPrice = stockHistory.length ? stockHistory[stockHistory.length - 1].value : snap?.price ?? null
-
-  // Benchmark (IPSA) + rebased series for relative-performance mode
-  const liveIpsaHistory = chartHistory['IPSA']
-  const ipsaHistory = relative && liveIpsaHistory && liveIpsaHistory.points.length >= 2
-    ? liveIpsaHistory.points
-    : getStockHistoryForTimeframe('IPSA', chartTimeframe).map(p => ({ date: p.date, value: p.price }))
-  const rebase = (arr: { date: string; value: number }[]) => {
-    const base = arr[0]?.value || 1
-    return arr.map(p => ({ date: p.date, value: (p.value / base) * 100 }))
-  }
-  const chartData = relative ? rebase(stockHistory) : stockHistory
-  const compareData = relative && ipsaHistory.length >= 2 ? rebase(ipsaHistory) : undefined
+  const chartData = stockHistory
 
   // Event markers: earnings overlaid on the price line
   const markers: ChartMarker[] = getEarningsByTicker(sym).filter(e => e.resultQuality !== 'Pending')
@@ -170,18 +171,27 @@ export default function CompanyDetailPage() {
     return m != null ? `med ${Math.round(m * 10) / 10}${suffix}` : ''
   }
 
-  const xMult = (n: number | null | undefined) => (n != null ? `${n}x` : '—')
-  const pctVal = (n: number | null | undefined) => (n != null ? `${n}%` : '—')
+  const r1 = (n: number | null | undefined) => (n == null ? null : Math.round(n * 10) / 10)
+  const xMult = (n: number | null | undefined) => { const v = r1(n); return v != null ? `${v}x` : '—' }
+  const pctVal = (n: number | null | undefined) => { const v = r1(n); return v != null ? `${v}%` : '—' }
+  // Live Yahoo valuation ONLY. `lf` returns a field's value solely when it's a
+  // real live/persisted figure (in derivedFields) — never the fabricated static
+  // snapshot layer buildFundamentals falls back to — so a field Yahoo can't
+  // provide for this ticker (EV/EBITDA, gross margin, FCF for a bank) honestly
+  // shows "—". Same figures as the Compare tab. Works for every ticker.
+  const vf = valuation?.fundamentals
+  const lf = (key: CompareFundamentalKey): number | null =>
+    vf && vf.derivedFields.includes(key) ? (vf[key] ?? null) : null
   const valMetrics = [
-    { label: t.company.val.peFwd,         val: xMult(snap?.peFwd),         med: medStr('peFwd', 'x') },
-    { label: t.company.val.psFwd,         val: xMult(snap?.psFwd),         med: medStr('psFwd', 'x') },
-    { label: t.company.val.evEbitda,      val: xMult(snap?.evEbitda),      med: medStr('evEbitda', 'x') },
-    { label: t.company.val.opMargin,      val: pctVal(snap?.opMargin),     med: medStr('opMargin', '%') },
-    { label: t.company.val.grossMargin,   val: pctVal(snap?.grossMargin),  med: medStr('grossMargin', '%') },
-    { label: t.company.val.roe,           val: pctVal(snap?.roe),          med: medStr('roe', '%') },
-    { label: t.company.val.fcfYield,      val: pctVal(snap?.fcfYield),     med: medStr('fcfYield', '%') },
-    { label: t.company.val.pb,            val: xMult(snap?.pb),            med: medStr('pb', 'x') },
-    { label: t.company.val.netDebtEbitda, val: xMult(snap?.netDebtEbitda), med: medStr('netDebtEbitda', 'x') },
+    { label: t.company.val.peFwd,         val: xMult(lf('pe')),            med: medStr('peFwd', 'x') },
+    { label: t.company.val.psFwd,         val: xMult(lf('psFwd')),         med: medStr('psFwd', 'x') },
+    { label: t.company.val.evEbitda,      val: xMult(lf('evEbitda')),      med: medStr('evEbitda', 'x') },
+    { label: t.company.val.opMargin,      val: pctVal(lf('opMargin')),     med: medStr('opMargin', '%') },
+    { label: t.company.val.grossMargin,   val: pctVal(lf('grossMargin')),  med: medStr('grossMargin', '%') },
+    { label: t.company.val.roe,           val: pctVal(lf('roe')),          med: medStr('roe', '%') },
+    { label: t.company.val.fcfYield,      val: pctVal(lf('fcfYield')),     med: medStr('fcfYield', '%') },
+    { label: t.company.val.pb,            val: xMult(lf('pb')),            med: medStr('pb', 'x') },
+    { label: t.company.val.netDebtEbitda, val: xMult(lf('netDebtEbitda')), med: medStr('netDebtEbitda', 'x') },
   ]
 
   if (!company) {
@@ -198,18 +208,25 @@ export default function CompanyDetailPage() {
   }
 
   const lv = live?.stocks[sym]
-  const livePrice  = lv?.price        ?? supaSnap?.price        ?? snap?.price
+  const livePrice  = lv?.price        ?? valuation?.latestPrice ?? supaSnap?.price        ?? snap?.price
   const liveDayPct = lv?.dayChangePct ?? supaSnap?.dayChangePct ?? snap?.dayChangePct
-  const priceStatus: DataSourceStatus = live ? 'live' : supaSnap ? 'persisted' : 'static'
+  const priceStatus: DataSourceStatus = live ? 'live' : (valuation?.marketDataStatus ?? (supaSnap ? 'persisted' : 'static'))
   const priceAsOf = live ? live.lastUpdated : (supaSnap?.lastUpdated ?? null)
 
+  // Live valuation drives the YTD / Market Cap / P/E / Div Yield KPIs — live
+  // only (no static snapshot), so nothing here is frozen sample data. They show
+  // "—" for the brief moment before the live fetch resolves, then populate.
+  const ytdVal = valuation?.ytdChangePct ?? null
+  const mktCapVal = valuation?.marketCapCLP ?? null
+  const peVal = lf('pe')
+  const divVal = lf('dividendYield')
   const kpis = [
     { label: t.company.kpis.lastPrice, value: livePrice != null ? formatCLP(livePrice) : '—',       unit: 'CLP', color: '' },
     { label: t.company.kpis.dayChg,   value: liveDayPct != null ? formatPct(liveDayPct) : '—',       unit: '',    color: liveDayPct != null ? changeColor(liveDayPct) : '' },
-    { label: t.company.kpis.ytd,      value: snap ? formatPct(snap.ytdChangePct) : '—',              unit: '',    color: snap ? changeColor(snap.ytdChangePct) : '' },
-    { label: t.company.kpis.marketCap,value: company.marketCapCLP ? formatMarketCapMM(company.marketCapCLP) : '—', unit: '', color: '' },
-    { label: t.company.kpis.pe,       value: snap?.pe != null ? `${snap.pe}` : '—',                  unit: 'x',   color: '' },
-    { label: t.company.kpis.divYield, value: snap?.dividendYield != null ? `${snap.dividendYield}` : '—', unit: '%', color: '' },
+    { label: t.company.kpis.ytd,      value: ytdVal != null ? formatPct(ytdVal) : '—',               unit: '',    color: ytdVal != null ? changeColor(ytdVal) : '' },
+    { label: t.company.kpis.marketCap,value: mktCapVal != null ? formatMarketCapMM(mktCapVal) : '—', unit: '', color: '' },
+    { label: t.company.kpis.pe,       value: peVal != null ? `${peVal}` : '—',                       unit: 'x',   color: '' },
+    { label: t.company.kpis.divYield, value: divVal != null ? `${divVal}` : '—',                     unit: '%', color: '' },
   ]
 
   return (
@@ -325,16 +342,6 @@ export default function CompanyDetailPage() {
             </div>
           </div>
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => setRelative(r => !r)}
-              className={`px-2 py-0.5 text-xs rounded border transition-colors mr-1 ${
-                relative ? 'bg-surface-2 text-foreground border-border' : 'text-muted-fg border-transparent hover:text-foreground'
-              }`}
-              title="Relative to IPSA (rebased to 100)"
-            >
-              vs IPSA
-            </button>
-            <span className="w-px h-4 bg-border mr-1" />
             {STOCK_TIMEFRAMES.map(tf => (
               <button
                 key={tf}
@@ -355,9 +362,7 @@ export default function CompanyDetailPage() {
             data={chartData}
             unit=""
             height={240}
-            valueFormatter={relative ? (v) => v.toFixed(1) : priceFmt}
-            compareData={compareData}
-            compareLabel="IPSA"
+            valueFormatter={priceFmt}
             primaryLabel={sym}
             markers={markers}
           />
@@ -436,15 +441,22 @@ export default function CompanyDetailPage() {
             <span className="ui-label text-muted-fg">{t.company.valuation}</span>
           </div>
           <div className="p-2">
-            <div className="grid grid-cols-3 gap-2">
-              {valMetrics.map(({ label, val, med }) => (
-                <div key={label} className="border border-border rounded flex flex-col items-center justify-center text-center px-1 py-1.5">
-                  <div className="ui-label text-muted-fg mb-0.5" style={{ fontSize: '9px' }}>{label}</div>
-                  <div className="text-sm ui-number text-foreground">{val}</div>
-                  {med && <div className="ui-number text-muted-fg" style={{ fontSize: '9px' }}>{med}</div>}
-                </div>
-              ))}
-            </div>
+            {valuation === null ? (
+              <div className="py-8 text-center text-xs text-muted-fg">{t.common.loading}</div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {valMetrics.map(({ label, val, med }) => (
+                  <div key={label} className="border border-border rounded flex flex-col items-center justify-center text-center px-1 py-1.5">
+                    <div className="ui-label text-muted-fg mb-0.5" style={{ fontSize: '9px' }}>{label}</div>
+                    <div className="text-sm ui-number text-foreground">{val}</div>
+                    {med && <div className="ui-number text-muted-fg" style={{ fontSize: '9px' }}>{med}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="px-4 py-2 border-t border-border shrink-0">
+            <TableSourceFooter source={t.stocks.footer} />
           </div>
         </div>
       </div>

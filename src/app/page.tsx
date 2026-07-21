@@ -14,7 +14,8 @@ import { getAllSnapshots } from '@/lib/data/stocks'
 import { getAllIndicators, getByCategory } from '@/lib/data/macro'
 import { getChileanRates } from '@/lib/data/chileanRates'
 import { getSeriesByStaticId } from '@/config/macroSeries'
-import { getUpcomingEarnings, getRecentResults } from '@/lib/data/earnings'
+import { getRecentResults } from '@/lib/data/earnings'
+import { fetchEarningsCalendar, upcomingWithinDays, type EarningsCalendarResult } from '@/lib/data/earningsCalendar'
 import { fetchLiveNews, type NewsFetchResponse } from '@/lib/data/newsLive'
 import { getNewsSourceCode, getNewsSourceColor } from '@/lib/news/sourceCodes'
 import { getDocumentByRelatedId } from '@/lib/data/documents'
@@ -89,7 +90,6 @@ export default function HomePage() {
   const macroChileAsOf = macroChile.reduce((max, i) => (i.lastUpdated > max ? i.lastUpdated : max), '')
   const macroUsAsOf = macroUs.reduce((max, i) => (i.lastUpdated > max ? i.lastUpdated : max), '')
   const fxAsOf = fxRows.reduce((max, i) => (i.lastUpdated > max ? i.lastUpdated : max), '')
-  const upcoming = getUpcomingEarnings().slice(0, 2)
   const recent = getRecentResults().slice(0, 2)
   const staticSectors = getSectorPerformance()
   const staticIndices = getIndexPerformance()
@@ -106,6 +106,9 @@ export default function HomePage() {
   // below: an unavailable live fetch shows an honest empty state, not
   // fabricated headlines).
   const [newsResult, setNewsResult] = useState<NewsFetchResponse | null>(null)
+  // Live CMF earnings calendar (report/EEFF-sending dates). Never fabricated —
+  // an unavailable fetch just leaves the Upcoming list empty.
+  const [earningsCal, setEarningsCal] = useState<EarningsCalendarResult | null>(null)
 
   useEffect(() => {
     let mounted = true
@@ -114,12 +117,14 @@ export default function HomePage() {
       fetchSectorPerformance().catch(() => null),
       fetchIndexPerformance().catch(() => null),
       fetchLiveNews().catch(() => null),
-    ]).then(([stRes, secRes, idxRes, newsRes]) => {
+      fetchEarningsCalendar().catch(() => null),
+    ]).then(([stRes, secRes, idxRes, newsRes, calRes]) => {
       if (!mounted) return
       if (stRes?.data.length) setSupaStockMap(Object.fromEntries(stRes.data.map(s => [s.ticker, s])))
       if (secRes?.data.length) setSupaSectors(secRes.data)
       if (idxRes?.data.length) setSupaIdxMap(Object.fromEntries(idxRes.data.map(i => [i.id, i])))
       if (newsRes) setNewsResult(newsRes)
+      if (calRes) setEarningsCal(calRes)
     })
     return () => { mounted = false }
   }, [])
@@ -145,6 +150,12 @@ export default function HomePage() {
 
   const snapshotMap = Object.fromEntries(snapshots.map(s => [s.ticker, s]))
   const companyMap = Object.fromEntries(companies.map(c => [c.ticker, c]))
+
+  // Companies reporting within 7 days, from the live CMF earnings calendar.
+  // Empty (honest) when the calendar is unavailable — never fabricated.
+  const upcomingCmf = earningsCal?.status === 'live'
+    ? upcomingWithinDays(earningsCal.events, 7).slice(0, 8)
+    : []
 
   // Home's "Watchlist" table mirrors the user's real /watchlist selection
   // (Supabase-persisted, per Phase 6A) rather than a hardcoded first-N
@@ -411,18 +422,18 @@ export default function HomePage() {
             <span className="ui-label text-muted-fg">{t.home.upcomingEarnings}</span>
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto p-4">
-            {upcoming.length > 0 && (
-              <div className="mb-2">
-                <div className="ui-label text-muted-fg mb-1">{t.home.upcoming}</div>
-                {upcoming.map(e => (
-                  <div key={e.id} className="grid grid-cols-3 items-center py-1 border-b border-border last:border-0">
-                    <Link href={`/companies/${e.ticker}`} className="text-xs font-mono text-primary hover:underline">{e.ticker}</Link>
-                    <span className="text-xs text-muted text-center">{e.period}</span>
-                    <span className="text-xs ui-number text-muted-fg text-right">{e.reportDate}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="mb-2">
+              <div className="ui-label text-muted-fg mb-1">{t.home.upcoming}</div>
+              {upcomingCmf.length > 0 ? upcomingCmf.map(e => (
+                <div key={`${e.ticker}-${e.reportDate}`} className="grid grid-cols-3 items-center py-1 border-b border-border last:border-0">
+                  <Link href={`/companies/${e.ticker}`} className="text-xs font-mono text-primary hover:underline">{e.ticker}</Link>
+                  <span className="text-xs text-muted text-center">{e.period}</span>
+                  <span className="text-xs ui-number text-muted-fg text-right">{`${e.reportDate.slice(8, 10)}/${e.reportDate.slice(5, 7)}`}</span>
+                </div>
+              )) : (
+                <div className="text-xs text-muted-fg py-1">{t.home.noUpcoming}</div>
+              )}
+            </div>
             {recent.length > 0 && (
               <div>
                 <div className="ui-label text-muted-fg mb-1">{t.home.recentResults}</div>
@@ -441,7 +452,7 @@ export default function HomePage() {
             )}
           </div>
           <div className="px-4 py-2 border-t border-border shrink-0">
-            <TableSourceFooter source={t.home.earningsSource} />
+            <TableSourceFooter source={earningsCal?.status === 'live' ? t.home.earningsCalSource : t.home.earningsSource} asOf={earningsCal?.status === 'live' ? (earningsCal.asOf ?? null) : null} />
           </div>
         </div>
       </div>

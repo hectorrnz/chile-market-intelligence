@@ -129,6 +129,25 @@ export interface PersistedFundamentalsInput {
 }
 
 /**
+ * Full live valuation from Yahoo (see fetchYahooValuation). When present it is
+ * the PRIMARY source for every fundamentals field — the same Yahoo snapshot the
+ * price/market-cap come from, so the whole row is internally consistent. A null
+ * field just falls through to the persisted/static layers below it.
+ */
+export interface LiveFundamentalsInput {
+  peFwd?: number | null
+  psTtm?: number | null
+  evEbitda?: number | null
+  opMargin?: number | null
+  grossMargin?: number | null
+  roe?: number | null
+  fcfYield?: number | null
+  pb?: number | null
+  dividendYield?: number | null
+  netDebtEbitda?: number | null
+}
+
+/**
  * Builds Compare's fundamentals row. Starts from the static snapshot, then
  * upgrades individual fields to 'derived' wherever persisted financials (+
  * market price/cap) make a real calculation possible — never a blanket
@@ -141,6 +160,7 @@ export function buildFundamentals(
   latestPrice?: number | null,
   marketCapCLP?: number | null,
   persisted?: PersistedFundamentalsInput,
+  live?: LiveFundamentalsInput,
 ): CompareFundamentals {
   const derivedFields: CompareFundamentalKey[] = []
 
@@ -188,14 +208,36 @@ export function buildFundamentals(
   // sales estimate and this project ingests no analyst estimates, so the UI
   // label must read TTM. The field keeps its original name only to avoid
   // churning the CompareFundamentals shape and its consumers.
-  const psTtm = safeNumber(persisted?.psTtmLive ?? null)
+  let psTtm = safeNumber(persisted?.psTtmLive ?? null)
   if (psTtm !== null) derivedFields.push('psFwd')
 
-  const roe = safeNumber(persisted?.roeLivePct ?? null)
+  let roe = safeNumber(persisted?.roeLivePct ?? null)
   if (roe !== null) derivedFields.push('roe')
 
-  const pb = safeNumber(persisted?.pbLive ?? null)
+  let pb = safeNumber(persisted?.pbLive ?? null)
   if (pb !== null) derivedFields.push('pb')
+
+  // Live Yahoo valuation is the PRIMARY layer — it shares the same snapshot as
+  // the price/market cap, so every field is internally consistent. When a live
+  // field is present it overrides the persisted/static value computed above and
+  // is marked as a live/derived cell (so the UI shows the "•" and names Yahoo
+  // as the source). A null live field leaves the fallback layers untouched.
+  const applyLive = (key: CompareFundamentalKey, current: number | null, liveVal: number | null | undefined): number | null => {
+    const v = safeNumber(liveVal)
+    if (v === null) return current
+    if (!derivedFields.includes(key)) derivedFields.push(key)
+    return v
+  }
+  pe = applyLive('pe', pe, live?.peFwd)
+  psTtm = applyLive('psFwd', psTtm, live?.psTtm)
+  evEbitda = applyLive('evEbitda', evEbitda, live?.evEbitda)
+  opMargin = applyLive('opMargin', opMargin, live?.opMargin)
+  grossMargin = applyLive('grossMargin', grossMargin, live?.grossMargin)
+  roe = applyLive('roe', roe, live?.roe)
+  fcfYield = applyLive('fcfYield', fcfYield, live?.fcfYield)
+  pb = applyLive('pb', pb, live?.pb)
+  netDebtEbitda = applyLive('netDebtEbitda', netDebtEbitda, live?.netDebtEbitda)
+  dividendYield = applyLive('dividendYield', dividendYield, live?.dividendYield)
 
   return {
     pe,

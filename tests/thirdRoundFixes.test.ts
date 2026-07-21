@@ -137,9 +137,10 @@ describe('Compare fundamentals — live ratios are currency-corrected', () => {
 
   it('divides price-based ratios by the quote/financial FX rate', () => {
     // SQM-B, CAP, ENELAM, COLBUN and LTM quote in CLP but report in USD, so
-    // Yahoo's raw priceToBook for SQM-B is 3096.9 rather than ~3.3.
-    assert.ok(src.includes('rawPb / fx'))
-    assert.ok(src.includes('rawPs / fx'))
+    // Yahoo's raw priceToBook for SQM-B is 3096.9 rather than ~3.3. The
+    // correction now runs through a shared `correct()` helper (raw / fx).
+    assert.ok(src.includes('correct(rawPb)'))
+    assert.ok(src.includes('correct(rawPs)'))
   })
 
   it('never applies the FX correction to ROE', () => {
@@ -150,7 +151,7 @@ describe('Compare fundamentals — live ratios are currency-corrected', () => {
   })
 
   it('returns null rather than an uncorrected figure when the rate is unavailable', () => {
-    assert.ok(src.includes('fx != null && rawPb != null ? rawPb / fx : null'))
+    assert.ok(src.includes('fx != null && raw != null ? raw / fx : null'))
     assert.ok(src.includes("financialCurrency === 'USD' && quoteCurrency === 'CLP' ? usdClp : null"))
   })
 

@@ -506,6 +506,67 @@ docs/                 — Project documentation
 
 ## Current Phase
 
+**Most recent work (2026-07-21, seventh pass) — four larger feature/correctness requests: a live
+CMF earnings calendar, fully-live per-stock valuation everywhere, a Compare price-mismatch fix, and
+a market-implied FOMC rate outlook.** All four verified live in the browser + against real data.
+
+1. **Compare price mismatch + live fundamentals (item 4) — FIXED.** Root cause: the Market Data table
+   used the client-side live Yahoo overlay while the Fundamentals "Last Price" used the stale
+   server-resolved snapshot (21.000 vs 20.800). New **`fetchYahooValuation`** (rewritten
+   `yahooRatiosProvider.ts`) pulls price + market cap + EVERY valuation ratio (P/E fwd, P/S TTM,
+   EV/EBITDA, op/gross margin, ROE, FCF yield, P/B, div yield, net-debt/EBITDA) from ONE quoteSummary
+   call per ticker — one consistent price basis, so the two tables can never disagree. Same
+   currency-correction discipline as before (price-based ratios ÷ the quote/financial FX rate; ROE
+   never corrected; EV/EBITDA + FCF recomputed from raw components in one currency). `resolveCompareData`
+   now drives both Compare tables from this; the client overlay was removed and Compare re-fetches on
+   `live.lastUpdated` so any tab's Update still refreshes it. Both tables read the same `entry.*`.
+   Gross margin of exactly 0 (Yahoo's value for banks) → null (`—`), never a misleading `0%`.
+2. **Stocks/Company page fully live + vs IPSA removed (item 3).** New shared `resolveValuation(ticker)`
+   (same builder as Compare, minus the multi-timeframe history) + `GET /api/valuation/[ticker]` +
+   `src/lib/data/valuation.ts`. The company page's Valuation table AND the P/E / Div Yield / Market Cap
+   / YTD KPIs now read live Yahoo for EVERY ticker — **live-only**, gated on `fundamentals.derivedFields`
+   so a field Yahoo can't provide (EV/EBITDA, gross margin, FCF for a bank) shows an honest `—`, never
+   the fabricated static-sample layer inside buildFundamentals. Loading state while the fetch resolves;
+   valuation footer always names Yahoo Finance. The **vs IPSA toggle is gone** (Yahoo serves no ^IPSA
+   history — a known dead end). Chart keeps its live→persisted→static tiering and re-fetches on Update.
+   Compare fundamentals cells likewise dropped their static fallbacks (live-only, per the • marker).
+3. **Live CMF earnings calendar (item 2) — NEW.** The user directed me to CMF's public, no-CAPTCHA
+   "Fechas de envío de EEFF" page
+   (`novedades_envio_fechas_eeff.php`) — this explicit instruction overrides the standing no-scraping
+   default for this one source. `POST aaaa=<year>` returns a 6-col table (Razón Social · RUT · Mar/Jun/
+   Sep/Dec dates). Architecture: `cmfEarningsClient.ts` (dependency-free HTML-table parser, injectable
+   fetcher) → `earningsCalendarProvider.ts` (maps RUT→ticker, current + next year, sorted deduped
+   events) → `GET /api/earnings/calendar` (6h server cache → auto-updates on expiry/cold-start, no cron
+   needed) → `src/lib/data/earningsCalendar.ts`. RUT map (`src/config/cmfEarningsCalendarMap.ts`) — 23
+   of 25 tickers verified against CMF's own rows (never guessed; 21 cross-checked with cmfIssuerMap,
+   banks CHILE=97004000 / BCI=97006000 read straight off CMF). **BSANTANDER and ITAUCL are genuinely
+   ABSENT from the CMF calendar (only 3 banks appear on it) — honest `missingTickers`, never a
+   fabricated date.** Home's Upcoming section now shows tracked companies reporting within 7 days
+   (`upcomingWithinDays`), CMF source footer. Verified live: 60 events, all 23 covered tickers, SONDA/
+   ANDINA-B/COLBUN/ENELCHILE showing on Home.
+4. **FOMC market-implied rate outlook (item 1) — NEW, honest derived estimate.** CME FedWatch's API is
+   paid (no free endpoint) — collides with the no-paid-vendor/no-scraping rules, so "just use FedWatch"
+   isn't possible. The user chose a free derived estimate; I used the **Federal Reserve Bank of Atlanta
+   Market Probability Tracker** (free/official). It's an `.xlsx` behind an Akamai WAF (browser UA sent;
+   may block datacenter IPs — graceful fallback if so) organized by **3-month-SOFR reference quarter,
+   NOT per FOMC meeting**. Dependency-free xlsx reader (`mptXlsx.ts`, reuses the existing `unzip.ts` +
+   sharedStrings/DATA-sheet-tail parse — the value & date columns are shared strings, only
+   reference_start is numeric) → `fomcExpectations.ts` (current target range from the workbook, FRED
+   `DFEDTARL/DFEDTARU` as a resilient fallback) → `GET /api/macro/fomc-expectations` (12h cache) →
+   a `/macro/calendar` card labeled **"Market-implied rate outlook"** showing the current target range
+   (3.50%–3.75%) + per-quarter expected rate and P(below/in-range/above current target). Deliberately
+   NOT presented per-meeting and explicitly disclaimed as "NOT CME FedWatch" — the per-meeting framing
+   would mislead given the SOFR-quarter basis. FOMC meeting DATES already merged into the FRED calendar
+   (sixth pass). Never fabricates: WAF/parse failure degrades to target-range-only or unavailable.
+
+New tests: `cmfEarningsCalendar.test.ts`, `fomcExpectations.test.ts` (mptXlsx parser + serial dates +
+formatters), `liveValuationFundamentals.test.ts` (buildFundamentals live layering). Two pre-existing
+brittle source-text assertions in `thirdRoundFixes`/`compareFundamentalsScaleFix` updated for the
+`correct()`/`buildTickerValuationCore` refactor. Suite 1643 → **1666** · lint 0 · build 0 errors.
+Not addressed (out of scope, unchanged): Home IPSA YTD is still a hardcoded static value.
+
+---
+
 **Most recent work (2026-07-20, sixth pass) — seven reported items; two turned out to be real
 data bugs (a stale/never-refreshing macro chart source, and a genuine Yahoo data gap behind a
 permanently-blank column) rather than the cosmetic issues reported.**

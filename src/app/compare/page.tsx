@@ -70,15 +70,14 @@ export default function ComparePage() {
   const valids: { slot: number; ticker: string }[] = []
   s6.forEach((v, i) => { const tk = norm(v); if (tk && compMap[tk] && !seen.has(tk)) { seen.add(tk); valids.push({ slot: i, ticker: tk }) } })
 
-  // Update Data — Compare previously had no Update button at all, and its own
-  // /api/compare + /api/compare/history fetches only ran on mount/ticker/tf
-  // change, so nothing on this page ever responded to Update. `live` is the
-  // shared platform-wide Yahoo snapshot (see MarketDataProvider) — overlaying
-  // it on the Market Data table below means clicking Update on ANY tab
-  // updates Compare's price/day-change/market-cap immediately via the shared
-  // context, with no extra fetch needed here. `compareRefreshSeq` additionally
-  // forces Compare's OWN data (fundamentals, performance, returns history) to
-  // re-fetch — the shared live snapshot doesn't carry those.
+  // Update Data — Compare's /api/compare fetch is now the SINGLE source for the
+  // Market Data table AND the Fundamentals table (price, market cap and every
+  // ratio come from one live Yahoo snapshot server-side), so the two can never
+  // disagree (the item-4 bug was two different price fetches feeding the two
+  // tables). `live` is the shared platform-wide snapshot (see
+  // MarketDataProvider); we don't overlay it on a table anymore, but we DO
+  // re-fetch /api/compare whenever it changes so clicking Update on ANY tab
+  // refreshes Compare too. `compareRefreshSeq` bumps on this page's own Update.
   const { live } = useMarketData()
   const refreshShared = useGlobalRefresh()
   const [compareRefreshSeq, setCompareRefreshSeq] = useState(0)
@@ -110,11 +109,14 @@ export default function ComparePage() {
     }
     run()
     return () => { mounted = false }
-  }, [validTickerKey, compareRefreshSeq])
-  // 'live' beats whatever /api/compare itself reported, mirroring the
-  // live→persisted→static priority every other page uses.
+    // live?.lastUpdated: re-fetch /api/compare whenever the shared snapshot
+    // refreshes (an Update clicked on any tab), so Compare stays in sync
+    // without a divergent client-side overlay.
+  }, [validTickerKey, compareRefreshSeq, live?.lastUpdated])
+  // /api/compare reports 'live' per entry when its Yahoo valuation succeeded —
+  // both tables read that same resolved data, so the badge matches what's shown.
   const marketStatus: 'live' | 'persisted' | 'static' | 'hybrid-fallback' | 'live-unavailable' =
-    valids.some(({ ticker }) => live?.stocks[ticker]) ? 'live' : (Object.values(compareData)[0]?.marketDataStatus ?? 'static')
+    (Object.values(compareData)[0]?.marketDataStatus as 'live' | 'persisted' | 'static' | 'hybrid-fallback' | 'live-unavailable') ?? 'static'
   const perfCell = (m: ComparePerformanceMetric | undefined) => ({
     label: m?.value != null ? fmtPct(m.value) : '—',
     title: m && m.source !== 'persisted' ? (m.fallbackReason ?? m.source) : undefined,
@@ -225,19 +227,20 @@ export default function ComparePage() {
   const fund: Row[] = [
     { label: t.company.kpis.lastPrice, dir: 0, get: e => num(e?.latestPrice), fmt: v => formatFx(v, v < 1000 ? 2 : 0) },
     { label: `${t.home.marketCap} (Bn)`, dir: 0, get: e => { const v = num(e?.marketCapCLP); return v != null ? v / 1000 : null }, fmt: v => formatCLP(v, 1) },
-    { label: t.company.val.peFwd, key: 'pe', dir: -1, get: (e, s) => num(e?.fundamentals.pe ?? s?.peFwd), fmt: fmtX },
-    // P/S, ROE and P/B read ONLY the resolved (live Yahoo) value — no static
-    // snapshot fallback. The static figures are fabricated sample data; an
-    // honest "—" is correct when Yahoo has nothing for a ticker.
+    // Every fundamentals cell reads ONLY the resolved (live Yahoo) value — no
+    // static snapshot fallback anywhere. The static figures are fabricated
+    // sample data; an honest "—" is correct when Yahoo has nothing for a ticker
+    // (e.g. EV/EBITDA, gross margin or FCF for a bank).
+    { label: t.company.val.peFwd, key: 'pe', dir: -1, get: e => num(e?.fundamentals.pe), fmt: fmtX },
     { label: t.compare.psTtm, key: 'psFwd', dir: -1, get: e => num(e?.fundamentals.psFwd), fmt: fmtX },
-    { label: t.company.val.evEbitda, key: 'evEbitda', dir: -1, get: (e, s) => num(e?.fundamentals.evEbitda ?? s?.evEbitda), fmt: fmtX },
-    { label: t.company.val.opMargin, key: 'opMargin', dir: 1, get: (e, s) => num(e?.fundamentals.opMargin ?? s?.opMargin), fmt: fmtPctCell },
-    { label: t.company.val.grossMargin, key: 'grossMargin', dir: 1, get: (e, s) => num(e?.fundamentals.grossMargin ?? s?.grossMargin), fmt: fmtPctCell },
+    { label: t.company.val.evEbitda, key: 'evEbitda', dir: -1, get: e => num(e?.fundamentals.evEbitda), fmt: fmtX },
+    { label: t.company.val.opMargin, key: 'opMargin', dir: 1, get: e => num(e?.fundamentals.opMargin), fmt: fmtPctCell },
+    { label: t.company.val.grossMargin, key: 'grossMargin', dir: 1, get: e => num(e?.fundamentals.grossMargin), fmt: fmtPctCell },
     { label: t.company.val.roe, key: 'roe', dir: 1, get: e => num(e?.fundamentals.roe), fmt: fmtPctCell },
-    { label: t.company.val.fcfYield, key: 'fcfYield', dir: 1, get: (e, s) => num(e?.fundamentals.fcfYield ?? s?.fcfYield), fmt: fmtPctCell },
+    { label: t.company.val.fcfYield, key: 'fcfYield', dir: 1, get: e => num(e?.fundamentals.fcfYield), fmt: fmtPctCell },
     { label: t.company.val.pb, key: 'pb', dir: -1, get: e => num(e?.fundamentals.pb), fmt: fmtX },
-    { label: t.company.val.netDebtEbitda, key: 'netDebtEbitda', dir: -1, get: (e, s) => num(e?.fundamentals.netDebtEbitda ?? s?.netDebtEbitda), fmt: fmtX },
-    { label: t.company.kpis.divYield, key: 'dividendYield', dir: 1, get: (e, s) => num(e?.fundamentals.dividendYield ?? s?.dividendYield), fmt: fmtPctCell },
+    { label: t.company.val.netDebtEbitda, key: 'netDebtEbitda', dir: -1, get: e => num(e?.fundamentals.netDebtEbitda), fmt: fmtX },
+    { label: t.company.kpis.divYield, key: 'dividendYield', dir: 1, get: e => num(e?.fundamentals.dividendYield), fmt: fmtPctCell },
   ]
   // Whether ANY shown ticker has at least one field derived from persisted
   // financials — drives the fundamentals footer's source name.
@@ -291,14 +294,11 @@ export default function ComparePage() {
             <tbody>
               {valids.map(({ ticker }) => {
                 const entry = compareData[ticker]
-                // The shared live Yahoo snapshot (see MarketDataProvider)
-                // overlays price/market-cap on top of whatever /api/compare
-                // itself last returned — this is what makes an Update
-                // clicked on ANY tab show up here immediately, with no extra
-                // fetch from this page.
-                const lv = live?.stocks[ticker]
-                const price = lv?.price ?? entry?.latestPrice
-                const marketCapCLP = lv?.marketCapCLP ?? entry?.marketCapCLP
+                // Price + market cap come from /api/compare's live Yahoo
+                // valuation — the SAME resolved entry the Fundamentals table
+                // reads, so the two tables always agree (item-4 fix).
+                const price = entry?.latestPrice
+                const marketCapCLP = entry?.marketCapCLP
                 const p1d = perfCell(entry?.performance.oneDay)
                 const p5d = perfCell(entry?.performance.fiveDay)
                 const p1m = perfCell(entry?.performance.oneMonth)
@@ -436,7 +436,7 @@ export default function ComparePage() {
                 </tbody>
               </table>
               <div className="px-4 py-2 border-t border-border">
-                <TableSourceFooter source={hasDerivedFundamentals ? t.compare.fundamentalsSource : t.common.staticSample} />
+                <TableSourceFooter source={marketStatus === 'live' ? t.compare.marketSource : (hasDerivedFundamentals ? t.compare.fundamentalsSource : t.common.staticSample)} />
               </div>
             </div>
           )}

@@ -95,6 +95,25 @@ export interface CompareResolveResult {
   metadata: CompareResolveMeta
 }
 
+/**
+ * Compact live-valuation payload for a single ticker — the company/stocks
+ * detail page's Valuation table + KPIs read this. Same resolver/fundamentals
+ * as Compare (so the two surfaces always agree) but without the multi-timeframe
+ * performance history Compare needs.
+ */
+export interface ValuationResult {
+  ticker: string
+  companyName: string
+  currency: string
+  latestPrice: number | null
+  /** Market cap in MILLIONS of the quote currency (platform-wide convention). */
+  marketCapCLP: number | null
+  /** Year-to-date price change %, from live/persisted history (null if unavailable). */
+  ytdChangePct: number | null
+  marketDataStatus: DataSourceStatus
+  fundamentals: CompareFundamentals
+}
+
 /** Guards against NaN/Infinity ever reaching a CompareEntry field. */
 export function safeNumber(v: unknown): number | null {
   if (typeof v !== 'number' || !Number.isFinite(v)) return null
