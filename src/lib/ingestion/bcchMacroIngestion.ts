@@ -21,6 +21,15 @@ const BATCH_SIZE = 500
 const INTER_REQUEST_DELAY_MS = 150
 // Extra history fetched before rangeFrom so yoy transforms have a year-ago base.
 const EXTRA_YEARS_CONTEXT = 1
+// Monthly series publish observations DATED 4-8 weeks in the past (May's IPC
+// arrives in June with observation_date 2026-05-01), so the default 14-day
+// incremental window could structurally never store a new monthly print once
+// the publication lag exceeded it — found in the 2026-07-21 audit with
+// desempleo/imacec frozen on April data in the persisted store. Monthlies get
+// this wider window instead (mirrors the health evaluator's own 100-day
+// monthly staleness allowance); upserts are idempotent, so re-storing rows
+// already present is a no-op.
+const MONTHLY_INCREMENTAL_DAYS_BACK = 120
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -228,8 +237,14 @@ export async function runBcchMacroIngestion(opts: IngestionOptions): Promise<Ing
     const isDerived   = def.transformation !== 'none'
     const fetchedAt   = new Date().toISOString()
 
+    // See MONTHLY_INCREMENTAL_DAYS_BACK above — a monthly print's observation
+    // date lags publication by more than the default incremental window.
+    const seriesRangeFrom = opts.mode === 'incremental' && def.frequency === 'monthly'
+      ? daysAgoIso(MONTHLY_INCREMENTAL_DAYS_BACK)
+      : rangeFrom
+
     const insertRows: MacroObservationInsert[] = transformed
-      .filter(p => p.value != null && p.date >= rangeFrom && p.date <= rangeTo)
+      .filter(p => p.value != null && p.date >= seriesRangeFrom && p.date <= rangeTo)
       .map(p => ({
         indicator_id:       def.fallbackStaticId,
         observation_date:   p.date,

@@ -75,3 +75,17 @@ describe('macro_indicators DB coverage for ingested series', () => {
     }
   })
 })
+
+describe('incremental ingestion can actually store monthly prints', () => {
+  // A monthly print's observation_date lags its publication by 4-8 weeks
+  // (May's IPC arrives in June dated 2026-05-01), so a 14-day incremental
+  // window could never persist a new monthly observation — desempleo/imacec
+  // sat frozen on April data while BCCh already served May/June (confirmed
+  // live 2026-07-21: the widened window immediately advanced all 5 monthlies).
+  test('monthly-frequency series get a widened incremental window', () => {
+    const src = readFileSync(join(ROOT, 'src/lib/ingestion/bcchMacroIngestion.ts'), 'utf8')
+    assert.match(src, /MONTHLY_INCREMENTAL_DAYS_BACK = 120/)
+    assert.match(src, /def\.frequency === 'monthly'/)
+    assert.match(src, /p\.date >= seriesRangeFrom/)
+  })
+})
