@@ -534,10 +534,19 @@ a market-implied FOMC rate outlook.** All four verified live in the browser + ag
    "Fechas de envío de EEFF" page
    (`novedades_envio_fechas_eeff.php`) — this explicit instruction overrides the standing no-scraping
    default for this one source. `POST aaaa=<year>` returns a 6-col table (Razón Social · RUT · Mar/Jun/
-   Sep/Dec dates). Architecture: `cmfEarningsClient.ts` (dependency-free HTML-table parser, injectable
-   fetcher) → `earningsCalendarProvider.ts` (maps RUT→ticker, current + next year, sorted deduped
-   events) → `GET /api/earnings/calendar` (6h server cache → auto-updates on expiry/cold-start, no cron
-   needed) → `src/lib/data/earningsCalendar.ts`. RUT map (`src/config/cmfEarningsCalendarMap.ts`) — 23
+   Sep/Dec dates). **CMF blocks Vercel's datacenter IPs** (verified live — the fetch fast-fails from
+   production while Yahoo and the Atlanta Fed both succeed there; and CMF rejects *concurrent* POSTs
+   from one IP, so years are fetched sequentially). So this is NOT a request-time fetch: a **scheduled
+   GitHub Action** (`.github/workflows/refresh-earnings-calendar.yml`, daily, runs
+   `scripts/refresh/refreshEarningsCalendar.ts` from GitHub's network which CAN reach CMF) commits a
+   snapshot `src/data/earningsCalendar.json`; the commit triggers a Vercel redeploy — same
+   "refresh-via-committed-JSON" pattern as `refreshMarketData.py`. `GET /api/earnings/calendar` serves
+   that committed JSON instantly (events carry ABSOLUTE dates; Home computes the ≤7-day window live, so
+   the snapshot stays correct between refreshes). Architecture: `cmfEarningsClient.ts` (dependency-free
+   HTML-table parser, browser UA — CMF rejects a bot UA — injectable fetcher) → `earningsCalendarProvider.ts`
+   (maps RUT→ticker, current + next year sequential, sorted deduped events; used by the refresh script,
+   not the route) → the committed JSON → route → `src/lib/data/earningsCalendar.ts`. RUT map
+   (`src/config/cmfEarningsCalendarMap.ts`) — 23
    of 25 tickers verified against CMF's own rows (never guessed; 21 cross-checked with cmfIssuerMap,
    banks CHILE=97004000 / BCI=97006000 read straight off CMF). **BSANTANDER and ITAUCL are genuinely
    ABSENT from the CMF calendar (only 3 banks appear on it) — honest `missingTickers`, never a

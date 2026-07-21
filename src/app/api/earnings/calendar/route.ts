@@ -1,46 +1,26 @@
 // GET /api/earnings/calendar
-// Live CMF earnings (EEFF-sending-date) calendar for the app's tracked tickers.
-// Server-cached for 6h per warm instance, so it auto-refreshes on cache expiry
-// / cold start — no manual step and no cron needed. Always returns 200 with a
-// status envelope so the UI never breaks (and never shows a fabricated date).
+// Serves the committed CMF earnings-calendar snapshot
+// (src/data/earningsCalendar.json), refreshed daily by a GitHub Action
+// (scripts/refresh/refreshEarningsCalendar.ts).
+//
+// Why a committed snapshot rather than a live fetch: CMF's site (cmfchile.cl)
+// blocks Vercel's datacenter IPs — verified live, the request fast-fails from
+// production while Yahoo and the Atlanta Fed both succeed there — so the app
+// cannot fetch it at request time. The Action runs from GitHub's network (and
+// local dev runs from Chile), both of which CAN reach CMF, and commits the
+// snapshot; a commit triggers a Vercel redeploy, so "updates automatically".
+//
+// Events carry ABSOLUTE report dates; the Home page computes the "within 7 days"
+// window live at render time (upcomingWithinDays), so the snapshot stays correct
+// between refreshes. Serving the JSON is instant and always available.
 
 import { NextResponse } from 'next/server'
-import {
-  resolveEarningsCalendar,
-  type EarningsCalendarResult,
-} from '@/lib/providers/earnings/earningsCalendarProvider'
+import earningsData from '@/data/earningsCalendar.json'
+import type { EarningsCalendarResult } from '@/lib/providers/earnings/earningsCalendarProvider'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-// CMF's full-table response is genuinely slow (~15 s); allow the function room
-// to fetch both years in parallel. Only a rare cache-miss ever runs this long.
-export const maxDuration = 60
-
-const CACHE_TTL_MS = 6 * 60 * 60 * 1000
-
-let cache: { at: number; data: EarningsCalendarResult } | null = null
 
 export async function GET() {
-  const now = Date.now()
-  if (cache && now - cache.at < CACHE_TTL_MS && cache.data.status === 'live') {
-    return NextResponse.json(cache.data)
-  }
-  try {
-    const data = await resolveEarningsCalendar()
-    // Only cache a genuinely live result — never pin an 'unavailable' fetch.
-    if (data.status === 'live') cache = { at: now, data }
-    return NextResponse.json(data)
-  } catch {
-    if (cache) return NextResponse.json(cache.data)
-    return NextResponse.json(
-      {
-        status: 'unavailable',
-        asOf: new Date().toISOString(),
-        source: 'Comisión para el Mercado Financiero (CMF)',
-        events: [],
-        missingTickers: [],
-      } satisfies EarningsCalendarResult,
-      { status: 200 },
-    )
-  }
+  return NextResponse.json(earningsData as EarningsCalendarResult)
 }

@@ -1,0 +1,311 @@
+{
+  "status": "live",
+  "asOf": "2026-07-21T13:56:23.122Z",
+  "source": "Comisión para el Mercado Financiero (CMF)",
+  "events": [
+    {
+      "ticker": "SONDA",
+      "reportDate": "2026-04-24",
+      "period": "Q1"
+    },
+    {
+      "ticker": "ANDINA-B",
+      "reportDate": "2026-04-28",
+      "period": "Q1"
+    },
+    {
+      "ticker": "COLBUN",
+      "reportDate": "2026-04-28",
+      "period": "Q1"
+    },
+    {
+      "ticker": "ENELCHILE",
+      "reportDate": "2026-04-28",
+      "period": "Q1"
+    },
+    {
+      "ticker": "BCI",
+      "reportDate": "2026-04-30",
+      "period": "Q1"
+    },
+    {
+      "ticker": "CHILE",
+      "reportDate": "2026-04-30",
+      "period": "Q1"
+    },
+    {
+      "ticker": "ENELAM",
+      "reportDate": "2026-04-30",
+      "period": "Q1"
+    },
+    {
+      "ticker": "PARAUCO",
+      "reportDate": "2026-04-30",
+      "period": "Q1"
+    },
+    {
+      "ticker": "ENTEL",
+      "reportDate": "2026-05-04",
+      "period": "Q1"
+    },
+    {
+      "ticker": "CONCHATORO",
+      "reportDate": "2026-05-05",
+      "period": "Q1"
+    },
+    {
+      "ticker": "FALABELLA",
+      "reportDate": "2026-05-05",
+      "period": "Q1"
+    },
+    {
+      "ticker": "LTM",
+      "reportDate": "2026-05-05",
+      "period": "Q1"
+    },
+    {
+      "ticker": "MALLPLAZA",
+      "reportDate": "2026-05-05",
+      "period": "Q1"
+    },
+    {
+      "ticker": "CCU",
+      "reportDate": "2026-05-06",
+      "period": "Q1"
+    },
+    {
+      "ticker": "CENCOSUD",
+      "reportDate": "2026-05-07",
+      "period": "Q1"
+    },
+    {
+      "ticker": "CMPC",
+      "reportDate": "2026-05-07",
+      "period": "Q1"
+    },
+    {
+      "ticker": "COPEC",
+      "reportDate": "2026-05-07",
+      "period": "Q1"
+    },
+    {
+      "ticker": "CAP",
+      "reportDate": "2026-05-08",
+      "period": "Q1"
+    },
+    {
+      "ticker": "RIPLEY",
+      "reportDate": "2026-05-18",
+      "period": "Q1"
+    },
+    {
+      "ticker": "AGUAS-A",
+      "reportDate": "2026-05-20",
+      "period": "Q1"
+    },
+    {
+      "ticker": "VAPORES",
+      "reportDate": "2026-05-25",
+      "period": "Q1"
+    },
+    {
+      "ticker": "SQM-B",
+      "reportDate": "2026-05-26",
+      "period": "Q1"
+    },
+    {
+      "ticker": "LAS-CONDES",
+      "reportDate": "2026-05-29",
+      "period": "Q1"
+    },
+    {
+      "ticker": "SONDA",
+      "reportDate": "2026-07-24",
+      "period": "Q2"
+    },
+    {
+      "ticker": "ANDINA-B",
+      "reportDate": "2026-07-28",
+      "period": "Q2"
+    },
+    {
+      "ticker": "COLBUN",
+      "reportDate": "2026-07-28",
+      "period": "Q2"
+    },
+    {
+      "ticker": "ENELCHILE",
+      "reportDate": "2026-07-28",
+      "period": "Q2"
+    },
+    {
+      "ticker": "ENELAM",
+      "reportDate": "2026-07-29",
+      "period": "Q2"
+    },
+    {
+      "ticker": "PARAUCO",
+      "reportDate": "2026-07-30",
+      "period": "Q2"
+    },
+    {
+      "ticker": "BCI",
+      "reportDate": "2026-07-31",
+      "period": "Q2"
+    },
+    {
+      "ticker": "CHILE",
+      "reportDate": "2026-07-31",
+      "period": "Q2"
+    },
+    {
+      "ticker": "CONCHATORO",
+      "reportDate": "2026-08-03",
+      "period": "Q2"
+    },
+    {
+      "ticker": "ENTEL",
+      "reportDate": "2026-08-03",
+      "period": "Q2"
+    },
+    {
+      "ticker": "CCU",
+      "reportDate": "2026-08-04",
+      "period": "Q2"
+    },
+    {
+      "ticker": "LTM",
+      "reportDate": "2026-08-04",
+      "period": "Q2"
+    },
+    {
+      "ticker": "MALLPLAZA",
+      "reportDate": "2026-08-04",
+      "period": "Q2"
+    },
+    {
+      "ticker": "CENCOSUD",
+      "reportDate": "2026-08-06",
+      "period": "Q2"
+    },
+    {
+      "ticker": "CMPC",
+      "reportDate": "2026-08-06",
+      "period": "Q2"
+    },
+    {
+      "ticker": "CAP",
+      "reportDate": "2026-08-07",
+      "period": "Q2"
+    },
+    {
+      "ticker": "FALABELLA",
+      "reportDate": "2026-08-11",
+      "period": "Q2"
+    },
+    {
+      "ticker": "COPEC",
+      "reportDate": "2026-08-13",
+      "period": "Q2"
+    },
+    {
+      "ticker": "SQM-B",
+      "reportDate": "2026-08-18",
+      "period": "Q2"
+    },
+    {
+      "ticker": "AGUAS-A",
+      "reportDate": "2026-08-20",
+      "period": "Q2"
+    },
+    {
+      "ticker": "RIPLEY",
+      "reportDate": "2026-08-28",
+      "period": "Q2"
+    },
+    {
+      "ticker": "VAPORES",
+      "reportDate": "2026-08-28",
+      "period": "Q2"
+    },
+    {
+      "ticker": "LAS-CONDES",
+      "reportDate": "2026-09-11",
+      "period": "Q2"
+    },
+    {
+      "ticker": "CHILE",
+      "reportDate": "2026-10-29",
+      "period": "Q3"
+    },
+    {
+      "ticker": "PARAUCO",
+      "reportDate": "2026-10-29",
+      "period": "Q3"
+    },
+    {
+      "ticker": "BCI",
+      "reportDate": "2026-10-30",
+      "period": "Q3"
+    },
+    {
+      "ticker": "ENTEL",
+      "reportDate": "2026-11-02",
+      "period": "Q3"
+    },
+    {
+      "ticker": "CMPC",
+      "reportDate": "2026-11-05",
+      "period": "Q3"
+    },
+    {
+      "ticker": "CAP",
+      "reportDate": "2026-11-06",
+      "period": "Q3"
+    },
+    {
+      "ticker": "SQM-B",
+      "reportDate": "2026-11-17",
+      "period": "Q3"
+    },
+    {
+      "ticker": "VAPORES",
+      "reportDate": "2026-11-20",
+      "period": "Q3"
+    },
+    {
+      "ticker": "AGUAS-A",
+      "reportDate": "2026-11-26",
+      "period": "Q3"
+    },
+    {
+      "ticker": "LAS-CONDES",
+      "reportDate": "2026-11-27",
+      "period": "Q3"
+    },
+    {
+      "ticker": "ENTEL",
+      "reportDate": "2027-01-27",
+      "period": "Annual"
+    },
+    {
+      "ticker": "CMPC",
+      "reportDate": "2027-01-28",
+      "period": "Annual"
+    },
+    {
+      "ticker": "PARAUCO",
+      "reportDate": "2027-01-28",
+      "period": "Annual"
+    },
+    {
+      "ticker": "BCI",
+      "reportDate": "2027-02-26",
+      "period": "Annual"
+    }
+  ],
+  "missingTickers": [
+    "BSANTANDER",
+    "ITAUCL"
+  ]
+}

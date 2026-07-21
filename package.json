@@ -33,7 +33,8 @@
         "ingest:cmf-bank:dry": "node scripts/discover/cmfBankFinancials.ts --live",
         "ingest:cmf-bank": "node scripts/discover/cmfBankFinancials.ts --live --write",
         "ingest:fred-macro": "node scripts/ingest/fredMacro.ts",
-        "ingest:fred-macro:dry": "node scripts/ingest/fredMacro.ts --all"
+        "ingest:fred-macro:dry": "node scripts/ingest/fredMacro.ts --all",
+        "refresh:earnings-calendar": "node scripts/refresh/refreshEarningsCalendar.ts"
     },
     "dependencies": {
         "@supabase/ssr": "^0.12.0",

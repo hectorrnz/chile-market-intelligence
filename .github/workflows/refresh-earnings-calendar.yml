@@ -1,0 +1,46 @@
+name: Refresh Earnings Calendar
+
+# CMF's site (cmfchile.cl) blocks Vercel's datacenter IPs, so the CMF earnings
+# calendar can't be fetched at request time in production. This Action runs from
+# GitHub's network (which can reach CMF), fetches + parses the calendar, and
+# commits src/data/earningsCalendar.json — which /api/earnings/calendar serves.
+# A commit triggers a Vercel redeploy, so the data "updates automatically".
+
+on:
+  schedule:
+    # Daily at 12:00 UTC (report dates change infrequently; a daily refresh is
+    # plenty for a "within 7 days" window computed live client-side).
+    - cron: '0 12 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Refresh CMF earnings calendar snapshot
+        run: node scripts/refresh/refreshEarningsCalendar.ts
+
+      - name: Commit and push if the calendar changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/data/earningsCalendar.json
+          if git diff --staged --quiet; then
+            echo "No calendar changes — skipping commit"
+          else
+            git commit -m "chore(data): CMF earnings calendar refresh"
+            git push
+          fi
