@@ -164,18 +164,29 @@ export function buildSectors(
 export function buildIndices(
   quotes: YFQuote[],
   base: StaticIndex[],
+  // Live year-start (previous year's final close) per index id, from Yahoo
+  // chart history. When present for an index, YTD is computed live from the
+  // same live price shown; otherwise it falls back to the static YTD. Yahoo's
+  // quote payload carries no YTD field for indices, so this baseline is the
+  // only way to make IPSA (and every index) YTD genuinely live.
+  yearStartByIndex?: Record<string, number>,
 ): IndexLive[] {
   const bySymbol = Object.fromEntries(quotes.map(q => [q.symbol, q]))
   return base.map(idx => {
     const yf = INDEX_YF[idx.id]
     const q  = yf ? bySymbol[yf] : undefined
+    const value = q?.regularMarketPrice ?? idx.value
+    const baseline = yearStartByIndex?.[idx.id]
+    const liveYtd = baseline != null && baseline > 0 && q?.regularMarketPrice != null
+      ? Math.round(((value / baseline - 1) * 100) * 100) / 100
+      : null
     return {
       id:           idx.id,
-      value:        q?.regularMarketPrice ?? idx.value,
+      value,
       dayChangePct: q?.regularMarketChangePercent != null
         ? Math.round(q.regularMarketChangePercent * 100) / 100
         : idx.dayChangePct,
-      ytdChangePct: idx.ytdChangePct,
+      ytdChangePct: liveYtd ?? idx.ytdChangePct,
     }
   })
 }

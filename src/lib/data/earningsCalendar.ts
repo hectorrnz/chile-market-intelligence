@@ -31,3 +31,22 @@ export function upcomingWithinDays(
     .filter((e) => e.reportDate >= todayIso && e.reportDate <= endIso)
     .sort((a, b) => a.reportDate.localeCompare(b.reportDate))
 }
+
+/**
+ * The `count` most-recently-passed report dates (most recent first). Client-safe
+ * pure helper. Unlike a fixed lookback window, this always surfaces the genuinely
+ * latest filings — between quarterly reporting waves the most recent report can
+ * be up to ~3 months old, and a fixed window would go empty rather than show
+ * real data. These are real CMF EEFF-sending dates, never fabricated results.
+ */
+export function recentlyReported(
+  events: EarningsCalendarEvent[],
+  count: number,
+  now: Date = new Date(),
+): EarningsCalendarEvent[] {
+  const todayIso = now.toISOString().slice(0, 10)
+  return events
+    .filter((e) => e.reportDate < todayIso)
+    .sort((a, b) => b.reportDate.localeCompare(a.reportDate))
+    .slice(0, count)
+}

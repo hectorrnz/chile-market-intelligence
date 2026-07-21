@@ -202,3 +202,32 @@ test('buildIndices rounds dayChangePct to 2dp', () => {
   const result = buildIndices(quotes, BASE_INDICES)
   assert.equal(result.find(i => i.id === 'ipsa')!.dayChangePct, 1.23)
 })
+
+test('buildIndices computes LIVE YTD from a year-start baseline when provided', () => {
+  const quotes: YFQuote[] = [
+    { symbol: '^IPSA', regularMarketPrice: 7480, regularMarketChangePercent: 0.9 },
+  ]
+  // baseline 6800 → (7480/6800 - 1) = +10.00% YTD, overriding the static 3.2
+  const result = buildIndices(quotes, BASE_INDICES, { ipsa: 6800 })
+  const ipsa = result.find(i => i.id === 'ipsa')!
+  assert.equal(ipsa.value, 7480)
+  assert.equal(ipsa.ytdChangePct, 10)
+})
+
+test('buildIndices YTD falls back to static when baseline missing or no live price', () => {
+  // baseline provided for sp500 but no live quote for it → keep static YTD
+  const quotes: YFQuote[] = [
+    { symbol: '^IPSA', regularMarketPrice: 7000, regularMarketChangePercent: 2.0 },
+  ]
+  const result = buildIndices(quotes, BASE_INDICES, { sp500: 5000 })
+  assert.equal(result.find(i => i.id === 'sp500')!.ytdChangePct, 8.0) // static, no live price
+  assert.equal(result.find(i => i.id === 'ipsa')!.ytdChangePct, 3.2)  // static, no baseline
+})
+
+test('buildIndices ignores a non-positive baseline (never divides by zero)', () => {
+  const quotes: YFQuote[] = [
+    { symbol: '^IPSA', regularMarketPrice: 7000, regularMarketChangePercent: 2.0 },
+  ]
+  const result = buildIndices(quotes, BASE_INDICES, { ipsa: 0 })
+  assert.equal(result.find(i => i.id === 'ipsa')!.ytdChangePct, 3.2) // static fallback
+})

@@ -15,9 +15,11 @@ import {
 } from '../src/config/calendarEnrichmentMap.ts'
 import {
   buildEnrichedMetric,
+  buildFomcMetric,
   enrichEventsWithCache,
   resolveCalendarEnrichment,
   summarizeEnrichment,
+  FOMC_RELEASE_ID,
   type SeriesFetcher,
 } from '../src/lib/providers/calendarEnrichment.ts'
 import type { FredCalendarEvent } from '../src/lib/providers/fredReleaseCalendar.ts'
@@ -206,6 +208,60 @@ test('resolveCalendarEnrichment: a fetcher that THROWS for one series degrades t
   // CPI still resolved fine from the non-throwing series.
   const cpi = out.find((e) => e.releaseId === 10)!
   assert.ok(cpi.metrics.every((m) => m.status === 'published'))
+})
+
+// ── FOMC policy-band enrichment (release 101) ────────────────────────────────
+
+// Daily target-range series: band was 4.00–4.25% until 2026-06-19, then cut to
+// 3.50–3.75% effective 2026-06-19 (announced at the 2026-06-17 meeting).
+const dfedtarl: FredSeriesPoint[] = [
+  { date: '2026-06-16', value: 4.00 },
+  { date: '2026-06-17', value: 4.00 },
+  { date: '2026-06-18', value: 4.00 },
+  { date: '2026-06-19', value: 3.50 },
+  { date: '2026-07-20', value: 3.50 },
+]
+const dfedtaru: FredSeriesPoint[] = [
+  { date: '2026-06-16', value: 4.25 },
+  { date: '2026-06-17', value: 4.25 },
+  { date: '2026-06-18', value: 4.25 },
+  { date: '2026-06-19', value: 3.75 },
+  { date: '2026-07-20', value: 3.75 },
+]
+
+test('buildFomcMetric: scheduled meeting → actual pending, previous = current band', () => {
+  const m = buildFomcMetric(ev(FOMC_RELEASE_ID, '2026-07-29', 'scheduled'), okSeries(dfedtarl), okSeries(dfedtaru))
+  assert.equal(m.status, 'pending')
+  assert.equal(m.actual, null)
+  assert.equal(m.actualText, null)
+  assert.equal(m.previousText, '3.50%–3.75%')
+  assert.equal(m.label, 'Fed Funds Target Range')
+  assert.equal(m.originatingAgency, 'Federal Reserve')
+})
+
+test('buildFomcMetric: past meeting → actual = band set at meeting, previous = band going in', () => {
+  const m = buildFomcMetric(ev(FOMC_RELEASE_ID, '2026-06-17', 'past'), okSeries(dfedtarl), okSeries(dfedtaru))
+  assert.equal(m.status, 'published')
+  assert.equal(m.actualText, '3.50%–3.75%')  // read a couple days out (effective 06-19)
+  assert.equal(m.previousText, '4.00%–4.25%') // day before the meeting
+})
+
+test('buildFomcMetric: missing series → unavailable, never fabricated', () => {
+  const m = buildFomcMetric(ev(FOMC_RELEASE_ID, '2026-07-29', 'scheduled'), undefined, okSeries(dfedtaru))
+  assert.equal(m.status, 'unavailable')
+  assert.equal(m.actualText, null)
+  assert.equal(m.previousText, null)
+})
+
+test('enrichEventsWithCache: FOMC event (101) gets a policy-band metric, not empty metrics', () => {
+  const cache = new Map<string, ProviderResult<FredSeriesPoint[]>>([
+    ['DFEDTARL', okSeries(dfedtarl)],
+    ['DFEDTARU', okSeries(dfedtaru)],
+  ])
+  const [e] = enrichEventsWithCache([ev(FOMC_RELEASE_ID, '2026-07-29', 'scheduled')], cache)
+  assert.equal(e.metrics.length, 1)
+  assert.equal(e.metrics[0].key, 'fed-funds-target')
+  assert.equal(e.metrics[0].previousText, '3.50%–3.75%')
 })
 
 // ── cron route + hygiene (source assertions) ─────────────────────────────────

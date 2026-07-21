@@ -4,7 +4,6 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import Link from 'next/link'
 import { useLang } from '@/components/providers/LangProvider'
 import { usePersistentState } from '@/lib/usePersistentState'
-import { StatusPill } from '@/components/ui/StatusPill'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { DataSourceBadge } from '@/components/ui/DataSourceBadge'
 import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
@@ -14,11 +13,9 @@ import { getAllSnapshots } from '@/lib/data/stocks'
 import { getAllIndicators, getByCategory } from '@/lib/data/macro'
 import { getChileanRates } from '@/lib/data/chileanRates'
 import { getSeriesByStaticId } from '@/config/macroSeries'
-import { getRecentResults } from '@/lib/data/earnings'
-import { fetchEarningsCalendar, upcomingWithinDays, type EarningsCalendarResult } from '@/lib/data/earningsCalendar'
+import { fetchEarningsCalendar, upcomingWithinDays, recentlyReported, type EarningsCalendarResult } from '@/lib/data/earningsCalendar'
 import { fetchLiveNews, type NewsFetchResponse } from '@/lib/data/newsLive'
 import { getNewsSourceCode, getNewsSourceColor } from '@/lib/news/sourceCodes'
-import { getDocumentByRelatedId } from '@/lib/data/documents'
 import { getSectorPerformance } from '@/lib/data/sectorPerformance'
 import { getIndexPerformance } from '@/lib/data/indexPerformance'
 import { useMarketData } from '@/components/providers/MarketDataProvider'
@@ -30,10 +27,6 @@ import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
 import { formatCLP, formatPct, formatMacroValue, formatMacroChange, changeColor, formatNewsTimestamp } from '@/lib/formatters'
 import type { MacroIndicator, ChileanRate } from '@/types'
 import type { WatchlistItemRow } from '@/lib/db/repositories/watchlistRepository'
-
-const qualityVariant = {
-  Clean: 'positive', Mixed: 'warning', Weak: 'negative', Pending: 'neutral',
-} as const
 
 const CHILE_MACRO_IDS = ['tpm', 'ipc-anual', 'usdclp', 'imacec-anual', 'pib', 'desempleo']
 const US_MACRO_IDS = ['fed-funds', 'us10y', 'us-cpi-anual', 'us-gdp', 'us-unemployment', 'dxy']
@@ -90,7 +83,6 @@ export default function HomePage() {
   const macroChileAsOf = macroChile.reduce((max, i) => (i.lastUpdated > max ? i.lastUpdated : max), '')
   const macroUsAsOf = macroUs.reduce((max, i) => (i.lastUpdated > max ? i.lastUpdated : max), '')
   const fxAsOf = fxRows.reduce((max, i) => (i.lastUpdated > max ? i.lastUpdated : max), '')
-  const recent = getRecentResults().slice(0, 2)
   const staticSectors = getSectorPerformance()
   const staticIndices = getIndexPerformance()
 
@@ -155,6 +147,13 @@ export default function HomePage() {
   // Empty (honest) when the calendar is unavailable — never fabricated.
   const upcomingCmf = earningsCal?.status === 'live'
     ? upcomingWithinDays(earningsCal.events, 7).slice(0, 8)
+    : []
+  // Real "recently reported" = the most recent past CMF report dates, replacing
+  // the old fabricated static sample (fake Clean/Weak quality pills). Between
+  // quarterly waves these are the genuinely latest filings, so we show the N
+  // most recent rather than a fixed window that would sit empty for weeks.
+  const recentCmf = earningsCal?.status === 'live'
+    ? recentlyReported(earningsCal.events, 5)
     : []
 
   // Home's "Watchlist" table mirrors the user's real /watchlist selection
@@ -434,20 +433,16 @@ export default function HomePage() {
                 <div className="text-xs text-muted-fg py-1">{earningsCal === null ? t.common.loading : t.home.noUpcoming}</div>
               )}
             </div>
-            {recent.length > 0 && (
+            {recentCmf.length > 0 && (
               <div>
-                <div className="ui-label text-muted-fg mb-1">{t.home.recentResults}</div>
-                {recent.map(e => {
-                  const doc = getDocumentByRelatedId(e.id)
-                  return (
-                    <div key={e.id} className="flex items-center gap-2 py-1 border-b border-border last:border-0">
-                      <Link href={`/companies/${e.ticker}`} className="text-xs font-mono text-primary hover:underline">{e.ticker}</Link>
-                      <span className="text-xs text-muted flex-1">{e.period}</span>
-                      <StatusPill label={e.resultQuality} variant={qualityVariant[e.resultQuality]} />
-                      {doc && <Link href={`/documents/${doc.id}`} className="text-xs text-muted-fg hover:text-primary transition-colors shrink-0" title={t.documents.viewSummary}>→</Link>}
-                    </div>
-                  )
-                })}
+                <div className="ui-label text-muted-fg mb-1">{t.home.recentlyReported}</div>
+                {recentCmf.map(e => (
+                  <div key={`${e.ticker}-${e.reportDate}`} className="grid grid-cols-3 items-center py-1 border-b border-border last:border-0">
+                    <Link href={`/companies/${e.ticker}`} className="text-xs font-mono text-primary hover:underline">{e.ticker}</Link>
+                    <span className="text-xs text-muted text-center">{e.period}</span>
+                    <span className="text-xs ui-number text-muted-fg text-right">{`${e.reportDate.slice(8, 10)}/${e.reportDate.slice(5, 7)}`}</span>
+                  </div>
+                ))}
               </div>
             )}
           </div>

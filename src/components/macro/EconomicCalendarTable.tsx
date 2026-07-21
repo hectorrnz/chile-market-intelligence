@@ -80,10 +80,12 @@ export function EconomicCalendarTable({ events, emptyMessage }: { events: Enrich
                   {!m ? <span className="text-muted-fg">—</span>
                     : pending ? <span className="text-muted-fg" title={t.cal.pendingTitle}>{t.cal.pending}</span>
                     : m.status === 'unavailable' ? <span className="text-muted-fg">—</span>
-                    : <span className="text-foreground">{fmtValue(m.actual, m.unit, m.decimals)}</span>}
+                    : <span className="text-foreground">{m.actualText ?? fmtValue(m.actual, m.unit, m.decimals)}</span>}
                 </td>
                 <td className="py-2 px-3 text-right ui-number text-muted-fg">
-                  {m && m.previous != null ? fmtValue(m.previous, m.unit, m.decimals) : '—'}
+                  {m && m.previousText != null ? m.previousText
+                    : m && m.previous != null ? fmtValue(m.previous, m.unit, m.decimals)
+                    : '—'}
                 </td>
                 <td className="py-2 px-3 text-center">
                   {m ? <span className="text-[10px] px-1 py-0.5 rounded bg-surface-2 border border-border text-muted-fg" title={t.cal.srcTitle}>{m.originatingAgency}</span> : ''}

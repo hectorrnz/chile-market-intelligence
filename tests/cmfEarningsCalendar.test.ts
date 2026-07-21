@@ -13,6 +13,7 @@ import {
   RUT_TO_TICKER,
   UNLISTED_EARNINGS_TICKERS,
 } from '../src/config/cmfEarningsCalendarMap.ts'
+import { recentlyReported } from '../src/lib/data/earningsCalendar.ts'
 
 describe('CMF earnings calendar — date parsing', () => {
   test('DD/MM/YYYY → YYYY-MM-DD', () => {
@@ -99,5 +100,32 @@ describe('CMF earnings calendar — RUT map integrity', () => {
   })
   test('all 25 tickers are accounted for (23 mapped + 2 unlisted)', () => {
     assert.equal(Object.keys(CMF_EARNINGS_CALENDAR_MAP).length, 25)
+  })
+})
+
+describe('CMF earnings calendar — recentlyReported (Home real recent results)', () => {
+  const events = [
+    { ticker: 'SONDA', reportDate: '2026-07-24', period: 'Q2' as const },
+    { ticker: 'SQM-B', reportDate: '2026-05-26', period: 'Q1' as const },
+    { ticker: 'CAP',   reportDate: '2026-05-08', period: 'Q1' as const },
+    { ticker: 'CCU',   reportDate: '2026-05-07', period: 'Q1' as const },
+  ]
+
+  test('returns the N most recent PAST report dates, most-recent first', () => {
+    const now = new Date('2026-07-21T12:00:00Z')
+    const recent = recentlyReported(events, 2, now)
+    assert.deepEqual(recent.map((e) => e.ticker), ['SQM-B', 'CAP'])
+  })
+
+  test('excludes future dates (never shows a not-yet-reported company as reported)', () => {
+    const now = new Date('2026-07-21T12:00:00Z')
+    const recent = recentlyReported(events, 5, now)
+    assert.ok(recent.every((e) => e.reportDate < '2026-07-21'))
+    assert.ok(!recent.some((e) => e.ticker === 'SONDA'))
+  })
+
+  test('empty when no past events (no fabricated fallback)', () => {
+    const now = new Date('2026-01-01T12:00:00Z')
+    assert.deepEqual(recentlyReported(events, 5, now), [])
   })
 })

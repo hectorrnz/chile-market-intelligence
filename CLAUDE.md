@@ -506,7 +506,46 @@ docs/                 — Project documentation
 
 ## Current Phase
 
-**Most recent work (2026-07-21, seventh pass) — four larger feature/correctness requests: a live
+**Most recent work (2026-07-21, eighth pass) — three follow-up items on top of the seventh pass.**
+All verified live in the browser + against real FRED/Yahoo/CMF data. Suite 1666 → **1676** · lint 0 ·
+build 0 errors.
+
+1. **Home "Recent Results" was fabricated static data (fake Clean/Weak quality pills from
+   `earnings.json`) — replaced with REAL CMF data.** The Earnings column's second block now shows
+   **"Recently Reported"** = the 5 most-recent PAST CMF report dates (`recentlyReported()` in
+   `src/lib/data/earningsCalendar.ts`), mirroring the Upcoming block — real EEFF-sending dates, no
+   fabricated quality assessment. Between quarterly waves this correctly surfaces the genuinely latest
+   filings (e.g. late-May Q1 reports in July) rather than going empty on a fixed window. Removed the now-
+   dead `getRecentResults`/`getDocumentByRelatedId`/`StatusPill`/`qualityVariant` usage from Home. New
+   i18n `home.recentlyReported`.
+2. **Index YTD is now genuinely live for every index Yahoo has history for (was always static).**
+   `buildIndices` (`liveOverlay.ts`) gained an optional `yearStartByIndex` map; the live-snapshot route's
+   new `fetchIndexYearStarts()` fetches each index's first close of the current year via Yahoo chart
+   (memoized per warm instance — the baseline is a year-constant; own 9s timeout). Verified live: S&P
+   +9.25%, Nikkei +27.78%, KOSPI +56.58% now computed from the live baseline. **IPSA is the one genuine
+   exception** — `^IPSA` returns only a SINGLE recent bar from Yahoo at request time (re-verified live:
+   1 bar vs 159 for `^GSPC`), so a `MIN_YEAR_BARS`/year-start-cutoff guard rejects it (never prints a
+   bogus ~0% from the lone bar) and it keeps its **twice-daily GitHub-refreshed** static YTD (8.2%),
+   which IS computed from real `^IPSA` history via Python/yfinance in `refreshMarketData.py` — the same
+   committed-snapshot pattern as market data / the earnings calendar. There is no free request-time live
+   source for `^IPSA` history; the refreshed value is the honest best available.
+3. **FOMC calendar rows showed "Dates only — no value mapped" with no previous — now show the policy
+   BAND.** New FOMC handling in `calendarEnrichment.ts` (`buildFomcMetric`, release id 101) fetches
+   FRED `DFEDTARL`/`DFEDTARU` (keyless, alongside the existing enrichment series) and renders a
+   **"Fed Funds Target Range"** metric: a scheduled meeting → actual Pending, previous = the current
+   band (verified live: **3.50%–3.75%**); a past meeting → actual = band set at the meeting (read a
+   couple days out for the effective date), previous = band the day before. Because a policy band is a
+   RANGE not a scalar, `EnrichedMetric` gained optional `actualText`/`previousText` (the table prefers
+   them; `actual`/`previous` still carry the upper bound for any numeric consumer). ADP stays honestly
+   "dates only" (its FRED series is stale — unchanged). Never fabricates: a missing series → unavailable.
+
+New/updated tests: `buildFomcMetric` (scheduled/past/missing) + FOMC event enrichment in
+`calendarEnrichment.test.ts`; `recentlyReported` in `cmfEarningsCalendar.test.ts`; live-YTD +
+sparse-series guard in `marketLiveOverlay.test.ts`.
+
+---
+
+**Previous work (2026-07-21, seventh pass) — four larger feature/correctness requests: a live
 CMF earnings calendar, fully-live per-stock valuation everywhere, a Compare price-mismatch fix, and
 a market-implied FOMC rate outlook.** All four verified live in the browser + against real data.
 
