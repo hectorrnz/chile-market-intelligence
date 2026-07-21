@@ -1,126 +1,102 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { SectionHeader } from '@/components/ui/SectionHeader'
-import { StatusPill } from '@/components/ui/StatusPill'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
-import { SourceStateBadge } from '@/components/ui/SourceStateBadge'
+import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
+import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
 import { useLang } from '@/components/providers/LangProvider'
-import { getUpcomingEarnings, getRecentResults } from '@/lib/data/earnings'
-import { getDocumentByRelatedId } from '@/lib/data/documents'
-import { fetchEarningsEvents, type EarningsEventOut } from '@/lib/data/financialsData'
-import { formatMillionsCLP, formatPct, surprisePct, changeColor } from '@/lib/formatters'
+import { useGlobalRefresh } from '@/components/providers/useGlobalRefresh'
+import { fetchEarningsCalendar, upcomingWithinDays, type EarningsCalendarResult } from '@/lib/data/earningsCalendar'
+import { fetchEarningsResults, type EarningsResultsPayload } from '@/lib/data/earningsResults'
+import { formatPct, changeColor } from '@/lib/formatters'
 import { exportCSV } from '@/lib/export'
-import type { EarningsRelease } from '@/types'
 
-const qualityVariant: Record<EarningsRelease['resultQuality'], 'positive' | 'warning' | 'negative' | 'neutral'> = {
-  Clean:   'positive',
-  Mixed:   'warning',
-  Weak:    'negative',
-  Pending: 'neutral',
+/** Millions of the row's own reporting currency (Yahoo reports some issuers in USD). */
+function fmtMM(v: number | null): string {
+  if (v == null) return '—'
+  return v.toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 }
 
-const eventStatusVariant: Record<string, 'positive' | 'warning' | 'negative' | 'neutral'> = {
-  reported: 'positive',
-  expected: 'neutral',
-  preliminary: 'warning',
-  missing: 'negative',
-}
-
-// Phase 8C — a row is either static-sourced (EarningsRelease, full feature
-// set incl. quality judgment + synthetic consensus) or persisted-sourced
-// (EarningsEventOut, manual CSV import — never a fabricated quality/consensus).
-interface DisplayRow {
-  id: string
-  ticker: string
-  companyName: string
-  period: string
-  reportDate: string
-  revenue: number | null
-  revenueYoY: number | null
-  ebitda: number | null
-  ebitdaYoY: number | null
-  consensusRevenue: number | null
-  keyDriver: string | null
-  isPersisted: boolean
-  resultQuality: EarningsRelease['resultQuality'] | null
-  eventStatus: string | null
-}
-
-const staticUpcoming = getUpcomingEarnings()
-const staticResults = getRecentResults()
-
-function staticToRow(e: EarningsRelease): DisplayRow {
-  return {
-    id: e.id, ticker: e.ticker, companyName: e.companyName, period: e.period, reportDate: e.reportDate,
-    revenue: e.revenue ?? null, revenueYoY: e.revenueYoY ?? null, ebitda: e.ebitda ?? null, ebitdaYoY: e.ebitdaYoY ?? null,
-    consensusRevenue: e.consensusRevenue ?? null, keyDriver: e.keyDriver ?? null,
-    isPersisted: false, resultQuality: e.resultQuality, eventStatus: null,
-  }
-}
-
-function persistedToRow(e: EarningsEventOut): DisplayRow {
-  const period = e.fiscalPeriod && e.fiscalYear ? `${e.fiscalPeriod} ${e.fiscalYear}` : (e.fiscalPeriod ?? '—')
-  return {
-    id: e.id, ticker: e.ticker, companyName: e.ticker, period, reportDate: e.reportDate ?? e.eventDate ?? '',
-    revenue: e.revenue, revenueYoY: null, ebitda: e.ebitda, ebitdaYoY: null,
-    consensusRevenue: null, keyDriver: null,
-    isPersisted: true, resultQuality: null, eventStatus: e.status,
-  }
+/**
+ * EPS in the row's reporting currency. Issuers reporting in USD with very large
+ * share counts (LATAM, Enel Américas, Colbún) have a sub-cent EPS that rounds to
+ * a useless "0,00" at 2dp — those get 4dp so a real figure is shown rather than
+ * an apparent zero.
+ */
+function fmtEps(v: number | null): string {
+  if (v == null) return '—'
+  const d = Math.abs(v) < 1 ? 4 : 2
+  return v.toLocaleString('es-CL', { minimumFractionDigits: d, maximumFractionDigits: d })
 }
 
 export default function EarningsPage() {
   const { t } = useLang()
-  const [persisted, setPersisted] = useState<{ events: EarningsEventOut[]; tickersCovered: string[] } | null>(null)
+  const refreshAll = useGlobalRefresh()
 
+  const [cal, setCal] = useState<EarningsCalendarResult | null>(null)
+  const [results, setResults] = useState<EarningsResultsPayload | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  // Inline promise chain (not a named helper called from the effect body) so
+  // every setState lands in a callback — the shape the React Compiler rules
+  // require, and the same one Home uses for its mount fetches.
   useEffect(() => {
     let mounted = true
-    const run = async () => {
-      try {
-        const res = await fetchEarningsEvents()
-        if (mounted) setPersisted(res)
-      } catch {
-        if (mounted) setPersisted(null)
-      }
-    }
-    run()
+    Promise.all([
+      fetchEarningsCalendar().catch(() => null),
+      fetchEarningsResults(false).catch(() => null),
+    ]).then(([c, r]) => {
+      if (!mounted) return
+      if (c) setCal(c)
+      if (r) setResults(r)
+      setLoading(false)
+    })
     return () => { mounted = false }
   }, [])
 
-  const coveredTickers = new Set(persisted?.tickersCovered ?? [])
-  const persistedEvents = persisted?.events ?? []
+  // Update Data: refresh every live domain, then force-refetch this tab's own
+  // data past the resolver's 6h cache.
+  const refreshEarnings = useCallback(async () => {
+    setLoading(true)
+    await refreshAll()
+    const [c, r] = await Promise.all([
+      fetchEarningsCalendar().catch(() => null),
+      fetchEarningsResults(true).catch(() => null),
+    ])
+    if (c) setCal(c)
+    if (r) setResults(r)
+    setLoading(false)
+  }, [refreshAll])
 
-  const upcoming: DisplayRow[] = [
-    ...persistedEvents.filter(e => e.status === 'expected').map(persistedToRow),
-    ...staticUpcoming.filter(e => !coveredTickers.has(e.ticker)).map(staticToRow),
-  ].sort((a, b) => a.reportDate.localeCompare(b.reportDate))
-
-  const results: DisplayRow[] = [
-    ...persistedEvents.filter(e => e.status !== 'expected').map(persistedToRow),
-    ...staticResults.filter(e => !coveredTickers.has(e.ticker)).map(staticToRow),
-  ].sort((a, b) => b.reportDate.localeCompare(a.reportDate))
-
-  const surpriseLabel = (s: number) => (s > 0.5 ? t.earnings.beat : s < -0.5 ? t.earnings.miss : t.earnings.inline)
+  // Upcoming = real CMF EEFF-sending dates (next 45 days), replacing the old
+  // static sample. Absolute dates, so the window is always computed live.
+  const upcoming = cal?.status === 'live' ? upcomingWithinDays(cal.events, 45) : []
+  const rows = results?.rows ?? []
+  const live = results?.status === 'live'
 
   const handleExport = () => {
     exportCSV(
       'earnings_recent_results',
       [
-        t.earnings.calCols.ticker, t.earnings.cols.company, t.earnings.cols.period,
+        t.earnings.calCols.ticker, t.earnings.cols.company, t.earnings.cols.period, t.earnings.currency,
         t.earnings.cols.revenue, t.earnings.cols.revenueYoy, t.earnings.cols.ebitda, t.earnings.cols.ebitdaYoy,
-        t.earnings.consensus, t.earnings.surprise, t.earnings.resultQuality, t.earnings.keyDriver,
+        t.earnings.cols.netIncome, t.earnings.cols.netIncomeYoy, t.earnings.cols.eps,
       ],
-      results.map(e => {
-        const s = surprisePct(e.revenue, e.consensusRevenue)
-        return [
-          e.ticker, e.companyName, e.period,
-          e.revenue ?? '', e.revenueYoY ?? '', e.ebitda ?? '', e.ebitdaYoY ?? '',
-          e.consensusRevenue ?? '', s != null ? `${s.toFixed(1)}%` : '', e.resultQuality ?? e.eventStatus ?? '', e.keyDriver ?? '',
-        ]
-      }),
+      rows.map(e => [
+        e.ticker, e.companyName, e.period, e.currency,
+        e.revenue ?? '', e.revenueYoY ?? '', e.ebitda ?? '', e.ebitdaYoY ?? '',
+        e.netIncome ?? '', e.netIncomeYoY ?? '', e.eps ?? '',
+      ]),
     )
   }
+
+  const pctCell = (v: number | null) => (
+    <td className={`py-2.5 px-3 text-right ui-number ${v != null ? changeColor(v) : 'text-muted-fg'}`}>
+      {v != null ? formatPct(v) : '—'}
+    </td>
+  )
 
   return (
     <div className="w-full space-y-5">
@@ -128,48 +104,49 @@ export default function EarningsPage() {
         tag={t.earnings.tag}
         title={t.earnings.title}
         subtitle={t.earnings.subtitle}
+        actions={<UpdateDataButton onRefresh={refreshEarnings} />}
       />
 
-      {/* Upcoming calendar */}
-      {upcoming.length > 0 && (
-        <div className="bg-surface border border-border rounded overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-border bg-surface-2">
-            <span className="ui-label text-muted-fg">{t.earnings.upcomingLabel}</span>
-          </div>
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="text-left py-2.5 pl-4 pr-3 ui-table-header text-muted-fg">{t.earnings.calCols.ticker}</th>
-                <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.calCols.company}</th>
-                <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.calCols.period}</th>
-                <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.calCols.expected}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {upcoming.map(e => (
-                <tr key={e.id} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
-                  <td className="py-2.5 pl-4 pr-3">
-                    <Link href={`/companies/${e.ticker}`} className="font-mono text-primary hover:underline">{e.ticker}</Link>
-                  </td>
-                  <td className="py-2.5 px-3 text-foreground">{e.companyName}</td>
-                  <td className="py-2.5 px-3 text-muted-fg">{e.period}</td>
-                  <td className="py-2.5 px-3 ui-number text-muted-fg">{e.reportDate || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="px-4 py-2 border-t border-border">
-            <TableSourceFooter source={t.common.staticSample} />
-          </div>
+      {/* Upcoming — real CMF report dates */}
+      <div className="bg-surface border border-border rounded overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-border bg-surface-2 flex items-center gap-2">
+          <span className="ui-label text-muted-fg">{t.earnings.upcomingLabel}</span>
+          <MarketDataSourceBadge status={cal?.status === 'live' ? 'live' : 'static'} />
         </div>
-      )}
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-border">
+              <th className="text-left py-2.5 pl-4 pr-3 ui-table-header text-muted-fg">{t.earnings.calCols.ticker}</th>
+              <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.calCols.period}</th>
+              <th className="text-left py-2.5 px-3 pr-4 ui-table-header text-muted-fg">{t.earnings.calCols.expected}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {upcoming.map(e => (
+              <tr key={`${e.ticker}-${e.reportDate}`} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
+                <td className="py-2.5 pl-4 pr-3">
+                  <Link href={`/companies/${e.ticker}`} className="font-mono text-primary hover:underline">{e.ticker}</Link>
+                </td>
+                <td className="py-2.5 px-3 text-muted-fg">{e.period}</td>
+                <td className="py-2.5 px-3 pr-4 ui-number text-muted-fg">{e.reportDate}</td>
+              </tr>
+            ))}
+            {upcoming.length === 0 && (
+              <tr><td colSpan={3} className="py-6 text-center text-xs text-muted-fg">{loading ? t.common.loading : t.earnings.noUpcoming}</td></tr>
+            )}
+          </tbody>
+        </table>
+        <div className="px-4 py-2 border-t border-border">
+          <TableSourceFooter source={t.home.earningsCalSource} asOf={cal?.asOf ?? null} />
+        </div>
+      </div>
 
-      {/* Recent results */}
+      {/* Recent results — real reported quarterly financials, rolling last 2 quarters */}
       <div className="bg-surface border border-border rounded overflow-hidden">
         <div className="px-4 py-2.5 border-b border-border bg-surface-2 flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <span className="ui-label text-muted-fg">{t.earnings.recentResults}</span>
-            <SourceStateBadge sourceKey={coveredTickers.size > 0 ? 'earningsPersisted' : 'fundamentalsStatic'} />
+            <MarketDataSourceBadge status={live ? 'live' : 'static'} />
           </div>
           <button
             onClick={handleExport}
@@ -178,90 +155,57 @@ export default function EarningsPage() {
             <span aria-hidden>⤓</span>{t.common.exportCsv}
           </button>
         </div>
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-border">
-              <th className="text-left py-2.5 pl-4 pr-3 ui-table-header text-muted-fg">{t.earnings.calCols.ticker}</th>
-              <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.cols.company}</th>
-              <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.cols.period}</th>
-              <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.cols.revenue}</th>
-              <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.cols.revenueYoy}</th>
-              <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.cols.ebitda}</th>
-              <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.cols.ebitdaYoy}</th>
-              <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.surprise}</th>
-              <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.resultQuality}</th>
-              <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.keyDriver}</th>
-              <th className="text-left py-2.5 px-3 pr-4 ui-table-header text-muted-fg">{t.documents.viewSummary}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {results.map(e => {
-              const doc = getDocumentByRelatedId(e.id)
-              return (
-                <tr key={e.id} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border">
+                <th className="text-left py-2.5 pl-4 pr-3 ui-table-header text-muted-fg">{t.earnings.calCols.ticker}</th>
+                <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.cols.company}</th>
+                <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.cols.period}</th>
+                <th className="text-center py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.currency}</th>
+                <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.cols.revenue}</th>
+                <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.cols.revenueYoy}</th>
+                <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.cols.ebitda}</th>
+                <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.cols.ebitdaYoy}</th>
+                <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.cols.netIncome}</th>
+                <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.cols.netIncomeYoy}</th>
+                <th className="text-right py-2.5 px-3 pr-4 ui-table-header text-muted-fg">{t.earnings.cols.eps}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(e => (
+                <tr key={`${e.ticker}-${e.periodEnd}`} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
                   <td className="py-2.5 pl-4 pr-3">
                     <Link href={`/companies/${e.ticker}`} className="font-mono text-primary hover:underline">{e.ticker}</Link>
                   </td>
                   <td className="py-2.5 px-3 text-foreground">{e.companyName}</td>
                   <td className="py-2.5 px-3 text-muted-fg">{e.period}</td>
-                  <td className="py-2.5 px-3 text-right ui-number text-foreground">
-                    {e.revenue != null ? formatMillionsCLP(e.revenue) : '—'}
+                  <td className="py-2.5 px-3 text-center text-muted-fg">{e.currency}</td>
+                  <td className="py-2.5 px-3 text-right ui-number text-foreground">{fmtMM(e.revenue)}</td>
+                  {pctCell(e.revenueYoY)}
+                  <td className="py-2.5 px-3 text-right ui-number text-foreground" title={e.isBank ? t.earnings.bankNoEbitda : undefined}>
+                    {fmtMM(e.ebitda)}
                   </td>
-                  <td className={`py-2.5 px-3 text-right ui-number ${e.revenueYoY != null ? changeColor(e.revenueYoY) : 'text-muted-fg'}`}>
-                    {e.revenueYoY != null ? formatPct(e.revenueYoY) : '—'}
-                  </td>
-                  <td className="py-2.5 px-3 text-right ui-number text-foreground">
-                    {e.ebitda != null ? formatMillionsCLP(e.ebitda) : '—'}
-                  </td>
-                  <td className={`py-2.5 px-3 text-right ui-number ${e.ebitdaYoY != null ? changeColor(e.ebitdaYoY) : 'text-muted-fg'}`}>
-                    {e.ebitdaYoY != null ? formatPct(e.ebitdaYoY) : '—'}
-                  </td>
-                  <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                    {e.isPersisted ? (
-                      <span className="text-muted-fg" title={t.earnings.noEstimates}>—</span>
-                    ) : (() => {
-                      const s = surprisePct(e.revenue, e.consensusRevenue)
-                      if (s == null) return <span className="text-muted-fg">—</span>
-                      return (
-                        <span className={`ui-number ${changeColor(s)}`} title={`${t.earnings.consensus}: ${e.consensusRevenue != null ? formatMillionsCLP(e.consensusRevenue) : '—'}`}>
-                          <span className="text-muted-fg mr-1">{surpriseLabel(s)}</span>{formatPct(s)}
-                        </span>
-                      )
-                    })()}
-                  </td>
-                  <td className="py-2.5 px-3">
-                    {e.isPersisted
-                      ? <StatusPill label={t.earnings.status[e.eventStatus as keyof typeof t.earnings.status] ?? e.eventStatus ?? '—'} variant={eventStatusVariant[e.eventStatus ?? ''] ?? 'neutral'} />
-                      : <StatusPill label={e.resultQuality!} variant={qualityVariant[e.resultQuality!]} />}
-                  </td>
-                  <td className="py-2.5 px-3 text-muted max-w-[180px]">
-                    <span className="block truncate" title={e.keyDriver ?? undefined}>{e.keyDriver ?? '—'}</span>
-                  </td>
-                  <td className="py-2.5 px-3 pr-4">
-                    {doc ? (
-                      <Link href={`/documents/${doc.id}`} className="text-xs text-primary hover:underline">
-                        {t.documents.viewSummary}
-                      </Link>
-                    ) : (
-                      <span className="text-xs text-muted-fg">—</span>
-                    )}
-                  </td>
+                  {pctCell(e.ebitdaYoY)}
+                  <td className={`py-2.5 px-3 text-right ui-number ${e.netIncome != null && e.netIncome < 0 ? 'text-negative' : 'text-foreground'}`}>{fmtMM(e.netIncome)}</td>
+                  {pctCell(e.netIncomeYoY)}
+                  <td className={`py-2.5 px-3 pr-4 text-right ui-number ${e.eps != null && e.eps < 0 ? 'text-negative' : 'text-foreground'}`}>{fmtEps(e.eps)}</td>
                 </tr>
-              )
-            })}
-            {results.length === 0 && (
-              <tr>
-                <td colSpan={11} className="py-6 text-center text-xs text-muted-fg">{t.common.noResults}</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-        <div className="px-4 py-2.5 border-t border-border bg-surface flex items-center justify-between">
-          <TableSourceFooter source={coveredTickers.size > 0 ? t.earnings.footer : t.common.staticSample} />
-          <span className="text-xs ui-number text-muted-fg">{results.length} {t.common.records}</span>
+              ))}
+              {rows.length === 0 && (
+                <tr><td colSpan={11} className="py-6 text-center text-xs text-muted-fg">{loading ? t.common.loading : t.common.noResults}</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="px-4 py-2.5 border-t border-border bg-surface flex items-center justify-between gap-3 flex-wrap">
+          <div className="space-y-0.5">
+            <TableSourceFooter source={t.stocks.footer} asOf={results?.asOf ?? null} />
+            <p className="text-xs text-muted-fg">{t.earnings.amountsNote}</p>
+          </div>
+          <span className="text-xs ui-number text-muted-fg">{rows.length} {t.common.records}</span>
         </div>
       </div>
-
     </div>
   )
 }

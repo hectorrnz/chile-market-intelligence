@@ -506,7 +506,75 @@ docs/                 — Project documentation
 
 ## Current Phase
 
-**Most recent work (2026-07-21, eighth pass) — three follow-up items on top of the seventh pass.**
+**Most recent work (2026-07-21, ninth pass) — eight reported items: a fully live Earnings tab, live
+IPSA YTD, and the discovery that three US macro indicators had NO live source at all.** Suite 1676 →
+**1702** · lint 0 · build 0 errors. All verified live in the browser + against real FRED/Yahoo/CMF data.
+
+1. **Three US macro indicators had no live mapping in ANY provider** (items 5, 7, 8 — one root cause).
+   `dxy`, `bitcoin` and `us-gdp` existed only in `macroIndicators.json`, so `/api/macro?region=US`
+   returned just the 9 FRED-mapped series and those three fell back to static values stamped
+   **2025-06-17** forever — the "June 17th" period the user spotted. Bitcoin was additionally
+   attributed to **"CoinMarketCap"**, a vendor this project has no relationship with. Fixes:
+   **`us-gdp` → FRED `A191RL1Q225SBEA`** (real GDP q/q SAAR, already verified live for the GDP
+   calendar release; transform `none` — it is already a rate). **`bitcoin`/`dxy` → Yahoo Finance**
+   via a new `yahooMacroProvider.ts` (`BTC-USD`, `DX-Y.NYB`), merged into `resolveMacroIndicators`
+   alongside BCCh/FRED. FRED genuinely carries neither: it has no crypto series, and `DTWEXBGS` is
+   the Fed's *broad* trade-weighted index — a different index from ICE's DXY, so publishing it under
+   a "DXY" label would misattribute the number. The id→symbol map lives in
+   **`src/config/yahooMacroSeries.ts`** (pure/client-safe) so the Macro page can label the popup
+   chart without importing the server-only provider. Verified live: all 12 US indicators now live
+   with current periods; **Home and the Macro tab return identical values** (item 8's mismatch was
+   these three falling back to different static numbers).
+2. **Bitcoin popup chart is live too** (item 7b) — `resolveMacroHistory` gained a Yahoo branch for
+   the Yahoo-backed ids (weekly bars, same monthly frequency policy as every other macro chart), so
+   the chart and the row can never disagree on source. Verified: 54 real weekly points.
+3. **IPSA YTD now recomputed daily from a committed baseline** (item 1 — the user's own suggestion).
+   Yahoo serves **no `^IPSA` history at request time** (re-verified across every endpoint/range: 1 bar
+   vs 159 for `^GSPC`), so a request-time baseline is impossible. Instead `indexPerformance.json`
+   carries a **`yearStartClose`** per index, written by the twice-daily GitHub refresh
+   (`refreshMarketData.py` `_year_start()`, Python yfinance — which *does* reach `^IPSA` history); the
+   live-snapshot route seeds `yearStartByIndex` from it and lets a healthy live chart override, then
+   YTD is computed from the **live quote price** on every refresh. So the baseline changes once a year
+   while the percentage moves daily.
+4. **Fed funds already used the target-range UPPER limit** (item 4) — `DFEDTARU`, 3.75%. Verified, no
+   change needed; now guarded by a test.
+5. **Earnings tab rebuilt on real data** (items 2, 3, 6). Both tables were static: `getUpcomingEarnings`/
+   `getRecentResults` from `src/data/earnings.json` — invented revenue/EBITDA, a synthetic "consensus",
+   and an editorial Clean/Mixed/Weak quality pill that was never a real assessment. Now:
+   **Upcoming = real CMF EEFF-sending dates** (next 45 days, reusing the committed CMF calendar);
+   **Recent Results = real reported quarterly financials from Yahoo** via new
+   `resolveEarningsResults.ts` + pure `earningsResultsCore.ts` + `GET /api/earnings/results` (6h cache,
+   `?force=1` for Update). Columns: Ticker · Company · Period · **Cur.** · Revenue (MM) · Rev. YoY ·
+   EBITDA (MM) · EBITDA YoY · Net Income (MM) · Net Inc. YoY · EPS. **Rolling window**: exactly the two
+   most recent reported quarters per ticker, derived from the sorted period list, so a new quarter
+   enters and the oldest drops automatically (item 6). **YoY matches the SAME quarter a year earlier**
+   by exact period-end date — never the sequential quarter, which would be wrong for seasonal
+   businesses — and is null off a non-positive base rather than a misleading swing. Verified live:
+   **all 25 tickers, 50 rows, 0 missing.**
+   - **Per-row reporting currency** (`Cur.`): Yahoo reports SQM-B/CAP/CMPC/COLBUN/COPEC/ENELAM/
+     ENELCHILE/LTM in **USD**. The old table hard-labelled every column "MM CLP", which would have
+     mislabelled those issuers by ~1000×. Amounts are now in millions of each row's own currency.
+   - **Banks**: `BANK_TICKERS` (BSANTANDER/CHILE/BCI/ITAUCL) never show EBITDA — not a banking metric —
+     even if Yahoo returns a number. **NIM is deliberately NOT shown**: it needs net interest income
+     over average earning assets, which no free source available here publishes per quarter, so
+     approximating it and presenting it as reported would violate the no-fabrication rule. Banks still
+     show revenue / net income / EPS.
+   - **"View Summary" column removed.** It only ever resolved for the static sample's ids via
+     `documents.json`; live Yahoo-derived rows have no ingested source document (CMF filing PDFs stay
+     CAPTCHA-blocked — see `docs/cmf_provider_discovery.md`). A column that could never populate is
+     worse than none; the ticker already links to the company page.
+   - EPS uses 4dp below 1.0 — USD reporters with huge share counts (LATAM, Enel Américas, Colbún)
+     rounded to a useless "0,00" at 2dp.
+
+New tests: `tests/earningsResults.test.ts` (rolling window, same-quarter YoY, bank EBITDA suppression,
+sparse/undated rows, no-fabrication hygiene), `tests/macroFreshness.test.ts` (every US indicator has a
+live source, Yahoo symbol map, plausibility bands, IPSA baseline reproduces the committed YTD, refresh
+script writes it). One pre-existing test updated: the earnings-page consensus check now asserts the
+stronger property (no consensus/surprise/quality machinery exists at all).
+
+---
+
+**Previous work (2026-07-21, eighth pass) — three follow-up items on top of the seventh pass.**
 All verified live in the browser + against real FRED/Yahoo/CMF data. Suite 1666 → **1676** · lint 0 ·
 build 0 errors.
 

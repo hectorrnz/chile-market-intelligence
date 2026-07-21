@@ -36,6 +36,14 @@ export const PLAUSIBILITY: Record<string, Band> = {
   'us-unemployment': { min: 0, max: 30 },
   'us-cpi-mensual': { min: -5, max: 10 },
   'us-cpi-anual': { min: -5, max: 30 },
+  // Real GDP q/q annualized — a growth RATE, not a level. Wide band still
+  // catches a level-vs-rate mis-mapping (a GDP level would be in the trillions).
+  'us-gdp': { min: -40, max: 40 },
+  // ── US (Yahoo Finance, 2026-07-21) ────────────────────────────────────────
+  // Index level / USD price, not a percentage — bands sized to catch a wrong
+  // symbol mapping, never a normal market move.
+  dxy: { min: 40, max: 200 },
+  bitcoin: { min: 1000, max: 1_000_000 },
 }
 
 /** True when `value` is finite and within the band for `key` (or no band defined). */

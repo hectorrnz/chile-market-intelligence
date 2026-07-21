@@ -9,7 +9,8 @@
     "dayChangePct": 0.41,
     "ytdChangePct": 8.2,
     "date": "2026-07-21",
-    "source": "yfinance / Yahoo Finance"
+    "source": "yfinance / Yahoo Finance",
+    "yearStartClose": 10062.59
   },
   {
     "id": "sp500",
@@ -21,7 +22,8 @@
     "dayChangePct": 0.75,
     "ytdChangePct": 9.34,
     "date": "2026-07-21",
-    "source": "yfinance / Yahoo Finance"
+    "source": "yfinance / Yahoo Finance",
+    "yearStartClose": 6858.66
   },
   {
     "id": "ibovespa",
@@ -33,7 +35,8 @@
     "dayChangePct": -0.61,
     "ytdChangePct": 7.33,
     "date": "2026-07-21",
-    "source": "yfinance / Yahoo Finance"
+    "source": "yfinance / Yahoo Finance",
+    "yearStartClose": 160544.06
   },
   {
     "id": "ipc-mexico",
@@ -45,7 +48,8 @@
     "dayChangePct": 0.52,
     "ytdChangePct": 3.62,
     "date": "2026-07-21",
-    "source": "yfinance / Yahoo Finance"
+    "source": "yfinance / Yahoo Finance",
+    "yearStartClose": 64143.67
   },
   {
     "id": "colcap",
@@ -57,7 +61,8 @@
     "dayChangePct": -0.58,
     "ytdChangePct": -4.1,
     "date": "2026-07-21",
-    "source": "yfinance / Yahoo Finance"
+    "source": "yfinance / Yahoo Finance",
+    "yearStartClose": 1633.92
   },
   {
     "id": "bvl-peru",
@@ -69,7 +74,8 @@
     "dayChangePct": 1.83,
     "ytdChangePct": 20.32,
     "date": "2026-07-21",
-    "source": "yfinance / Yahoo Finance"
+    "source": "yfinance / Yahoo Finance",
+    "yearStartClose": 71.53
   },
   {
     "id": "eurostoxx50",
@@ -81,7 +87,8 @@
     "dayChangePct": 0.73,
     "ytdChangePct": 5.9,
     "date": "2026-07-21",
-    "source": "yfinance / Yahoo Finance"
+    "source": "yfinance / Yahoo Finance",
+    "yearStartClose": 5923.54
   },
   {
     "id": "ftse100",
@@ -93,7 +100,8 @@
     "dayChangePct": 0.39,
     "ytdChangePct": 6.17,
     "date": "2026-07-21",
-    "source": "yfinance / Yahoo Finance"
+    "source": "yfinance / Yahoo Finance",
+    "yearStartClose": 9951.36
   },
   {
     "id": "nikkei225",
@@ -105,7 +113,8 @@
     "dayChangePct": -4.03,
     "ytdChangePct": 23.75,
     "date": "2026-07-21",
-    "source": "yfinance / Yahoo Finance"
+    "source": "yfinance / Yahoo Finance",
+    "yearStartClose": 51831.21
   },
   {
     "id": "hangseng",
@@ -117,7 +126,8 @@
     "dayChangePct": -0.04,
     "ytdChangePct": -4.58,
     "date": "2026-07-21",
-    "source": "yfinance / Yahoo Finance"
+    "source": "yfinance / Yahoo Finance",
+    "yearStartClose": 26338.6
   },
   {
     "id": "kospi",
@@ -129,6 +139,7 @@
     "dayChangePct": -4.46,
     "ytdChangePct": 51.2,
     "date": "2026-07-21",
-    "source": "yfinance / Yahoo Finance"
+    "source": "yfinance / Yahoo Finance",
+    "yearStartClose": 4309.7
   }
 ]

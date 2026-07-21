@@ -36,7 +36,7 @@ export function DataSourceBadge({
 }: {
   status: DataSourceStatus
   /** Which live provider backs this data — shown only in the hover tooltip. */
-  provider?: 'BCCh' | 'FRED'
+  provider?: 'BCCh' | 'FRED' | 'Yahoo Finance'
   className?: string
 }) {
   const { t } = useLang()

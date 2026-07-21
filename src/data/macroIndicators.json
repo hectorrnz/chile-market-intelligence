@@ -344,7 +344,7 @@
     "change": -2.1,
     "changeLabel": "-2.0%",
     "period": "17-Jun-2025",
-    "source": "ICE / FRED",
+    "source": "ICE US Dollar Index (via Yahoo Finance)",
     "lastUpdated": "2025-06-17",
     "importance": "high",
     "marketImplication": "Weaker USD historically supportive of copper prices and EM currencies incl. CLP"
@@ -360,7 +360,7 @@
     "change": -8500,
     "changeLabel": "-11.2%",
     "period": "17-Jun-2025",
-    "source": "CoinMarketCap",
+    "source": "Yahoo Finance",
     "lastUpdated": "2025-06-17",
     "importance": "low",
     "marketImplication": "Risk appetite proxy; crypto weakness tends to precede EM risk-off episodes"
@@ -408,7 +408,7 @@
     "change": -0.3,
     "changeLabel": "-0.3%",
     "period": "Q1 2025",
-    "source": "BEA",
+    "source": "BEA (via FRED)",
     "lastUpdated": "2025-06-17",
     "importance": "high",
     "marketImplication": "Growth cooling toward trend; soft-landing narrative intact"

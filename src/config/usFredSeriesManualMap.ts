@@ -156,6 +156,24 @@ export const usFredSeriesManualMap: Record<string, FredManualEntry> = {
     verificationMethod: 'FRED public CSV graph endpoint (no API key), verified live',
     notes: 'CPIAUCSL is an INDEX LEVEL (seasonally adjusted), not a % change — the month-over-month % change is derived via the shared transforms.ts "mom" transform (same math already used for BCCh IMACEC yoy). Same underlying series as us-cpi-anual below, different transform.',
   },
+  'us-gdp': {
+    // Real GDP, percent change from preceding period, seasonally adjusted
+    // ANNUAL RATE — the headline "GDP grew X%" print, already a rate (no
+    // transform). Same series the economic-calendar enrichment uses for the
+    // GDP release (src/config/calendarEnrichmentMap.ts), verified live there
+    // and re-verified for this mapping. Wired 2026-07-21 because us-gdp had NO
+    // live mapping at all and was serving a static 2025-06-17 value forever.
+    seriesId: 'A191RL1Q225SBEA',
+    verified: true,
+    frequency: 'MONTHLY',
+    transformation: 'none',
+    staticId: 'us-gdp',
+    sourceName: 'Real GDP, q/q % change SAAR (BEA, via FRED)',
+    confidence: 'high',
+    verificationDate: '2026-07-21',
+    verificationMethod: 'FRED public CSV graph endpoint (no API key); already verified live for the GDP calendar release',
+    notes: 'Quarterly. Already a percent-change rate — never transformed. Declared MONTHLY here only because FredFrequency has no quarterly member; the cadence comes from the series itself, and nothing keys off this field for a non-resampled series.',
+  },
   'us-cpi-anual': {
     seriesId: 'CPIAUCSL',
     verified: true,

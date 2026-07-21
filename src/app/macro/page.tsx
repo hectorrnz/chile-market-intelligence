@@ -17,6 +17,7 @@ import { getYieldCurve } from '@/lib/data/yieldCurves'
 import { fetchLiveYieldCurve } from '@/lib/data/yieldCurveLive'
 import { getMacroHistoryForTimeframe, fetchMacroHistory } from '@/lib/data/macroHistory'
 import { getSeriesByStaticId } from '@/config/macroSeries'
+import { isYahooMacroIndicator } from '@/config/yahooMacroSeries'
 import { DataSourceBadge } from '@/components/ui/DataSourceBadge'
 import { SourceStateBadge } from '@/components/ui/SourceStateBadge'
 import { fetchUsForexTable } from '@/lib/data/frankfurterFx'
@@ -145,9 +146,14 @@ export default function MacroPage() {
   // (histId from RATE_HIST, e.g. 'tpm'/'btu10-ref') is always BCCh-sourced (or
   // static, never FRED), while a canonical indicator id (histId === i.id, e.g.
   // 'fed-funds'/'us10y') looks up its real sourceProvider from the registry.
-  const chartProvider = selected?.histId && getSeriesByStaticId(selected.histId)?.sourceProvider === 'FRED'
-    ? 'FRED' as const
-    : 'BCCh' as const
+  // BTC/USD and DXY exist in neither registry — they're Yahoo-backed (see
+  // yahooMacroProvider), so they must not be labelled BCCh by the default.
+  const chartProvider: 'BCCh' | 'FRED' | 'Yahoo Finance' =
+    selected?.histId && isYahooMacroIndicator(selected.histId)
+      ? 'Yahoo Finance'
+      : selected?.histId && getSeriesByStaticId(selected.histId)?.sourceProvider === 'FRED'
+        ? 'FRED'
+        : 'BCCh'
 
   // Live yield curve (today / 1 week ago / prior year-end) — built from
   // already-verified BCCh/FRED series (yieldCurveProvider.ts). Falls back to
@@ -444,7 +450,7 @@ export default function MacroPage() {
             )}
             <div className="flex items-center gap-2 mt-3">
               <DataSourceBadge status={histStatus} provider={chartProvider} />
-              <span className="text-xs text-muted-fg">· {chartProvider === 'FRED' ? t.macro.chartSourceFred : t.macro.chartSourceBcch}</span>
+              <span className="text-xs text-muted-fg">· {chartProvider === 'Yahoo Finance' ? 'Yahoo Finance' : chartProvider === 'FRED' ? t.macro.chartSourceFred : t.macro.chartSourceBcch}</span>
             </div>
           </div>
         </div>

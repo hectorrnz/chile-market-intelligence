@@ -111,7 +111,17 @@ export type StaticSector = {
   topContributor: string; topContributorPct: number; worstContributor: string; worstContributorPct: number
 }
 
-export type StaticIndex = { id: string; name?: string; country?: string; currency?: string; value: number; dayChangePct: number; ytdChangePct: number }
+export type StaticIndex = {
+  id: string; name?: string; country?: string; currency?: string
+  value: number; dayChangePct: number; ytdChangePct: number
+  /**
+   * Prior-year-end close — the YTD baseline, written by the twice-daily GitHub
+   * refresh (refreshMarketData.py). Lets YTD be recomputed from the live price
+   * on every snapshot even for symbols whose history Yahoo won't serve at
+   * request time (notably ^IPSA). Optional: absent → static YTD is used.
+   */
+  yearStartClose?: number
+}
 
 export function buildStocks(
   quotes: YFQuote[],

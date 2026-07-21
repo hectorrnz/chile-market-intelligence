@@ -148,6 +148,18 @@ def _last(s: 'pd.Series') -> float | None:
     return round(float(s.iloc[-1]), 2) if not s.empty else None
 
 
+def _year_start(s: 'pd.Series') -> float | None:
+    """
+    First close of the current year — the YTD baseline. Committed so the app can
+    recompute YTD from the live price on every refresh (see StaticIndex
+    .yearStartClose). Requires >= 2 points so a lone recent bar (Yahoo's
+    behaviour for ^IPSA at request time) is never mistaken for a year-start.
+    """
+    if len(s) < 2:
+        return None
+    return round(float(s.iloc[0]), 2)
+
+
 # ── Refresh functions ──────────────────────────────────────────────────────────
 
 def refresh_stocks(today: str) -> tuple[int, dict[str, float], dict[str, float]]:
@@ -256,6 +268,7 @@ def refresh_indices(today: str) -> int:
         p = _last(s)
         dp = _day_pct(s)
         yp = _ytd_pct(s)
+        ys = _year_start(s)
 
         if p is not None:
             entry = {
@@ -263,6 +276,11 @@ def refresh_indices(today: str) -> int:
                 'value':         p,
                 'dayChangePct':  dp if dp is not None else entry.get('dayChangePct', 0),
                 'ytdChangePct':  yp if yp is not None else entry.get('ytdChangePct', 0),
+                # YTD baseline (first close of the current year) so the app can
+                # recompute YTD from the live price on every refresh — the only
+                # way ^IPSA gets a YTD, since Yahoo serves it no history at
+                # request time. Keep the previous value if this run had no data.
+                'yearStartClose': ys if ys is not None else entry.get('yearStartClose'),
                 'date':          today,
                 'source':        SOURCE,
             }

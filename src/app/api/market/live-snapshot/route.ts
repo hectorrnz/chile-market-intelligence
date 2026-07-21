@@ -92,6 +92,25 @@ async function fetchIndexYearStarts(): Promise<Record<string, number>> {
   return map
 }
 
+/**
+ * Committed prior-year-end baselines from indexPerformance.json, written by the
+ * twice-daily GitHub refresh (scripts/refresh/refreshMarketData.py, Python
+ * yfinance). This is the ONLY way IPSA gets a YTD: Yahoo serves no `^IPSA`
+ * history at request time — re-verified 2026-07-21, every endpoint and range
+ * returns a single recent bar — while yfinance from GitHub's network does reach
+ * it. With the baseline committed, YTD is recomputed here on every refresh from
+ * the LIVE quote price, so it updates daily even though the baseline changes
+ * only once a year.
+ */
+function committedYearStarts(): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const idx of staticIndices as StaticIndex[]) {
+    const v = idx.yearStartClose
+    if (typeof v === 'number' && Number.isFinite(v) && v > 0) out[idx.id] = v
+  }
+  return out
+}
+
 export async function GET(): Promise<NextResponse> {
   try {
     const allSymbols = [...Object.values(TICKER_YF), ...Object.values(INDEX_YF)]
@@ -106,10 +125,11 @@ export async function GET(): Promise<NextResponse> {
     const rawQuotes: any = await Promise.race([quotePromise, timeoutPromise])
     const quotes = Array.isArray(rawQuotes) ? rawQuotes : [rawQuotes]
 
-    // Index YTD baselines run in parallel with nothing else here, but only
-    // gate the indices — a slow/failed fetch degrades to static YTD, never
-    // blocks the price snapshot (own timeout inside).
-    const yearStartByIndex = await fetchIndexYearStarts()
+    // Index YTD baselines. Start from the committed prior-year-end closes
+    // (covers IPSA, whose history Yahoo won't serve at request time), then let
+    // a healthy live chart override with a freshly-fetched first-close-of-year.
+    // Either way YTD is recomputed below from the LIVE price, so it moves daily.
+    const yearStartByIndex = { ...committedYearStarts(), ...(await fetchIndexYearStarts()) }
 
     const { stocks, dayByTicker, succeeded, failed } = buildStocks(quotes)
     const sectors = buildSectors(dayByTicker, staticSectors as StaticSector[])

@@ -12,6 +12,11 @@ import { staticMacroProvider } from './staticMacroProvider'
 import { bcchMacroProvider } from './bcchMacroProvider'
 import { fredMacroProvider } from './fredMacroProvider'
 import { getSeriesByStaticId } from '@/config/macroSeries'
+import {
+  getYahooMacroIndicators,
+  getYahooMacroHistory,
+  isYahooMacroIndicator,
+} from './yahooMacroProvider'
 import { applyMacroFrequency } from './macroFrequency'
 import { pickFreshestMacroSource } from './macroHistorySource'
 import { getDbMode, decideDbSource } from '@/lib/db/dbMode'
@@ -40,9 +45,13 @@ export async function resolveMacroIndicators(region?: 'CL' | 'US'): Promise<Macr
   let lastUpdated = ''
 
   if (requested !== 'static') {
-    const [bcchRes, fredRes] = await Promise.all([
+    // BTC/USD and DXY exist in neither FRED nor BCCh — they came from Yahoo or
+    // stayed frozen on a 2025-06-17 static value forever. Fetched alongside the
+    // other two providers; an empty result just leaves them on static.
+    const [bcchRes, fredRes, yahooRes] = await Promise.all([
       bcchMacroProvider.getIndicators(region),
       fredMacroProvider.getIndicators(region),
+      getYahooMacroIndicators(region),
     ])
     if (bcchRes.ok) {
       liveOk = true
@@ -56,7 +65,13 @@ export async function resolveMacroIndicators(region?: 'CL' | 'US'): Promise<Macr
       sources.push(fredRes.source)
       if (fredRes.lastUpdated > lastUpdated) lastUpdated = fredRes.lastUpdated
     }
-    if (!bcchRes.ok && !fredRes.ok) liveReason = bcchRes.reason || fredRes.reason
+    if (yahooRes.length > 0) {
+      liveOk = true
+      combinedData = [...combinedData, ...yahooRes]
+      sources.push('Yahoo Finance')
+      for (const i of yahooRes) if (i.lastUpdated > lastUpdated) lastUpdated = i.lastUpdated
+    }
+    if (!bcchRes.ok && !fredRes.ok && yahooRes.length === 0) liveReason = bcchRes.reason || fredRes.reason
   }
 
   const decision = decideSource(requested, liveOk, liveReason)
@@ -99,6 +114,36 @@ export async function resolveMacroHistory(
   const dataMode = getDataMode()
   const dbMode   = getDbMode()
   const dbSource = decideDbSource(dbMode)
+
+  // ─── Yahoo-backed indicators (BTC/USD, DXY) ──────────────────────────────
+  // Neither FRED nor BCCh carries these, so the popup chart could only ever
+  // render the frozen static series. Same source as the row's value, so the
+  // chart and the number can never disagree. Falls through to static on failure.
+  if (isYahooMacroIndicator(indicatorId) && dataMode !== 'static') {
+    const live = await getYahooMacroHistory(indicatorId, years)
+    if (live.length >= 2) {
+      const points: MacroChartPoint[] = applyMacroFrequency(
+        live.map((p) => ({ date: p.date, value: p.value })),
+        indicatorId,
+        years,
+      )
+      const decision = decideSource(dataMode, true, undefined)
+      return {
+        data: points,
+        metadata: {
+          dataModeRequested: dataMode,
+          dataModeUsed: decision.dataModeUsed,
+          liveAvailable: true,
+          status: decision.status,
+          source: 'Yahoo Finance',
+          lastUpdated: live[live.length - 1]?.date ?? '',
+          provider: 'Yahoo Finance',
+          dbModeRequested: dbMode,
+          dbModeUsed: dbSource,
+        },
+      }
+    }
+  }
 
   const def = getSeriesByStaticId(indicatorId)
   const providerLabel = def?.sourceProvider === 'FRED' ? FRED_PROVIDER : BCCH_PROVIDER

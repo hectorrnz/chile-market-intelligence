@@ -120,6 +120,7 @@ const BASE: BaseDef[] = [
   { id: 'us-unemployment', displayName: 'US Unemployment Rate', region: 'US', category: 'US Labor', source: 'BLS (via FRED)', sourceProvider: 'FRED', manualKey: 'us-unemployment', unit: '%', frequency: 'monthly', fallbackStaticId: 'us-unemployment' },
   { id: 'us-cpi-mensual', displayName: 'US CPI Month-over-Month', region: 'US', category: 'US Inflation', source: 'BLS (via FRED)', sourceProvider: 'FRED', manualKey: 'us-cpi-mensual', unit: '%', frequency: 'monthly', fallbackStaticId: 'us-cpi-mensual' },
   { id: 'us-cpi-anual', displayName: 'US CPI Year-over-Year', region: 'US', category: 'US Inflation', source: 'BLS (via FRED)', sourceProvider: 'FRED', manualKey: 'us-cpi-anual', unit: '%', frequency: 'monthly', fallbackStaticId: 'us-cpi-anual' },
+  { id: 'us-gdp', displayName: 'US GDP', region: 'US', category: 'US Activity', source: 'BEA (via FRED)', sourceProvider: 'FRED', manualKey: 'us-gdp', unit: '%', frequency: 'quarterly', fallbackStaticId: 'us-gdp' },
 ]
 
 function merge(base: BaseDef): MacroSeriesDef {

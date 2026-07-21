@@ -458,10 +458,15 @@ describe('Phase 8C source labels and hygiene', () => {
     assert.ok(src.includes('SourceStateBadge'))
   })
 
-  it('Earnings page never shows a fabricated surprise/consensus for persisted rows', () => {
+  it('Earnings page never shows a fabricated surprise/consensus or quality judgment', () => {
+    // Stronger than the original persisted-row check: as of the 2026-07-21 live
+    // rewrite the page carries NO consensus/surprise column and no editorial
+    // Clean/Mixed/Weak quality pill at all — those only ever existed for the
+    // now-deleted static sample, so there is nothing left to fabricate.
     const src = readFileSync(EARNINGS_PAGE, 'utf8')
-    assert.ok(src.includes('noEstimates'))
-    assert.ok(src.includes('isPersisted'))
+    assert.ok(!src.includes('surprisePct'), 'no synthetic surprise calculation')
+    assert.ok(!src.includes('consensusRevenue'), 'no synthetic consensus')
+    assert.ok(!src.includes('resultQuality'), 'no editorial quality judgment')
   })
 
   it('Compare resolver still wires market data via marketProvider (no regression)', () => {
