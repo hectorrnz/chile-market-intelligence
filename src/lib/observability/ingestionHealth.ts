@@ -79,6 +79,10 @@ const MONTHLY_INDICATORS = new Set([
   // Phase 8D: copper (BCCh, monthly) + 3 monthly FRED series (Fed Funds is a
   // monthly average; CPI m/m and y/y derive from the same monthly index level).
   'cobre-lme', 'fed-funds', 'us-cpi-mensual', 'us-cpi-anual', 'us-unemployment',
+  // 2026-07-21 audit: BTP 2 is an AUCTION rate — BCCh only prints it when an
+  // auction happens (weeks/months apart), so daily-cadence thresholds would
+  // chronically false-flag it. Same sparse-cadence allowance as the monthlies.
+  'btp10',
 ])
 const MONTHLY_STALE_DAYS = 100  // ~3.5 months: IPC lags 1m, IMACEC/Desempleo 2m — alert only if genuinely missing
 
