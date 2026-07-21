@@ -45,7 +45,8 @@ describe('Home page — Watchlist and FX merged into one band-separated table', 
     // The old layout had two sibling bg-surface cards (stocks + FX); the new
     // layout is one table with two <tr> band-divider rows, mirroring the
     // Macro card's Chile/US band pattern.
-    const tableMatches = src.match(/<table className="w-full text-xs">/g) ?? []
+    // Tolerates extra utility classes (e.g. the responsive min-w added 2026-07-21).
+    const tableMatches = src.match(/<table className="w-full text-xs[^"]*">/g) ?? []
     // The macro indicators table on /macro is a separate page; on Home there
     // should be exactly one table for this merged Watchlist+FX card.
     assert.ok(tableMatches.length >= 1)

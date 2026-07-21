@@ -325,6 +325,26 @@ persisted rows exclusively for that ticker) with `earnings.json` for every other
 **Never do:** show a "beat/miss" surprise percentage for a persisted (manual-CSV) row — there is no
 estimates source for imported data, and the UI explicitly renders `—` rather than inferring one.
 
+**Superseded (2026-07-21):** the table above describes the Phase-8C-era Earnings tab. The ninth pass
+rebuilt the tab on real data — Upcoming = live CMF EEFF-sending dates (committed snapshot,
+`GET /api/earnings/calendar`), Recent Results = real Yahoo quarterly financials
+(`GET /api/earnings/results`, rolling two most recent quarters, per-row reporting currency, no
+consensus/quality machinery at all). The production audit the same day extended this to the
+**Company page**: its Recent Results card no longer renders the fabricated `earnings.json` sample
+with editorial Clean/Mixed/Weak pills — it reads the same live `/api/earnings/results` rows
+(live-only, honest loading/empty states, "Source: Yahoo Finance" footer with a real as-of), and the
+price chart's earnings markers are now real CMF report dates. `src/lib/data/earnings.ts` (which
+hardcoded `today = '2025-06-17'`) was deleted; `earnings.json` remains only as an inert input to the
+dev-only `scripts/gen*` sample generators — no production code imports it.
+
+## Document Viewer — REMOVED (2026-07-21)
+
+The orphaned `/documents/[id]` route (fabricated "AI Summary" text + Clean/Weak assessment pills from
+`documents.json`, publicly reachable by direct URL with no inbound link since the earnings rewrite
+removed its "View Summary" entry points) was deleted in the 2026-07-21 production audit, together
+with `src/lib/data/documents.ts` and the `documents` i18n block. The dormant Phase-5B
+`documentsRepository.ts` + `documents` DB table remain (unused infrastructure, not user-visible).
+
 ---
 
 ## Hechos Esenciales — REMOVED (2026-07-20)

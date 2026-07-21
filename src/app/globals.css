@@ -212,10 +212,11 @@ html, body { height: 100%; margin: 0; }
 
 /* Root rem bumped from the 16px default so all rem-based text scales up
    slightly for readability across the app. */
-/* min-width keeps the layout intact on narrow viewports — this is a
-   desktop-first institutional terminal, so horizontal scrolling is
-   preferable to a crushed 3-column grid at <1200px. */
-html { font-size: 17px; min-width: 1200px; }
+/* Responsive audit 2026-07-21: the old 1200px root minimum-width (full-page
+   horizontal scroll crutch) is removed — grids now collapse via responsive
+   Tailwind prefixes and dense tables scroll inside their own cards instead of
+   pushing page width. Do NOT reintroduce a root minimum width here. */
+html { font-size: 17px; }
 
 body {
   background-color: var(--background);

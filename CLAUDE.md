@@ -506,7 +506,73 @@ docs/                 — Project documentation
 
 ## Current Phase
 
-**Most recent work (2026-07-21, ninth pass) — eight reported items: a fully live Earnings tab, live
+**Most recent work (2026-07-21, tenth pass) — full production audit: source integrity + responsive
+layout.** Suite 1702 → **1739** · lint 0 · build 0 errors. Findings list produced first, then only
+high-confidence fixes applied; everything below verified in the browser and/or against the live DB.
+
+1. **Daily BCCh cron was FK-failing every weekday** (`partial_success` since 2026-07-15): the
+   promoted BTP 2 / PDBC 14d series write `macro_observations` rows keyed `btp10`/`pdbc90`, but
+   `macro_indicators` never got those parent rows. Fixed by migration
+   `20260721120000_macro_indicators_btp2_pdbc14.sql` (idempotent; **also commits `eurclp`**, whose
+   Phase-8D.1 row existed only as a live DB insert — a fresh environment would have reproduced the
+   same failure), applied to production via the admin client + a 10-year backfill (PDBC 1,140 rows ·
+   BTP 2 37 rows — auction rate, sparse by nature). Guard: `tests/macroIndicatorDbCoverage.test.ts`
+   statically asserts every enabled BCCh/FRED series' `fallbackStaticId` has a committed
+   `macro_indicators` row, so a future series promotion without a DB row fails the suite.
+2. **Company page rendered fabricated earnings** — static `earnings.json` rows with the editorial
+   Clean/Mixed/Weak "Quality" pills the Earnings-tab rewrite had condemned, plus chart markers on the
+   fake dates. Now: Recent Results reads the same live `/api/earnings/results` rows as the Earnings
+   tab (2 rolling quarters, per-row currency, YoY, live-only with honest loading/empty states, Yahoo
+   footer + real as-of); chart markers are **real CMF EEFF report dates** (tickers absent from the CMF
+   calendar honestly get none); Update force-refreshes past the 6h cache. Deleted:
+   `src/lib/data/earnings.ts` (dead exports hardcoding `today='2025-06-17'`), the orphaned
+   **`/documents/[id]` route** (publicly-reachable fabricated "AI Summary" content, zero inbound
+   links), `src/lib/data/documents.ts`, both `documents` i18n blocks, the dead consensus-era keys
+   (`resultQuality`/`consensus`/`beat`/`miss`/`surprise`/`tabs`/`status`/`calNote`/"Phase 2" strings)
+   and `formatters.surprisePct`. `fxRates.json` (test/demo-quarantined) had its fabricated
+   "Bloomberg"/"CoinMarketCap" attributions scrubbed; three 3-byte leftover JSONs deleted.
+3. **Responsive overhaul** (the reported layout break). Root cause was `html { min-width: 1200px }`
+   (globals.css) forcing full-page horizontal scroll below 1200px — removed, do NOT reintroduce.
+   Conventions now in force (locked by `tests/responsiveLayout.test.ts`):
+   - **Layout grids carry responsive prefixes** — Home regions `grid-cols-1 lg:grid-cols-3`, Company
+     KPI `grid-cols-2 sm:grid-cols-3 lg:grid-cols-6`, Portfolio cards
+     `grid-cols-2 sm:grid-cols-4 xl:grid-cols-7`, Macro US row `grid-cols-1 xl:grid-cols-2`, heat
+     tiles `grid-cols-2 sm:grid-cols-3` (`sm:col-start-2` for the centered 10th tile).
+   - **Measured-height pinning binds only at lg+** via a CSS variable: cards set
+     `style={pinH(macroH)}` (`--pin-h`) + class `lg:h-(--pin-h)` — below lg the variable-based height
+     is invalid→auto so stacked cards take natural height. Never reintroduce inline
+     `style={{ height: macroH }}` (it locked stacked mobile cards to the driver card's height).
+   - **Dense tables scroll inside their card**: wrapper `overflow-x-auto` + `min-w-[…px]` on the
+     table (Stocks 760 · Portfolio positions/transactions 720, cash 440 · Watchlist 620 · Macro
+     indicators 660, US FX 420 · Compare returns 440 · SN detail 480/560/640 · Home watchlist 430 ·
+     Company results 520). Full-page horizontal scroll is never acceptable.
+   - **Sidebar**: static `w-52` column is `hidden lg:flex`; below lg the TopBar hamburger opens an
+     overlay **drawer** (`SidebarProvider.mobileOpen`, plain non-persisted state; closes on backdrop
+     click or navigation; `toggle()` is viewport-aware via matchMedia at click time). `SidebarContent`
+     is the shared inner markup with an `onNavigate` callback.
+   - **TopBar** compresses (left group `min-w-0` + truncate, brand/crumbs hide `sm:`/`md:`, date
+     `hidden xl:inline`); **SectionHeader** wraps its actions row (`flex-wrap`, `min-w-0`);
+     **NotificationBell** dropdown capped `max-w-[calc(100vw-1.5rem)]`; `main` padding
+     `px-3 py-4 sm:px-6 sm:py-5`.
+   - Verified in-browser at 1728/1440/1280/1023/900/767/630/430/390 on Home and at 390 on
+     stocks/macro/calendar/earnings/compare/chart-builder/company/login — zero page-level horizontal
+     overflow anywhere, drawer round-trip works, tables scroll internally (e.g. Stocks: 802px content
+     in a 363px card), dark mode covered (the 390 ladder ran dark).
+4. Verified clean, no action: all 9 cron routes fail closed on Bearer auth; middleware protects
+   `/watchlist`/`/portfolio`/`/structured-notes`/`/settings` (+ APIs); GitHub workflows leak no
+   secrets; `.env.example` honest; CMF snapshot fresh + proper UTF-8; no CurrencyFreaks import from
+   any route; charts/modals already measured/responsive. Deferred (documented): Compare custom Range
+   stays static-sample-only (capped at its data end, labeled honestly — live custom ranges are
+   feature work); 5 pre-existing tests-only `tsc` nits invisible to the project gates; dormant
+   `documentsRepository.ts`/`marketMeta.ts`/CurrencyFreaks files retained deliberately.
+
+New tests: `tests/macroIndicatorDbCoverage.test.ts`, `tests/responsiveLayout.test.ts`,
+`tests/auditSourceIntegrity.test.ts`. Updated for the new conventions: `thirdRoundFixes`,
+`frankfurterFx`, `homeWatchlistOverhaul`, `formatters` (surprisePct removed).
+
+---
+
+**Previous work (2026-07-21, ninth pass) — eight reported items: a fully live Earnings tab, live
 IPSA YTD, and the discovery that three US macro indicators had NO live source at all.** Suite 1676 →
 **1702** · lint 0 · build 0 errors. All verified live in the browser + against real FRED/Yahoo/CMF data.
 

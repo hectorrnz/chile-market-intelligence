@@ -135,7 +135,8 @@ export default function StructuredNoteDetailPage() {
 
         {/* Current levels & distance to barrier */}
         <Card title={t.sn.currentPrices}>
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[480px]">
             <thead><tr className="border-b border-border">
               {[t.sn.colUnderlyings, 'Level', t.sn.distanceCoupon, t.sn.distanceKnockIn, t.sn.monitoring.lastMonitored].map((h) => <th key={h} className="text-center py-1.5 px-2 ui-table-header text-muted-fg">{h}</th>)}
             </tr></thead>
@@ -155,6 +156,7 @@ export default function StructuredNoteDetailPage() {
               ))}
             </tbody>
           </table>
+          </div>
           <TableSourceFooter
             source={t.sn.sourceMarket}
             asOf={data.prices.reduce<string | null>((max, p) => (p.asOf && (!max || p.asOf > max) ? p.asOf : max), null)}
@@ -165,7 +167,8 @@ export default function StructuredNoteDetailPage() {
 
         {/* Underlyings */}
         <Card title={t.sn.underlyings}>
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[560px]">
             <thead><tr className="border-b border-border">
               {['#', t.sn.colUnderlyings, 'Yahoo', 'Initial', 'Strike', 'Knock-in', 'Coupon', 'Autocall'].map((h) => <th key={h} className="text-center py-1.5 px-2 ui-table-header text-muted-fg">{h}</th>)}
             </tr></thead>
@@ -184,6 +187,7 @@ export default function StructuredNoteDetailPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </Card>
 
         {/* Schedule — one row per valuation date (coupon + autocall coincide).
@@ -191,8 +195,8 @@ export default function StructuredNoteDetailPage() {
             once an observation's valuation date arrives — a monitoring estimate,
             never an official calculation-agent determination. */}
         <Card title={t.sn.schedule}>
-          <div className="max-h-64 overflow-y-auto">
-            <table className="w-full text-sm">
+          <div className="max-h-64 overflow-y-auto overflow-x-auto">
+            <table className="w-full text-sm min-w-[640px]">
               <thead><tr className="border-b border-border">
                 {['#', 'Valuation', 'Payment', 'Coupon barrier', 'Autocall barrier', 'Status', t.sn.monitoring.coupon, t.sn.monitoring.autocall].map((h) => <th key={h} className="text-center py-1.5 px-2 ui-table-header text-muted-fg whitespace-nowrap">{h}</th>)}
               </tr></thead>

@@ -16,7 +16,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Sidebar />
               <div className="flex flex-col flex-1 min-w-0 overflow-hidden print:overflow-visible">
                 <TopBar />
-                <main className="flex-1 overflow-y-auto px-6 py-5 bg-background print:overflow-visible print:px-0 print:py-0">
+                <main className="flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-5 bg-background print:overflow-visible print:px-0 print:py-0">
                   {children}
                 </main>
               </div>

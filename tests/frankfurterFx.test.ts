@@ -390,7 +390,8 @@ describe('Chile Macro-page FX depth table — removed from production', () => {
     // are already visible in the indicators table, so the card is simply not
     // rendered and the yield curve takes the full width.
     assert.doesNotMatch(macroPageSrc, /fxClDepthRemoved/)
-    assert.match(macroPageSrc, /region === 'CL' \? 'grid-cols-1' : 'grid-cols-2'/)
+    // Responsive audit 2026-07-21: the US two-column row stacks below xl.
+    assert.match(macroPageSrc, /region === 'CL' \? 'grid-cols-1' : 'grid-cols-1 xl:grid-cols-2'/)
     // The FX depth card must be US-only.
     assert.match(macroPageSrc, /\{region === 'US' && \(/)
   })

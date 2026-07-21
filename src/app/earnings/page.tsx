@@ -108,12 +108,12 @@ export default function EarningsPage() {
       />
 
       {/* Upcoming — real CMF report dates */}
-      <div className="bg-surface border border-border rounded overflow-hidden">
+      <div className="bg-surface border border-border rounded overflow-x-auto">
         <div className="px-4 py-2.5 border-b border-border bg-surface-2 flex items-center gap-2">
           <span className="ui-label text-muted-fg">{t.earnings.upcomingLabel}</span>
           <MarketDataSourceBadge status={cal?.status === 'live' ? 'live' : 'static'} />
         </div>
-        <table className="w-full text-xs">
+        <table className="w-full text-xs min-w-[360px]">
           <thead>
             <tr className="border-b border-border">
               <th className="text-left py-2.5 pl-4 pr-3 ui-table-header text-muted-fg">{t.earnings.calCols.ticker}</th>

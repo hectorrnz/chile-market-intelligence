@@ -334,7 +334,7 @@ export default function ComparePage() {
       <div className="grid grid-cols-12 gap-4 items-start">
 
         {/* Returns table */}
-        <div className="col-span-12 xl:col-span-5 bg-surface border border-border rounded overflow-hidden">
+        <div className="col-span-12 xl:col-span-5 bg-surface border border-border rounded overflow-x-auto">
           <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2">
               <span className="ui-label text-muted-fg">{t.compare.returnsTitle}</span>
@@ -346,7 +346,7 @@ export default function ComparePage() {
               </button>
             </div>
           </div>
-          <table className="w-full text-xs">
+          <table className="w-full text-xs min-w-[440px]">
             <thead>
               <tr className="border-b border-border bg-surface-2">
                 <th className="text-left py-2 pl-4 pr-1 ui-table-header text-muted-fg w-6">#</th>

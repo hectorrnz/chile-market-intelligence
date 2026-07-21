@@ -6,18 +6,18 @@ import { useParams } from 'next/navigation'
 import { useLang } from '@/components/providers/LangProvider'
 import { usePersistentState } from '@/lib/usePersistentState'
 import { SectionHeader } from '@/components/ui/SectionHeader'
-import { StatusPill } from '@/components/ui/StatusPill'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { LineChart, type ChartMarker } from '@/components/charts/LineChart'
 import { getCompanyByTicker, getAllCompanies } from '@/lib/data/companies'
 import { getSnapshotByTicker, getAllSnapshots } from '@/lib/data/stocks'
-import { getEarningsByTicker } from '@/lib/data/earnings'
+import { fetchEarningsResults, type EarningsResultsPayload } from '@/lib/data/earningsResults'
+import { fetchEarningsCalendar, type EarningsCalendarResult } from '@/lib/data/earningsCalendar'
 import { fetchLiveNews, type NewsFetchResponse } from '@/lib/data/newsLive'
 import { getNewsSourceCode, getNewsSourceColor } from '@/lib/news/sourceCodes'
 import { getStockHistoryForTimeframe } from '@/lib/data/stockHistory'
-import { formatCLP, formatPct, formatFx, formatMillionsCLP, formatEPS, formatNetDebt, formatMarketCapMM, changeColor, formatNewsTimestamp } from '@/lib/formatters'
-import type { EarningsRelease, StockPriceSnapshot } from '@/types'
+import { formatCLP, formatPct, formatFx, formatMarketCapMM, changeColor, formatNewsTimestamp } from '@/lib/formatters'
+import type { StockPriceSnapshot } from '@/types'
 import { useMarketData } from '@/components/providers/MarketDataProvider'
 import { useGlobalRefresh } from '@/components/providers/useGlobalRefresh'
 import { fetchStockSnapshot, fetchStockHistory } from '@/lib/data/marketData'
@@ -40,8 +40,20 @@ type StockTimeframe = '1D' | '5D' | '1M' | 'MTD' | 'YTD' | '1Y' | '3Y' | '5Y'
 const priceFmt = (v: number) => `${formatFx(v, v < 1000 ? 2 : 0)} CLP`
 const STOCK_TIMEFRAMES: StockTimeframe[] = ['1D', '5D', '1M', 'MTD', 'YTD', '1Y', '3Y', '5Y']
 
-const qualityVariant: Record<EarningsRelease['resultQuality'], 'positive' | 'warning' | 'negative' | 'neutral'> = {
-  Clean: 'positive', Mixed: 'warning', Weak: 'negative', Pending: 'neutral',
+// Measured-height pinning via CSS var + `lg:h-(--pin-h)` — only binds while the
+// 2-column row is active; stacked cards below lg keep natural height.
+const pinH = (px: number): React.CSSProperties | undefined =>
+  px ? ({ ['--pin-h' as string]: `${px}px` } as React.CSSProperties) : undefined
+
+/** Millions of the row's own reporting currency (same helper as the Earnings tab). */
+const fmtMM = (v: number | null): string =>
+  v == null ? '—' : v.toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+
+/** EPS in the row's reporting currency; 4dp below 1.0 (USD reporters with huge share counts). */
+const fmtEps = (v: number | null): string => {
+  if (v == null) return '—'
+  const d = Math.abs(v) < 1 ? 4 : 2
+  return v.toLocaleString('es-CL', { minimumFractionDigits: d, maximumFractionDigits: d })
 }
 
 export default function CompanyDetailPage() {
@@ -61,6 +73,13 @@ export default function CompanyDetailPage() {
   // the P/E / Div Yield / Market Cap / YTD KPIs for EVERY ticker.
   const [valuation, setValuation] = useState<ValuationResult | null>(null)
   const [newsResult, setNewsResult] = useState<NewsFetchResponse | null>(null)
+  // Real reported quarterly financials (same live Yahoo resolver the Earnings
+  // tab uses) + the CMF earnings calendar (real EEFF report dates, for the
+  // chart's earnings markers). Replaces the fabricated static earnings.json
+  // rows and their editorial Clean/Mixed/Weak "Quality" pills — the exact
+  // machinery the Earnings-tab rewrite removed as fabricated.
+  const [earningsResults, setEarningsResults] = useState<EarningsResultsPayload | null>(null)
+  const [earningsCal, setEarningsCal] = useState<EarningsCalendarResult | null>(null)
   // Real historical price data (live Yahoo Finance fetch, Supabase-persisted
   // accumulation as fallback — see resolveStockHistory in marketProvider.ts),
   // keyed by ticker so both the primary series and the IPSA benchmark can be
@@ -83,6 +102,12 @@ export default function CompanyDetailPage() {
     }).catch(() => {})
     fetchLiveNews().then(res => {
       if (mounted && res) setNewsResult(res)
+    }).catch(() => {})
+    fetchEarningsResults(false).then(res => {
+      if (mounted && res) setEarningsResults(res)
+    }).catch(() => {})
+    fetchEarningsCalendar().then(res => {
+      if (mounted && res) setEarningsCal(res)
     }).catch(() => {})
     return () => { mounted = false }
   }, [sym])
@@ -123,8 +148,14 @@ export default function CompanyDetailPage() {
   }, [sym, chartTimeframe, live?.lastUpdated])
 
   const doRefresh = useCallback(async () => {
-    const [, newsRes] = await Promise.all([refresh(), fetchLiveNews()])
+    const [, newsRes, resultsRes] = await Promise.all([
+      refresh(),
+      fetchLiveNews().catch(() => null),
+      // force=true skips the resolver's 6h cache — same as the Earnings tab's Update.
+      fetchEarningsResults(true).catch(() => null),
+    ])
     if (newsRes) setNewsResult(newsRes)
+    if (resultsRes) setEarningsResults(resultsRes)
   }, [refresh])
 
   // Valuation card (natural height) drives the Results · Valuation · Filings row;
@@ -143,9 +174,12 @@ export default function CompanyDetailPage() {
 
   const company  = getCompanyByTicker(sym)
   const snap     = getSnapshotByTicker(sym)
-  const earnings = [...getEarningsByTicker(sym)]
-    .sort((a, b) => b.reportDate.localeCompare(a.reportDate))
-    .slice(0, 6)
+  // Live rows only (rolling two most recent reported quarters, same data as the
+  // Earnings tab). An unavailable fetch leaves the card honestly empty/loading —
+  // never the fabricated static sample.
+  const earnings = earningsResults?.status === 'live'
+    ? earningsResults.rows.filter(r => r.ticker === sym)
+    : []
   const news     = (newsResult?.data ?? []).filter(n => n.affectedTickers.includes(sym)).slice(0, 4)
   const liveStockHistory = chartHistory[sym]
   const stockHistory = liveStockHistory && liveStockHistory.points.length >= 2
@@ -159,9 +193,15 @@ export default function CompanyDetailPage() {
   const lastPrice = stockHistory.length ? stockHistory[stockHistory.length - 1].value : snap?.price ?? null
   const chartData = stockHistory
 
-  // Event markers: earnings overlaid on the price line
-  const markers: ChartMarker[] = getEarningsByTicker(sym).filter(e => e.resultQuality !== 'Pending')
-    .map(e => ({ date: e.reportDate, label: `${e.period} earnings` }))
+  // Event markers: REAL CMF EEFF report dates for this ticker (past only),
+  // replacing the fabricated static earnings.json dates. Tickers absent from
+  // the CMF calendar (BSANTANDER, ITAUCL) honestly get no markers.
+  const todayIso = new Date().toISOString().slice(0, 10)
+  const markers: ChartMarker[] = earningsCal?.status === 'live'
+    ? earningsCal.events
+        .filter(e => e.ticker === sym && e.reportDate <= todayIso)
+        .map(e => ({ date: e.reportDate, label: `${e.period} EEFF` }))
+    : []
 
   // Valuation context: sector medians
   const sectorOf = Object.fromEntries(getAllCompanies().map(c => [c.ticker, c.sector]))
@@ -264,7 +304,7 @@ export default function CompanyDetailPage() {
       />
 
       {/* KPI strip */}
-      <div className="grid grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {kpis.map(({ label, value, unit, color }) => (
           <div key={label} className="bg-surface border border-border rounded p-3">
             <div className="text-xs text-muted mb-1 leading-tight">{label}</div>
@@ -287,7 +327,7 @@ export default function CompanyDetailPage() {
 
       {/* Business model / revenue drivers / risks — shown if available */}
       {(company.businessModel || company.keyRevenueDrivers || company.keyRisks) && (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {company.businessModel && (
             <div className="bg-surface border border-border rounded p-4">
               <div className="ui-label text-muted-fg mb-2">{t.company.businessModel}</div>
@@ -376,17 +416,19 @@ export default function CompanyDetailPage() {
             source={chartStatus !== 'static' ? t.stocks.footer : t.company.stockChartSource}
             asOf={liveStockHistory?.asOf ?? null}
           />
-          <div className="flex items-center gap-3 text-xs text-muted-fg">
-            <span className="flex items-center gap-1"><span style={{ color: 'var(--primary)' }}>▲</span>earnings</span>
-          </div>
+          {markers.length > 0 && (
+            <div className="flex items-center gap-3 text-xs text-muted-fg">
+              <span className="flex items-center gap-1"><span style={{ color: 'var(--primary)' }}>▲</span>EEFF</span>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Recent results · Valuation — Valuation drives height, Results scrolls to match */}
-      <div className="grid grid-cols-2 gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
 
         {/* Recent results — shows ~3 rows, scroll for the rest */}
-        <div className="bg-surface border border-border rounded flex flex-col overflow-hidden" style={{ height: valH || undefined }}>
+        <div className="bg-surface border border-border rounded flex flex-col overflow-hidden lg:h-(--pin-h)" style={pinH(valH)}>
           <div className="px-4 py-2.5 border-b border-border shrink-0 flex items-center justify-between gap-2">
             <span className="ui-label text-muted-fg">{t.company.earnings}</span>
             <Link
@@ -399,39 +441,41 @@ export default function CompanyDetailPage() {
           </div>
           {earnings.length > 0 ? (
             <div className="flex-1 min-h-0 overflow-auto">
-              <table className="w-full text-xs">
+              <table className="w-full text-xs min-w-[520px]">
                 <thead>
                   <tr className="border-b border-border bg-surface-2">
-                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.company.cols.period}</th>
-                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.company.cols.revenue}</th>
-                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.company.cols.ebitda}</th>
-                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.company.cols.income}</th>
-                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.company.cols.eps}</th>
-                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.company.cols.netDebt}</th>
-                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.resultQuality}</th>
+                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.cols.period}</th>
+                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.currency}</th>
+                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.cols.revenue}</th>
+                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.cols.revenueYoy}</th>
+                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.cols.ebitda}</th>
+                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.cols.netIncome}</th>
+                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.cols.netIncomeYoy}</th>
+                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.cols.eps}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {earnings.map(e => (
-                    <tr key={e.id} className="border-b border-border last:border-0">
+                    <tr key={`${e.ticker}-${e.periodEnd}`} className="border-b border-border last:border-0">
                       <td className="py-2 px-2 text-center text-muted-fg whitespace-nowrap">{e.period}</td>
-                      <td className="py-2 px-2 text-center ui-number text-foreground">{e.revenue != null ? formatMillionsCLP(e.revenue) : '—'}</td>
-                      <td className="py-2 px-2 text-center ui-number text-foreground">{e.ebitda != null ? formatMillionsCLP(e.ebitda) : '—'}</td>
-                      <td className={`py-2 px-2 text-center ui-number ${e.netIncome != null && e.netIncome < 0 ? 'text-negative' : 'text-foreground'}`}>{e.netIncome != null ? formatMillionsCLP(e.netIncome) : '—'}</td>
-                      <td className={`py-2 px-2 text-center ui-number ${e.eps != null && e.eps < 0 ? 'text-negative' : 'text-foreground'}`}>{formatEPS(e.eps)}</td>
-                      <td className="py-2 px-2 text-center ui-number text-foreground">{formatNetDebt(e.netDebt)}</td>
-                      <td className="py-2 px-2 text-center"><StatusPill label={e.resultQuality} variant={qualityVariant[e.resultQuality]} /></td>
+                      <td className="py-2 px-2 text-center text-muted-fg">{e.currency}</td>
+                      <td className="py-2 px-2 text-center ui-number text-foreground">{fmtMM(e.revenue)}</td>
+                      <td className={`py-2 px-2 text-center ui-number ${e.revenueYoY != null ? changeColor(e.revenueYoY) : 'text-muted-fg'}`}>{e.revenueYoY != null ? formatPct(e.revenueYoY) : '—'}</td>
+                      <td className="py-2 px-2 text-center ui-number text-foreground" title={e.isBank ? t.earnings.bankNoEbitda : undefined}>{fmtMM(e.ebitda)}</td>
+                      <td className={`py-2 px-2 text-center ui-number ${e.netIncome != null && e.netIncome < 0 ? 'text-negative' : 'text-foreground'}`}>{fmtMM(e.netIncome)}</td>
+                      <td className={`py-2 px-2 text-center ui-number ${e.netIncomeYoY != null ? changeColor(e.netIncomeYoY) : 'text-muted-fg'}`}>{e.netIncomeYoY != null ? formatPct(e.netIncomeYoY) : '—'}</td>
+                      <td className={`py-2 px-2 text-center ui-number ${e.eps != null && e.eps < 0 ? 'text-negative' : 'text-foreground'}`}>{fmtEps(e.eps)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           ) : (
-            <p className="px-4 py-3 text-xs text-muted-fg">{t.company.noData}</p>
+            <p className="px-4 py-3 text-xs text-muted-fg">{earningsResults === null ? t.common.loading : t.company.noData}</p>
           )}
           <div className="px-4 py-2 border-t border-border shrink-0">
-            <TableSourceFooter source={t.company.earningsSource} />
-            <p className="text-xs text-muted-fg">{t.company.earningsFootnote}</p>
+            <TableSourceFooter source={t.stocks.footer} asOf={earningsResults?.status === 'live' ? (earningsResults.asOf ?? null) : null} />
+            <p className="text-xs text-muted-fg">{t.earnings.amountsNote}</p>
           </div>
         </div>
 

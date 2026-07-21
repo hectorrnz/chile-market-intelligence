@@ -298,8 +298,8 @@ export default function MacroPage() {
       )}
 
       {/* One indicators table with highlighted category bands */}
-      <div className="bg-surface border border-border rounded overflow-hidden">
-        <table className="w-full text-xs">
+      <div className="bg-surface border border-border rounded overflow-x-auto">
+        <table className="w-full text-xs min-w-[660px]">
           <thead>
             <tr className="border-b border-border bg-surface-2">
               <th className="text-left py-2.5 pl-4 pr-3 ui-table-header text-muted-fg w-44">{t.macro.indicator}</th>
@@ -348,7 +348,7 @@ export default function MacroPage() {
           already appear in the FX category of the indicators table above), so
           the yield curve takes the full width there rather than sitting next
           to a placeholder card explaining an absence. */}
-      <div className={`grid gap-4 items-start ${region === 'CL' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+      <div className={`grid gap-4 items-start ${region === 'CL' ? 'grid-cols-1' : 'grid-cols-1 xl:grid-cols-2'}`}>
         <div className="bg-surface border border-border rounded p-4">
           <div className="flex items-center justify-between gap-2 mb-1">
             <div className="ui-label text-muted-fg">{t.macro.yieldCurve}</div>
@@ -371,14 +371,14 @@ export default function MacroPage() {
         </div>
 
         {region === 'US' && (
-          <div className="bg-surface border border-border rounded overflow-hidden">
+          <div className="bg-surface border border-border rounded overflow-x-auto">
             <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-2">
               <span className="ui-label text-muted-fg">{t.macro.fxDepth}</span>
               <SourceStateBadge sourceKey={usForex?.ok ? 'frankfurterLive' : 'frankfurterUnavailable'} />
             </div>
             {usForex?.ok && usForex.rows.length > 0 ? (
               <>
-                <table className="w-full text-xs">
+                <table className="w-full text-xs min-w-[420px]">
                   <thead>
                     <tr className="border-b border-border bg-surface-2">
                       <th className="text-left py-2 pl-4 pr-3 ui-table-header text-muted-fg">{t.macro.pair}</th>

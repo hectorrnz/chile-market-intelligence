@@ -13,7 +13,7 @@
 //
 // Public routes (no auth required):
 //   /, /stocks, /macro, /companies/*, /earnings,
-//   /documents/*, /compare, /chart-builder, /login, /auth/*,
+//   /compare, /chart-builder, /login, /auth/*,
 //   /api/macro/*, /api/market/*, /api/health/*
 //
 // Cron routes (/api/cron/*) carry their own CRON_SECRET bearer auth — the

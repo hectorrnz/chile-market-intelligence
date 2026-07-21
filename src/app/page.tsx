@@ -277,6 +277,15 @@ export default function HomePage() {
     return () => ro.disconnect()
   }, [])
 
+  // Measured-height pinning is applied through a CSS variable + `lg:h-(--pin-h)`
+  // so it only binds while the 3-column grid is active. Below lg the grid
+  // stacks to one column and each card takes its natural height — an inline
+  // `style={{ height }}` would have locked stacked cards to the (unrelated)
+  // driver card's height. With the variable unset, `height: var(--pin-h)` is
+  // invalid-at-computed-value → auto, so the fallback needs no JS.
+  const pinH = (px: number): React.CSSProperties | undefined =>
+    px ? ({ ['--pin-h' as string]: `${px}px` } as React.CSSProperties) : undefined
+
 
   return (
     <div className="w-full space-y-4">
@@ -295,7 +304,7 @@ export default function HomePage() {
 
       {/* ── Top region: Macro · (Tracked stocks + FX) · Earnings ── */}
       {/* Macro card (natural height) drives the region; the other columns match it and scroll. */}
-      <div className="grid grid-cols-3 gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
 
         {/* Column 1 — Macro Chile + US (one card, highlighted region bands) */}
         {/* Chile and US are fetched (and badged) separately — Chile via BCCh,
@@ -333,13 +342,13 @@ export default function HomePage() {
 
         {/* Column 2 — one table, Watchlist + FX separated by highlighted bands
             (same pattern as the Macro card's Chile/US bands) */}
-        <div className="bg-surface border border-border rounded flex flex-col overflow-hidden" style={{ height: macroH || undefined }}>
+        <div className="bg-surface border border-border rounded flex flex-col overflow-hidden lg:h-(--pin-h)" style={pinH(macroH)}>
           <div className="px-4 py-2.5 border-b border-border shrink-0 flex items-center justify-between">
             <span className="ui-label text-muted-fg">{t.home.watchlistTitle}</span>
             <Link href="/watchlist" className="text-xs text-primary hover:underline">{t.watchlist.title} →</Link>
           </div>
-          <div className="flex-1 min-h-0 overflow-y-auto">
-            <table className="w-full text-xs">
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-auto">
+            <table className="w-full text-xs min-w-[430px]">
               <thead className="sticky top-0 bg-surface-2 z-10">
                 <tr className="border-b border-border">
                   <th className="text-left py-2 pl-4 pr-3 ui-table-header text-muted-fg">{t.home.ticker}</th>
@@ -416,7 +425,7 @@ export default function HomePage() {
         </div>
 
         {/* Column 3 — Earnings (fills to macroH and scrolls, matching columns 1/2) */}
-        <div className="bg-surface border border-border rounded overflow-hidden flex flex-col" style={{ height: macroH || undefined }}>
+        <div className="bg-surface border border-border rounded overflow-hidden flex flex-col lg:h-(--pin-h)" style={pinH(macroH)}>
           <div className="px-4 py-2.5 border-b border-border shrink-0">
             <span className="ui-label text-muted-fg">{t.home.upcomingEarnings}</span>
           </div>
@@ -453,7 +462,7 @@ export default function HomePage() {
       </div>
 
       {/* ── Second region: Heat map (drives height) · Chilean rates · Markets ── */}
-      <div className="grid grid-cols-3 gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
 
         {/* Sector heat map — natural height (never scrolls), drives the row */}
         <div ref={heatRef} className="bg-surface border border-border rounded overflow-hidden flex flex-col">
@@ -464,13 +473,13 @@ export default function HomePage() {
             </div>
           </div>
           <div className="p-3">
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {sectors.map((s, i) => {
                 const isLastAlone = i === sectors.length - 1 && sectors.length % 3 === 1
                 return (
                   <div
                     key={s.sector}
-                    className={`border border-border rounded p-2 ${isLastAlone ? 'col-start-2' : ''}`}
+                    className={`border border-border rounded p-2 ${isLastAlone ? 'sm:col-start-2' : ''}`}
                     style={sectorTileStyle(s.dayChangePct, maxSectorAbs)}
                   >
                     <div className="text-foreground leading-tight font-semibold" style={{ fontSize: '11px' }}>{s.sector}</div>
@@ -506,7 +515,7 @@ export default function HomePage() {
             live dot; BCU 5 was removed (no live series exists for it,
             re-confirmed 2026-07-15) rather than shown static. See
             docs/macro_market_source_coverage.md for the full discovery record. */}
-        <div className="bg-surface border border-border rounded overflow-hidden flex flex-col" style={{ height: heatH || undefined }}>
+        <div className="bg-surface border border-border rounded overflow-hidden flex flex-col lg:h-(--pin-h)" style={pinH(heatH)}>
           <div className="px-4 py-2.5 border-b border-border shrink-0 flex items-center justify-between">
             <span className="ui-label text-muted-fg">{t.home.chileanRates}</span>
             <DataSourceBadge status={ratesStatus} />
@@ -546,7 +555,7 @@ export default function HomePage() {
         </div>
 
         {/* Markets — country on top, index below; scrolls to match heat map height */}
-        <div className="bg-surface border border-border rounded overflow-hidden flex flex-col" style={{ height: heatH || undefined }}>
+        <div className="bg-surface border border-border rounded overflow-hidden flex flex-col lg:h-(--pin-h)" style={pinH(heatH)}>
           <div className="px-4 py-2.5 border-b border-border shrink-0 flex items-center justify-between">
             <span className="ui-label text-muted-fg">{t.home.marketsTitle}</span>
             <MarketDataSourceBadge status={indexStatus} />

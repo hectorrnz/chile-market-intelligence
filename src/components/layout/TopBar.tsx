@@ -24,15 +24,16 @@ export function TopBar() {
 
   return (
     <header
-      className="no-print h-14 shrink-0 flex items-center gap-4 px-6"
+      className="no-print h-14 shrink-0 flex items-center gap-2 sm:gap-4 px-3 sm:px-6"
       style={{
         backgroundColor: 'var(--topbar)',
         borderBottom: '1px solid var(--topbar-border)',
         color: 'var(--topbar-fg)',
       }}
     >
-      {/* Left: sidebar toggle + breadcrumb */}
-      <div className="flex items-center gap-2.5 shrink-0">
+      {/* Left: sidebar toggle + breadcrumb. min-w-0 + truncate so a long page
+          title compresses instead of pushing the bar past the viewport. */}
+      <div className="flex items-center gap-2.5 shrink min-w-0">
         <button
           onClick={toggle}
           className="shrink-0 flex items-center justify-center w-8 h-8 -ml-1 rounded-md text-muted-fg hover:text-foreground hover:bg-surface-2 transition-colors"
@@ -43,31 +44,32 @@ export function TopBar() {
             <path strokeLinecap="round" d="M3 5.5h14M3 10h14M3 14.5h14" />
           </svg>
         </button>
-        <BrandLogo className="h-9 w-auto shrink-0" />
-        <span className="text-sm font-mono text-muted-fg uppercase tracking-wide">NMI</span>
-        <span className="text-muted-fg text-sm">/</span>
-        <span className="text-sm text-foreground font-medium">{title}</span>
+        <BrandLogo className="h-9 w-auto shrink-0 hidden sm:block" />
+        <span className="text-sm font-mono text-muted-fg uppercase tracking-wide hidden md:inline">NMI</span>
+        <span className="text-muted-fg text-sm hidden md:inline">/</span>
+        <span className="text-sm text-foreground font-medium truncate">{title}</span>
       </div>
 
-      {/* Center: wide search field */}
-      <div className="flex-1 flex justify-center">
+      {/* Center: wide search field (shrinks freely) */}
+      <div className="flex-1 flex justify-center min-w-0">
         <button
           onClick={() => window.dispatchEvent(new Event('cmdk:open'))}
           className="w-full max-w-2xl flex items-center gap-2 h-9 px-3 rounded-md border border-border bg-surface-2 text-sm text-muted-fg hover:text-foreground hover:border-accent transition-colors"
           title={t.common.search}
         >
           <span>⌕</span>
-          <span>{t.common.search}</span>
-          <kbd className="border border-border rounded px-1.5 ml-auto text-xs">⌘K</kbd>
+          <span className="truncate hidden sm:inline">{t.common.search}</span>
+          <kbd className="border border-border rounded px-1.5 ml-auto text-xs hidden sm:inline">⌘K</kbd>
         </button>
       </div>
 
-      {/* Right: toggles + date + status */}
-      <div className="flex items-center gap-3 shrink-0">
+      {/* Right: toggles + date. The date is informational — first to go on
+          narrow viewports. */}
+      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         <NotificationBell />
         <LangToggle />
         <ThemeToggle />
-        <span className="text-sm text-muted-fg font-mono tabular-nums">{today}</span>
+        <span className="text-sm text-muted-fg font-mono tabular-nums hidden xl:inline">{today}</span>
       </div>
     </header>
   )

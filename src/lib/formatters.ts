@@ -228,14 +228,3 @@ export function formatEPS(value: number | null | undefined): string {
   return formatCLP(value, 2)
 }
 
-/**
- * Surprise of an actual figure vs. consensus estimate, in percent.
- * Returns null when either input is missing or consensus is zero.
- */
-export function surprisePct(
-  actual: number | null | undefined,
-  consensus: number | null | undefined,
-): number | null {
-  if (actual == null || consensus == null || consensus === 0) return null
-  return (actual / consensus - 1) * 100
-}

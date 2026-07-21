@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   formatCLP, formatPercent, formatPct, formatFx, formatEPS, formatNetDebt,
-  formatMarketCapMM, surprisePct, changeColor, formatSourceDate,
+  formatMarketCapMM, changeColor, formatSourceDate,
 } from '../src/lib/formatters.ts'
 
 test('formatSourceDate renders "DD-MM" for a date-only string (no time to show)', () => {
@@ -70,14 +70,8 @@ test('formatMarketCapMM appends a single MM CLP suffix', () => {
   assert.equal((out.match(/MM/g) ?? []).length, 1)  // no "MM MM CLP" bug
 })
 
-test('surprisePct computes beat/miss vs consensus', () => {
-  assert.ok(Math.abs(surprisePct(110, 100)! - 10) < 1e-9)
-  assert.ok(Math.abs(surprisePct(90, 100)! - -10) < 1e-9)
-  assert.equal(surprisePct(100, 100), 0)
-  assert.equal(surprisePct(null, 100), null)
-  assert.equal(surprisePct(100, null), null)
-  assert.equal(surprisePct(100, 0), null)
-})
+// surprisePct removed (2026-07-21 audit): the consensus/beat-miss machinery is
+// gone platform-wide — no component computes a synthetic surprise anymore.
 
 test('changeColor maps direction to semantic token classes', () => {
   assert.equal(changeColor(5), 'text-positive')

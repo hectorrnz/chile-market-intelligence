@@ -182,8 +182,11 @@ export default function StocksPage() {
         </button>
       </div>
 
-      <div className="bg-surface border border-border rounded overflow-hidden">
-        <table className="w-full text-xs">
+      {/* overflow-x-auto: below ~760px the 9-column table scrolls inside the
+          card instead of pushing page width; when it fits, no scrollbar shows
+          and this clips exactly like the old overflow-hidden. */}
+      <div className="bg-surface border border-border rounded overflow-x-auto">
+        <table className="w-full text-xs min-w-[760px]">
           <thead>
             <tr className="border-b border-border bg-surface-2">
               {headers.map(({ key, label }) => (

@@ -6,9 +6,11 @@ interface SectionHeaderProps {
 }
 
 export function SectionHeader({ title, subtitle, tag, actions }: SectionHeaderProps) {
+  // flex-wrap + min-w-0: at narrow widths a wide actions group drops to its
+  // own line instead of pushing the header past the viewport.
   return (
-    <div className="flex items-start justify-between mb-5">
-      <div>
+    <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 mb-5">
+      <div className="min-w-0">
         {tag && (
           <div className="ui-label text-muted-fg mb-1">
             {tag}
@@ -20,7 +22,7 @@ export function SectionHeader({ title, subtitle, tag, actions }: SectionHeaderPr
         )}
       </div>
       {actions && (
-        <div className="flex items-center gap-2 shrink-0 ml-4">
+        <div className="flex flex-wrap items-center gap-2 shrink-0 ml-auto">
           {actions}
         </div>
       )}

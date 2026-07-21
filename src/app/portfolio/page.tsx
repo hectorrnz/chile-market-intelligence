@@ -274,7 +274,7 @@ function SummaryCards({
   ]
 
   return (
-    <div className="grid grid-cols-7 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3">
       {cards.map((c) => (
         <div key={c.label} className="bg-surface border border-border rounded px-4 py-3">
           <div className="ui-label text-muted-fg mb-1">{c.label}</div>
@@ -483,8 +483,8 @@ function PositionsTable({
   }
 
   return (
-    <div className="bg-surface border border-border rounded overflow-hidden">
-      <table className="w-full text-xs">
+    <div className="bg-surface border border-border rounded overflow-x-auto">
+      <table className="w-full text-xs min-w-[720px]">
         <thead>
           <tr className="border-b border-border bg-surface-2">
             <th className="text-left py-2.5 pl-4 pr-3 ui-table-header text-muted-fg">{t.portfolio.cols.ticker}</th>
@@ -698,8 +698,8 @@ function TransactionsTable({
   }
 
   return (
-    <div className="bg-surface border border-border rounded overflow-hidden">
-      <table className="w-full text-xs">
+    <div className="bg-surface border border-border rounded overflow-x-auto">
+      <table className="w-full text-xs min-w-[720px]">
         <thead>
           <tr className="border-b border-border bg-surface-2">
             <th className="text-left py-2.5 pl-4 pr-3 ui-table-header text-muted-fg">{t.portfolio.tx.cols.date}</th>
@@ -856,7 +856,7 @@ function CashSummaryCards({ summary }: { summary: CashSummary }) {
     { label: t.portfolio.cash.netBalance, value: formatCLP(summary.netCashBalance), color: 'text-foreground' },
   ]
   return (
-    <div className="grid grid-cols-5 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
       {cards.map((c) => (
         <div key={c.label} className="bg-surface border border-border rounded px-4 py-3">
           <div className="ui-label text-muted-fg mb-1">{c.label}</div>
@@ -891,8 +891,8 @@ function CashLedgerTable({ entries }: { entries: CashEntryOut[] }) {
   }
 
   return (
-    <div className="bg-surface border border-border rounded overflow-hidden">
-      <table className="w-full text-xs">
+    <div className="bg-surface border border-border rounded overflow-x-auto">
+      <table className="w-full text-xs min-w-[440px]">
         <thead>
           <tr className="border-b border-border bg-surface-2">
             <th className="text-left py-2.5 pl-4 pr-3 ui-table-header text-muted-fg">{t.portfolio.cash.cols.date}</th>

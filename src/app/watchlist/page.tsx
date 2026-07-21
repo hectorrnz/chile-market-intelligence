@@ -147,8 +147,8 @@ function WatchlistTable({
   }
 
   return (
-    <div className="bg-surface border border-border rounded overflow-hidden">
-      <table className="w-full text-xs">
+    <div className="bg-surface border border-border rounded overflow-x-auto">
+      <table className="w-full text-xs min-w-[620px]">
         <thead>
           <tr className="border-b border-border bg-surface-2">
             <th className="text-left py-2.5 pl-4 pr-3 ui-table-header text-muted-fg">{t.stocks.cols.ticker}</th>

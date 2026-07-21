@@ -106,7 +106,7 @@ export function NotificationBell() {
         <div
           role="dialog"
           aria-label={t.notifications.panelLabel}
-          className="absolute right-0 mt-2 w-96 max-h-[28rem] overflow-y-auto rounded-lg border border-border bg-surface shadow-lg z-50"
+          className="absolute right-0 mt-2 w-96 max-w-[calc(100vw-1.5rem)] max-h-[28rem] overflow-y-auto rounded-lg border border-border bg-surface shadow-lg z-50"
         >
           <div className="flex items-center justify-between px-3 py-2 border-b border-border sticky top-0 bg-surface">
             <span className="ui-label text-muted-fg">{t.notifications.panelLabel}</span>

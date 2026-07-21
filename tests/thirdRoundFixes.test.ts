@@ -128,7 +128,8 @@ describe('Macro Chile — calendar and FX depth removed', () => {
 
   it('the FX depth card renders for US only, and Chile gets a full-width curve', () => {
     assert.ok(!src.includes('fxClDepthRemoved'))
-    assert.ok(src.includes("region === 'CL' ? 'grid-cols-1' : 'grid-cols-2'"))
+    // Responsive audit 2026-07-21: the US two-column row now stacks below xl.
+    assert.ok(src.includes("region === 'CL' ? 'grid-cols-1' : 'grid-cols-1 xl:grid-cols-2'"))
   })
 })
 

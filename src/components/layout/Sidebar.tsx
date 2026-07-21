@@ -79,11 +79,15 @@ const MACRO_REGIONS: { rg: 'CL' | 'US'; label: string }[] = [
   { rg: 'US', label: 'US' },
 ]
 
-export function Sidebar() {
+/**
+ * The sidebar's inner content (brand, nav, footer). Rendered by BOTH the
+ * static desktop column and the mobile overlay drawer — `onNavigate` lets the
+ * drawer close itself when a nav link is clicked.
+ */
+function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
   const { t } = useLang()
   const { name: displayName, ready: authReady } = useAuthDisplay()
-  const { collapsed } = useSidebar()
   const onMacro = pathname.startsWith('/macro')
   const [macroOpen, setMacroOpen] = useState(onMacro)
   const [macroRegion, setMacroRegion] = usePersistentState<'CL' | 'US'>('cmi.macroRegion', 'CL')
@@ -96,16 +100,11 @@ export function Sidebar() {
     setMacroRegion(rg)
     window.dispatchEvent(new CustomEvent('macro:region', { detail: rg }))
     setMacroOpen(true)
+    onNavigate?.()
   }
 
-  // Collapsed: hide the sidebar entirely; the TopBar hamburger brings it back.
-  if (collapsed) return null
-
   return (
-    <aside
-      className="no-print w-52 shrink-0 h-full flex flex-col"
-      style={{ backgroundColor: 'var(--sidebar)', color: 'var(--sidebar-fg)', borderRight: '1px solid var(--sidebar-border)' }}
-    >
+    <>
       {/* Brand */}
       <div
         className="h-14 shrink-0 flex flex-col justify-center px-4"
@@ -147,7 +146,7 @@ export function Sidebar() {
                     ? { borderLeftColor: 'var(--sidebar-accent)', backgroundColor: 'var(--sidebar-active)', color: 'var(--sidebar-fg)' }
                     : { borderLeftColor: 'transparent', color: 'var(--sidebar-muted)' }}
                 >
-                  <Link href="/macro" onClick={() => setMacroOpen(true)} className="flex-1 flex items-center gap-2.5 py-2 pl-3.5 pr-2 text-xs">
+                  <Link href="/macro" onClick={() => { setMacroOpen(true); onNavigate?.() }} className="flex-1 flex items-center gap-2.5 py-2 pl-3.5 pr-2 text-xs">
                     <span style={{ color: isActive ? 'var(--sidebar-accent)' : 'currentColor' }}><NavIcon name={item.icon} /></span>
                     <span>{label}</span>
                   </Link>
@@ -180,6 +179,7 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.soon ? '#' : item.href}
+              onClick={item.soon ? undefined : onNavigate}
               aria-current={isActive ? 'page' : undefined}
               style={
                 isActive
@@ -226,6 +226,7 @@ export function Sidebar() {
           ) : (
             <Link
               href="/login"
+              onClick={onNavigate}
               className="text-xs hover:text-[var(--sidebar-fg)] transition-colors"
               style={{ color: 'var(--sidebar-muted)' }}
             >
@@ -234,6 +235,44 @@ export function Sidebar() {
           )
         )}
       </div>
-    </aside>
+    </>
+  )
+}
+
+const SIDEBAR_SURFACE = {
+  backgroundColor: 'var(--sidebar)',
+  color: 'var(--sidebar-fg)',
+  borderRight: '1px solid var(--sidebar-border)',
+} as const
+
+export function Sidebar() {
+  const { collapsed, mobileOpen, closeMobile } = useSidebar()
+
+  return (
+    <>
+      {/* Desktop: static column (manual collapse via the TopBar hamburger).
+          Hidden below lg — a 208px fixed column ate half a phone viewport. */}
+      {!collapsed && (
+        <aside className="no-print w-52 shrink-0 h-full hidden lg:flex flex-col" style={SIDEBAR_SURFACE}>
+          <SidebarContent />
+        </aside>
+      )}
+
+      {/* Mobile (<lg): overlay drawer opened by the same hamburger; closes on
+          backdrop click or navigation. Never persisted open. */}
+      {mobileOpen && (
+        <div className="no-print fixed inset-0 z-[80] lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
+          <div
+            className="absolute inset-0"
+            style={{ backgroundColor: 'color-mix(in oklab, var(--foreground) 40%, transparent)' }}
+            onClick={closeMobile}
+            aria-hidden
+          />
+          <aside className="absolute inset-y-0 left-0 w-52 flex flex-col overflow-y-auto" style={SIDEBAR_SURFACE}>
+            <SidebarContent onNavigate={closeMobile} />
+          </aside>
+        </div>
+      )}
+    </>
   )
 }
