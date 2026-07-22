@@ -49,19 +49,47 @@ Every visible field must be classified as `live` · `persisted` · `derived` · 
 No login pages, no session management, no Supabase Auth, no middleware. Authentication is Phase 6.
 
 ### Do not change the design direction without asking
-The design is defined in `docs/design_principles.md`. Flag conflicts before implementing. Do not substitute your own design judgment for the documented principles.
+The design is defined in `docs/design_principles.md`, which encodes the **approved Fable visual
+direction**. Flag conflicts before implementing. Do not substitute your own design judgment for the
+documented principles.
 
-### Use semantic CSS tokens — never hardcoded colors
-In all component files, use the semantic CSS token classes (`bg-surface`, `text-foreground`, `border-border`, `text-positive`, etc.) or CSS variable inline styles (`var(--sidebar-fg)`). Never use:
+**Authority split:** Fable is authoritative for *visual design* (typography, layout hierarchy,
+color, materials, spacing, radii, shadows, motion, transitions, responsive composition, login
+presentation). The existing NMI implementation is authoritative for *content, data, routes, data
+sources, business logic, source disclosures, timestamps, loading/empty/error states, localization,
+authentication, and responsive functionality*. Resolve conflicts as "Fable's look, NMI's substance."
+
+Background and the full plan: `docs/fable-integration/` (docs 01–06).
+
+### Never remove application substance when restyling
+Every existing route, module, table, column, control, dataset, source note, timestamp, user action,
+loading state, empty state, error state, language, auth rule, and business rule **remains**.
+- Where Fable shows less than NMI, keep the NMI content and build new components in the Fable language.
+- Where Fable shows sample content NMI has no data for, exclude it — harvest the visual treatment only.
+- **Fable mock financial data must never enter production.** No static sample component may replace a
+  live NMI component.
+- Every existing route stays accessible; dynamic detail routes stay **full pages**. Slide-in detail
+  panels are supplementary and may never replace a canonical route.
+
+### Use semantic CSS tokens — never hardcoded colors or material values
+In all component files, use the semantic CSS token classes (`bg-surface`, `text-foreground`,
+`border-border`, `text-positive`, etc.) or CSS variable inline styles (`var(--sidebar-fg)`). Never use:
 - Raw Tailwind color scales: `bg-gray-900`, `text-emerald-400`
 - Hardcoded hex values in className or style props
-- Purple anywhere
+- Hardcoded blur radii, glass fills, shadows, radii, or motion durations — these are tokens too,
+  declared once in `globals.css` and consumed by name
+- Purple, except the "Review" status/chart token (`#7A68AE`/`#B9ABE4`/`#5E4B8B`), which carries meaning
 
-The full token list is in `docs/design_principles.md` Section 3 and in `src/app/globals.css`.
+The full token list is in `docs/design_principles.md` §5–§6 and in `src/app/globals.css`.
 
-### Light mode is default. Dark mode must preserve contrast.
-The app starts in light mode. Dark mode is activated by the user and saved to localStorage. When adding dark mode support to new components:
-- Test that all text is readable on dark backgrounds.
+### Dark mode is the first-visit default. Light mode is fully supported.
+The app starts in dark mode on first visit. The user's choice persists in localStorage and takes
+precedence over the system preference on every later visit; the system preference is consulted only
+when no choice is stored. The theme is applied before first paint by the inline script in
+`layout.tsx` — no flash in either direction. When adding a new component:
+- Define **both** a light and a dark value for every token it introduces.
+- Verify text meets WCAG AA against the *composited* backdrop — for glass surfaces that means the
+  rendered result, not the nominal token.
 - Use `color-mix()` for pill/badge backgrounds rather than fixed hex values.
 - Never use `bg-white` or `text-black` — use `bg-surface` and `text-foreground`.
 
@@ -83,7 +111,8 @@ Any new component or page must:
 - No abstractions that aren't immediately needed.
 - No third-party libraries unless they solve a specific, documented problem.
 - No state management libraries (Redux, Zustand) — React state + context is sufficient.
-- No animation libraries in MVP.
+- Motion is implemented with **CSS transitions/keyframes and the Web Animations API**. Do not add an
+  animation library without an explicit, documented decision.
 - Keep components small and single-purpose.
 
 ### Keep API keys out of code
@@ -103,14 +132,48 @@ When a phase is complete:
 
 ## Design Rules (see full detail in docs/design_principles.md)
 
-- Light mode is default. Dark mode toggled by user, derived from same palette.
-- Goldman-style institutional palette: `#004A64` deep navy, `#7399C6` blue, `#F1F1F1` light background.
-- Sidebar is always dark navy (`#004A64` light / `#191C1D` dark).
-- Tables first. Cards for KPI summaries only.
-- Monospace font for all prices, numbers, tickers, codes.
-- Color only for signal: `--positive` (green), `--negative` (red), `--warning` (amber), `--primary` (blue accent).
-- No purple. No gradients. No `rounded-2xl`+. No hero sections. No hardcoded colors.
-- Every data point shows source and timestamp.
+**Approved visual direction: the Fable "Liquid Glass" institutional language.**
+
+- **Dark mode is the first-visit default**; light mode is fully supported and equally maintained.
+  User choice persists and wins over the system preference.
+- Institutional palette (same Goldman-derived set as before): `#004A64` deep teal, `#00355F` deep
+  navy, `#7399C6` institutional blue, `#ACD4F1` pale blue, `#231F20` near-black, `#F1F1F1`/`#202324`
+  digital tones, `#8B0E04` critical, `#3EA464` positive.
+- **Liquid Glass is approved, governed.** 4 material tiers (auth panel / header / card / overlay),
+  `backdrop-filter: blur(var(--nv-blur)) saturate(142–150%)`, `--nv-blur` = 24px default. Readability
+  wins over effect; no stacked blur; always ship an opaque fallback fill.
+- **Dense content is never on low-opacity glass.** Tables and any surface carrying text below 13px use
+  a high-opacity surface (`--nv-tbl`, ≈.97; hard minimum .92). Glass belongs to the card *around* the
+  table, not the table.
+- **Navigation:** Fable top pill rail with a measured sliding indicator is the primary desktop model.
+  Every route stays reachable; below desktop it becomes a scrollable rail/drawer. Canonical routes stay
+  canonical.
+- **Radii:** 999px pills, 24px hero, 22px card, 20px module, 18px capsule, 13px input, 12px menu item,
+  **6px dense/table**. Large radii for auth panels, major glass surfaces, nav pills, approved heroes —
+  never on tables, cells, rows, or compact controls.
+- **Shadows:** permitted only to establish material hierarchy, and restrained (large-radius,
+  low-opacity, offset-negative + inset specular). Never on table rows, cells, in-table chips, or form
+  fields. No stacking, no neumorphism.
+- **Gradients:** permitted only as subtle material reflections, atmospheric overlays, charts where
+  analytically justified, or approved brand treatments (the deep-teal action card). Broad decorative
+  gradients remain prohibited.
+- **Motion:** permitted when it communicates hierarchy, state, navigation, or continuity — section
+  reveal, nav pill slide, KPI count-up, bar width, overlay pop, drawer slide, login Ken-Burns.
+  Decorative/ambient motion prohibited. **`prefers-reduced-motion` must always be honored** (all
+  durations → `.01ms`); any component adding motion ships its reduced-motion path in the same change.
+- **Logo:** the transparent blue/cyan Inversiones Nevada SVG (`#1E5591` + `#23BAE8`) is authoritative.
+  Never redraw, recolor, distort, or box it. Full lockup on login; 30px symbol crop + "Inversiones
+  Nevada" as UI text in the header.
+- Tables first. Cards for KPI summaries, hero values, and 1–2 row modules.
+- Body font with `tabular-nums lining-nums` for numeric data; monospace only for identifiers
+  (tickers, codes, version strings).
+- Color only for signal: `--positive`, `--negative`, `--warning`, `--accent`. No purple except the
+  "Review" token. No hardcoded colors or material values.
+- **Source badges, `TableSourceFooter`, data-quality disclosures, and timestamps stay visible** —
+  restyled into the Fable chip language, never removed. Every data point shows source and timestamp.
+- Accessibility: WCAG AA in both themes against the composited backdrop, visible focus ring
+  (`2px var(--nv-focus)`, offset 2px), keyboard-operable overlays, never meaning by color alone.
+- Zero page-level horizontal overflow at every breakpoint; dense tables scroll inside their card.
 - Chilean locale for financial figures (1.234.567,50).
 
 ---
@@ -195,24 +258,36 @@ docs/                 — Project documentation
 
 ## Typography Rules
 
-- Font stack: `"Helvetica Neue", Helvetica, Arial, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`
-- **The body font is the default for ALL UI text** — labels, headers, table headers, badges, eyebrows.
-- `font-mono` is ONLY for data values: prices, numbers, tickers/codes, timestamps in data rows, version strings.
-- Do NOT use `font-mono` on section titles, card titles, table `<th>`, badge labels, or "Affected:" labels.
-- Section headers and table headers: use CSS utility classes `ui-label` and `ui-table-header` defined in `globals.css`.
-  - These set 11px, font-weight 500, uppercase, letter-spacing 0.04em — body font (not mono).
-  - Always combine with `text-muted-fg` and spacing classes: `className="ui-label text-muted-fg mb-3"`
+- Font stack (Fable spec): `-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+  "Helvetica Neue", Helvetica, Arial, sans-serif`. No web-font downloads. (SF Pro is Apple-only and
+  falls back to Helvetica Neue — compatible with the previous stack.)
+- **`font-variant-numeric: tabular-nums lining-nums` applies body-wide.**
+- **The body font is the default for ALL UI text** — labels, headers, table headers, badges, eyebrows,
+  **and numeric data values**.
+- `font-mono` is ONLY for identifiers: ticker symbols, codes, version strings. **Not** for prices,
+  percentages, market caps, or any numeric value — those use the body font with tabular numerals.
+- Do NOT use `font-mono` on section titles, card titles, table `<th>`, or badge labels.
+- Section headers and table headers: use CSS utility classes `ui-label` and `ui-table-header` defined
+  in `globals.css`.
+  - Fable `sectionLabel` spec: **10.5px, font-weight 700, uppercase, letter-spacing 0.14em** — body
+    font (not mono). *(Supersedes the pre-Fable 11px/500/0.04em spec.)*
+  - Always combine with a muted color token and spacing classes: `className="ui-label text-muted-fg mb-3"`
   - For table `<th>`: `className="text-left py-2.5 px-3 first:pl-4 ui-table-header text-muted-fg"`
-- `tracking-widest` (0.1em) is forbidden — it is a generic AI dashboard anti-pattern.
-- The only exception is short brand monograms like "CMI" which may use `tracking-wider` (0.05em).
+- Type scale (role → spec) is in `docs/design_principles.md` §18. Weights: 400, 500, 550, 600, 650, 700.
+- **Maximum tracking is `.14em`.** `tracking-widest` (0.1em) as a generic decorative flourish remains
+  forbidden — the `.14em` allowance exists specifically for the sectionLabel/microLabel roles.
+- Do not use decorative, condensed, or display typefaces.
 
 ## Theme Toggle Rule
 
-- The TopBar theme toggle is a **segmented pill** — [☀ Light | ☽ Dark] both options visible.
-- Active segment: `bg-surface text-foreground`. Inactive: `text-muted-fg`.
-- Container: `bg-surface-2 border border-border rounded-full`.
-- Uses `aria-label` on the group and `title` on each button for accessibility.
-- Do NOT replace it with an icon-only button or text-only "Theme: Light" — the segmented pill is the current standard.
+- The theme control lives in the app header and offers both themes. Style it in the Fable pill/capsule
+  language (999px radius, glass chip, active fill) — the pre-Fable `bg-surface-2 border border-border`
+  segmented pill styling is superseded, but its **behavior and accessibility contract are not**.
+- Preserved regardless of styling: both options discoverable, `aria-label` on the group and `title` on
+  each option, keyboard-operable, visible focus ring, and never state-by-color-alone.
+- Dark is the first-visit default; the choice persists in localStorage and beats the system preference
+  on later visits. The pre-paint script in `layout.tsx` applies it before first paint.
+- Do NOT reduce it to a text-only "Theme: Light" label.
 
 ## Source Badge Rule (2026-07-20)
 
@@ -349,14 +424,20 @@ docs/                 — Project documentation
 - Use the `.ui-number` CSS utility class for all numeric table cells: `className="ui-number"`.
   - `.ui-number` applies `font-family: var(--font-sans); font-variant-numeric: tabular-nums;`
   - It is defined in `globals.css` under `@layer components`.
-- `font-mono` is ONLY for ticker symbols (identifiers), the sidebar version string, and timestamp chips in the news affected row.
+  - Under the Fable direction `tabular-nums lining-nums` also applies body-wide, so `.ui-number`
+    is now a reinforcement rather than the only source of tabular alignment. Keep using it on
+    numeric cells — it keeps the intent explicit and survives any future body-level change.
+- `font-mono` is ONLY for ticker symbols (identifiers) and version strings.
 - Never write `font-mono tabular-nums` on price, change, market cap, or any numerical data cell.
 
 ## Layout Rules (Phase 2B)
 
 - All dashboard and table pages (`page.tsx` files) use `w-full` as the outermost container class.
 - Do NOT add `max-w-screen-xl` or other max-width constraints to page containers.
-- The `AppShell` sidebar controls horizontal layout; pages fill the remaining space.
+- The app shell owns horizontal layout; pages fill the remaining space. Under the Fable direction the
+  shell centers content at a **1560px max width** — that constraint lives in the shell, not in pages.
+- Dense tables scroll inside their own card (`overflow-x-auto` + `min-w` on the table). Page-level
+  horizontal overflow is never acceptable; never reintroduce a root `min-width`.
 
 ## DocumentRecord System (Phase 2B)
 

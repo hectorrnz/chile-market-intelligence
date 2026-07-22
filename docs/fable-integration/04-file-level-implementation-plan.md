@@ -258,14 +258,32 @@ logic · `src/lib/providers/**` · `src/lib/db/**` · `src/lib/financials/**` ·
 `src/lib/portfolio/*` math · `src/config/**` · `src/data/**` · `vercel.json` crons ·
 `supabase/migrations/**` · `scripts/**`. No new auth system, no schema/API/business-logic edits.
 
-## Dependency decisions to confirm before Phase 1 (see doc 05 open decisions)
+## Dependency decisions — RESOLVED in Phase 0 (see doc 05 §A for the binding record)
 
-1. **Default theme:** keep NMI light-default, or adopt Fable dark-default? (Both must exist.)
-2. **Theme class mechanism:** stay with `.dark` on `<html>` (current), or add `body.nv-light`?
-3. **Nav model:** keep left sidebar (glass) or move to Fable top pill-rail?
-4. **Detail views:** keep full pages, or adopt Fable slide-in detail panels for
-   company/position/note?
-5. **Logo:** ship the Fable cyan/blue SVG mark, keep NMI's navy raster, or produce a merged mark?
-6. **Motion library:** pure CSS (README-friendly, zero deps) vs a minimal lib (Framer Motion is
-   README-suggested but adds a dependency — CLAUDE.md prefers no new libs). Recommend **pure CSS
-   + WAAPI** to honor "no new libraries unless documented".
+| # | Decision | Outcome |
+|---|---|---|
+| D1 | Default theme | **Dark is the first-visit default**; light fully supported; user choice persists and beats system preference |
+| D2 | Theme class mechanism | ⚠️ **Still open** — implementation detail, settle at the top of Phase 1. One class system only |
+| D3 | Nav model | **Fable top pill rail is the primary desktop model** *(overrides the audit recommendation to keep the sidebar)* — every route stays reachable; scrollable rail/drawer below desktop |
+| D4 | Detail views | **Full pages retained** for dynamic detail routes; slide-in panels supplementary only, never replacing a canonical route |
+| D5 | Logo | **Fable transparent blue/cyan SVG is authoritative**; never redraw/recolor/distort/box |
+| D6 | Motion | **Pure CSS + WAAPI**, no animation library; `prefers-reduced-motion` always honored |
+| D7 | Fable-only screens | **Excluded**; visual language harvested only; no mock data, no sample component replacing a live one |
+
+### Impact of D3 on this plan
+
+Phase 2 changes shape: the top pill rail is **the** nav model, not the fallback branch.
+- `src/components/layout/Sidebar.tsx` → becomes/gives way to a top pill rail with a measured
+  sliding indicator (380ms, primary easing), plus a horizontally scrollable rail (or equivalent
+  drawer) below the desktop breakpoint.
+- `src/components/providers/SidebarProvider.tsx` — its collapse/drawer semantics **do** change;
+  treat as an explicit sub-task, not an incidental edit.
+- `tests/responsiveLayout.test.ts` encodes the current sidebar conventions (`hidden lg:flex`,
+  drawer round-trip). It must be **updated deliberately** to the new nav conventions — never
+  deleted or weakened to make markup pass.
+- Must be preserved through the change: the Macro Chile/US sub-region navigation and its
+  `macro:region` event, active-state logic, `useAuthDisplay` name, sign-in/out affordance,
+  command-palette entry point, and zero page-level horizontal overflow at every breakpoint.
+
+Phase 6 gains certainty on the logo (D5): ship the SVG, keep `BrandLogo`'s theme-swap and
+graceful `onError`, and verify legibility against both themes and the Santiago photo.

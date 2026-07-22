@@ -7,20 +7,44 @@
 
 ---
 
-## A. Open decisions (must be resolved before Phase 1)
+## A. Decisions — RESOLVED (Phase 0, 2026-07-22)
 
-These are not risks to mitigate silently — they are choices only the user can make. Each has a
-recommendation.
+These were the choices only the user could make. **All are now decided** and encoded in
+`docs/design_principles.md` + CLAUDE.md. The "Recommendation" column is retained as the record of
+what was proposed; **"Decision" is binding.** Note D3 and D4 where the outcome differs from, or
+tightens, the original recommendation.
 
-| # | Decision | Options | Recommendation |
-|---|---|---|---|
-| D1 | **Default theme** | Fable defaults **dark**; NMI defaults **light** (persisted `theme`, and `design_principles.md` calls light "first-class"). | **Adopt Fable dark as the new default**, since Fable is authoritative for aesthetics and its cards/materials are tuned for dark first — *but* keep light fully supported and keep respecting a user's saved preference. Merge point 8 ("preserve dark mode") is satisfied either way; confirm the default explicitly. |
-| D2 | **Theme class mechanism** | Current: `.dark` class on `<html>` (pre-paint script). Fable: `body.nv-light` swap on a dark base. | Keep the **`.dark`-on-`<html>`** mechanism (it already has the flash-free pre-paint script and dark-mode tests) and express Fable's light values under `:root`, dark under `.dark`. Avoid introducing a second class system. |
-| D3 | **Navigation model** | Keep NMI left navy sidebar (`w-52` + mobile drawer), restyled in glass; OR adopt Fable's glass **top pill-rail** with sliding indicator (+ mobile scroll rail). | **Keep the left sidebar, restyled in glass.** It preserves the Macro accordion, the mobile-drawer responsive fix, and `responsiveLayout.test.ts`, and NMI has 9 primary + sub-nav items (denser than Fable's rail). Optionally add the sliding-indicator motion to the sidebar active state. (If the top rail is chosen, treat it as its own sub-project with test updates.) |
-| D4 | **Detail views** | Keep full pages for company / position / note; OR adopt Fable slide-in **detail side panels**. | **Keep full pages** (they carry more content than Fable's panels, are linkable/bookmarkable, and support print). Optionally use the panel pattern as an *additive* quick-look, not a replacement. |
-| D5 | **Brand logo** | Ship Fable cyan/blue SVG (`#1E5591`/`#23BAE8`); keep NMI navy raster (`/nevada-logo-*`); or a merged mark. | Confirm with the user which is the real brand mark. If Fable's is authoritative, ship the SVG (add light/dark variants) and keep `BrandLogo`'s theme-swap + graceful onError. |
-| D6 | **Motion implementation** | Pure CSS + WAAPI (zero deps); or a motion library (README suggests Framer Motion). | **Pure CSS + WAAPI.** CLAUDE.md forbids new libraries without a documented reason; the Fable prototype's own motion is CSS/WAAPI. Avoids a React 19 / Framer compatibility surface. |
-| D7 | **Fable-only screens** (Risk, Fixed Income, Research, Documents, Admin, Performance-standalone, portfolio selector, privacy mask) | Exclude sample content (merge point 4); optionally build real versions later. | **Exclude now.** Harvest their visual language into NMI pages that have real data. Privacy-mask (`•••••`) is a cheap, high-value optional add for Portfolio/Structured Notes. |
+| # | Decision | Options | Recommendation (at audit) | **DECISION (binding)** |
+|---|---|---|---|---|
+| D1 | **Default theme** | Fable defaults **dark**; NMI defaulted **light**. | Adopt Fable dark; keep light fully supported and keep respecting a saved preference. | ✅ **Dark is the first-visit default.** Light remains **fully supported and equally maintained** — every token/material/state specified in both. User choice persists and **takes precedence over the system preference** on every later visit; system preference consulted only when nothing is stored. Pre-paint application, no flash either direction. → principles §15 |
+| D2 | **Theme class mechanism** | `.dark` on `<html>` (current, pre-paint script) vs Fable's `body.nv-light`. | Keep `.dark`-on-`<html>`; express light under `:root`, dark under `.dark`. Avoid a second class system. | ⚠️ **Implementation detail — deferred to Phase 1.** Not a product decision; the user's ruling is on *behavior* (D1), which either mechanism satisfies. Recommendation stands: **one** class system, no `body.nv-light` alongside `.dark`. Note the inversion implied by D1 — dark is now the default state, so the pre-paint script's default branch flips. |
+| D3 | **Navigation model** | Keep NMI left navy sidebar restyled in glass; OR adopt Fable's glass **top pill-rail** with sliding indicator. | Keep the left sidebar (preserves Macro accordion, mobile drawer, `responsiveLayout.test.ts`; NMI's nav is denser than Fable's rail). | ✅ **OVERRIDDEN — Fable top pill navigation is the primary desktop model.** Constraints attached: **every existing route must remain reachable**, including sub-region nav (Macro Chile/US); below desktop it becomes a horizontally scrollable pill rail or equivalent drawer that closes on navigate/backdrop; `aria-current` for active state; zero page-level horizontal overflow. → principles §14. **This is a sub-project**: `SidebarProvider` semantics and `tests/responsiveLayout.test.ts` change deliberately (see B5, C-series). |
+| D4 | **Detail views** | Keep full pages for company / position / note; OR adopt Fable slide-in detail panels. | Keep full pages; panels only as an additive quick-look. | ✅ **Confirmed, and tightened: dynamic detail routes remain full pages.** Slide-in panels are **supplementary and may not replace a canonical route** — they may enrich a list view, never become the only path to content that has its own URL. → principles §2 |
+| D5 | **Brand logo** | Fable cyan/blue SVG (`#1E5591`/`#23BAE8`) vs NMI navy raster (`/nevada-logo-*`) vs merged mark. | Confirm which is the real brand mark. | ✅ **The transparent blue + cyan Inversiones Nevada SVG is authoritative.** Never redraw/recolor/distort/box. Full lockup on login; 30px symbol crop + "Inversiones Nevada" as UI text in the header. Because it is transparent, legibility must be verified against **both** theme backgrounds and the login photo — if a backdrop compromises it, change the backdrop. Keep graceful degradation on load failure. → principles §16 |
+| D6 | **Motion implementation** | Pure CSS + WAAPI (zero deps) vs a motion library (README suggests Framer Motion). | Pure CSS + WAAPI. | ✅ **Pure CSS transitions/keyframes + WAAPI.** Resolved by the standing "no new libraries without a documented decision" rule rather than by new instruction; now stated explicitly in CLAUDE.md. Motion is approved **when it communicates hierarchy, state, navigation, or continuity**; decorative/ambient motion prohibited; **`prefers-reduced-motion` always honored**. → principles §12–§13 |
+| D7 | **Fable-only screens** (Risk, Fixed Income, Research, Documents, Admin, Performance-standalone, portfolio selector, privacy mask) | Exclude sample content; optionally build real versions later. | Exclude now; harvest the visual language. | ✅ **Excluded.** **Fable mock financial data must never enter production**, and **no static sample component may replace a live NMI component.** Harvest visual language only. Privacy mask remains an optional additive feature. → principles §3 |
+
+**Still open (implementation-level, not product-level):** D2 only — settle it at the top of Phase 1.
+
+### A.1 Additional governance rules ratified in Phase 0
+
+Beyond D1–D7, these were ruled on directly and are now binding in `design_principles.md`:
+
+- **Liquid Glass approved — governed.** Permitted subject to explicit readability, contrast,
+  density, and performance rules: readability beats effect, no stacked blur, no `backdrop-filter`
+  on continuously-animating or per-row elements, always an opaque fallback fill, opaque in print.
+  (§7)
+- **Dense tables use high-opacity surfaces, not low-opacity glass** — `--nv-tbl` ≈.97, hard minimum
+  `.92` for any surface carrying text below 13px. Glass belongs to the card *around* the table. (§8)
+- **Gradients** permitted only as subtle material reflections, atmospheric overlays, charts where
+  analytically justified, or approved brand treatments. Broad decorative gradients still prohibited. (§11)
+- **Shadows** permitted only to establish material hierarchy, and restrained; never on table rows,
+  cells, in-table chips, or form fields; no stacking, no neumorphism. (§10)
+- **Large radii** for auth panels, major glass surfaces, nav pills, approved heroes; **dense tables
+  and analytical modules use small radii** (6px cell). (§9)
+- **Source badges, `TableSourceFooter`, data-quality disclosures, and timestamps stay visible** —
+  restyled, never removed. Fable's single `SAMPLE` badge is not a substitute. (§4)
+- **Content-preservation and data-integrity are non-negotiable** and outrank any visual rule. (§2, §3)
 
 ---
 
