@@ -33,16 +33,30 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     /*
-     * suppressHydrationWarning prevents React from complaining that the server
-     * rendered <html> without "dark" but the client might add it before hydration.
-     * The inline script below reads localStorage and applies .dark before paint,
-     * which eliminates the flash of wrong theme without needing an extra library.
+     * THEME MECHANISM (decision D2 — resolved, single system).
+     *
+     *   - ONE class system: `.dark` on <html>. Light values live under `:root`
+     *     in globals.css, dark values under `.dark`. There is no separate
+     *     light-mode body class (the Fable prototype's own mechanism is
+     *     deliberately not carried over), no second theme provider, and no
+     *     second localStorage key.
+     *   - DARK IS THE FIRST-VISIT DEFAULT, so the server already renders
+     *     `class="dark"`. The inline script below only *removes* it when the user
+     *     has explicitly stored 'light' — a stored preference always wins over
+     *     the default.
+     *   - Because dark is the server-rendered default and the removal runs in
+     *     <head> before the body paints, neither direction can flash.
+     *   - localStorage key ('theme') and its 'dark' | 'light' values are
+     *     unchanged, so ThemeToggle's existing read/write behavior still applies.
+     *
+     * suppressHydrationWarning prevents React from complaining when the class
+     * list differs between the server render and the pre-paint script.
      */
-    <html lang="en" className="h-full" suppressHydrationWarning>
+    <html lang="en" className="h-full dark" suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('theme');if(t==='dark'||(t===null&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark')}}catch(e){}})()`,
+            __html: `(function(){try{if(localStorage.getItem('theme')==='light'){document.documentElement.classList.remove('dark')}}catch(e){}})()`,
           }}
         />
       </head>

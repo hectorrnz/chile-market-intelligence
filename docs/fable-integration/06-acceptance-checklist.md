@@ -6,6 +6,11 @@
 
 Status key: `[ ]` not done · `[~]` in progress · `[x]` verified.
 
+**Phase progress:** Phase 0 (design governance) ✓ · **Phase 1 (shared visual foundation) ✓
+COMPLETE 2026-07-22** — see `04-file-level-implementation-plan.md` § "Phase 1 — as built".
+Phases 2–8 not started. Items below are ticked only where Phase 1 genuinely satisfies them;
+everything that still depends on shell/component/page work stays `[ ]` or `[~]`.
+
 ---
 
 ## A. Merge contract — 12 points
@@ -32,8 +37,13 @@ Status key: `[ ]` not done · `[~]` in progress · `[x]` verified.
   login re-skin wires the real `/api/auth/*` routes; no simulated/passkey/demo auth added.
 - [ ] **7 · English + Spanish preserved.** Every route renders in EN and ES; all new strings in
   both `dict.en` and `dict.es`; no hardcoded UI text.
-- [ ] **8 · Dark mode preserved.** Light and dark both fully supported; pre-paint no-flash intact;
+- [~] **8 · Dark mode preserved.** Light and dark both fully supported; pre-paint no-flash intact;
   WCAG AA in both themes; default-theme decision (D1) implemented as agreed.
+  *Phase 1: D1 + D2 implemented and browser-verified (dark first-visit default, stored light and
+  stored dark both persist across reload, no flash in either direction, one class system). Every
+  theme-varying token has a light and a dark value (asserted by `tests/fableFoundation.test.ts`).
+  Three tokens deviate from the Fable palette to hold WCAG AA — documented in doc 04. Per-route AA
+  auditing remains open until the pages are restyled.*
 - [ ] **9 · Responsive fixes preserved.** Card-level table scrolling, mobile navigation behavior,
   and **zero page-level horizontal overflow** at every breakpoint.
 - [ ] **10 · Source labels, data-quality disclosures, and timestamps preserved.** Every table
@@ -85,13 +95,26 @@ loading state · empty state · error state · auth status — verified identica
 ## C. Cross-cutting quality gates
 
 ### C1 · Design language fidelity (doc 02)
-- [ ] Tokens: every Fable token present in `globals.css` with a **light and dark** value.
-- [ ] Liquid Glass materials applied (card/header/overlay/chip tiers); dense tables on near-opaque
-  surface.
-- [ ] Typography scale, `tabular-nums lining-nums` body-wide, updated `.ui-label`/`.ui-table-header`.
-- [ ] Radii (999px pills, 22–24px cards), shadows, spacing per spec.
+- [x] Tokens: every Fable token present in `globals.css` with a **light and dark** value.
+  *(Phase 1. Light under `:root`, dark under `.dark`; parity asserted by test.)*
+- [~] Liquid Glass materials applied (card/header/overlay/chip tiers); dense tables on near-opaque
+  surface. *(Phase 1 defines all 7 tiers — auth / nav / KPI / card / overlay / dense / scrim — each
+  with an opaque fallback, blur gated behind `@supports`, no stacked blur, no blur on table rows,
+  and opaque in print. **Applying** them to the shell/components/pages is Phases 2–5.)*
+- [x] Typography scale, `tabular-nums lining-nums` body-wide, updated `.ui-label`/`.ui-table-header`.
+  *(Phase 1. Verified in-browser: `.ui-table-header` computes to 10.5px / 700 / 1.47px in the body
+  font; body numerals `lining-nums tabular-nums`.)*
+- [x] Radii (999px pills, 22–24px cards), shadows, spacing per spec — **tokenised** as
+  `--radius-*`, `--shadow-*`, `--space-*`. *(Phase 1; per-surface application is Phases 2–5.)*
 - [ ] Segmented pill controls with sliding indicator where Fable uses them.
-- [ ] Motion (reveal, count-up, nav slide, drawer/pop) present and **`prefers-reduced-motion`-gated**.
+  *(Phase 1 ships the `.nv-indicator` motion primitive at 380ms/primary easing; the controls
+  themselves are Phase 3.)*
+- [~] Motion (reveal, count-up, nav slide, drawer/pop) present and **`prefers-reduced-motion`-gated**.
+  *(Phase 1: all 6 Fable keyframes, the duration/easing token set, the foundational utilities, and
+  the reduced-motion block — which disables reveal / Ken-Burns / pulse / spin outright and collapses
+  everything else to `.01ms` — are in place and confirmed in the live stylesheet. Page-specific
+  choreography and JS-driven count-up land with their pages, each of which must read the preference
+  before animating.)*
 - [ ] Login: Ken-Burns Santiago bg, cursor specular, utility chips (secure dot, EN|ES, clock,
   contrast), glass auth panel.
 
@@ -114,10 +137,16 @@ loading state · empty state · error state · auth status — verified identica
 - [ ] `Update` buttons refresh via `useGlobalRefresh`; badges reflect live/persisted/static.
 
 ### C4 · Engineering gates (run at each phase boundary)
-- [ ] `npm run build` → 0 errors, all routes present.
-- [ ] `npm run lint` → 0 problems.
-- [ ] `npm test` → all 75 files pass (business-logic tests untouched; DOM tests updated only
-  deliberately, never deleted to pass).
+- [x] `npm run build` → 0 errors, all routes present. *(Phase 1 boundary: compiled in 6.4s, 19/19
+  static pages, full route list unchanged.)*
+- [x] `npm run lint` → 0 problems. *(Phase 1 boundary.)*
+- [~] `npm test` → all files pass (business-logic tests untouched; DOM tests updated only
+  deliberately, never deleted to pass). *(Phase 1 boundary: 1795 tests, 1792 pass, **0 caused by
+  this phase** — no existing test was modified or deleted; 1 new file, `tests/fableFoundation.test.ts`
+  (55 tests). The 3 failures in `tests/newsModule.test.ts` are pre-existing and date-dependent —
+  fixtures stamped `15 Jul 2026` now fall outside the News orchestrator's rolling 7-day window —
+  reproduced identically on a clean stash of this branch. Fixing them is News-module work, out of
+  scope here.)*
 - [ ] Browser responsive ladder (1728/1440/1280/1023/900/767/630/430/390) in **light + dark** and
   **EN + ES**, per route → zero page-level horizontal overflow.
 - [ ] Accessibility: focus-visible ring, `aria` on toggles/dialogs, `prefers-reduced-motion`, AA
@@ -129,7 +158,9 @@ loading state · empty state · error state · auth status — verified identica
   (Phase 0) — the app no longer contradicts its own design authority.
 - [ ] `docs/data_source_status.md` current (no module static as terminal state).
 - [ ] `docs/fable-integration/03` implementation/verification columns updated per route.
-- [ ] No new runtime dependency added without an explicit, documented decision (D6).
+  *(Untouched by Phase 1 — no route changed.)*
+- [x] No new runtime dependency added without an explicit, documented decision (D6).
+  *(Phase 1 added none; `package.json`/`package-lock.json` unchanged. Asserted by test.)*
 
 ### C6 · Security & privacy (merge point 12)
 - [ ] No secrets/credentials in client bundles; no `NEXT_PUBLIC_` provider key.

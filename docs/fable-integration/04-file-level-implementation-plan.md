@@ -37,7 +37,11 @@ must be rewritten *before* code, or every re-skin PR will read as a violation.
 
 ---
 
-## Phase 1 — Token & material foundation (`globals.css` + tailwind theme)
+## Phase 1 — Token & material foundation (`globals.css` + tailwind theme) ✓ COMPLETE (2026-07-22)
+
+> **Status: implemented and validated.** The shared visual foundation is in place. No page, route,
+> API, provider, shell, navigation, or login file was touched. See "Phase 1 — as built" below for
+> the delivered file list, the D2 ruling, and the three documented palette deviations.
 
 **Files**
 - `src/app/globals.css` — the heart of this phase:
@@ -63,6 +67,61 @@ must be rewritten *before* code, or every re-skin PR will read as a violation.
 
 **Guardrails:** `tests/dataSourceAudit.test.ts` asserts badges use semantic tokens — keep
 that true. Verify light+dark parity for every new token (WCAG AA).
+
+---
+
+### Phase 1 — as built (2026-07-22)
+
+**Files changed (6 — 2 primary, 4 supporting):**
+
+| File | Change |
+|---|---|
+| `src/app/globals.css` | Rewritten as the foundation. Fable `--nv-*` material tokens (light in `:root`, dark in `.dark`) + NMI semantic aliases mapped onto them; 7 Liquid Glass material tiers; typography/radius/shadow/spacing/motion token scales; 6 Fable keyframes; reduced-motion block; focus ring on `--focus`; print flattens glass. |
+| `src/app/layout.tsx` | D2 + dark-first: `<html>` ships `class="h-full dark"`; the pre-paint script now only *removes* `.dark` for a stored `'light'`. Metadata/viewport/`AppShell` untouched. |
+| `public/nevada-logo.svg` | **New.** Byte-identical copy of the Fable `brand-assets/download1.svg` (SHA256 `ada2c482…cb5f`). Never redrawn or recolored. |
+| `src/components/ui/NevadaMark.tsx` | **New.** Reusable brand component (`lockup` / `symbol` variants, the latter reproducing Fable's exact 30px header crop). Graceful `onError`. **Not yet consumed** — existing `BrandLogo` branding is untouched. |
+| `tests/fableFoundation.test.ts` | **New.** 55 tests locking the theme mechanism, token parity, glass rules, typography, radii, shadows, motion, reduced motion, a11y, responsive guarantees, logo, and source-badge compatibility. |
+| `docs/fable-integration/{04,06}` | This status record + the acceptance checklist. |
+
+**D2 — RESOLVED (binding).** One theme system: `.dark` on `<html>`; light under `:root`, dark under
+`.dark`. **No `body.nv-light`, no second provider, no second localStorage key.** Dark is the
+first-visit default, so the *server render already carries `.dark`* and the head script only removes
+it when `localStorage.theme === 'light'` — a stored choice always beats the default, and neither
+direction can flash. The `theme` key, its `'dark' | 'light'` values, and `ThemeToggle`'s behavior
+are unchanged (the component needed no edit).
+
+Consequence to note: because dark is now an unconditional default, `prefers-color-scheme` is no
+longer consulted on a first visit. That is the explicit reading of D1 / principles §15 ("dark mode
+is the first-visit default") and of this phase's own acceptance criterion.
+
+**Three documented palette deviations** (WCAG AA §5.4 is non-negotiable and outranks palette
+fidelity; each carries a `DEVIATION (documented)` note in `globals.css`):
+
+| Token | Fable value | Shipped | Why |
+|---|---|---|---|
+| `--positive` (light) | `#3EA464` | `#1A6630` | Fable's green is 3.1:1 on white — fails AA for normal text. Dark mode uses Fable's `#3EA464` (5.9:1). |
+| `--negative` (dark) | `#D4796B` | `#D05050` | Three live surfaces paint white text on solid `var(--negative)` (Home + Company high-impact news bar, `NotificationBell` count badge); Fable's value drops them 4.25:1 → 3.11:1. |
+| `--muted-fg` / `--meta-fg` (light) | `#8B8E92` | `#6E7276` | Fable's tertiary is 3.3:1 on white and this token carries 10.5px labels. Dark keeps Fable's `#75818A` (4.7:1). |
+
+`--critical-fill` / `--critical-fill-fg` (`#8B0E04` on white, 9:1+ in both themes) was added as the
+one signal token safe *under* white text. **Follow-up for Phase 3/5:** move the three solid-fill
+sites above from `--negative` to `--critical-fill`, after which dark `--negative` can adopt Fable's
+`#D4796B`.
+
+**Deliberately deferred out of Phase 1** (per the brief): top pill navigation, shell/`AppShell`,
+login redesign, per-page restyling, Santiago login photograph, consuming `NevadaMark` in the header
+or login, and JS-driven motion (count-up, IntersectionObserver reveal staggering) — the CSS
+reduced-motion path is in place for all of them.
+
+**Validation:** lint 0 · build 0 errors (all routes present) · suite 1795 tests, 1792 pass. The 3
+failures are **pre-existing and date-dependent** (`tests/newsModule.test.ts` fixtures are stamped
+`15 Jul 2026` and today, 2026-07-22, is outside the orchestrator's rolling 7-day window) — verified
+identical on a clean `git stash` of this branch, so Phase 1 did not cause them. Browser-verified on
+`/stocks` and `/`: dark default with no stored preference, light and dark preferences both persist
+across reload, tokens resolve per theme, `.ui-table-header` computes to 10.5px/700/1.47px in the
+body font, body numerals are `lining-nums tabular-nums`, the reduced-motion rule and the `@supports`
+blur guard are present in the live stylesheet, source badges and `TableSourceFooter` render intact,
+and page-level horizontal overflow is 0.
 
 ---
 
@@ -263,7 +322,7 @@ logic · `src/lib/providers/**` · `src/lib/db/**` · `src/lib/financials/**` ·
 | # | Decision | Outcome |
 |---|---|---|
 | D1 | Default theme | **Dark is the first-visit default**; light fully supported; user choice persists and beats system preference |
-| D2 | Theme class mechanism | ⚠️ **Still open** — implementation detail, settle at the top of Phase 1. One class system only |
+| D2 | Theme class mechanism | ✅ **RESOLVED in Phase 1 (2026-07-22)** — `.dark` on `<html>`, light under `:root`, dark under `.dark`. Server renders `.dark` (dark-first); the pre-paint script only removes it for a stored `'light'`. No `body.nv-light`, no second provider, no second storage key. See "Phase 1 — as built" |
 | D3 | Nav model | **Fable top pill rail is the primary desktop model** *(overrides the audit recommendation to keep the sidebar)* — every route stays reachable; scrollable rail/drawer below desktop |
 | D4 | Detail views | **Full pages retained** for dynamic detail routes; slide-in panels supplementary only, never replacing a canonical route |
 | D5 | Logo | **Fable transparent blue/cyan SVG is authoritative**; never redraw/recolor/distort/box |

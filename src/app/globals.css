@@ -1,37 +1,75 @@
 @import "tailwindcss";
 
+/* ═════════════════════════════════════════════════════════════════════════════
+   NEVADA MARKET INTELLIGENCE — SHARED VISUAL FOUNDATION
+   Fable "Liquid Glass" institutional language (docs/design_principles.md,
+   docs/fable-integration/02-fable-design-inventory.md).
+
+   Layering, top to bottom:
+     1. @theme inline    — registers semantic tokens as Tailwind utilities
+     2. :root / .dark    — the ONE theme system (light under :root, dark under
+                           .dark on <html>). Dark is the first-visit default;
+                           the pre-paint script in layout.tsx removes .dark only
+                           when the user has stored 'light'.
+     3. @layer components— typography, Liquid Glass materials, motion utilities
+     4. base / a11y / print
+
+   Naming: Fable's material tokens keep their documented `--nv-*` names (cited by
+   name in CLAUDE.md and design_principles.md — e.g. --nv-blur, --nv-tbl,
+   --nv-focus, --nv-hover). NMI's long-standing semantic aliases (--background,
+   --surface, --foreground, …) are mapped onto them so every existing component
+   inherits the Fable language without a page edit.
+
+   HARD RULE: components consume tokens by name. Never hardcode a color, blur
+   radius, opacity, shadow, radius, duration, or easing curve in a component.
+═════════════════════════════════════════════════════════════════════════════ */
+
 /* ─────────────────────────────────────────────────────────────────────────────
-   TAILWIND THEME REGISTRATION
-   Defines semantic color tokens as Tailwind utilities via CSS variable
-   references. Light/dark values are set in :root and .dark below.
-   Usage: bg-background, text-foreground, border-border, text-positive, etc.
+   1 · TAILWIND THEME REGISTRATION
+   `inline` is required so the .dark override on <html> flows through to the
+   generated utilities (the utility emits var(--token), resolved per theme).
 ───────────────────────────────────────────────────────────────────────────── */
 @theme inline {
-  /* Font stacks — system fonts only, no web font downloads */
-  --font-sans: "Helvetica Neue", Helvetica, Arial, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* Font stacks — system fonts only, no web font downloads (Fable §2.4).
+     SF Pro is Apple-only and falls back to Helvetica Neue, matching the
+     pre-Fable NMI stack, so no rendering regression on Windows/Linux. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, 'Cascadia Code', 'Fira Mono', 'Roboto Mono', monospace;
 
-  /* Page / layout */
-  --color-background:    var(--background);
-  --color-surface:       var(--surface);
-  --color-surface-2:     var(--surface-2);
+  /* Page / layout surfaces */
+  --color-background:      var(--background);
+  --color-background-2:    var(--background-2);
+  --color-surface:         var(--surface);
+  --color-surface-2:       var(--surface-2);
+  --color-surface-module:  var(--surface-module);
+  --color-surface-table:   var(--surface-table);
 
   /* Text */
   --color-foreground:    var(--foreground);
   --color-muted:         var(--muted);
   --color-muted-fg:      var(--muted-fg);
+  --color-meta-fg:       var(--meta-fg);
 
-  /* Borders */
+  /* Borders / focus */
   --color-border:        var(--border);
   --color-border-strong: var(--border-strong);
+  --color-focus:         var(--focus);
+
+  /* Brand constants (identical in both themes — see §5.1 of design_principles) */
+  --color-brand-teal:    var(--brand-teal);
+  --color-brand-navy:    var(--brand-navy);
+  --color-brand-blue:    var(--brand-blue);
+  --color-brand-pale:    var(--brand-pale);
+  --color-brand-cyan:    var(--brand-cyan);
 
   /* Brand / primary institutional blue */
   --color-primary:       var(--primary);
   --color-primary-fg:    var(--primary-fg);
 
-  /* Accent — softer blue */
+  /* Accent — Fable --nv-acc / --nv-acc2 */
   --color-accent:        var(--accent);
   --color-accent-fg:     var(--accent-fg);
+  --color-accent-2:      var(--accent-2);
 
   /* Link / action */
   --color-link:          var(--link);
@@ -40,49 +78,192 @@
   --color-positive:      var(--positive);
   --color-negative:      var(--negative);
   --color-warning:       var(--warning);
+  --color-critical:      var(--critical);
+  --color-review:        var(--review);
+  --color-unavailable:   var(--unavailable);
+
+  /* Interaction states */
+  --color-hover:         var(--hover);
+  --color-selected:      var(--selected);
+  --color-scrim:         var(--scrim);
 
   /* Navigation */
   --color-sidebar:       var(--sidebar);
   --color-sidebar-fg:    var(--sidebar-fg);
   --color-topbar:        var(--topbar);
   --color-topbar-fg:     var(--topbar-fg);
+
+  /* Radii (design_principles §9). Large radii for auth panels, major glass
+     surfaces, nav pills and approved heroes; dense tables and compact controls
+     use `cell`. Never put `card`/`hero` on a table, row, cell, or filter. */
+  --radius-pill:    999px;
+  --radius-hero:     24px;
+  --radius-card:     22px;
+  --radius-module:   20px;
+  --radius-capsule:  18px;
+  --radius-input:    13px;
+  --radius-menu:     12px;
+  --radius-cell:      6px;
+
+  /* Shadows (design_principles §10) — material hierarchy only. Never on a table
+     row, cell, in-table chip, or form field. Never stacked for decorative pop. */
+  --shadow-card:    var(--nv-sh);
+  --shadow-auth:    var(--nv-sh-auth);
+  --shadow-action:  var(--nv-sh-action);
+  --shadow-drawer:  var(--nv-sh-drawer);
+  --shadow-button:  var(--nv-sh-button);
+  --shadow-palette: var(--nv-sh-palette);
+
+  /* Easing curves (design_principles §12.1) */
+  --ease-primary: cubic-bezier(.22, .61, .36, 1);
+  --ease-out-cubic: cubic-bezier(.33, 1, .68, 1);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   LIGHT THEME  (default)
-   Palette inspired by institutional finance — Goldman-style
-   #004A64 deep navy · #7399C6 institutional blue · #F1F1F1 background
+   2 · THEME — LIGHT (`:root`)
+   Light mode is fully supported and equally maintained; every token defined
+   here has a counterpart in `.dark` below.
 ───────────────────────────────────────────────────────────────────────────── */
 :root {
+  /* ── Fable material tokens ────────────────────────────────────────────── */
+  /* The single tunable glass knob (design_principles §7.1, range 0.4×–1.6×). */
+  --nv-blur:          24px;
+  --nv-blur-overlay:  30px;   /* command palette */
+  --nv-blur-menu:     28px;   /* dropdown menus, drawers */
+  --nv-blur-chip:     18px;   /* login utility chips */
+  --nv-blur-scrim:     3px;   /* overlay scrim */
+
+  --nv-sat-auth:     150%;
+  --nv-sat-nav:      145%;
+  --nv-sat-card:     142%;
+  --nv-sat-overlay:  150%;
+  --nv-sat-chip:     140%;
+
+  --nv-bg0:   #EEF1F3;
+  --nv-bg1:   #F5F6F7;
+  --nv-text:  #231F20;
+  --nv-text2: #58575A;
+  --nv-text3: #8B8E92;
+  --nv-line:  rgba(0, 53, 95, .1);
+  --nv-bd:    rgba(0, 53, 95, .1);
+  --nv-card:  linear-gradient(168deg, rgba(255, 255, 255, .9), rgba(245, 248, 251, .75));
+  /* Opaque composite of --nv-card, used as the no-backdrop-filter / print fallback */
+  --nv-card-solid: #FCFDFE;
+  --nv-mod:   rgba(255, 255, 255, .94);  /* near-opaque analytical surface (§8) */
+  --nv-tbl:   rgba(255, 255, 255, .97);  /* near-opaque dense table surface (§8) */
+  --nv-chip:   rgba(47, 110, 182, .07);
+  --nv-chipbd: rgba(0, 53, 95, .12);
+  --nv-acc:   #00355F;
+  --nv-acc2:  #2F6EB6;
+  --nv-deep:  #00355F;
+  --nv-teal:  #004A64;
+  --nv-hdrbg: rgba(243, 246, 248, .88);
+  --nv-hdrbg-solid: #F3F6F8;
+  --nv-hover: rgba(0, 53, 95, .05);
+  --nv-selected: rgba(47, 110, 182, .12);
+  --nv-onnav: #FFFFFF;
+  --nv-focus: #2F6EB6;
+  --nv-scrim: rgba(4, 10, 16, .38);
+  --nv-actioncard: linear-gradient(160deg, #004A64, #00355F);
+
+  /* Signal fills — Fable pairs a translucent *bg with the signal color as text.
+     Never white text on these; use --critical-fill for a solid alert bar. */
+  --nv-posbg:  rgba(62, 164, 100, .12);
+  --nv-negbg:  rgba(139, 14, 4, .07);
+  --nv-critbg: rgba(139, 14, 4, .08);
+  --nv-ambbg:  rgba(255, 212, 87, .22);
+  --nv-revbg:  rgba(122, 104, 174, .13);
+  --nv-neubg:  rgba(88, 87, 90, .1);
+
+  /* Chart series (design_principles §11.3 — gradients/series where analytic) */
+  --nv-ch1: #2F6EB6;
+  --nv-ch2: #546292;
+  --nv-ch3: #679146;
+
+  /* Shadows — theme-specific (light uses a cooler, tighter falloff) */
+  --nv-sh:         0 22px 44px -30px rgba(0, 42, 84, .25), inset 0 1px 0 rgba(255, 255, 255, .95);
+  --nv-sh-auth:    0 30px 70px -30px rgba(0, 30, 60, .45), 0 4px 16px -8px rgba(0, 40, 80, .18);
+  --nv-sh-action:  0 24px 50px -26px rgba(0, 25, 40, .45), inset 0 1px 0 rgba(255, 255, 255, .09);
+  --nv-sh-drawer:  -30px 0 70px -30px rgba(0, 42, 84, .3);
+  --nv-sh-button:  0 12px 26px -12px rgba(0, 53, 95, .55), inset 0 1px 0 rgba(255, 255, 255, .18);
+  --nv-sh-palette: 0 40px 90px -30px rgba(0, 30, 60, .35);
+
+  /* ── NMI semantic aliases (what components actually consume) ──────────── */
   /* Backgrounds */
-  --background:     #F1F1F1;
+  --background:     var(--nv-bg0);
+  --background-2:   var(--nv-bg1);
   --surface:        #FFFFFF;
-  --surface-2:      #E8EAEB;
+  --surface-2:      #E6ECF2;
+  --surface-module: var(--nv-mod);
+  --surface-table:  var(--nv-tbl);
 
   /* Text */
-  --foreground:     #231F20;
-  --muted:          #58575A;
-  --muted-fg:       #8A8887;
+  --foreground:     var(--nv-text);
+  --muted:          var(--nv-text2);
+  /* DEVIATION (documented): Fable's light text3 #8B8E92 measures 3.3:1 on white
+     — below AA for the 10.5px labels this token carries. §5.4 (AA, both themes)
+     is non-negotiable, so light mode uses #6E7276 (4.9:1). Dark mode keeps
+     Fable's #75818A, which measures 4.7:1 on --nv-bg0 and passes. */
+  --muted-fg:       #6E7276;
+  --meta-fg:        #6E7276;
 
-  /* Borders */
-  --border:         #D0D0D0;
-  --border-strong:  #ABABAB;
+  /* Borders / focus */
+  --border:         var(--nv-bd);
+  --border-strong:  rgba(0, 53, 95, .22);
+  --focus:          var(--nv-focus);
 
-  /* Primary — deep institutional navy */
-  --primary:        #004A64;
+  /* Brand constants — identical in both themes */
+  --brand-teal:     #004A64;
+  --brand-navy:     #00355F;
+  --brand-blue:     #7399C6;
+  --brand-pale:     #ACD4F1;
+  --brand-cyan:     #23BAE8;
+
+  /* Primary — deep institutional teal */
+  --primary:        var(--brand-teal);
   --primary-fg:     #FFFFFF;
 
-  /* Accent — medium institutional blue */
-  --accent:         #7399C6;
+  /* Accent */
+  --accent:         var(--nv-acc);
+  --accent-2:       var(--nv-acc2);
   --accent-fg:      #FFFFFF;
 
   /* Link / interactive */
-  --link:           #007FC3;
+  --link:           var(--nv-acc2);
 
-  /* Signal colors — dark variants for readability on white */
+  /* Signal colors.
+     DEVIATION (documented): Fable's light `pos` #3EA464 measures 3.14:1 on
+     white — below WCAG AA for normal text. design_principles §5.4 (AA, both
+     themes) and §7.2 ("readability wins") outrank palette fidelity, so light
+     mode keeps the AA-compliant #1A6630. Dark mode uses Fable's #3EA464 (5.9:1). */
   --positive:       #1A6630;
-  --negative:       #8B0E04;
-  --warning:        #7A5200;
+  --negative:       #A34A3D;
+  --warning:        #8A6D14;
+  --critical:       #8B0E04;
+  --review:         #5E4B8B;
+  --unavailable:    var(--nv-text3);
+
+  /* Solid alert fill — the ONE signal token safe under white text in both
+     themes (9:1+). Signal *text* uses --negative/--critical; solid alert bars
+     and count badges use this pair. */
+  --critical-fill:    #8B0E04;
+  --critical-fill-fg: #FFFFFF;
+
+  /* Source-status states — the vocabulary the badge components already express
+     (live · persisted · hybrid · static fallback · static · blocked ·
+     unavailable). Declared as tokens so the Phase-3 badge restyle is a token
+     swap, not a colour redefinition. Values match today's rendering exactly. */
+  --state-live:        var(--positive);
+  --state-persisted:   var(--accent);
+  --state-hybrid:      var(--accent);
+  --state-static:      var(--muted-fg);
+  --state-blocked:     var(--negative);
+  --state-unavailable: var(--unavailable);
+
+  /* Interaction states */
+  --hover:    var(--nv-hover);
+  --selected: var(--nv-selected);
+  --scrim:    var(--nv-scrim);
 
   /* News source-code identity colors (institutional, non-signal — must NOT
      reuse positive/negative/warning, which carry meaning). Used only for the
@@ -97,7 +278,7 @@
   --news-src-bc:    #6B5B14;  /* BCCh — bronze (reserved, official) */
 
   /* Sidebar — always dark navy, even in light mode */
-  --sidebar:        #004A64;
+  --sidebar:        var(--brand-teal);
   --sidebar-fg:     #FFFFFF;
   --sidebar-muted:  rgba(255, 255, 255, 0.52);
   --sidebar-active: rgba(255, 255, 255, 0.10);
@@ -105,45 +286,150 @@
   --sidebar-border: transparent;
 
   /* Top bar */
-  --topbar:         #FFFFFF;
-  --topbar-fg:      #231F20;
-  --topbar-border:  #D0D0D0;
+  --topbar:         var(--nv-hdrbg-solid);
+  --topbar-fg:      var(--nv-text);
+  --topbar-border:  var(--nv-line);
+
+  /* ── Typography scale (design_principles §18) ─────────────────────────── */
+  --fs-login-headline: clamp(32px, 4.6vw, 56px);
+  --fs-kpi-hero:       clamp(30px, 3vw, 40px);
+  --fs-chart-headline: 23px;
+  --fs-capsule-value:  20px;
+  --fs-page-title:     19px;
+  --fs-card-value:     15px;
+  --fs-body:           13px;
+  --fs-table-cell:     12.2px;
+  --fs-section-label:  10.5px;
+  --fs-micro-label:     9.5px;
+  --fs-meta:           11px;
+
+  --tracking-section-label: .14em;  /* maximum permitted tracking (§18) */
+  --tracking-micro-label:   .1em;
+  --tracking-tight:        -.01em;
+  --tracking-hero:         -.02em;
+
+  --fw-regular: 400;
+  --fw-medium:  500;
+  --fw-body:    550;
+  --fw-semi:    600;
+  --fw-value:   650;
+  --fw-bold:    700;
+
+  /* ── Spacing scale (Fable §2.5, base 8) ───────────────────────────────── */
+  --space-card-y: 18px;
+  --space-card-x: 20px;
+  --space-hero-y: 20px;
+  --space-hero-x: 22px;
+  --space-grid-gap: 14px;
+  --space-row-y: 9px;
+  --content-max-w: 1560px;
+
+  /* ── Motion (design_principles §12.1) ─────────────────────────────────── */
+  --ease-primary:   cubic-bezier(.22, .61, .36, 1);
+  --ease-out-cubic: cubic-bezier(.33, 1, .68, 1);
+
+  --dur-instant:  120ms;  /* colour/theme swaps */
+  --dur-hover:    180ms;  /* hover transitions (150–300ms band) */
+  --dur-state:    260ms;  /* state-change transitions */
+  --dur-pop:      220ms;  /* overlay appearance */
+  --dur-drawer:   320ms;  /* drawer movement */
+  --dur-nav:      380ms;  /* pill-indicator movement */
+  --dur-pulse:    430ms;  /* content pulse */
+  --dur-reveal:   640ms;  /* section reveal */
+  --dur-countup:  650ms;  /* KPI count-up */
+  --dur-bar:      660ms;  /* bar width */
+  --dur-fade:     700ms;  /* app fade */
+  --dur-ken:        60s;  /* login Ken-Burns (login only) */
+  --stagger-reveal: 70ms;
+
+  /* ── Login glass (theme-independent by design — the login renders its own
+     light-glass palette over the Santiago photograph, in both themes). ──── */
+  --nv-auth-fill:  linear-gradient(163deg, rgba(255, 255, 255, .6), rgba(228, 240, 250, .42) 55%, rgba(212, 231, 246, .52));
+  --nv-auth-solid: #EDF3F9;
+  --nv-auth-bd:    rgba(255, 255, 255, .62);
+  --nv-auth-spec:  inset 0 1px 0 rgba(255, 255, 255, .8), inset 0 -14px 30px -22px rgba(0, 53, 95, .25);
+  --nv-chip-fill:  rgba(255, 255, 255, .44);
+  --nv-chip-bd:    rgba(255, 255, 255, .55);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   DARK THEME
-   Applied when <html class="dark">. Derived from same palette — not invented.
+   3 · THEME — DARK (`.dark` on <html>) — the first-visit default
 ───────────────────────────────────────────────────────────────────────────── */
 .dark {
-  /* Backgrounds */
-  --background:     #202324;
-  --surface:        #2A2D2E;
-  --surface-2:      #333638;
+  /* ── Fable material tokens ────────────────────────────────────────────── */
+  --nv-bg0:   #0D1418;
+  --nv-bg1:   #12181D;
+  --nv-text:  #F1F1F1;
+  --nv-text2: #A7B2BA;
+  --nv-text3: #75818A;
+  --nv-line:  rgba(172, 212, 241, .12);
+  --nv-bd:    rgba(172, 212, 241, .13);
+  --nv-card:  linear-gradient(168deg, rgba(27, 38, 48, .72), rgba(15, 22, 29, .58));
+  --nv-card-solid: #151E25;
+  --nv-mod:   rgba(19, 27, 35, .94);
+  --nv-tbl:   rgba(15, 21, 27, .97);
+  --nv-chip:   rgba(172, 212, 241, .08);
+  --nv-chipbd: rgba(172, 212, 241, .14);
+  --nv-acc:   #ACD4F1;
+  --nv-acc2:  #68A6D6;
+  --nv-deep:  #00355F;
+  --nv-teal:  #004A64;
+  --nv-hdrbg: rgba(10, 17, 23, .86);
+  --nv-hdrbg-solid: #0E151B;
+  --nv-hover: rgba(172, 212, 241, .06);
+  --nv-selected: rgba(172, 212, 241, .14);
+  --nv-onnav: #EAF4FC;
+  --nv-focus: #68A6D6;
+  --nv-scrim: rgba(4, 10, 16, .48);
+  --nv-actioncard: linear-gradient(160deg, #0A4157, #003A52 55%, #00304A);
 
-  /* Text */
-  --foreground:     #E6E5E4;
-  --muted:          #9A9897;
-  --muted-fg:       #6E6C6B;
+  --nv-posbg:  rgba(62, 164, 100, .16);
+  --nv-negbg:  rgba(139, 14, 4, .16);
+  --nv-critbg: rgba(139, 14, 4, .28);
+  --nv-ambbg:  rgba(255, 212, 87, .13);
+  --nv-revbg:  rgba(122, 104, 174, .22);
+  --nv-neubg:  rgba(145, 148, 182, .16);
 
-  /* Borders */
-  --border:         #3A3D3E;
-  --border-strong:  #545758;
+  --nv-ch1: #ACD4F1;
+  --nv-ch2: #9194B6;
+  --nv-ch3: #679146;
 
-  /* Primary — lighter blue readable on dark */
-  --primary:        #7399C6;
+  --nv-sh:         0 22px 48px -26px rgba(0, 0, 0, .65), inset 0 1px 0 rgba(255, 255, 255, .05);
+  --nv-sh-auth:    0 30px 70px -30px rgba(0, 30, 60, .45), 0 4px 16px -8px rgba(0, 40, 80, .18);
+  --nv-sh-action:  0 24px 50px -26px rgba(0, 25, 40, .7), inset 0 1px 0 rgba(255, 255, 255, .09);
+  --nv-sh-drawer:  -30px 0 70px -30px rgba(0, 0, 0, .55);
+  --nv-sh-button:  0 12px 26px -12px rgba(0, 53, 95, .55), inset 0 1px 0 rgba(255, 255, 255, .18);
+  --nv-sh-palette: 0 40px 90px -30px rgba(0, 0, 0, .6);
+
+  /* ── NMI semantic aliases ─────────────────────────────────────────────── */
+  --surface:        var(--nv-card-solid);
+  --surface-2:      #1C262E;
+
+  --muted-fg:       var(--nv-text3);
+  --meta-fg:        var(--nv-text3);
+
+  --border-strong:  rgba(172, 212, 241, .26);
+
+  /* Primary — Fable institutionalBlue, readable on the dark page */
+  --primary:        var(--brand-blue);
   --primary-fg:     #FFFFFF;
 
-  /* Accent */
-  --accent:         #88CBDF;
-  --accent-fg:      #191C1D;
+  --accent-fg:      #101619;
 
-  /* Link */
-  --link:           #ACD4F1;
-
-  /* Signal — lighter for contrast on dark backgrounds */
-  --positive:       #3DAA60;
+  /* Signal — Fable's dark set.
+     DEVIATION (documented): --negative holds #D05050 rather than Fable's
+     #D4796B. Three existing production surfaces (Home + Company high-impact
+     news bar, NotificationBell count badge) paint white text on solid
+     var(--negative); #D4796B would drop those from 4.25:1 to 3.11:1. Held here
+     until those surfaces move to --critical-fill in their re-skin phase. */
+  --positive:       #3EA464;
   --negative:       #D05050;
-  --warning:        #CC9010;
+  --warning:        #FFD457;
+  --critical:       #ED8A7B;
+  --review:         #B9ABE4;
+
+  --critical-fill:    #8B0E04;
+  --critical-fill-fg: #FFFFFF;
 
   /* News source-code identity colors — lightened for contrast on dark surface */
   --news-src-df:    #4FB0E0;
@@ -153,7 +439,7 @@
   --news-src-cmf:   #6FA8C4;
   --news-src-bc:    #C0AA5A;
 
-  /* Sidebar — deep institutional navy, distinct from #202324 page background */
+  /* Sidebar — deep institutional navy, distinct from the page background */
   --sidebar:        #0B2437;
   --sidebar-fg:     #E8EFF5;
   --sidebar-muted:  rgba(200, 222, 240, 0.62);
@@ -162,51 +448,264 @@
   --sidebar-border: rgba(136, 203, 223, 0.12);
 
   /* Top bar */
-  --topbar:         #2A2D2E;
-  --topbar-fg:      #E6E5E4;
-  --topbar-border:  #3A3D3E;
+  --topbar:         var(--nv-hdrbg-solid);
+  --topbar-fg:      var(--nv-text);
+  --topbar-border:  var(--nv-line);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   TYPOGRAPHY UTILITY CLASSES
-   Use these instead of font-mono + tracking-wide on UI labels.
-   Data values (prices, numbers, tickers, codes) still use font-mono directly.
+   4 · COMPONENT LAYER — typography, Liquid Glass materials, motion
 ───────────────────────────────────────────────────────────────────────────── */
 @layer components {
-  /* Section titles, card titles, panel headers, eyebrow labels */
+  /* ── Typography utilities ───────────────────────────────────────────────
+     Section labels and table headers use the body font at the Fable
+     sectionLabel spec (10.5px / 700 / .14em / uppercase). Never monospace,
+     never above .14em tracking. */
   .ui-label {
     font-family: var(--font-sans);
-    font-size: 0.6875rem; /* 11px */
-    font-weight: 500;
+    font-size: var(--fs-section-label);
+    font-weight: var(--fw-bold);
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: var(--tracking-section-label);
   }
 
   /* Table column headers — use alongside text-left text-muted-fg in className */
   .ui-table-header {
     font-family: var(--font-sans);
-    font-size: 0.6875rem; /* 11px */
-    font-weight: 500;
+    font-size: var(--fs-section-label);
+    font-weight: var(--fw-bold);
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: var(--tracking-section-label);
     white-space: nowrap;
+  }
+
+  .ui-micro-label {
+    font-family: var(--font-sans);
+    font-size: var(--fs-micro-label);
+    font-weight: var(--fw-bold);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-micro-label);
+  }
+
+  .ui-meta {
+    font-family: var(--font-sans);
+    font-size: var(--fs-meta);
+    color: var(--meta-fg);
+  }
+
+  .ui-page-title {
+    font-size: var(--fs-page-title);
+    font-weight: var(--fw-value);
+    letter-spacing: var(--tracking-tight);
+  }
+
+  .ui-kpi-hero {
+    font-size: var(--fs-kpi-hero);
+    font-weight: var(--fw-value);
+    line-height: 1;
+    letter-spacing: var(--tracking-hero);
+  }
+
+  .ui-capsule-value {
+    font-size: var(--fs-capsule-value);
+    font-weight: var(--fw-value);
+  }
+
+  .ui-card-value {
+    font-size: var(--fs-card-value);
+    font-weight: var(--fw-value);
+  }
+
+  .ui-chart-headline {
+    font-size: var(--fs-chart-headline);
+    font-weight: var(--fw-value);
   }
 
   /*
    * Numeric display — body font with tabular figure alignment.
    * Use this instead of font-mono on prices, percentages, dates, market caps,
    * valuation multiples, macro values, and all other non-ticker numbers.
-   * Only tickers and version strings may use font-mono.
+   * Only tickers, codes and version strings may use font-mono.
+   * (tabular-nums lining-nums also applies body-wide; this keeps the intent
+   * explicit on numeric cells and survives any future body-level change.)
    */
   .ui-number {
     font-family: var(--font-sans);
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: tabular-nums lining-nums;
     font-feature-settings: "tnum";
+  }
+
+  /* ── Liquid Glass material tiers (design_principles §7) ─────────────────
+     Seven tiers. Each declares an OPAQUE fallback fill first; the translucent
+     fill + backdrop-filter are applied only where the browser supports them
+     (@supports block below), so no-backdrop-filter engines and print stay
+     legible. Readability always outranks the effect. */
+
+  /* Tier 1 — authentication glass (theme-independent, over the login photo) */
+  .nv-glass-auth {
+    border-radius: var(--radius-hero);
+    background: var(--nv-auth-solid);
+    border: 1px solid var(--nv-auth-bd);
+    box-shadow: var(--nv-sh-auth), var(--nv-auth-spec);
+  }
+
+  /* Tier 2 — navigation / header glass */
+  .nv-glass-nav {
+    background: var(--nv-hdrbg-solid);
+    border-color: var(--nv-line);
+  }
+
+  /* Tier 3 — floating KPI glass (capsules, chips) */
+  .nv-glass-kpi {
+    border-radius: var(--radius-capsule);
+    background: var(--surface);
+    border: 1px solid var(--nv-chipbd);
+  }
+
+  /* Tier 4 — standard analytical glass (the default card material) */
+  .nv-glass-card {
+    border-radius: var(--radius-card);
+    background: var(--nv-card-solid);
+    border: 1px solid var(--nv-bd);
+    box-shadow: var(--nv-sh);
+  }
+
+  /* Tier 5 — elevated modal / drawer / menu glass */
+  .nv-glass-overlay {
+    border-radius: var(--radius-module);
+    background: var(--nv-card-solid);
+    border: 1px solid var(--nv-bd);
+    box-shadow: var(--nv-sh-palette);
+  }
+
+  /* Tier 6 — near-opaque dense surfaces. Tables, data grids, and ANY module
+     carrying text below 13px use these — never low-opacity glass (§8).
+     These tiers deliberately carry no blur at all — glass belongs to the card
+     *around* the table, not to the table surface. */
+  .nv-surface-dense {
+    background: var(--surface-table);
+  }
+  .nv-surface-module {
+    background: var(--surface-module);
+  }
+
+  /* Tier 7 — scrim / overlay surface */
+  .nv-scrim {
+    background: var(--scrim);
+  }
+
+  /* Row hover uses a tint, never a blur change (§8). */
+  .nv-row-hover:hover {
+    background-color: var(--hover);
+  }
+
+  /* ── Motion utilities (design_principles §12) ───────────────────────────
+     Foundational only — page-specific choreography lands with its page. */
+  .nv-transition {
+    transition-property: color, background-color, border-color, box-shadow, opacity;
+    transition-duration: var(--dur-hover);
+    transition-timing-function: var(--ease-primary);
+  }
+  .nv-transition-state {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform, width;
+    transition-duration: var(--dur-state);
+    transition-timing-function: var(--ease-primary);
+  }
+  /* Sliding pill indicator (nav rail, segmented toggles) */
+  .nv-indicator {
+    transition-property: transform, width;
+    transition-duration: var(--dur-nav);
+    transition-timing-function: var(--ease-primary);
+  }
+  /* Overlay appearance */
+  .nv-pop {
+    animation: nvPop var(--dur-pop) var(--ease-primary) both;
+  }
+  /* Drawer movement */
+  .nv-slide-in {
+    animation: nvSlide var(--dur-drawer) var(--ease-primary) both;
+  }
+  /* Section reveal — stagger via `style={{ '--nv-reveal-delay': '140ms' }}` */
+  .nv-reveal {
+    animation: nvIn var(--dur-reveal) var(--ease-primary) both;
+    animation-delay: var(--nv-reveal-delay, 0ms);
+  }
+  .nv-pulse {
+    animation: nvPulse 2.6s ease-in-out infinite;
+  }
+  .nv-spin {
+    animation: nvSpin .7s linear infinite;
+  }
+  .nv-ken {
+    animation: nvKen var(--dur-ken) ease-in-out infinite alternate;
   }
 }
 
+/* Translucent fills + blur, only where the engine supports backdrop-filter.
+   Placed outside @layer components so it reliably wins over the opaque
+   fallbacks declared above. */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .nv-glass-auth {
+    background: var(--nv-auth-fill);
+    backdrop-filter: blur(var(--nv-blur)) saturate(var(--nv-sat-auth));
+    -webkit-backdrop-filter: blur(var(--nv-blur)) saturate(var(--nv-sat-auth));
+  }
+  .nv-glass-nav {
+    background: var(--nv-hdrbg);
+    backdrop-filter: blur(var(--nv-blur)) saturate(var(--nv-sat-nav));
+    -webkit-backdrop-filter: blur(var(--nv-blur)) saturate(var(--nv-sat-nav));
+  }
+  .nv-glass-kpi {
+    background: var(--nv-chip);
+    backdrop-filter: blur(var(--nv-blur-chip)) saturate(var(--nv-sat-chip));
+    -webkit-backdrop-filter: blur(var(--nv-blur-chip)) saturate(var(--nv-sat-chip));
+  }
+  .nv-glass-card {
+    background: var(--nv-card);
+    backdrop-filter: blur(var(--nv-blur)) saturate(var(--nv-sat-card));
+    -webkit-backdrop-filter: blur(var(--nv-blur)) saturate(var(--nv-sat-card));
+  }
+  .nv-glass-overlay {
+    background: var(--nv-card);
+    backdrop-filter: blur(var(--nv-blur-overlay)) saturate(var(--nv-sat-overlay));
+    -webkit-backdrop-filter: blur(var(--nv-blur-overlay)) saturate(var(--nv-sat-overlay));
+  }
+  .nv-scrim {
+    backdrop-filter: blur(var(--nv-blur-scrim));
+    -webkit-backdrop-filter: blur(var(--nv-blur-scrim));
+  }
+}
+
+/* NO STACKED BLUR (§7.2 rule 3) — a glass surface nested inside another glass
+   surface keeps its tint but drops its own backdrop-filter. One blur layer
+   between content and the page background, always. */
+:is(.nv-glass-auth, .nv-glass-nav, .nv-glass-kpi, .nv-glass-card, .nv-glass-overlay)
+:is(.nv-glass-auth, .nv-glass-nav, .nv-glass-kpi, .nv-glass-card, .nv-glass-overlay) {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* NO BLUR ON DENSE DATA (§7.2 rule 4) — never per-row, never on a large
+   scrolling data region. Blur is GPU-expensive and illegible under small text. */
+table :is(.nv-glass-auth, .nv-glass-nav, .nv-glass-kpi, .nv-glass-card, .nv-glass-overlay),
+:is(thead, tbody, tfoot, tr, th, td) {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
-   BASE STYLES
+   5 · KEYFRAMES (Fable §2.7)
+   Every one is disabled or collapsed under prefers-reduced-motion below.
+───────────────────────────────────────────────────────────────────────────── */
+@keyframes nvKen   { from { transform: scale(1) translateY(0) } to { transform: scale(1.07) translateY(-8px) } }
+@keyframes nvPulse { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
+@keyframes nvSpin  { to { transform: rotate(360deg) } }
+@keyframes nvPop   { from { opacity: 0; transform: translateY(-6px) scale(.985) } to { opacity: 1; transform: none } }
+@keyframes nvSlide { from { opacity: 0; transform: translateX(26px) } to { opacity: 1; transform: none } }
+@keyframes nvIn    { from { opacity: 0; transform: translateY(22px); filter: blur(8px) } to { opacity: 1; transform: none; filter: blur(0) } }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   6 · BASE STYLES
 ───────────────────────────────────────────────────────────────────────────── */
 html, body { height: 100%; margin: 0; }
 
@@ -225,8 +724,14 @@ body {
   font-size: 0.875rem; /* ~14.9px */
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-  transition: background-color 0.12s ease, color 0.12s ease;
+  text-rendering: optimizeLegibility;
+  /* Tabular, lining figures body-wide so digits align in every table and card
+     without a per-cell opt-in (design_principles §18). */
+  font-variant-numeric: tabular-nums lining-nums;
+  transition: background-color var(--dur-instant) ease, color var(--dur-instant) ease;
 }
+
+::selection { background: color-mix(in oklab, var(--accent-2) 35%, transparent); }
 
 /* Theme-aware scrollbars — adapt to light/dark via tokens (fixes the stuck
    light-mode scrollbar in dark mode). */
@@ -238,22 +743,24 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   background-color: var(--border-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-pill);
   border: 2px solid var(--background);
 }
 ::-webkit-scrollbar-thumb:hover { background-color: var(--muted-fg); }
 ::-webkit-scrollbar-corner { background: transparent; }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   ACCESSIBILITY — keyboard focus
+   7 · ACCESSIBILITY — keyboard focus
    A single visible focus ring for keyboard users on every interactive element
    (links, buttons, inputs, selects, custom widgets with tabindex). Mouse clicks
    do not trigger :focus-visible, so the ring only appears on keyboard nav.
+   2px solid var(--focus), offset 2px (design_principles §20). Never removed —
+   glass backdrops make a visible ring more important, not less.
 ───────────────────────────────────────────────────────────────────────────── */
 :focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
-  border-radius: 2px;
+  border-radius: var(--radius-cell);
 }
 /* Don't double-draw on the sidebar's dark navy — use the accent there. */
 [style*="--sidebar"] :focus-visible,
@@ -262,11 +769,47 @@ aside :focus-visible {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   BRAND LOGO — theme swap
+   8 · REDUCED MOTION (design_principles §13 — hard rule)
+   `prefers-reduced-motion: reduce` is always honored. Every animation and
+   transition collapses to .01ms; section reveal, Ken-Burns, pulse, and spin
+   are disabled outright and content renders in its final visible position.
+   Any component that adds motion ships its reduced-motion path in the same
+   change — including JS-driven count-up, which must read this preference
+   before animating.
+───────────────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Render in the final state rather than the animation's starting frame. */
+  .nv-reveal, .nv-pop, .nv-slide-in {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+  .nv-ken, .nv-pulse, .nv-spin {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   9 · BRAND LOGO — theme swap
    Keyed off the `.dark` class on <html> (the app's own theme switch), NOT the
    prefers-color-scheme media query that Tailwind's `dark:` variant uses by
    default. The `.dark` class is applied before paint, so the swap is instant
    with no flash.
+
+   The authoritative Inversiones Nevada mark (`/nevada-logo.svg`) is a
+   transparent blue/cyan SVG that reads correctly on BOTH theme backgrounds and
+   therefore needs no swap — see `NevadaMark`. These two classes serve the
+   legacy raster pair still used by `BrandLogo`.
 ───────────────────────────────────────────────────────────────────────────── */
 .brand-logo-light { display: block; }
 .brand-logo-dark  { display: none; }
@@ -274,9 +817,10 @@ aside :focus-visible {
 .dark .brand-logo-dark  { display: block; }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   PRINT — one-page tearsheet
+   10 · PRINT — one-page tearsheet
    Hide app chrome (.no-print), unlock the nested scroll/height containers, and
    print on a white page with readable ink. Cards avoid breaking across pages.
+   Glass is flattened to opaque (design_principles §7.2 rule 6).
 ───────────────────────────────────────────────────────────────────────────── */
 @media print {
   .no-print { display: none !important; }
@@ -288,8 +832,24 @@ aside :focus-visible {
     font-size: 12px;
   }
 
+  /* Glass surfaces render opaque and legible on paper — never blurred. */
+  .nv-glass-auth,
+  .nv-glass-nav,
+  .nv-glass-kpi,
+  .nv-glass-card,
+  .nv-glass-overlay,
+  .nv-surface-dense,
+  .nv-surface-module {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    border-color: #cccccc !important;
+  }
+  .nv-scrim { display: none !important; }
+
   /* Cards and table rows should not be split across page boundaries. */
-  .bg-surface { break-inside: avoid; }
+  .bg-surface, .nv-glass-card { break-inside: avoid; }
   table { break-inside: auto; }
   tr, .grid > * { break-inside: avoid; }
 
