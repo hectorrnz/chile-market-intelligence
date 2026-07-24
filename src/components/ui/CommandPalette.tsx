@@ -1,5 +1,10 @@
 'use client'
 
+// Phase 3 (Fable): restyled to the glass overlay language (`.nv-glass-overlay`
+// + `.nv-scrim` + `.nv-pop` entrance, dense-surface results list, dialog
+// semantics) — every keyboard shortcut, search behavior, and routed action
+// below is unchanged from the pre-Fable version.
+
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLang } from '@/components/providers/LangProvider'
@@ -68,6 +73,14 @@ export function CommandPalette() {
     return () => clearTimeout(id)
   }, [open])
 
+  // Body-scroll lock while open, matching every other Fable overlay.
+  useEffect(() => {
+    if (!open) return
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prevOverflow }
+  }, [open])
+
   const select = (ticker: string) => {
     const now = Date.now()
     const next = [
@@ -88,29 +101,31 @@ export function CommandPalette() {
   if (!open) return null
 
   return (
-    <div
-      className="fixed inset-0 z-[100] flex items-start justify-center pt-[12vh] px-4"
-      style={{ backgroundColor: 'color-mix(in oklab, var(--foreground) 35%, transparent)' }}
-      onClick={() => setOpen(false)}
-    >
-      <div className="bg-surface border border-border rounded-lg shadow-xl w-full max-w-xl overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center gap-2 px-3 border-b border-border">
-          <span className="text-muted-fg text-sm">⌕</span>
+    <div className="no-print nv-scrim fixed inset-0 z-[100] flex items-start justify-center pt-[13vh] px-4" onClick={() => setOpen(false)}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={t.common.search}
+        className="nv-glass-overlay nv-pop w-full max-w-xl overflow-hidden flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2 px-4" style={{ borderBottom: '1px solid var(--nv-line)' }}>
+          <span className="text-muted-fg text-sm" aria-hidden="true">⌕</span>
           <input
             ref={inputRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={onListKey}
             placeholder={t.common.search}
-            className="flex-1 bg-transparent outline-none focus:outline-none focus-visible:outline-none py-3 text-sm text-foreground placeholder:text-muted-fg"
+            className="flex-1 bg-transparent outline-none focus:outline-none focus-visible:outline-none py-3.5 text-sm text-foreground placeholder:text-muted-fg"
             style={{ outline: 'none', boxShadow: 'none' }}
           />
-          <kbd className="text-xs text-muted-fg border border-border rounded px-1.5 py-0.5">Esc</kbd>
+          <kbd className="ui-meta rounded px-1.5 py-0.5" style={{ border: '1px solid var(--nv-chipbd)' }}>Esc</kbd>
         </div>
 
-        <div className="max-h-[50vh] overflow-y-auto py-1">
+        <div className="nv-surface-dense max-h-[50vh] overflow-y-auto py-1">
           {!query.trim() && recentItems.length > 0 && (
-            <div className="px-3 pt-2 pb-1 ui-label text-muted-fg">{t.commandk.recent}</div>
+            <div className="px-4 pt-2 pb-1 ui-label text-muted-fg">{t.commandk.recent}</div>
           )}
           {visible.length === 0 && (
             <div className="px-4 py-6 text-center text-xs text-muted-fg">
@@ -122,7 +137,8 @@ export function CommandPalette() {
               key={item.ticker}
               onMouseEnter={() => setActive(i)}
               onClick={() => select(item.ticker)}
-              className={`w-full text-left px-3 py-1.5 flex items-center justify-between gap-3 ${i === active ? 'bg-surface-2' : ''}`}
+              className="w-full text-left px-4 py-2 flex items-center justify-between gap-3 nv-transition"
+              style={i === active ? { backgroundColor: 'var(--selected)' } : undefined}
             >
               <span className="text-sm text-foreground truncate"><span className="font-mono text-primary">{item.ticker}</span> <span className="text-muted-fg">· {item.label.split('· ')[1]}</span></span>
               <span className="text-xs text-muted-fg truncate shrink-0 max-w-[40%]">{item.sub}</span>
@@ -130,10 +146,10 @@ export function CommandPalette() {
           ))}
         </div>
 
-        <div className="px-3 py-2 border-t border-border flex items-center gap-3 text-xs text-muted-fg">
-          <span><kbd className="border border-border rounded px-1">↑</kbd> <kbd className="border border-border rounded px-1">↓</kbd> {t.commandk.navigate}</span>
-          <span><kbd className="border border-border rounded px-1">↵</kbd> {t.commandk.open}</span>
-          <span className="ml-auto"><kbd className="border border-border rounded px-1">⌘K</kbd></span>
+        <div className="px-4 py-2.5 flex items-center gap-3 text-xs text-muted-fg" style={{ borderTop: '1px solid var(--nv-line)' }}>
+          <span><kbd className="rounded px-1" style={{ border: '1px solid var(--nv-chipbd)' }}>↑</kbd> <kbd className="rounded px-1" style={{ border: '1px solid var(--nv-chipbd)' }}>↓</kbd> {t.commandk.navigate}</span>
+          <span><kbd className="rounded px-1" style={{ border: '1px solid var(--nv-chipbd)' }}>↵</kbd> {t.commandk.open}</span>
+          <span className="ml-auto"><kbd className="rounded px-1" style={{ border: '1px solid var(--nv-chipbd)' }}>⌘K</kbd></span>
         </div>
       </div>
     </div>

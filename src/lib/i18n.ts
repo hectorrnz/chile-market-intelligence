@@ -710,6 +710,41 @@ export const dict = {
         high52:     '52-wk High',
       },
     },
+    fable: {
+      kpi: {
+        unavailable: 'Unavailable',
+      },
+      currentActions: {
+        title: 'Current Actions',
+        empty: 'No current actions.',
+        approve: 'Approve',
+        view: 'View',
+        viewAll: 'View all →',
+      },
+      barrier: {
+        current: 'Current',
+        distance: 'distance to barrier',
+        unavailable: 'Barrier data unavailable',
+      },
+      privacy: {
+        show: 'Show value',
+        hide: 'Hide value',
+        masked: 'Value hidden',
+      },
+      panel: {
+        close: 'Close panel',
+        viewFullPage: 'Open full page →',
+      },
+      async: {
+        loading:     { title: 'Loading', body: 'Fetching the latest data…' },
+        empty:       { title: 'No data', body: 'There is nothing to show yet.' },
+        error:       { title: 'Something went wrong', body: 'This section could not be loaded. Try again shortly.' },
+        unavailable: { title: 'Unavailable', body: 'This data is not currently available.' },
+        blocked:     { title: 'Blocked', body: 'This data source is currently blocked.' },
+        partial:     { title: 'Partial data', body: 'Some data could not be loaded.' },
+        stale:       { title: 'Stale data', body: 'This data may be out of date.' },
+      },
+    },
   },
 
   es: {
@@ -1416,6 +1451,41 @@ export const dict = {
         divYield:   'Rdto. Div.',
         low52:      'Mín. 52 sem.',
         high52:     'Máx. 52 sem.',
+      },
+    },
+    fable: {
+      kpi: {
+        unavailable: 'No disponible',
+      },
+      currentActions: {
+        title: 'Acciones Actuales',
+        empty: 'No hay acciones pendientes.',
+        approve: 'Aprobar',
+        view: 'Ver',
+        viewAll: 'Ver todas →',
+      },
+      barrier: {
+        current: 'Actual',
+        distance: 'distancia a la barrera',
+        unavailable: 'Datos de barrera no disponibles',
+      },
+      privacy: {
+        show: 'Mostrar valor',
+        hide: 'Ocultar valor',
+        masked: 'Valor oculto',
+      },
+      panel: {
+        close: 'Cerrar panel',
+        viewFullPage: 'Abrir página completa →',
+      },
+      async: {
+        loading:     { title: 'Cargando', body: 'Obteniendo los datos más recientes…' },
+        empty:       { title: 'Sin datos', body: 'Todavía no hay nada que mostrar.' },
+        error:       { title: 'Ocurrió un error', body: 'No se pudo cargar esta sección. Intente nuevamente en breve.' },
+        unavailable: { title: 'No disponible', body: 'Estos datos no están disponibles en este momento.' },
+        blocked:     { title: 'Bloqueado', body: 'Esta fuente de datos está actualmente bloqueada.' },
+        partial:     { title: 'Datos parciales', body: 'Parte de los datos no se pudo cargar.' },
+        stale:       { title: 'Datos desactualizados', body: 'Estos datos podrían estar desactualizados.' },
       },
     },
   },

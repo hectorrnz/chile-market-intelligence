@@ -1,0 +1,54 @@
+'use client'
+
+import type { ReactNode } from 'react'
+import { GlassSurface } from './GlassSurface'
+import { AsyncState, type AsyncStateKind } from './AsyncState'
+
+interface TableCardProps {
+  title?: string
+  /** Toolbar-style controls (search, filters, a source badge, Export CSV, Update). */
+  controls?: ReactNode
+  /** When set, renders the matching async state INSTEAD of `children` — never both at once. */
+  state?: AsyncStateKind
+  stateMessage?: string
+  stateSource?: string
+  stateAsOf?: string
+  /** Minimum width for the inner scrollable table (matches this app's existing `min-w-[…px]` convention) so the scroll stays card-level, never page-level. */
+  minWidth?: number
+  /** Exactly one `<TableSourceFooter>` (or equivalent) belongs here — this component never supplies its own source text. */
+  footer?: ReactNode
+  children: ReactNode
+  className?: string
+}
+
+/**
+ * Analytical table container: a near-opaque surface (design_principles §8 —
+ * dense financial data never sits on low-opacity glass) wrapping an optional
+ * title/controls header, card-level horizontal scroll, and one designated
+ * footer slot. Purely a layout shell — it never touches the table's own
+ * data, columns, or rows, and never embeds a sample table.
+ */
+export function TableCard({ title, controls, state, stateMessage, stateSource, stateAsOf, minWidth, footer, children, className = '' }: TableCardProps) {
+  return (
+    <GlassSurface variant="card" className={`overflow-hidden flex flex-col ${className}`}>
+      {(title || controls) && (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-3 pb-2">
+          {title && <h2 className="ui-label text-muted-fg">{title}</h2>}
+          {controls && <div className="flex items-center gap-2 flex-wrap ml-auto">{controls}</div>}
+        </div>
+      )}
+
+      <GlassSurface variant="dense">
+        {state ? (
+          <AsyncState kind={state} message={stateMessage} source={stateSource} asOf={stateAsOf} />
+        ) : (
+          <div className="overflow-x-auto">
+            <div style={minWidth ? { minWidth } : undefined}>{children}</div>
+          </div>
+        )}
+      </GlassSurface>
+
+      {footer && <div className="px-4 py-2.5">{footer}</div>}
+    </GlassSurface>
+  )
+}

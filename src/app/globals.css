@@ -576,6 +576,17 @@
     background: var(--scrim);
   }
 
+  /* Current Actions solid deep-teal treatment (design_principles §5.2
+     exception) — NOT a glass tier (no blur, no translucency): fixed
+     light-on-teal in both themes, reusing the existing --nv-actioncard
+     gradient and --shadow-action tokens rather than declaring a new one. */
+  .nv-action-card {
+    border-radius: var(--radius-card);
+    background: var(--nv-actioncard);
+    border: 1px solid rgba(255, 255, 255, .12);
+    box-shadow: var(--shadow-action);
+  }
+
   /* Row hover uses a tint, never a blur change (§8). */
   .nv-row-hover:hover {
     background-color: var(--hover);
@@ -614,6 +625,13 @@
   }
   .nv-pulse {
     animation: nvPulse 2.6s ease-in-out infinite;
+  }
+  /* Content pulse — a brief ONE-SHOT cue on a currency/period/privacy/value
+     change (design_principles §12.1, 430ms), distinct from .nv-pulse's
+     infinite ambient loop (the login "secure connection" dot). Reuses the
+     same nvPulse keyframe and the existing --dur-pulse token. */
+  .nv-content-pulse {
+    animation: nvPulse var(--dur-pulse) var(--ease-primary) 1;
   }
   .nv-spin {
     animation: nvSpin .7s linear infinite;

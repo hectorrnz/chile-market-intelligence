@@ -165,7 +165,13 @@ describe('NotificationBell UI', () => {
   })
   it('shows a red unread-count badge only when unreadCount > 0', () => {
     assert.ok(BELL.includes('unreadCount > 0 && ('))
-    assert.ok(BELL.includes("backgroundColor: 'var(--negative)'"))
+    // Phase 3 (Fable): moved from --negative to --critical-fill/--critical-fill-fg
+    // — the one signal-token pair Phase 1 reserved specifically for white text
+    // on a solid alert fill (globals.css DEVIATION note named this exact badge
+    // as a Phase 3 follow-up). --negative stays for signal *text*, never a
+    // solid fill background.
+    assert.ok(BELL.includes("backgroundColor: 'var(--critical-fill)'"))
+    assert.ok(BELL.includes("color: 'var(--critical-fill-fg)'"))
   })
   it('links to the recipients settings page', () => {
     assert.ok(BELL.includes('/settings/notifications'))

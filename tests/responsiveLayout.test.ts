@@ -180,7 +180,10 @@ describe('shared components wrap instead of overflowing', () => {
     assert.match(src, /min-w-0/)
   })
 
-  test('NotificationBell dropdown is capped to the viewport', () => {
-    assert.match(read('src/components/ui/NotificationBell.tsx'), /max-w-\[calc\(100vw-1\.5rem\)\]/)
+  test('NotificationBell drawer is capped to the viewport', () => {
+    // Phase 3 (Fable): restyled from an anchored dropdown to a full right-edge
+    // drawer (Fable spec: right `min(390px,94vw)`) — still always narrower
+    // than the viewport at any width, just via a different responsive unit.
+    assert.match(read('src/components/ui/NotificationBell.tsx'), /w-\[min\(390px,94vw\)\]/)
   })
 })

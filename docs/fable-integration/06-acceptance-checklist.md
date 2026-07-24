@@ -7,10 +7,11 @@
 Status key: `[ ]` not done · `[~]` in progress · `[x]` verified.
 
 **Phase progress:** Phase 0 (design governance) ✓ · **Phase 1 (shared visual foundation) ✓
-COMPLETE 2026-07-22** · **Phase 2 (app shell: top pill navigation) ✓ COMPLETE 2026-07-24** —
-see `04-file-level-implementation-plan.md` § "Phase 1 — as built" / "Phase 2 — as built".
-Phases 3–8 not started. Items below are ticked only where Phase 1/2 genuinely satisfy them;
-everything that still depends on further component/page work stays `[ ]` or `[~]`.
+COMPLETE 2026-07-22** · **Phase 2 (app shell: top pill navigation) ✓ COMPLETE 2026-07-24** ·
+**Phase 3 (shared UI primitives / Fable component library) ✓ COMPLETE 2026-07-24** — see
+`04-file-level-implementation-plan.md` § "Phase 1 — as built" / "Phase 2 — as built" /
+"Phase 3 — as built". Phases 4–8 not started. Items below are ticked only where Phase 1–3
+genuinely satisfy them; everything that still depends on chart/page work stays `[ ]` or `[~]`.
 
 ---
 
@@ -115,10 +116,12 @@ loading state · empty state · error state · auth status — verified identica
 - [x] Radii (999px pills, 22–24px cards), shadows, spacing per spec — **tokenised** as
   `--radius-*`, `--shadow-*`, `--space-*`. *(Phase 1; per-surface application is Phases 2–5.)*
 - [~] Segmented pill controls with sliding indicator where Fable uses them.
-  *(Phase 1 shipped the `.nv-indicator` motion primitive at 380ms/primary easing. Phase 2 is its
-  first real consumer — the desktop primary nav rail and the contextual secondary pill row both use
-  a measured sliding indicator via the shared `useNavIndicator` hook. Compare/Charting/Macro's own
-  timeframe/period/frequency toggles are still plain segmented buttons — Phase 3.)*
+  *(Phase 1 shipped the `.nv-indicator` motion primitive at 380ms/primary easing. Phase 2 consumed
+  it for the nav rails. Phase 3 generalized it into a reusable `SegmentedControl` component
+  (`src/components/fable/SegmentedControl.tsx`, `role="radiogroup"`, keyboard-operable, reuses
+  `useNavIndicator`) — but no page has adopted it yet. Compare/Charting/Macro's own timeframe/
+  period/frequency toggles still use their original plain segmented buttons; migrating them to
+  `SegmentedControl` is Phase 5 page work, not a Phase 3 deliverable.)*
 - [~] Motion (reveal, count-up, nav slide, drawer/pop) present and **`prefers-reduced-motion`-gated**.
   *(Phase 1: all 6 Fable keyframes, the duration/easing token set, the foundational utilities, and
   the reduced-motion block — which disables reveal / Ken-Burns / pulse / spin outright and collapses
@@ -130,15 +133,25 @@ loading state · empty state · error state · auth status — verified identica
   contrast), glass auth panel.
 
 ### C2 · Shared components restyled (semantics unchanged)
-- [ ] `ThemeToggle`, `LangToggle`, `SectionHeader`, `EmptyState`, `StatusPill`, `UpdateDataButton`.
-- [ ] `DataSourceBadge`, `MarketDataSourceBadge`, `SourceStateBadge`, `TableSourceFooter` — states,
+- [~] `ThemeToggle`, `LangToggle`, `SectionHeader`, `EmptyState`, `StatusPill`, `UpdateDataButton`.
+  *(Phase 3: `StatusPill` extended with 8 new semantic variants, same `{label, variant?}` signature.
+  `ThemeToggle`/`LangToggle`/`SectionHeader`/`EmptyState`/`UpdateDataButton` visual restyle deferred
+  — they already consume semantic tokens from Phase 1 and were left out of Phase 3's explicit scope.)*
+- [x] `DataSourceBadge`, `MarketDataSourceBadge`, `SourceStateBadge`, `TableSourceFooter` — states,
   labels, tooltips, one-footer-per-table preserved.
-- [ ] `CommandPalette` (⌘K/`/`/`cmdk:open`, recent searches), `NotificationBell` (drawer, polling,
+  *(Phase 3: confirmed untouched — `tests/fableComponents.test.ts` locks this in.)*
+- [x] `CommandPalette` (⌘K/`/`/`cmdk:open`, recent searches), `NotificationBell` (drawer, polling,
   auth-gate, mark-read).
+  *(Phase 3: both restyled to the Fable glass overlay/drawer language with full dialog semantics
+  — role="dialog", aria-modal, focus trap/restore, body-scroll lock — while every keyboard
+  shortcut, fetch, and persisted key is unchanged.)*
 - [ ] Charts (`LineChart`, `CompareChart`, `FundamentalsChart`, `YieldCurveChart`,
-  `EconomicCalendarTable`) — props, ResizeObserver, hover, markers, dual-axis intact.
-- [ ] New: `GlassCard`, `KpiCapsule`/`KpiHero`, `SegmentedPill`, `Sparkline`, `BarrierGauge`
-  (+ optional `DetailPanel`, `SideScrim`, privacy mask).
+  `EconomicCalendarTable`) — props, ResizeObserver, hover, markers, dual-axis intact. *(Phase 4.)*
+- [x] New: `GlassSurface`, `KpiCapsule`/`KpiHero`, `SegmentedControl`, `Sparkline`/`SparklineRow`,
+  `BarrierGauge`, `DetailPanel`, `AsyncState`, `PrivacyValue`/`usePrivacyMode`, `CurrentActions`,
+  `ChangeIndicator`, `useCountUp`, `motion` primitives (Reveal/Pop/SlideIn/ContentPulse).
+  *(Phase 3, 2026-07-24 — `src/components/fable/*`, 16 files. Not yet consumed by any page — that
+  is Phase 5.)*
 
 ### C3 · Interaction & state preservation
 - [~] All persisted `cmi.*` keys (compare, gf, ratesOrder, chartTimeframe, macroRegion,
@@ -158,26 +171,32 @@ loading state · empty state · error state · auth status — verified identica
 ### C4 · Engineering gates (run at each phase boundary)
 - [x] `npm run build` → 0 errors, all routes present. *(Phase 1 boundary: compiled in 6.4s, 19/19
   static pages, full route list unchanged. Phase 2 boundary: 0 errors, 19/19 static pages, full
-  route list unchanged.)*
-- [x] `npm run lint` → 0 problems. *(Phase 1 and Phase 2 boundaries.)*
+  route list unchanged. Phase 3 boundary: 0 errors, full route table unchanged.)*
+- [x] `npm run lint` → 0 problems. *(Phase 1, Phase 2, and Phase 3 boundaries.)*
 - [~] `npm test` → all files pass (business-logic tests untouched; DOM tests updated only
   deliberately, never deleted to pass). *(Phase 1 boundary: 1795 tests, 1792 pass. Phase 2 boundary:
-  **1846 tests, 1843 pass** — 2 new test files (`tests/topNavigation.test.ts`, 30 tests) and 2
-  existing test files deliberately updated (`tests/responsiveLayout.test.ts`'s sidebar block
-  rewritten for the new nav conventions; `tests/fableFoundation.test.ts`'s theme-token list dropped
-  the now-deleted `--sidebar*` entries) — no test weakened or deleted to force a pass. The same 3
-  pre-existing, date-dependent `tests/newsModule.test.ts` failures from Phase 1 persist unchanged
-  (News-module work, out of scope here).)*
+  1846 tests, 1843 pass. Phase 3 boundary: **1980 tests, 1977 pass** — 1 new test file
+  (`tests/fableComponents.test.ts`, 134 tests) and 2 existing test files deliberately updated
+  (`tests/responsiveLayout.test.ts`'s NotificationBell viewport-cap assertion now checks the new
+  `w-[min(390px,94vw)]` drawer pattern; `tests/notificationsPlatform.test.ts`'s unread-badge
+  assertion now checks `--critical-fill`/`--critical-fill-fg`, the exact migration Phase 1's own
+  `globals.css` DEVIATION note flagged as deferred to Phase 3/5) — no test weakened or deleted to
+  force a pass. The same 3 pre-existing, date-dependent `tests/newsModule.test.ts` failures from
+  Phase 1/2 persist unchanged (News-module work, out of scope here).)*
 - [ ] Browser responsive ladder (1728/1440/1280/1023/900/767/630/430/390) in **light + dark** and
   **EN + ES**, per route → zero page-level horizontal overflow.
-  *Phase 2 could only run HTTP/source-level checks — no interactive browser session was available
-  in this environment. A real browser ladder pass remains open.*
-- [ ] Accessibility: focus-visible ring, `aria` on toggles/dialogs, `prefers-reduced-motion`, AA
+  *Phase 3, like Phase 2, could only run source-level/build checks — no interactive browser session
+  was available in this environment, and no page consumes the new components yet to ladder-test. A
+  real browser pass remains open until Phase 5 renders these components on real pages.*
+- [~] Accessibility: focus-visible ring, `aria` on toggles/dialogs, `prefers-reduced-motion`, AA
   contrast.
-  *Phase 2: the mobile drawer's dialog semantics (`role="dialog"`, `aria-modal`, focus trap, Escape,
-  restored focus, body-scroll lock) and `aria-current`/reduced-motion on the nav indicator are
-  source-verified by `tests/topNavigation.test.ts`. A live keyboard/screen-reader/contrast pass
-  remains open.*
+  *Phase 2: the mobile drawer's dialog semantics and nav-indicator `aria-current`/reduced-motion are
+  source-verified by `tests/topNavigation.test.ts`. Phase 3: the same dialog-semantics pattern
+  (role="dialog", aria-modal, focus trap, Escape, restored focus, body-scroll lock) is now also
+  verified on `NotificationBell`, `CommandPalette`, and the new `DetailPanel` component by
+  `tests/fableComponents.test.ts`; `SegmentedControl`'s `role="radiogroup"`/keyboard handling and
+  `BarrierGauge`'s accessible text equivalent are source-verified too. A live keyboard/
+  screen-reader/contrast pass remains open.*
 - [ ] Print tearsheet (Company) renders; `.no-print` chrome hidden.
 
 ### C5 · Governance & docs
@@ -187,7 +206,8 @@ loading state · empty state · error state · auth status — verified identica
 - [ ] `docs/fable-integration/03` implementation/verification columns updated per route.
   *(Untouched by Phase 1 — no route changed.)*
 - [x] No new runtime dependency added without an explicit, documented decision (D6).
-  *(Phase 1 added none; `package.json`/`package-lock.json` unchanged. Asserted by test.)*
+  *(Phase 1 and Phase 3 both added none; `package.json`/`package-lock.json` unchanged. Asserted by
+  test in both phases.)*
 
 ### C6 · Security & privacy (merge point 12)
 - [ ] No secrets/credentials in client bundles; no `NEXT_PUBLIC_` provider key.

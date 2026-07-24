@@ -1,10 +1,17 @@
 'use client'
 
-// Platform notification bell — icon + red unread-count badge + dropdown
-// panel, mounted in the TopBar. Only rendered for signed-in users (the feed
-// is auth-only). Polls the shared feed periodically so the badge stays
-// current without a page refresh; "Mark as read" persists per-user via
-// notification_reads, so the badge count stays correct across devices.
+// Platform notification bell — icon + red unread-count badge + a right-edge
+// Fable glass drawer, mounted in the TopBar. Only rendered for signed-in
+// users (the feed is auth-only). Polls the shared feed periodically so the
+// badge stays current without a page refresh; "Mark as read" persists
+// per-user via notification_reads, so the badge count stays correct across
+// devices.
+//
+// Phase 3 (Fable): restyled from an anchored dropdown to a full dialog
+// drawer — role="dialog" aria-modal, a Tab focus trap, Escape-to-close
+// (unchanged), body-scroll lock, and focus restored to the bell button on
+// close — mirroring the pattern `MobileNavDrawer` established in Phase 2.
+// The fetch/polling/read APIs and auth gating below are unchanged.
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
@@ -22,6 +29,7 @@ interface Notification {
 }
 
 const POLL_MS = 60_000
+const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])'
 
 export function NotificationBell() {
   const { t } = useLang()
@@ -30,7 +38,9 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const wasOpenRef = useRef(open)
 
   // Inline fetch (not a memoized callback invoked as the effect's top-level
   // statement) — setState only runs from inside the .then() callback, the
@@ -55,16 +65,41 @@ export function NotificationBell() {
     return () => { cancelled = true; clearInterval(id) }
   }, [signedIn])
 
+  useEscape(open, () => setOpen(false))
+
+  // Body-scroll lock while the drawer is open.
   useEffect(() => {
     if (!open) return
-    const onClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onClickOutside)
-    return () => document.removeEventListener('mousedown', onClickOutside)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prevOverflow }
   }, [open])
 
-  useEscape(open, () => setOpen(false))
+  // Focus trap: first focusable element on open, Tab/Shift+Tab cycle inside.
+  useEffect(() => {
+    if (!open) return
+    const container = panelRef.current
+    if (!container) return
+    const getFocusable = () => Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+    const id = setTimeout(() => getFocusable()[0]?.focus(), 0)
+    function onKeydown(e: KeyboardEvent) {
+      if (e.key !== 'Tab') return
+      const focusable = getFocusable()
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
+    }
+    container.addEventListener('keydown', onKeydown)
+    return () => { clearTimeout(id); container.removeEventListener('keydown', onKeydown) }
+  }, [open])
+
+  // Restore focus to the bell button when the drawer closes.
+  useEffect(() => {
+    if (wasOpenRef.current && !open) triggerRef.current?.focus()
+    wasOpenRef.current = open
+  }, [open])
 
   async function markRead(id: string) {
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)))
@@ -81,10 +116,13 @@ export function NotificationBell() {
   if (!signedIn) return null
 
   return (
-    <div ref={containerRef} className="relative">
+    <>
       <button
+        ref={triggerRef}
         onClick={() => setOpen((v) => !v)}
-        className="relative flex items-center justify-center w-8 h-8 rounded-md text-muted-fg hover:text-foreground hover:bg-surface-2 transition-colors"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        className="relative flex items-center justify-center w-8 h-8 rounded-full text-muted-fg hover:text-foreground hover:bg-surface-2 nv-transition"
         aria-label={t.notifications.bellLabel}
         title={t.notifications.bellLabel}
       >
@@ -95,7 +133,7 @@ export function NotificationBell() {
         {unreadCount > 0 && (
           <span
             className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full text-[10px] leading-4 font-medium text-center"
-            style={{ backgroundColor: 'var(--negative)', color: '#fff' }}
+            style={{ backgroundColor: 'var(--critical-fill)', color: 'var(--critical-fill-fg)' }}
           >
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
@@ -103,53 +141,88 @@ export function NotificationBell() {
       </button>
 
       {open && (
-        <div
-          role="dialog"
-          aria-label={t.notifications.panelLabel}
-          className="absolute right-0 mt-2 w-96 max-w-[calc(100vw-1.5rem)] max-h-[28rem] overflow-y-auto rounded-lg border border-border bg-surface shadow-lg z-50"
-        >
-          <div className="flex items-center justify-between px-3 py-2 border-b border-border sticky top-0 bg-surface">
-            <span className="ui-label text-muted-fg">{t.notifications.panelLabel}</span>
-            {unreadCount > 0 && (
-              <button onClick={markAllRead} className="text-xs text-accent hover:underline">{t.notifications.markAllRead}</button>
-            )}
-          </div>
-          {notifications.length === 0 ? (
-            <div className="p-4 text-sm text-muted-fg text-center">{t.notifications.empty}</div>
-          ) : (
-            <ul>
-              {notifications.map((n) => (
-                <li key={n.id} className={`px-3 py-2.5 border-b border-border last:border-0 ${n.isRead ? '' : 'bg-surface-2'}`}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-sm text-foreground font-medium">{n.title}</p>
-                      {n.body && <p className="text-xs text-muted-fg mt-0.5">{n.body}</p>}
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs text-muted-fg ui-number">{new Date(n.createdAt).toLocaleString()}</span>
-                        {n.linkUrl && (
-                          <Link href={n.linkUrl} onClick={() => setOpen(false)} className="text-xs text-accent hover:underline">
-                            {t.notifications.view}
-                          </Link>
+        <div className="no-print fixed inset-0 z-[90]">
+          <div className="nv-scrim absolute inset-0" onClick={() => setOpen(false)} aria-hidden="true" />
+          <div
+            ref={panelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label={t.notifications.panelLabel}
+            className="nv-glass-overlay nv-slide-in absolute inset-y-0 right-0 w-[min(390px,94vw)] flex flex-col overflow-y-auto rounded-none"
+          >
+            <div className="flex items-center justify-between gap-2 px-4 pt-4 pb-3" style={{ borderBottom: '1px solid var(--nv-line)' }}>
+              <span className="ui-label text-muted-fg">{t.notifications.panelLabel}</span>
+              <div className="flex items-center gap-3">
+                {unreadCount > 0 && (
+                  <button onClick={markAllRead} className="text-xs text-accent hover:underline">{t.notifications.markAllRead}</button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  aria-label={t.fable.panel.close}
+                  title={t.fable.panel.close}
+                  className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-muted-fg hover:text-foreground hover:bg-surface-2 nv-transition"
+                >
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-4 h-4">
+                    <path strokeLinecap="round" d="M5 5l10 10M15 5L5 15" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="nv-surface-dense flex-1">
+              {notifications.length === 0 ? (
+                <div className="p-6 text-sm text-muted-fg text-center">{t.notifications.empty}</div>
+              ) : (
+                <ul>
+                  {notifications.map((n) => (
+                    <li
+                      key={n.id}
+                      className="px-4 py-3"
+                      style={{ borderBottom: '1px solid var(--nv-line)', backgroundColor: n.isRead ? 'transparent' : 'var(--selected)' }}
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <span
+                          className="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0"
+                          style={{ backgroundColor: n.isRead ? 'var(--muted-fg)' : 'var(--accent)' }}
+                          aria-hidden="true"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm text-foreground font-medium">{n.title}</p>
+                          {n.body && <p className="text-xs text-muted-fg mt-0.5">{n.body}</p>}
+                          <div className="flex items-center gap-2 mt-1.5">
+                            <span className="ui-meta">{new Date(n.createdAt).toLocaleString()}</span>
+                            {n.linkUrl && (
+                              <Link href={n.linkUrl} onClick={() => setOpen(false)} className="text-xs text-accent hover:underline">
+                                {t.notifications.view}
+                              </Link>
+                            )}
+                          </div>
+                        </div>
+                        {!n.isRead && (
+                          <button
+                            onClick={() => markRead(n.id)}
+                            className="shrink-0 text-xs px-2 py-1 rounded-full nv-transition"
+                            style={{ border: '1px solid var(--nv-chipbd)' }}
+                          >
+                            {t.notifications.markRead}
+                          </button>
                         )}
                       </div>
-                    </div>
-                    {!n.isRead && (
-                      <button onClick={() => markRead(n.id)} className="shrink-0 text-xs px-2 py-1 rounded border border-border hover:bg-surface-2">
-                        {t.notifications.markRead}
-                      </button>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-          <div className="px-3 py-2 border-t border-border">
-            <Link href="/settings/notifications" onClick={() => setOpen(false)} className="text-xs text-muted-fg hover:text-foreground hover:underline">
-              {t.notifications.manageRecipients}
-            </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="px-4 py-3" style={{ borderTop: '1px solid var(--nv-line)' }}>
+              <Link href="/settings/notifications" onClick={() => setOpen(false)} className="text-xs text-muted-fg hover:text-foreground hover:underline">
+                {t.notifications.manageRecipients}
+              </Link>
+            </div>
           </div>
         </div>
       )}
-    </div>
+    </>
   )
 }

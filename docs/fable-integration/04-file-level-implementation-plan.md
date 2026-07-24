@@ -192,7 +192,11 @@ renders with no leftover "NMI" monogram.
 
 ---
 
-## Phase 3 — Shared UI primitives (`src/components/ui/` + `src/components/fable/`)
+## Phase 3 — Shared UI primitives (`src/components/ui/` + `src/components/fable/`) ✓ COMPLETE (2026-07-24)
+
+> **Status: implemented and validated.** The reusable Fable component library now exists. No
+> individual page was redesigned this phase — see "Phase 3 — as built" below for the delivered
+> file list and validation record.
 
 Restyle every shared component so pages inherit the language for free. **Semantics/props stay
 identical** — only classes/markup change.
@@ -231,6 +235,69 @@ identical** — only classes/markup change.
 
 **Guardrails:** `tests/tableSourceFooterConvention.test.ts` (one footer/table, plain source
 names); badge/source tests. Charts keep their data props unchanged.
+
+---
+
+### Phase 3 — as built (2026-07-24)
+
+**New files (16 — `src/components/fable/`):** `GlassSurface.tsx` (the 7 Liquid Glass tiers as one
+prop-driven wrapper over the Phase 1 `.nv-glass-*`/`.nv-surface-dense`/`.nv-scrim` classes),
+`useCountUp.ts` (+ `usePrefersReducedMotion`, `useSyncExternalStore`-based, no setState-in-effect),
+`Sparkline.tsx`, `SparklineRow.tsx`, `ChangeIndicator.tsx`, `KpiCapsule.tsx`, `KpiHero.tsx`,
+`CurrentActions.tsx` (the one solid deep-teal card, new `.nv-action-card` CSS utility built only
+from existing `--nv-actioncard`/`--shadow-action`/`--radius-card` tokens — no new token),
+`SegmentedControl.tsx` (generic `role="radiogroup"` pill toggle, reusing the Phase 2
+`useNavIndicator` sliding-indicator hook — no second visual system), `BarrierGauge.tsx`,
+`TableCard.tsx`, `PrivacyValue.tsx` (+ `PrivacyToggle`), `usePrivacyMode.ts` (persisted via the
+existing `usePersistentState('cmi.privacyMode', …)` mechanism — no new persistence layer),
+`DetailPanel.tsx`, `AsyncState.tsx` (loading/empty/error/unavailable/blocked/partial/stale, each
+with distinct copy — never a generic skeleton standing in for a meaningful state), `motion.tsx`
+(`Reveal`/`Pop`/`SlideIn`/`ContentPulse` + `OverlayTransition`/`ValueChangeTransition` aliases,
+each a thin wrapper over the existing `.nv-reveal`/`.nv-pop`/`.nv-slide-in` classes plus one new
+one-shot `.nv-content-pulse` utility — reuses the existing `nvPulse` keyframe and `--dur-pulse`
+token at a single iteration, distinct from the ambient `.nv-pulse` loop).
+
+**Modified (restyled in place, semantics/props preserved):**
+- `StatusPill.tsx` — purely additive: 8 new variants (critical/review/live/persisted/derived/
+  fallback/blocked/unavailable) mapped onto the existing `--state-*` tokens Phase 1 declared
+  specifically for this; the `{ label, variant? }` signature is unchanged, so no call site needed
+  an edit. Does not replace `DataSourceBadge`/`SourceStateBadge`'s own vocabulary or logic.
+- `NotificationBell.tsx` — restyled from an anchored dropdown to a full right-edge Fable drawer
+  (`.nv-glass-overlay` + `.nv-slide-in`, `w-[min(390px,94vw)]`): added `role="dialog" aria-modal`,
+  a Tab focus trap, body-scroll lock, and focus restored to the bell button on close — capabilities
+  the old dropdown never had. The unread-count badge moved from `--negative` to
+  `--critical-fill`/`--critical-fill-fg` — the exact "Follow-up for Phase 3/5" migration Phase 1's
+  own `globals.css` DEVIATION note called out for this precise surface. Polling, auth-gating,
+  mark-read/mark-all-read, links, and timestamps are byte-for-byte unchanged.
+- `CommandPalette.tsx` — restyled to `.nv-glass-overlay`/`.nv-scrim`/`.nv-pop`, added
+  `role="dialog" aria-modal"` and a body-scroll lock. Every keyboard shortcut (⌘K/Ctrl-K/`/`),
+  `cmdk:open` event, arrow-key navigation, and the `cmi.recentSearches` persistence are unchanged.
+
+**i18n:** new `fable` namespace (EN+ES) — `kpi`, `currentActions`, `barrier`, `privacy`, `panel`,
+`async` (7 states × title/body). No existing namespace was touched beyond this addition.
+
+**Deliberately deferred out of Phase 3** (per the brief — restyling shared primitives only, not
+pages): `ThemeToggle`/`LangToggle`/`SectionHeader`/`EmptyState`/`UpdateDataButton`/`SearchInput`/
+`BrandLogo` visual restyle, the 4 chart components (Phase 4), and every individual page (Phase 5).
+`GlassSurface` intentionally does not include an `action`/`module` variant beyond the 7 named
+tiers — Current Actions uses its own `.nv-action-card` class directly (it is not a glass tier: no
+blur, no translucency, a fixed solid gradient), and `TableCard` composes `GlassSurface
+variant="dense"` for its inner body rather than needing an 8th variant.
+
+**Validation:** lint 0 problems · build 0 errors (35/35 routes, full route table unchanged) · test
+suite 1846 → **1980 tests, 1977 pass** (134 new — `tests/fableComponents.test.ts`). The 3 failures
+are the same pre-existing, date-dependent `tests/newsModule.test.ts` fixture failures documented in
+Phases 1–2 (fixtures stamped mid-July against the orchestrator's rolling 7-day window; unrelated to
+this phase, reproduced identically before this phase's changes). Two pre-existing tests were
+updated deliberately, not weakened: `tests/responsiveLayout.test.ts`'s NotificationBell viewport-cap
+assertion now checks the new `w-[min(390px,94vw)]` pattern (still always narrower than the
+viewport, just a different responsive unit than the old dropdown's `max-w-[calc(100vw-1.5rem)]`);
+`tests/notificationsPlatform.test.ts`'s unread-badge assertion now checks `--critical-fill`/
+`--critical-fill-fg` instead of `--negative`, matching the pre-planned token migration above. No
+`src/app/**`, `src/middleware.ts`, `src/lib/{providers,db,financials,structuredNotes,market,
+earnings,compare,ingestion,observability,portfolio}/**`, `src/config/**`, `src/data/**`, or
+`package.json`/`package-lock.json` file was touched (no new dependency — verified by
+`tests/fableComponents.test.ts`'s dependency-list check).
 
 ---
 
@@ -339,7 +406,7 @@ hardcoded UI text in components. Reuse existing namespaces; add keys under `topb
 | 0 | `docs/design_principles.md`, `CLAUDE.md` (docs only) |
 | 1 | `src/app/globals.css`, `src/app/layout.tsx` |
 | 2 ✓ | `src/lib/navigation.ts`, `src/components/layout/{AppShell,TopBar,PrimaryNav,SecondaryNav,MobileNavDrawer,NavIcon,useNavIndicator}.tsx/.ts`, `src/components/providers/MobileNavProvider.tsx` (replaces `SidebarProvider`), `src/lib/i18n.ts`, `src/app/globals.css` (small addition + sidebar-token cleanup) — `Sidebar.tsx`/`SidebarProvider.tsx` deleted |
-| 3 | `src/components/ui/*` (all 14), new `src/components/fable/*` (GlassCard, KpiCapsule/Hero, SegmentedPill, Sparkline, BarrierGauge, DetailPanel, SideScrim) |
+| 3 ✓ | `src/components/ui/{StatusPill,NotificationBell,CommandPalette}.tsx` (restyled in place), new `src/components/fable/*` (GlassSurface, KpiCapsule/Hero, ChangeIndicator, Sparkline, SparklineRow, useCountUp, CurrentActions, SegmentedControl, BarrierGauge, TableCard, PrivacyValue, usePrivacyMode, DetailPanel, AsyncState, motion), `src/app/globals.css` (`.nv-action-card`, `.nv-content-pulse`), `src/lib/i18n.ts` (`fable` namespace) |
 | 4 | `src/components/charts/*` (4), `src/components/macro/EconomicCalendarTable.tsx` |
 | 5 | `src/app/{stocks,watchlist,companies/[ticker],macro,macro/calendar,earnings,compare,chart-builder,portfolio,structured-notes,structured-notes/[id],settings/notifications}/page.tsx`, `src/app/page.tsx` |
 | 6 | new `src/app/(auth)/layout.tsx`, `src/app/{login,forgot-password,auth/reset-password}/page.tsx`, `src/components/ui/BrandLogo.tsx`, `public/*` (login photo, logo) |
