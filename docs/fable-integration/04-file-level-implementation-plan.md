@@ -301,7 +301,11 @@ earnings,compare,ingestion,observability,portfolio}/**`, `src/config/**`, `src/d
 
 ---
 
-## Phase 4 — Charts (`src/components/charts/`)
+## Phase 4 — Charts (`src/components/charts/`) ✓ COMPLETE (2026-07-24)
+
+> **Status: implemented and validated.** All four SVG charts now speak the same tokenized
+> institutional chart language, share one tooltip surface, and carry a real accessible text
+> alternative. See "Phase 4 — as built" below for the delivered file list and validation record.
 
 Restyle the four SVG charts to the Fable chart language (gridlines, dashed zero line, chart
 palette `--chart-1/2/3` + tertiary, crosshair tooltip, event chips). **Keep every prop and the
@@ -310,6 +314,101 @@ ResizeObserver measurement** — data flow is untouched.
 **Files:** `LineChart.tsx`, `CompareChart.tsx`, `FundamentalsChart.tsx`, `YieldCurveChart.tsx`,
 `src/components/macro/EconomicCalendarTable.tsx` (table restyle). Consider extracting shared
 chart primitives (axis, gridlines, tooltip) into `src/components/fable/chart/`.
+
+---
+
+### Phase 4 — as built (2026-07-24)
+
+**New files (2 — `src/components/fable/chart/`):** `ChartTooltip.tsx` (the one shared
+institutional tooltip surface — near-opaque `--chart-tooltip-bg`, `--radius-menu`,
+`--shadow-card`, no `backdrop-filter` — consumed by all four charts, replacing four
+near-identical `rounded border-border bg-surface px-2 py-1 shadow-md` blocks); `chartA11y.ts`
+(one pure `formatTemplate()` helper used to build each chart's accessible summary sentence from
+its own translated template + real data).
+
+**`src/app/globals.css`:** one new "Chart semantic tokens" block in `:root` — `--chart-primary/
+secondary/tertiary/comparison`, `--chart-positive/negative/neutral/review/warning/unavailable`,
+`--chart-grid/axis/border/bg`, `--chart-tooltip-bg/fg/border`, `--chart-crosshair/
+selected-point/reference-line/threshold-line/confidence-band`, `--legend-text/
+legend-inactive-opacity`. Every one aliases an existing signal/material token (`--nv-ch1/2/3`,
+`--positive`, `--border`, `--surface-table`, …) — no new raw color was introduced, and each
+already resolves correctly per-theme because the tokens it points at are themselves redefined
+under `.dark`. `--chart-threshold-line` and `--chart-confidence-band` are declared but not yet
+consumed by any chart (no current chart renders a threshold/confidence-band series) — reserved
+for the next chart that needs one, matching the existing "reserved token" convention (e.g.
+`--news-src-de`).
+
+**`src/lib/formatters.ts`:** added `formatChartValue()` — the one inline `toLocaleString('es-CL',
+…)` fallback call that used to live inside `LineChart`'s tooltip formatter, extracted verbatim
+(identical output) so chart components no longer perform an ad hoc locale call themselves.
+
+**Modified (4 chart components, props/data logic byte-for-byte unchanged):**
+- `LineChart.tsx` — gridlines/axis/border/crosshair/hover-dot-halo tokens renamed to their
+  `--chart-*` equivalents; the primary line (and the "hasCompare" primary line, previously
+  `--accent`) now draws from the Fable-designated chart palette (`--chart-primary` →
+  `--nv-ch1`) rather than the generic UI accent token — a deliberate, documented harmonization
+  (still institutional blue in both themes; only the light-mode hue shifts from deep navy to
+  the Fable chart blue). Tooltip switched to the shared `ChartTooltip`. Added `role="img"` +
+  `aria-describedby` on the chart wrapper, an SVG `<title>`, and an `sr-only` long-form summary
+  (point count, date range, latest value, plus a compare-series and marker-count sentence when
+  present) built via `chartA11y`'s `formatTemplate` — the hardcoded `"No data available"`
+  fallback is now `t.common.noData`.
+- `CompareChart.tsx` — same token renames; the 0%-baseline dashed reference line moved from
+  `--muted-fg` to the new shared `--chart-reference-line` (aliasing `--border-strong`, matching
+  `FundamentalsChart`'s existing baseline color so the two charts no longer disagree on what a
+  "reference line" looks like); the click-to-highlight legend's dimmed state now reads
+  `--legend-inactive-opacity` instead of a bare Tailwind `opacity-50` class, and its transition
+  moved from `transition-opacity` (untokenized duration) to the shared `.nv-transition` utility.
+  Same tooltip/accessibility/i18n treatment as above (`"No data"` → `t.common.noData`).
+- `FundamentalsChart.tsx` — same token renames; the hover-column highlight rect moved from
+  `fill="var(--surface-2)" opacity="0.5"` to `fill="var(--hover)"` — the same row-hover-tint
+  token the rest of the app already uses for "highlight without a blur/shadow change"
+  (design_principles §8). Same tooltip/accessibility treatment; the rarely-hit
+  no-metric-selected fallback (`"Select a company and at least one metric."`) now reads
+  `t.charting.selectMetric`.
+- `YieldCurveChart.tsx` — same token renames, shared tooltip, accessibility treatment
+  (`"No data"` → `t.common.noData`).
+
+All four: `fontSize="11"` attributes became `fontSize="var(--fs-meta)"` (identical 11px, now a
+named token); gridlines/axis-label fill/plot-border/crosshair moved to `--chart-grid`/
+`--chart-axis`/`--chart-border`/`--chart-crosshair`; the hover-dot halo stroke moved to
+`--chart-selected-point` (aliasing `--surface`, unchanged value). No series, benchmark,
+comparison line, marker, timeframe, axis, unit, or tooltip/legend field was removed — verified by
+the new test file's explicit prop-preservation checks per component.
+
+**`src/components/macro/EconomicCalendarTable.tsx`:** one small change — row hover moved from
+`hover:bg-surface-2 transition-colors` to the established `.nv-row-hover .nv-transition`
+utilities (the same pattern Phase 3's `SparklineRow` already uses), for token-driven hover timing
+instead of Tailwind's untokenized default. Everything else in this file was already fully
+semantic-token-compliant and needed no change.
+
+**`src/lib/i18n.ts`:** new `fable.chart` sub-namespace (EN+ES) — a translated name + a
+`{placeholder}` summary template per chart kind (`lineChart`/`compareChart`/
+`fundamentalsChart`/`yieldCurveChart`), plus `compareSuffix`/`comparisonSeries`/`markersSuffix`
+fragments for `LineChart`'s optional compare/marker sentences. The 3 pre-existing hardcoded
+English-only fallback strings inside the chart components (a genuine, pre-existing bilingual-rule
+gap, fixed while already in these exact lines) now resolve through existing keys
+(`t.common.noData`, `t.charting.selectMetric`) rather than a new duplicate key.
+
+**Deliberately not done this phase:** no page (`/macro`, `/compare`, `/chart-builder`,
+`/companies/[ticker]`, `/macro/calendar`) was touched — they still import the same components with
+the same call signatures, so nothing needed to change there. No keyboard-operable data-point
+navigation was added to any chart (a real, pre-existing limitation the new accessible summary
+narrows but does not close — the summary text is a genuine data-bearing alternative, not merely a
+decorative label, but there is still no keyboard equivalent for the mouse-driven crosshair/
+tooltip). `Sparkline.tsx` and `BarrierGauge.tsx` (Phase 3) were already accessible and were not
+touched.
+
+**Validation:** lint 0 problems · build 0 errors (same 19 static + dynamic routes, full route
+table unchanged) · new `tests/fableCharts.test.ts` (94 tests: token declarations, no hardcoded
+hex/raw Tailwind color scale, per-component prop preservation, shared-tooltip adoption, accessible
+role/description presence, i18n completeness, no network calls, no new dependency, no new
+animation, scope guard confirming no page/middleware/auth file changed) · full suite 1980 → **2074
+tests, 2071 pass**. The 3 failures are the same pre-existing, date-dependent
+`tests/newsModule.test.ts` failures documented in Phases 1–3 (fixtures stamped mid-July against
+the orchestrator's rolling 7-day window; today, 2026-07-24, is outside it) — reproduced
+identically before this phase's changes (git-confirmed: no file under `tests/newsModule.test.ts`
+or any news-related source path was touched this phase).
 
 ---
 
@@ -407,7 +506,7 @@ hardcoded UI text in components. Reuse existing namespaces; add keys under `topb
 | 1 | `src/app/globals.css`, `src/app/layout.tsx` |
 | 2 ✓ | `src/lib/navigation.ts`, `src/components/layout/{AppShell,TopBar,PrimaryNav,SecondaryNav,MobileNavDrawer,NavIcon,useNavIndicator}.tsx/.ts`, `src/components/providers/MobileNavProvider.tsx` (replaces `SidebarProvider`), `src/lib/i18n.ts`, `src/app/globals.css` (small addition + sidebar-token cleanup) — `Sidebar.tsx`/`SidebarProvider.tsx` deleted |
 | 3 ✓ | `src/components/ui/{StatusPill,NotificationBell,CommandPalette}.tsx` (restyled in place), new `src/components/fable/*` (GlassSurface, KpiCapsule/Hero, ChangeIndicator, Sparkline, SparklineRow, useCountUp, CurrentActions, SegmentedControl, BarrierGauge, TableCard, PrivacyValue, usePrivacyMode, DetailPanel, AsyncState, motion), `src/app/globals.css` (`.nv-action-card`, `.nv-content-pulse`), `src/lib/i18n.ts` (`fable` namespace) |
-| 4 | `src/components/charts/*` (4), `src/components/macro/EconomicCalendarTable.tsx` |
+| 4 ✓ | `src/components/charts/{LineChart,CompareChart,FundamentalsChart,YieldCurveChart}.tsx` (restyled in place, props unchanged), new `src/components/fable/chart/{ChartTooltip.tsx,chartA11y.ts}`, `src/components/macro/EconomicCalendarTable.tsx` (row-hover utility swap), `src/app/globals.css` (chart semantic token block), `src/lib/formatters.ts` (`formatChartValue`), `src/lib/i18n.ts` (`fable.chart` namespace) |
 | 5 | `src/app/{stocks,watchlist,companies/[ticker],macro,macro/calendar,earnings,compare,chart-builder,portfolio,structured-notes,structured-notes/[id],settings/notifications}/page.tsx`, `src/app/page.tsx` |
 | 6 | new `src/app/(auth)/layout.tsx`, `src/app/{login,forgot-password,auth/reset-password}/page.tsx`, `src/components/ui/BrandLogo.tsx`, `public/*` (login photo, logo) |
 | 7 | `src/lib/i18n.ts` |

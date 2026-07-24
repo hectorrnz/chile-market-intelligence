@@ -1,6 +1,9 @@
 'use client'
 
 import { useId, useLayoutEffect, useRef, useState } from 'react'
+import { useLang } from '@/components/providers/LangProvider'
+import { ChartTooltip } from '@/components/fable/chart/ChartTooltip'
+import { formatTemplate } from '@/components/fable/chart/chartA11y'
 
 export interface FundSeries {
   key: string
@@ -41,6 +44,7 @@ function abbrev(v: number) {
 export function FundamentalsChart({
   labels, series, height = 340, indexed = false, chartType = 'auto', showLegend = true, showGrid = true, fmtBar, fmtLine, fmtAxis,
 }: FundamentalsChartProps) {
+  const { t } = useLang()
   const uid = useId().replace(/:/g, '')
   const wrapRef = useRef<HTMLDivElement>(null)
   const [w, setW] = useState(800)
@@ -58,7 +62,7 @@ export function FundamentalsChart({
 
   const n = labels.length
   if (n < 1 || series.length === 0) {
-    return <div className="flex items-center justify-center text-xs text-muted-fg" style={{ height }}>Select a company and at least one metric.</div>
+    return <div className="flex items-center justify-center text-xs text-muted-fg" style={{ height }} role="status">{t.charting.selectMetric}</div>
   }
 
   // Indexed mode: rebase each series to 100 from its first available point.
@@ -127,28 +131,44 @@ export function FundamentalsChart({
 
   const lineSeries = view.filter(s => !asBar(s))
 
+  const descId = `${uid}-desc`
+  const longSummary = formatTemplate(t.fable.chart.fundamentalsChartSummary, {
+    seriesCount: String(series.length),
+    count: String(n),
+    first: labels[0],
+    last: labels[n - 1],
+  })
+
   return (
     <div className="w-full">
-      <div ref={wrapRef} className="relative w-full" style={{ height: H }}>
-        <svg viewBox={`0 0 ${w} ${H}`} width="100%" height={H} style={{ display: 'block' }} onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
+      <div
+        ref={wrapRef}
+        className="relative w-full"
+        style={{ height: H, backgroundColor: 'var(--chart-bg)' }}
+        role="img"
+        aria-label={t.fable.chart.fundamentalsChart}
+        aria-describedby={descId}
+      >
+        <svg viewBox={`0 0 ${w} ${H}`} width="100%" height={H} style={{ display: 'block' }} onMouseMove={onMove} onMouseLeave={() => setHover(null)} aria-hidden="true">
+          <title>{t.fable.chart.fundamentalsChart}</title>
           <defs><clipPath id={`clip-${uid}`}><rect x={ML} y={MT} width={chartW} height={chartH} /></clipPath></defs>
 
           {lTickVals.map((v, i) => {
             const y = toYLeft(v)
             return (
               <g key={i}>
-                {showGrid && <line x1={ML} y1={y} x2={ML + chartW} y2={y} stroke="var(--border)" strokeWidth="1" opacity="0.4" />}
-                <text x={ML - 6} y={y} textAnchor="end" dominantBaseline="middle" fontSize="11" fill="var(--muted-fg)" fontFamily="var(--font-sans)">{indexed ? v.toFixed(0) : fmtAxis ? fmtAxis(v) : abbrev(v)}</text>
+                {showGrid && <line x1={ML} y1={y} x2={ML + chartW} y2={y} stroke="var(--chart-grid)" strokeWidth="1" opacity="0.4" />}
+                <text x={ML - 6} y={y} textAnchor="end" dominantBaseline="middle" fontSize="var(--fs-meta)" fill="var(--chart-axis)" fontFamily="var(--font-sans)">{indexed ? v.toFixed(0) : fmtAxis ? fmtAxis(v) : abbrev(v)}</text>
               </g>
             )
           })}
           {hasRight && rTickVals.map((v, i) => (
-            <text key={i} x={ML + chartW + 6} y={toYRight(v)} textAnchor="start" dominantBaseline="middle" fontSize="11" fill="var(--muted-fg)" fontFamily="var(--font-sans)">{v.toFixed(1)}</text>
+            <text key={i} x={ML + chartW + 6} y={toYRight(v)} textAnchor="start" dominantBaseline="middle" fontSize="var(--fs-meta)" fill="var(--chart-axis)" fontFamily="var(--font-sans)">{v.toFixed(1)}</text>
           ))}
 
-          <line x1={ML} y1={baseY} x2={ML + chartW} y2={baseY} stroke="var(--border-strong)" strokeWidth="1" strokeDasharray={indexed ? '4 3' : undefined} />
+          <line x1={ML} y1={baseY} x2={ML + chartW} y2={baseY} stroke="var(--chart-reference-line)" strokeWidth="1" strokeDasharray={indexed ? '4 3' : undefined} />
 
-          {hover != null && <rect x={ML + hover * slotW} y={MT} width={slotW} height={chartH} fill="var(--surface-2)" opacity="0.5" />}
+          {hover != null && <rect x={ML + hover * slotW} y={MT} width={slotW} height={chartH} fill="var(--hover)" />}
 
           {barSeries.map((s, bi) => (
             <g key={s.key} clipPath={`url(#clip-${uid})`}>
@@ -174,29 +194,31 @@ export function FundamentalsChart({
           })}
 
           {labels.map((q, i) => (
-            <text key={q + i} x={slotCenter(i)} y={MT + chartH + 16} textAnchor="middle" fontSize="11" fill="var(--muted-fg)" fontFamily="var(--font-sans)">{q}</text>
+            <text key={q + i} x={slotCenter(i)} y={MT + chartH + 16} textAnchor="middle" fontSize="var(--fs-meta)" fill="var(--chart-axis)" fontFamily="var(--font-sans)">{q}</text>
           ))}
 
-          <rect x={ML} y={MT} width={chartW} height={chartH} fill="none" stroke="var(--border)" strokeWidth="1" />
+          <rect x={ML} y={MT} width={chartW} height={chartH} fill="none" stroke="var(--chart-border)" strokeWidth="1" />
         </svg>
 
         {hover != null && (
-          <div className="pointer-events-none absolute z-10 rounded border border-border bg-surface px-2 py-1 shadow-md" style={{ left: tipLeft, top: 2, transform: 'translateX(-50%)', whiteSpace: 'nowrap' }}>
-            <div className="text-xs font-semibold text-foreground mb-0.5">{labels[hover]}</div>
+          <ChartTooltip left={tipLeft}>
+            <div className="text-xs font-semibold mb-0.5">{labels[hover]}</div>
             {series.map(s => {
               const raw = s.values[hover]
               const iv = indexed ? view.find(v => v.key === s.key)?.values[hover] ?? null : null
               return (
                 <div key={s.key} className="flex items-center justify-between gap-3 text-xs">
                   <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm" style={{ backgroundColor: s.color }} />{s.label}</span>
-                  <span className="ui-number text-foreground">
+                  <span className="ui-number">
                     {raw == null ? '—' : indexed ? `${iv!.toFixed(1)} (${s.type === 'bar' ? (fmtBar ? fmtBar(raw) : abbrev(raw)) : (fmtLine ? fmtLine(raw, s.unit) : `${raw}${s.unit}`)})` : s.type === 'bar' ? (fmtBar ? fmtBar(raw) : abbrev(raw)) : (fmtLine ? fmtLine(raw, s.unit) : `${raw}${s.unit}`)}
                   </span>
                 </div>
               )
             })}
-          </div>
+          </ChartTooltip>
         )}
+
+        <p id={descId} className="sr-only">{longSummary}</p>
       </div>
 
       {showLegend && (
@@ -208,11 +230,11 @@ export function FundamentalsChart({
                 {isBarSeries ? (
                   <span className="inline-block w-3 h-2.5 rounded-sm" style={{ backgroundColor: s.color, opacity: s.faded ? 0.5 : 1 }} />
                 ) : s.dashed ? (
-                  <svg width="18" height="10" viewBox="0 0 18 10" style={{ flexShrink: 0 }}>
+                  <svg width="18" height="10" viewBox="0 0 18 10" style={{ flexShrink: 0 }} aria-hidden="true">
                     <line x1="0" y1="5" x2="18" y2="5" stroke={s.color} strokeWidth="2" strokeDasharray="4 2" />
                   </svg>
                 ) : (
-                  <svg width="18" height="10" viewBox="0 0 18 10" style={{ flexShrink: 0 }}>
+                  <svg width="18" height="10" viewBox="0 0 18 10" style={{ flexShrink: 0 }} aria-hidden="true">
                     <line x1="0" y1="5" x2="18" y2="5" stroke={s.color} strokeWidth="2" />
                   </svg>
                 )}

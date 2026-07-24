@@ -263,6 +263,49 @@
   --selected: var(--nv-selected);
   --scrim:    var(--nv-scrim);
 
+  /* ── Chart semantic tokens (Phase 4 — shared chart & financial-visualization
+     system). Every SVG chart (LineChart, CompareChart, FundamentalsChart,
+     YieldCurveChart) and the shared ChartTooltip/ChartA11y helpers consume
+     ONLY these names — never a raw hex, never a bare --border/--muted-fg
+     reference — so the whole chart language can be retuned from one place.
+     Most alias an existing signal/material token (so a chart can never fall
+     out of sync with the rest of the app's palette); a handful are genuinely
+     new concepts this app had no shared name for until now. Declared once
+     here — each already resolves per-theme because the tokens it points at
+     (--nv-ch1/2/3, --positive, --border, …) are themselves redefined in
+     `.dark` below. */
+  --chart-primary:      var(--nv-ch1);
+  --chart-secondary:    var(--nv-ch2);
+  --chart-tertiary:     var(--nv-ch3);
+  --chart-comparison:   var(--muted-fg);
+  --chart-positive:     var(--positive);
+  --chart-negative:     var(--negative);
+  --chart-neutral:      var(--muted-fg);
+  --chart-review:       var(--review);
+  --chart-warning:      var(--warning);
+  --chart-unavailable:  var(--unavailable);
+
+  --chart-grid:   var(--border);
+  --chart-axis:   var(--muted-fg);
+  --chart-border: var(--border);
+  --chart-bg:     transparent;
+
+  --chart-tooltip-bg:     var(--surface-table);
+  --chart-tooltip-fg:     var(--foreground);
+  --chart-tooltip-border: var(--border);
+
+  --chart-crosshair:      var(--muted-fg);
+  --chart-selected-point: var(--surface);
+  --chart-reference-line: var(--border-strong);
+  --chart-threshold-line: var(--warning);
+  /* Reserved — no chart in this app renders a confidence band today; declared
+     so one added later has an immediate, correctly-themed token to consume
+     rather than inventing an ad hoc color. */
+  --chart-confidence-band: var(--nv-chip);
+
+  --legend-text:             var(--muted-fg);
+  --legend-inactive-opacity: .5;
+
   /* News source-code identity colors (institutional, non-signal — must NOT
      reuse positive/negative/warning, which carry meaning). Used only for the
      2-3 letter source code beside a news timestamp, so each outlet is

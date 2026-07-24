@@ -1,6 +1,9 @@
 'use client'
 
 import { useId, useLayoutEffect, useRef, useState } from 'react'
+import { useLang } from '@/components/providers/LangProvider'
+import { ChartTooltip } from '@/components/fable/chart/ChartTooltip'
+import { formatTemplate } from '@/components/fable/chart/chartA11y'
 
 interface CurveSeries {
   label: string
@@ -18,6 +21,7 @@ interface YieldCurveChartProps {
 
 /** Yield-curve chart: categorical x-axis (tenors), absolute y-values (yields). */
 export function YieldCurveChart({ tenors, series, unit = '%', height = 240 }: YieldCurveChartProps) {
+  const { t } = useLang()
   const uid = useId().replace(/:/g, '')
   const wrapRef = useRef<HTMLDivElement>(null)
   const [w, setW] = useState(800)
@@ -34,7 +38,7 @@ export function YieldCurveChart({ tenors, series, unit = '%', height = 240 }: Yi
   }, [])
 
   const n = tenors.length
-  if (n < 2) return <div className="text-xs text-muted-fg" style={{ height }}>No data</div>
+  if (n < 2) return <div className="text-xs text-muted-fg" style={{ height }} role="status">{t.common.noData}</div>
 
   const ML = 44, MR = 14, MT = 14, MB = 26
   const H = height
@@ -62,18 +66,32 @@ export function YieldCurveChart({ tenors, series, unit = '%', height = 240 }: Yi
   const hx = hover != null ? toX(hover) : 0
   const tipLeft = Math.max(70, Math.min(w - 70, hx))
 
+  const descId = `${uid}-desc`
+  const longSummary = formatTemplate(t.fable.chart.yieldCurveChartSummary, {
+    seriesCount: String(series.length),
+    tenorCount: String(n),
+  })
+
   return (
     <div className="w-full">
-      <div ref={wrapRef} className="relative w-full" style={{ height: H }}>
-        <svg viewBox={`0 0 ${w} ${H}`} width="100%" height={H} style={{ display: 'block' }} onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
+      <div
+        ref={wrapRef}
+        className="relative w-full"
+        style={{ height: H, backgroundColor: 'var(--chart-bg)' }}
+        role="img"
+        aria-label={t.fable.chart.yieldCurveChart}
+        aria-describedby={descId}
+      >
+        <svg viewBox={`0 0 ${w} ${H}`} width="100%" height={H} style={{ display: 'block' }} onMouseMove={onMove} onMouseLeave={() => setHover(null)} aria-hidden="true">
+          <title>{t.fable.chart.yieldCurveChart}</title>
           <defs><clipPath id={`clip-${uid}`}><rect x={ML} y={MT} width={chartW} height={chartH} /></clipPath></defs>
 
           {yTickVals.map((v, i) => {
             const y = toY(v)
             return (
               <g key={i}>
-                <line x1={ML} y1={y} x2={ML + chartW} y2={y} stroke="var(--border)" strokeWidth="1" opacity="0.4" />
-                <text x={ML - 6} y={y} textAnchor="end" dominantBaseline="middle" fontSize="11" fill="var(--muted-fg)" fontFamily="var(--font-sans)">{v.toFixed(1)}{unit}</text>
+                <line x1={ML} y1={y} x2={ML + chartW} y2={y} stroke="var(--chart-grid)" strokeWidth="1" opacity="0.4" />
+                <text x={ML - 6} y={y} textAnchor="end" dominantBaseline="middle" fontSize="var(--fs-meta)" fill="var(--chart-axis)" fontFamily="var(--font-sans)">{v.toFixed(1)}{unit}</text>
               </g>
             )
           })}
@@ -84,30 +102,32 @@ export function YieldCurveChart({ tenors, series, unit = '%', height = 240 }: Yi
           ))}
 
           {tenors.map((tn, i) => (
-            <text key={tn} x={toX(i)} y={MT + chartH + 16} textAnchor="middle" fontSize="11" fill="var(--muted-fg)" fontFamily="var(--font-sans)">{tn}</text>
+            <text key={tn} x={toX(i)} y={MT + chartH + 16} textAnchor="middle" fontSize="var(--fs-meta)" fill="var(--chart-axis)" fontFamily="var(--font-sans)">{tn}</text>
           ))}
 
-          <rect x={ML} y={MT} width={chartW} height={chartH} fill="none" stroke="var(--border)" strokeWidth="1" />
+          <rect x={ML} y={MT} width={chartW} height={chartH} fill="none" stroke="var(--chart-border)" strokeWidth="1" />
 
           {hover != null && (
             <g>
-              <line x1={hx} y1={MT} x2={hx} y2={MT + chartH} stroke="var(--muted-fg)" strokeWidth="1" strokeDasharray="3 3" opacity="0.7" />
-              {series.map(s => <circle key={s.label} cx={hx} cy={toY(s.values[hover])} r="3" fill={s.color} stroke="var(--surface)" strokeWidth="1.5" />)}
+              <line x1={hx} y1={MT} x2={hx} y2={MT + chartH} stroke="var(--chart-crosshair)" strokeWidth="1" strokeDasharray="3 3" opacity="0.7" />
+              {series.map(s => <circle key={s.label} cx={hx} cy={toY(s.values[hover])} r="3" fill={s.color} stroke="var(--chart-selected-point)" strokeWidth="1.5" />)}
             </g>
           )}
         </svg>
 
         {hover != null && (
-          <div className="pointer-events-none absolute z-10 rounded border border-border bg-surface px-2 py-1 shadow-md" style={{ left: tipLeft, top: 2, transform: 'translateX(-50%)', whiteSpace: 'nowrap' }}>
-            <div className="text-xs font-semibold text-foreground mb-0.5">{tenors[hover]}</div>
+          <ChartTooltip left={tipLeft}>
+            <div className="text-xs font-semibold mb-0.5">{tenors[hover]}</div>
             {series.map(s => (
               <div key={s.label} className="flex items-center justify-between gap-3 text-xs">
                 <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />{s.label}</span>
-                <span className="ui-number text-foreground">{s.values[hover].toFixed(2)}{unit}</span>
+                <span className="ui-number">{s.values[hover].toFixed(2)}{unit}</span>
               </div>
             ))}
-          </div>
+          </ChartTooltip>
         )}
+
+        <p id={descId} className="sr-only">{longSummary}</p>
       </div>
 
       <div className="flex items-center gap-4 flex-wrap mt-2">

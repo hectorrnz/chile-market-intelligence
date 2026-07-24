@@ -8,10 +8,12 @@ Status key: `[ ]` not done · `[~]` in progress · `[x]` verified.
 
 **Phase progress:** Phase 0 (design governance) ✓ · **Phase 1 (shared visual foundation) ✓
 COMPLETE 2026-07-22** · **Phase 2 (app shell: top pill navigation) ✓ COMPLETE 2026-07-24** ·
-**Phase 3 (shared UI primitives / Fable component library) ✓ COMPLETE 2026-07-24** — see
+**Phase 3 (shared UI primitives / Fable component library) ✓ COMPLETE 2026-07-24** ·
+**Phase 4 (shared chart & financial-visualization system) ✓ COMPLETE 2026-07-24** — see
 `04-file-level-implementation-plan.md` § "Phase 1 — as built" / "Phase 2 — as built" /
-"Phase 3 — as built". Phases 4–8 not started. Items below are ticked only where Phase 1–3
-genuinely satisfy them; everything that still depends on chart/page work stays `[ ]` or `[~]`.
+"Phase 3 — as built" / "Phase 4 — as built". Phases 5–8 not started. Items below are ticked only
+where Phase 1–4 genuinely satisfy them; everything that still depends on page work stays `[ ]` or
+`[~]`.
 
 ---
 
@@ -145,8 +147,14 @@ loading state · empty state · error state · auth status — verified identica
   *(Phase 3: both restyled to the Fable glass overlay/drawer language with full dialog semantics
   — role="dialog", aria-modal, focus trap/restore, body-scroll lock — while every keyboard
   shortcut, fetch, and persisted key is unchanged.)*
-- [ ] Charts (`LineChart`, `CompareChart`, `FundamentalsChart`, `YieldCurveChart`,
-  `EconomicCalendarTable`) — props, ResizeObserver, hover, markers, dual-axis intact. *(Phase 4.)*
+- [x] Charts (`LineChart`, `CompareChart`, `FundamentalsChart`, `YieldCurveChart`,
+  `EconomicCalendarTable`) — props, ResizeObserver, hover, markers, dual-axis intact.
+  *(Phase 4, 2026-07-24 — every prop/series/marker/tooltip-field/legend-item preserved
+  (`tests/fableCharts.test.ts` asserts this per component); gridline/axis/border/crosshair/
+  hover-dot tokens moved to a new shared `--chart-*` set; a shared `ChartTooltip` replaces four
+  duplicated ad hoc tooltip boxes; each chart gained `role="img"` + `aria-describedby` + an
+  `sr-only` data-driven summary + an SVG `<title>` — a real accessible alternative, not merely a
+  title. No page that consumes these charts changed.)*
 - [x] New: `GlassSurface`, `KpiCapsule`/`KpiHero`, `SegmentedControl`, `Sparkline`/`SparklineRow`,
   `BarrierGauge`, `DetailPanel`, `AsyncState`, `PrivacyValue`/`usePrivacyMode`, `CurrentActions`,
   `ChangeIndicator`, `useCountUp`, `motion` primitives (Reveal/Pop/SlideIn/ContentPulse).
@@ -171,23 +179,21 @@ loading state · empty state · error state · auth status — verified identica
 ### C4 · Engineering gates (run at each phase boundary)
 - [x] `npm run build` → 0 errors, all routes present. *(Phase 1 boundary: compiled in 6.4s, 19/19
   static pages, full route list unchanged. Phase 2 boundary: 0 errors, 19/19 static pages, full
-  route list unchanged. Phase 3 boundary: 0 errors, full route table unchanged.)*
-- [x] `npm run lint` → 0 problems. *(Phase 1, Phase 2, and Phase 3 boundaries.)*
+  route list unchanged. Phase 3 boundary: 0 errors, full route table unchanged. Phase 4 boundary:
+  0 errors, full route table unchanged — no page route touched.)*
+- [x] `npm run lint` → 0 problems. *(Phase 1, Phase 2, Phase 3, and Phase 4 boundaries.)*
 - [~] `npm test` → all files pass (business-logic tests untouched; DOM tests updated only
   deliberately, never deleted to pass). *(Phase 1 boundary: 1795 tests, 1792 pass. Phase 2 boundary:
-  1846 tests, 1843 pass. Phase 3 boundary: **1980 tests, 1977 pass** — 1 new test file
-  (`tests/fableComponents.test.ts`, 134 tests) and 2 existing test files deliberately updated
-  (`tests/responsiveLayout.test.ts`'s NotificationBell viewport-cap assertion now checks the new
-  `w-[min(390px,94vw)]` drawer pattern; `tests/notificationsPlatform.test.ts`'s unread-badge
-  assertion now checks `--critical-fill`/`--critical-fill-fg`, the exact migration Phase 1's own
-  `globals.css` DEVIATION note flagged as deferred to Phase 3/5) — no test weakened or deleted to
-  force a pass. The same 3 pre-existing, date-dependent `tests/newsModule.test.ts` failures from
-  Phase 1/2 persist unchanged (News-module work, out of scope here).)*
+  1846 tests, 1843 pass. Phase 3 boundary: 1980 tests, 1977 pass. Phase 4 boundary: **2074 tests,
+  2071 pass** — 1 new test file (`tests/fableCharts.test.ts`, 94 tests); no existing test was
+  modified this phase. The same 3 pre-existing, date-dependent `tests/newsModule.test.ts` failures
+  from Phases 1–3 persist unchanged (News-module work, out of scope here; no news-related file was
+  touched this phase, confirmed via `git status`).)*
 - [ ] Browser responsive ladder (1728/1440/1280/1023/900/767/630/430/390) in **light + dark** and
   **EN + ES**, per route → zero page-level horizontal overflow.
-  *Phase 3, like Phase 2, could only run source-level/build checks — no interactive browser session
-  was available in this environment, and no page consumes the new components yet to ladder-test. A
-  real browser pass remains open until Phase 5 renders these components on real pages.*
+  *Phase 3/4, like Phase 2, could only run source-level/build checks — no interactive browser
+  session was available in this environment, and no page was restyled yet to ladder-test. A real
+  browser pass remains open until Phase 5 renders the restyled charts on real pages.*
 - [~] Accessibility: focus-visible ring, `aria` on toggles/dialogs, `prefers-reduced-motion`, AA
   contrast.
   *Phase 2: the mobile drawer's dialog semantics and nav-indicator `aria-current`/reduced-motion are
@@ -206,8 +212,9 @@ loading state · empty state · error state · auth status — verified identica
 - [ ] `docs/fable-integration/03` implementation/verification columns updated per route.
   *(Untouched by Phase 1 — no route changed.)*
 - [x] No new runtime dependency added without an explicit, documented decision (D6).
-  *(Phase 1 and Phase 3 both added none; `package.json`/`package-lock.json` unchanged. Asserted by
-  test in both phases.)*
+  *(Phase 1, Phase 3, and Phase 4 all added none; `package.json`/`package-lock.json` unchanged
+  every time — no chart library was added, per the brief's explicit instruction to keep the
+  existing pure-SVG approach. Asserted by test in every phase.)*
 
 ### C6 · Security & privacy (merge point 12)
 - [ ] No secrets/credentials in client bundles; no `NEXT_PUBLIC_` provider key.

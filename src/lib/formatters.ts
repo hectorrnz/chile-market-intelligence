@@ -69,6 +69,16 @@ export function formatLargeCLP(value: number): string {
   return formatCLP(value)
 }
 
+/**
+ * Generic chart-value formatter (Chilean locale, up to 2 decimals) — the
+ * shared fallback the SVG chart components use when a caller does not supply
+ * its own `valueFormatter`. Centralizes what used to be an inline
+ * `toLocaleString` call inside `LineChart`; identical output.
+ */
+export function formatChartValue(value: number, unit = ''): string {
+  return `${value.toLocaleString('es-CL', { maximumFractionDigits: 2 })}${unit}`
+}
+
 /** Format an FX/level value with a fixed number of decimals (Chilean locale). */
 export function formatFx(value: number, decimals = 2): string {
   return value.toLocaleString('es-CL', {

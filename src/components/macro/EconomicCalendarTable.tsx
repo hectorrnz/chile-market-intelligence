@@ -68,7 +68,7 @@ export function EconomicCalendarTable({ events, emptyMessage }: { events: Enrich
             const m = r.metric
             const pending = m?.status === 'pending'
             return (
-              <tr key={`${r.event.id}-${m?.key ?? 'na'}-${i}`} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
+              <tr key={`${r.event.id}-${m?.key ?? 'na'}-${i}`} className="border-b border-border last:border-0 nv-row-hover nv-transition">
                 <td className="py-2 pl-4 pr-3 ui-number text-muted-fg whitespace-nowrap">{r.firstOfEvent ? r.event.date : ''}</td>
                 <td className="py-2 px-3 text-foreground">
                   {r.firstOfEvent ? (

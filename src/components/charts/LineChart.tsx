@@ -1,6 +1,10 @@
 'use client'
 
 import { useId, useLayoutEffect, useRef, useState } from 'react'
+import { useLang } from '@/components/providers/LangProvider'
+import { formatChartValue } from '@/lib/formatters'
+import { ChartTooltip } from '@/components/fable/chart/ChartTooltip'
+import { formatTemplate } from '@/components/fable/chart/chartA11y'
 
 interface DataPoint {
   date: string
@@ -35,6 +39,7 @@ export function LineChart({
   data, unit = '', height = 200, valueFormatter,
   compareData, compareLabel, primaryLabel, markers,
 }: LineChartProps) {
+  const { t } = useLang()
   const uid = useId().replace(/:/g, '')
   const wrapRef = useRef<HTMLDivElement>(null)
   const [w, setW] = useState(800)
@@ -52,8 +57,8 @@ export function LineChart({
 
   if (!data || data.length < 2) {
     return (
-      <div className="flex items-center justify-center text-xs text-muted-fg" style={{ height }}>
-        No data available
+      <div className="flex items-center justify-center text-xs text-muted-fg" style={{ height }} role="status">
+        {t.common.noData}
       </div>
     )
   }
@@ -122,11 +127,13 @@ export function LineChart({
     if (spanDays <= 400) return `${d.getDate()} ${mon} ${d.getFullYear()}`
     return `${mon} ${d.getFullYear()}`
   }
-  const fmtVal = (v: number) =>
-    valueFormatter ? valueFormatter(v) : `${v.toLocaleString('es-CL', { maximumFractionDigits: 2 })}${unit}`
+  const fmtVal = (v: number) => (valueFormatter ? valueFormatter(v) : formatChartValue(v, unit))
 
   const isPositive = data[data.length - 1].value >= data[0].value
-  const strokeColor = hasCompare ? 'var(--accent)' : (isPositive ? 'var(--positive)' : 'var(--negative)')
+  // Chart lines use the Fable-designated chart palette (--chart-primary,
+  // aliasing --nv-ch1) rather than the generic UI --accent token, so the
+  // chart language stays retunable independently of the rest of the UI.
+  const strokeColor = hasCompare ? 'var(--chart-primary)' : (isPositive ? 'var(--chart-positive)' : 'var(--chart-negative)')
 
   // Map markers to x positions within the visible range
   const lo = data[0].date, hi = data[data.length - 1].date
@@ -150,9 +157,40 @@ export function LineChart({
   const tipLeft = hp ? Math.max(60, Math.min(w - 60, hp.x)) : 0
   const baseline = MT + chartH
 
+  // Accessible text alternative (design_principles §20 — a chart is never
+  // "accessible" merely because its SVG carries a <title>). A short name goes
+  // on aria-label; the fuller data summary — point count, date range, latest
+  // value, and (when present) the compare-series value and marker count — is
+  // exposed via aria-describedby so the real numbers are always available to
+  // assistive tech, not just a decorative label.
+  const descId = `${uid}-desc`
+  let longSummary = formatTemplate(t.fable.chart.lineChartSummary, {
+    count: String(data.length),
+    from: formatTooltipDate(data[0].date),
+    to: formatTooltipDate(data[data.length - 1].date),
+    latest: fmtVal(data[data.length - 1].value),
+  })
+  if (hasCompare && compareData) {
+    longSummary += ' ' + formatTemplate(t.fable.chart.compareSuffix, {
+      label: compareLabel ?? t.fable.chart.comparisonSeries,
+      value: fmtVal(compareData[compareData.length - 1].value),
+    })
+  }
+  if (markerPts.length > 0) {
+    longSummary += ' ' + formatTemplate(t.fable.chart.markersSuffix, { count: String(markerPts.length) })
+  }
+
   return (
-    <div ref={wrapRef} className="relative w-full" style={{ height: H }}>
-      <svg viewBox={`0 0 ${w} ${H}`} width="100%" height={H} style={{ display: 'block' }} onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
+    <div
+      ref={wrapRef}
+      className="relative w-full"
+      style={{ height: H, backgroundColor: 'var(--chart-bg)' }}
+      role="img"
+      aria-label={t.fable.chart.lineChart}
+      aria-describedby={descId}
+    >
+      <svg viewBox={`0 0 ${w} ${H}`} width="100%" height={H} style={{ display: 'block' }} onMouseMove={onMove} onMouseLeave={() => setHover(null)} aria-hidden="true">
+        <title>{t.fable.chart.lineChart}</title>
         <defs>
           <linearGradient id={`area-${uid}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={strokeColor} stopOpacity="0.16" />
@@ -165,8 +203,8 @@ export function LineChart({
           const y = toY(v)
           return (
             <g key={i}>
-              <line x1={ML} y1={y} x2={ML + chartW} y2={y} stroke="var(--border)" strokeWidth="1" opacity="0.5" />
-              <text x={ML - 8} y={y} textAnchor="end" dominantBaseline="middle" fontSize="11" fill="var(--muted-fg)" fontFamily="var(--font-sans)">
+              <line x1={ML} y1={y} x2={ML + chartW} y2={y} stroke="var(--chart-grid)" strokeWidth="1" opacity="0.5" />
+              <text x={ML - 8} y={y} textAnchor="end" dominantBaseline="middle" fontSize="var(--fs-meta)" fill="var(--chart-axis)" fontFamily="var(--font-sans)">
                 {formatY(v)}{unit}
               </text>
             </g>
@@ -176,7 +214,7 @@ export function LineChart({
         {!hasCompare && <path d={areaPath} fill={`url(#area-${uid})`} clipPath={`url(#clip-${uid})`} />}
 
         {hasCompare && (
-          <path d={comparePath} fill="none" stroke="var(--muted-fg)" strokeWidth="1.25" strokeDasharray="4 3" opacity="0.8" clipPath={`url(#clip-${uid})`} />
+          <path d={comparePath} fill="none" stroke="var(--chart-comparison)" strokeWidth="1.25" strokeDasharray="4 3" opacity="0.8" clipPath={`url(#clip-${uid})`} />
         )}
 
         <path d={linePath} fill="none" stroke={strokeColor} strokeWidth="1.75" strokeLinejoin="round" strokeLinecap="round" clipPath={`url(#clip-${uid})`} />
@@ -185,8 +223,8 @@ export function LineChart({
           const x = toX(idx, data.length)
           return (
             <g key={idx}>
-              <line x1={x} y1={baseline} x2={x} y2={baseline + 4} stroke="var(--border)" strokeWidth="1" />
-              <text x={x} y={baseline + 16} textAnchor="middle" fontSize="11" fill="var(--muted-fg)" fontFamily="var(--font-sans)">
+              <line x1={x} y1={baseline} x2={x} y2={baseline + 4} stroke="var(--chart-grid)" strokeWidth="1" />
+              <text x={x} y={baseline + 16} textAnchor="middle" fontSize="var(--fs-meta)" fill="var(--chart-axis)" fontFamily="var(--font-sans)">
                 {formatX(data[idx].date)}
               </text>
             </g>
@@ -204,12 +242,12 @@ export function LineChart({
           </path>
         ))}
 
-        <rect x={ML} y={MT} width={chartW} height={chartH} fill="none" stroke="var(--border)" strokeWidth="1" />
+        <rect x={ML} y={MT} width={chartW} height={chartH} fill="none" stroke="var(--chart-border)" strokeWidth="1" />
 
         {hp && (
           <g>
-            <line x1={hp.x} y1={MT} x2={hp.x} y2={baseline} stroke="var(--muted-fg)" strokeWidth="1" strokeDasharray="3 3" opacity="0.7" />
-            <circle cx={hp.x} cy={hp.y} r="3.5" fill={strokeColor} stroke="var(--surface)" strokeWidth="1.5" />
+            <line x1={hp.x} y1={MT} x2={hp.x} y2={baseline} stroke="var(--chart-crosshair)" strokeWidth="1" strokeDasharray="3 3" opacity="0.7" />
+            <circle cx={hp.x} cy={hp.y} r="3.5" fill={strokeColor} stroke="var(--chart-selected-point)" strokeWidth="1.5" />
           </g>
         )}
       </svg>
@@ -217,23 +255,22 @@ export function LineChart({
       {/* Legend when comparing two series */}
       {hasCompare && (
         <div className="pointer-events-none absolute top-1 right-2 flex items-center gap-3 text-xs">
-          <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5" style={{ backgroundColor: 'var(--accent)' }} />{primaryLabel}</span>
-          <span className="flex items-center gap-1 text-muted-fg"><span className="inline-block w-3 h-0.5" style={{ backgroundColor: 'var(--muted-fg)' }} />{compareLabel}</span>
+          <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5" style={{ backgroundColor: 'var(--chart-primary)' }} />{primaryLabel}</span>
+          <span className="flex items-center gap-1 text-muted-fg"><span className="inline-block w-3 h-0.5" style={{ backgroundColor: 'var(--chart-comparison)' }} />{compareLabel}</span>
         </div>
       )}
 
       {hover != null && hp && (
-        <div
-          className="pointer-events-none absolute z-10 rounded border border-border bg-surface px-2 py-1 shadow-md"
-          style={{ left: tipLeft, top: 2, transform: 'translateX(-50%)', whiteSpace: 'nowrap' }}
-        >
-          <div className="ui-number text-xs font-semibold text-foreground">{fmtVal(data[hover].value)}</div>
+        <ChartTooltip left={tipLeft}>
+          <div className="ui-number text-xs font-semibold">{fmtVal(data[hover].value)}</div>
           {hasCompare && compareData![hover] && (
             <div className="ui-number text-xs text-muted-fg">{compareLabel}: {fmtVal(compareData![hover].value)}</div>
           )}
           <div className="text-xs text-muted-fg">{formatTooltipDate(data[hover].date)}</div>
-        </div>
+        </ChartTooltip>
       )}
+
+      <p id={descId} className="sr-only">{longSummary}</p>
     </div>
   )
 }

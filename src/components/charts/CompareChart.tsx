@@ -1,6 +1,9 @@
 'use client'
 
 import { useId, useLayoutEffect, useRef, useState } from 'react'
+import { useLang } from '@/components/providers/LangProvider'
+import { ChartTooltip } from '@/components/fable/chart/ChartTooltip'
+import { formatTemplate } from '@/components/fable/chart/chartA11y'
 
 interface Series {
   ticker: string
@@ -22,6 +25,7 @@ function parseDate(s: string): Date { return new Date(s.length === 7 ? `${s}-01`
 
 /** Cumulative % return chart (each series rebased to 0% from its first point) — COMP-style. */
 export function CompareChart({ series, height = 300, showGrid = true, lineWidth = 1.75, legend = false }: CompareChartProps) {
+  const { t } = useLang()
   const uid = useId().replace(/:/g, '')
   const wrapRef = useRef<HTMLDivElement>(null)
   const [w, setW] = useState(800)
@@ -40,7 +44,7 @@ export function CompareChart({ series, height = 300, showGrid = true, lineWidth 
 
   const live = series.filter(s => s.data.length >= 2)
   if (live.length === 0) {
-    return <div className="flex items-center justify-center text-xs text-muted-fg" style={{ height }}>No data</div>
+    return <div className="flex items-center justify-center text-xs text-muted-fg" style={{ height }} role="status">{t.common.noData}</div>
   }
 
   const n = Math.min(...live.map(s => s.data.length))
@@ -88,18 +92,37 @@ export function CompareChart({ series, height = 300, showGrid = true, lineWidth 
   const tipLeft = Math.max(70, Math.min(w - 70, hx))
   const zeroY = toY(0)
 
+  // Accessible text alternative — series count, point count, and date range;
+  // the individual per-series latest % values are already surfaced as real
+  // visible text in the legend below (never color-only).
+  const descId = `${uid}-desc`
+  const longSummary = formatTemplate(t.fable.chart.compareChartSummary, {
+    seriesCount: String(ret.length),
+    count: String(n),
+    from: dates[0],
+    to: dates[n - 1],
+  })
+
   return (
     <div className="w-full">
-    <div ref={wrapRef} className="relative w-full" style={{ height: H }}>
-      <svg viewBox={`0 0 ${w} ${H}`} width="100%" height={H} style={{ display: 'block' }} onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
+    <div
+      ref={wrapRef}
+      className="relative w-full"
+      style={{ height: H, backgroundColor: 'var(--chart-bg)' }}
+      role="img"
+      aria-label={t.fable.chart.compareChart}
+      aria-describedby={descId}
+    >
+      <svg viewBox={`0 0 ${w} ${H}`} width="100%" height={H} style={{ display: 'block' }} onMouseMove={onMove} onMouseLeave={() => setHover(null)} aria-hidden="true">
+        <title>{t.fable.chart.compareChart}</title>
         <defs><clipPath id={`clip-${uid}`}><rect x={ML} y={MT} width={chartW} height={chartH} /></clipPath></defs>
 
         {yTickVals.map((v, i) => {
           const y = toY(v)
           return (
             <g key={i}>
-              {showGrid && <line x1={ML} y1={y} x2={ML + chartW} y2={y} stroke="var(--border)" strokeWidth="1" opacity="0.4" />}
-              <text x={ML - 6} y={y} textAnchor="end" dominantBaseline="middle" fontSize="11" fill="var(--muted-fg)" fontFamily="var(--font-sans)">
+              {showGrid && <line x1={ML} y1={y} x2={ML + chartW} y2={y} stroke="var(--chart-grid)" strokeWidth="1" opacity="0.4" />}
+              <text x={ML - 6} y={y} textAnchor="end" dominantBaseline="middle" fontSize="var(--fs-meta)" fill="var(--chart-axis)" fontFamily="var(--font-sans)">
                 {v > 0 ? '+' : ''}{v.toFixed(0)}%
               </text>
             </g>
@@ -107,7 +130,7 @@ export function CompareChart({ series, height = 300, showGrid = true, lineWidth 
         })}
 
         {/* 0% baseline */}
-        <line x1={ML} y1={zeroY} x2={ML + chartW} y2={zeroY} stroke="var(--muted-fg)" strokeWidth="1" strokeDasharray="4 3" opacity="0.7" />
+        <line x1={ML} y1={zeroY} x2={ML + chartW} y2={zeroY} stroke="var(--chart-reference-line)" strokeWidth="1" strokeDasharray="4 3" opacity="0.7" />
 
         {ret.map(s => (
           <path key={s.ticker} d={s.pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${toX(i).toFixed(1)},${toY(p.value).toFixed(1)}`).join(' ')}
@@ -119,35 +142,37 @@ export function CompareChart({ series, height = 300, showGrid = true, lineWidth 
 
         {xTickIdx.map(i => (
           <g key={i}>
-            <line x1={toX(i)} y1={MT + chartH} x2={toX(i)} y2={MT + chartH + 4} stroke="var(--border)" strokeWidth="1" />
-            <text x={toX(i)} y={MT + chartH + 16} textAnchor="middle" fontSize="11" fill="var(--muted-fg)" fontFamily="var(--font-sans)">{fmtX(dates[i])}</text>
+            <line x1={toX(i)} y1={MT + chartH} x2={toX(i)} y2={MT + chartH + 4} stroke="var(--chart-grid)" strokeWidth="1" />
+            <text x={toX(i)} y={MT + chartH + 16} textAnchor="middle" fontSize="var(--fs-meta)" fill="var(--chart-axis)" fontFamily="var(--font-sans)">{fmtX(dates[i])}</text>
           </g>
         ))}
 
-        <rect x={ML} y={MT} width={chartW} height={chartH} fill="none" stroke="var(--border)" strokeWidth="1" />
+        <rect x={ML} y={MT} width={chartW} height={chartH} fill="none" stroke="var(--chart-border)" strokeWidth="1" />
 
         {hover != null && (
           <g>
-            <line x1={hx} y1={MT} x2={hx} y2={MT + chartH} stroke="var(--muted-fg)" strokeWidth="1" strokeDasharray="3 3" opacity="0.7" />
-            {ret.map(s => <circle key={s.ticker} cx={hx} cy={toY(s.pts[hover].value)} r="3" fill={s.color} stroke="var(--surface)" strokeWidth="1.5" />)}
+            <line x1={hx} y1={MT} x2={hx} y2={MT + chartH} stroke="var(--chart-crosshair)" strokeWidth="1" strokeDasharray="3 3" opacity="0.7" />
+            {ret.map(s => <circle key={s.ticker} cx={hx} cy={toY(s.pts[hover].value)} r="3" fill={s.color} stroke="var(--chart-selected-point)" strokeWidth="1.5" />)}
           </g>
         )}
       </svg>
 
       {hover != null && (
-        <div className="pointer-events-none absolute z-10 rounded border border-border bg-surface px-2 py-1 shadow-md" style={{ left: tipLeft, top: 2, transform: 'translateX(-50%)', whiteSpace: 'nowrap' }}>
+        <ChartTooltip left={tipLeft}>
           {ret.map(s => {
             const v = s.pts[hover].value
             return (
               <div key={s.ticker} className="flex items-center justify-between gap-3 text-xs">
-                <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} /><span className="font-mono text-foreground">{s.ticker}</span></span>
+                <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} /><span className="font-mono">{s.ticker}</span></span>
                 <span className={`ui-number ${v >= 0 ? 'text-positive' : 'text-negative'}`}>{v >= 0 ? '+' : ''}{v.toFixed(2)}%</span>
               </div>
             )
           })}
           <div className="text-xs text-muted-fg mt-0.5">{dates[hover]}</div>
-        </div>
+        </ChartTooltip>
       )}
+
+      <p id={descId} className="sr-only">{longSummary}</p>
     </div>
 
     {legend && (
@@ -155,15 +180,18 @@ export function CompareChart({ series, height = 300, showGrid = true, lineWidth 
         {ret.map(s => {
           const last = s.pts[s.pts.length - 1].value
           const active = hi === s.ticker
+          const dimmed = !!hi && !active
           return (
             <button
               key={s.ticker}
               onClick={() => setHi(active ? null : s.ticker)}
               title="Click to highlight"
-              className={`flex items-center gap-1.5 text-xs rounded px-1 transition-opacity ${hi && !active ? 'opacity-50' : ''}`}
+              className="flex items-center gap-1.5 text-xs rounded px-1 nv-transition"
+              style={dimmed ? { opacity: 'var(--legend-inactive-opacity)' } : undefined}
+              aria-pressed={active}
             >
               <span className="inline-block w-3" style={{ height: active ? 3 : 2, backgroundColor: s.color }} />
-              <span className={`font-mono text-foreground ${active ? 'font-bold' : ''}`}>{s.ticker}</span>
+              <span className={active ? 'font-bold' : ''}>{s.ticker}</span>
               <span className={`ui-number ${last >= 0 ? 'text-positive' : 'text-negative'}`}>{last >= 0 ? '+' : ''}{last.toFixed(2)}%</span>
             </button>
           )
