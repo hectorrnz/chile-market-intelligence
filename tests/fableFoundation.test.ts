@@ -102,8 +102,6 @@ const THEME_VARYING = [
   '--critical-fill', '--critical-fill-fg',
   '--news-src-df', '--news-src-lt', '--news-src-em', '--news-src-de',
   '--news-src-cmf', '--news-src-bc',
-  '--sidebar', '--sidebar-fg', '--sidebar-muted', '--sidebar-active',
-  '--sidebar-accent', '--sidebar-border',
   '--topbar', '--topbar-fg', '--topbar-border',
 ]
 

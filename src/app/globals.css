@@ -88,8 +88,6 @@
   --color-scrim:         var(--scrim);
 
   /* Navigation */
-  --color-sidebar:       var(--sidebar);
-  --color-sidebar-fg:    var(--sidebar-fg);
   --color-topbar:        var(--topbar);
   --color-topbar-fg:     var(--topbar-fg);
 
@@ -277,14 +275,6 @@
   --news-src-cmf:   #004A64;  /* CMF — deep navy (reserved, official) */
   --news-src-bc:    #6B5B14;  /* BCCh — bronze (reserved, official) */
 
-  /* Sidebar — always dark navy, even in light mode */
-  --sidebar:        var(--brand-teal);
-  --sidebar-fg:     #FFFFFF;
-  --sidebar-muted:  rgba(255, 255, 255, 0.52);
-  --sidebar-active: rgba(255, 255, 255, 0.10);
-  --sidebar-accent: #88CBDF;
-  --sidebar-border: transparent;
-
   /* Top bar */
   --topbar:         var(--nv-hdrbg-solid);
   --topbar-fg:      var(--nv-text);
@@ -438,14 +428,6 @@
   --news-src-de:    #8CA8D8;
   --news-src-cmf:   #6FA8C4;
   --news-src-bc:    #C0AA5A;
-
-  /* Sidebar — deep institutional navy, distinct from the page background */
-  --sidebar:        #0B2437;
-  --sidebar-fg:     #E8EFF5;
-  --sidebar-muted:  rgba(200, 222, 240, 0.62);
-  --sidebar-active: rgba(136, 203, 223, 0.16);
-  --sidebar-accent: #88CBDF;
-  --sidebar-border: rgba(136, 203, 223, 0.12);
 
   /* Top bar */
   --topbar:         var(--nv-hdrbg-solid);
@@ -749,6 +731,21 @@ body {
 ::-webkit-scrollbar-thumb:hover { background-color: var(--muted-fg); }
 ::-webkit-scrollbar-corner { background: transparent; }
 
+/* Scrollbar-hidden — used by the top pill nav rail, which Fable specs as
+   "horizontally scrollable, scrollbar hidden" at every width. Distinct from
+   the themed visible scrollbar above (dense tables, the mobile drawer) —
+   only elements carrying this class hide their scrollbar. Declared unlayered
+   (not inside @layer components) so it can actually override the unlayered
+   universal scrollbar rule above — an @layer rule always loses to unlayered
+   CSS regardless of specificity or source order. */
+.nv-scrollbar-hidden {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.nv-scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    7 · ACCESSIBILITY — keyboard focus
    A single visible focus ring for keyboard users on every interactive element
@@ -761,11 +758,6 @@ body {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-radius: var(--radius-cell);
-}
-/* Don't double-draw on the sidebar's dark navy — use the accent there. */
-[style*="--sidebar"] :focus-visible,
-aside :focus-visible {
-  outline-color: var(--sidebar-accent);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────

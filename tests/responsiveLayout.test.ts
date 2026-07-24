@@ -1,4 +1,5 @@
-// Responsive layout conventions — production audit 2026-07-21.
+// Responsive layout conventions — production audit 2026-07-21, updated for
+// the Fable Phase 2 top-pill-navigation shell (2026-07-22).
 //
 // Root causes these lock in place:
 //   1. globals.css carried `html { min-width: 1200px }`, forcing full-page
@@ -9,7 +10,10 @@
 //      outside their cards instead of scrolling inside them.
 //   4. Measured-height pinning (macroH/heatH/valH) was applied via inline
 //      style, locking stacked mobile cards to an unrelated card's height.
-//   5. The sidebar was a fixed 208px column at every width with no drawer.
+//   5. The old left sidebar was a fixed 208px column at every width with no
+//      drawer. It has been replaced by a glass top pill rail (desktop) + an
+//      accessible mobile nav drawer — see the "primary navigation" block
+//      below, which supersedes the old "sidebar" block.
 //
 // These are source-scan checks (no browser) — they can't prove pixel-perfect
 // rendering, but they make the load-bearing class conventions impossible to
@@ -35,23 +39,61 @@ describe('global blockers stay removed', () => {
   })
 })
 
-describe('sidebar: desktop column + mobile drawer', () => {
-  test('static aside is hidden below lg', () => {
-    const src = read('src/components/layout/Sidebar.tsx')
+describe('primary navigation: desktop pill rail + accessible mobile drawer', () => {
+  test('the desktop pill rail is hidden below lg', () => {
+    const src = read('src/components/layout/PrimaryNav.tsx')
     assert.match(src, /hidden lg:flex/)
   })
 
-  test('a mobile overlay drawer exists and closes on navigate', () => {
-    const src = read('src/components/layout/Sidebar.tsx')
-    assert.match(src, /lg:hidden/)
-    assert.match(src, /mobileOpen/)
-    assert.match(src, /onNavigate/)
+  test('the pill rail scrolls internally with a hidden scrollbar instead of forcing page overflow', () => {
+    const src = read('src/components/layout/PrimaryNav.tsx')
+    assert.match(src, /overflow-x-auto nv-scrollbar-hidden/)
   })
 
-  test('SidebarProvider toggle is viewport-aware and the drawer is never persisted', () => {
-    const src = read('src/components/providers/SidebarProvider.tsx')
-    assert.match(src, /matchMedia\('\(min-width: 1024px\)'\)/)
-    assert.match(src, /useState\(false\)/, 'mobileOpen is plain state, not usePersistentState')
+  test('the contextual secondary row is also hidden below lg', () => {
+    const src = read('src/components/layout/SecondaryNav.tsx')
+    assert.match(src, /hidden lg:flex/)
+  })
+
+  test('the mobile drawer is hidden at lg and above, and closes on navigate', () => {
+    const src = read('src/components/layout/MobileNavDrawer.tsx')
+    assert.match(src, /lg:hidden/)
+    assert.match(src, /onClick=\{closeNav\}/)
+  })
+
+  test('the mobile drawer is a real dialog: modal role, focus trap, Escape, restored focus, locked body scroll', () => {
+    const src = read('src/components/layout/MobileNavDrawer.tsx')
+    assert.match(src, /role="dialog"/)
+    assert.match(src, /aria-modal="true"/)
+    assert.match(src, /useEscape\(open, closeNav\)/)
+    assert.match(src, /addEventListener\('keydown', onKeydown\)/, 'Tab is trapped inside the drawer')
+    assert.match(src, /returnFocusRef\.current\?\.focus\(\)/, 'focus is restored to the trigger on close')
+    assert.match(src, /document\.body\.style\.overflow = 'hidden'/, 'body scroll is locked while open')
+  })
+
+  test('the old Sidebar/SidebarProvider files are gone, not just unused', () => {
+    assert.throws(() => read('src/components/layout/Sidebar.tsx'))
+    assert.throws(() => read('src/components/providers/SidebarProvider.tsx'))
+  })
+
+  test('MobileNavProvider drawer-open state is plain, not persisted (a drawer must never restore open on load)', () => {
+    const src = read('src/components/providers/MobileNavProvider.tsx')
+    assert.match(src, /useState\(false\)/)
+    assert.doesNotMatch(src, /usePersistentState/)
+  })
+
+  test('AppShell mounts the hamburger-driven drawer exactly once, not a second nav system', () => {
+    const src = read('src/components/layout/AppShell.tsx')
+    assert.match(src, /<TopBar \/>/)
+    assert.match(src, /<SecondaryNav \/>/)
+    assert.match(src, /<MobileNavDrawer \/>/)
+    assert.doesNotMatch(src, /<Sidebar/)
+  })
+
+  test('the shell centers content at the 1560px Fable max-width', () => {
+    const src = read('src/components/layout/AppShell.tsx')
+    assert.match(src, /max-w-\(--content-max-w\)/)
+    assert.match(src, /mx-auto/)
   })
 })
 

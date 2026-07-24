@@ -7,9 +7,10 @@
 Status key: `[ ]` not done · `[~]` in progress · `[x]` verified.
 
 **Phase progress:** Phase 0 (design governance) ✓ · **Phase 1 (shared visual foundation) ✓
-COMPLETE 2026-07-22** — see `04-file-level-implementation-plan.md` § "Phase 1 — as built".
-Phases 2–8 not started. Items below are ticked only where Phase 1 genuinely satisfies them;
-everything that still depends on shell/component/page work stays `[ ]` or `[~]`.
+COMPLETE 2026-07-22** · **Phase 2 (app shell: top pill navigation) ✓ COMPLETE 2026-07-24** —
+see `04-file-level-implementation-plan.md` § "Phase 1 — as built" / "Phase 2 — as built".
+Phases 3–8 not started. Items below are ticked only where Phase 1/2 genuinely satisfy them;
+everything that still depends on further component/page work stays `[ ]` or `[~]`.
 
 ---
 
@@ -44,8 +45,15 @@ everything that still depends on shell/component/page work stays `[ ]` or `[~]`.
   theme-varying token has a light and a dark value (asserted by `tests/fableFoundation.test.ts`).
   Three tokens deviate from the Fable palette to hold WCAG AA — documented in doc 04. Per-route AA
   auditing remains open until the pages are restyled.*
-- [ ] **9 · Responsive fixes preserved.** Card-level table scrolling, mobile navigation behavior,
+- [~] **9 · Responsive fixes preserved.** Card-level table scrolling, mobile navigation behavior,
   and **zero page-level horizontal overflow** at every breakpoint.
+  *Phase 2: the navigation model itself changed by deliberate decision (D3, sidebar → top pill
+  rail) and is now verified — desktop rail scrolls internally with a hidden scrollbar rather than
+  wrapping or widening the page, the mobile drawer is `lg:hidden` with no page-level overflow, and
+  `tests/responsiveLayout.test.ts` encodes the new conventions. Card-level table scrolling on
+  individual pages is untouched (no page content changed). Full browser-ladder verification
+  (1728→390, light+dark, EN+ES) remains open until pages are restyled in Phase 5 — this phase's
+  checks were HTTP/source-level only (no interactive browser session was available).*
 - [ ] **10 · Source labels, data-quality disclosures, and timestamps preserved.** Every table
   ends in one `TableSourceFooter` (plain source name); badges show correct state word + tooltip;
   monitoring-estimate/derived/unofficial disclaimers intact; as-of timestamps correct.
@@ -106,15 +114,18 @@ loading state · empty state · error state · auth status — verified identica
   font; body numerals `lining-nums tabular-nums`.)*
 - [x] Radii (999px pills, 22–24px cards), shadows, spacing per spec — **tokenised** as
   `--radius-*`, `--shadow-*`, `--space-*`. *(Phase 1; per-surface application is Phases 2–5.)*
-- [ ] Segmented pill controls with sliding indicator where Fable uses them.
-  *(Phase 1 ships the `.nv-indicator` motion primitive at 380ms/primary easing; the controls
-  themselves are Phase 3.)*
+- [~] Segmented pill controls with sliding indicator where Fable uses them.
+  *(Phase 1 shipped the `.nv-indicator` motion primitive at 380ms/primary easing. Phase 2 is its
+  first real consumer — the desktop primary nav rail and the contextual secondary pill row both use
+  a measured sliding indicator via the shared `useNavIndicator` hook. Compare/Charting/Macro's own
+  timeframe/period/frequency toggles are still plain segmented buttons — Phase 3.)*
 - [~] Motion (reveal, count-up, nav slide, drawer/pop) present and **`prefers-reduced-motion`-gated**.
   *(Phase 1: all 6 Fable keyframes, the duration/easing token set, the foundational utilities, and
   the reduced-motion block — which disables reveal / Ken-Burns / pulse / spin outright and collapses
-  everything else to `.01ms` — are in place and confirmed in the live stylesheet. Page-specific
-  choreography and JS-driven count-up land with their pages, each of which must read the preference
-  before animating.)*
+  everything else to `.01ms` — are in place and confirmed in the live stylesheet. Phase 2: nav-pill
+  slide (`.nv-indicator`, real usage) and the mobile drawer slide-in (`.nv-slide-in`) are now live and
+  reduced-motion-gated (asserted by `tests/topNavigation.test.ts`). Page-specific choreography and
+  JS-driven count-up land with their pages, each of which must read the preference before animating.)*
 - [ ] Login: Ken-Burns Santiago bg, cursor specular, utility chips (secure dot, EN|ES, clock,
   contrast), glass auth panel.
 
@@ -130,27 +141,43 @@ loading state · empty state · error state · auth status — verified identica
   (+ optional `DetailPanel`, `SideScrim`, privacy mask).
 
 ### C3 · Interaction & state preservation
-- [ ] All persisted `cmi.*` keys (compare, gf, ratesOrder, chartTimeframe, macroRegion,
+- [~] All persisted `cmi.*` keys (compare, gf, ratesOrder, chartTimeframe, macroRegion,
   sidebarCollapsed) round-trip.
-- [ ] Window events (`macro:region`, `gf:ticker`, `cmdk:open`) fire and are handled.
+  *Phase 2: `cmi.macroRegion` migrated verbatim into `SecondaryNav`/`MobileNavDrawer` (same key,
+  same `'CL'|'US'` values). `cmi.sidebarCollapsed` has no successor — the top rail has no collapsed
+  mode, so this key is now simply unused going forward (never read/written by any file); not
+  removed from client localStorage automatically, but harmless. compare/gf/ratesOrder/
+  chartTimeframe are untouched (their pages haven't changed).*
+- [~] Window events (`macro:region`, `gf:ticker`, `cmdk:open`) fire and are handled.
+  *Phase 2: `macro:region` dispatch verified unchanged (same event name/detail shape) from both
+  the desktop and mobile nav surfaces, and `macro/page.tsx`'s listener is untouched. `gf:ticker`/
+  `cmdk:open` unaffected (their producers/consumers weren't touched this phase).*
 - [ ] CSV export (Stocks/Compare/Charting/Earnings) and Print (Company) work.
 - [ ] `Update` buttons refresh via `useGlobalRefresh`; badges reflect live/persisted/static.
 
 ### C4 · Engineering gates (run at each phase boundary)
 - [x] `npm run build` → 0 errors, all routes present. *(Phase 1 boundary: compiled in 6.4s, 19/19
-  static pages, full route list unchanged.)*
-- [x] `npm run lint` → 0 problems. *(Phase 1 boundary.)*
+  static pages, full route list unchanged. Phase 2 boundary: 0 errors, 19/19 static pages, full
+  route list unchanged.)*
+- [x] `npm run lint` → 0 problems. *(Phase 1 and Phase 2 boundaries.)*
 - [~] `npm test` → all files pass (business-logic tests untouched; DOM tests updated only
-  deliberately, never deleted to pass). *(Phase 1 boundary: 1795 tests, 1792 pass, **0 caused by
-  this phase** — no existing test was modified or deleted; 1 new file, `tests/fableFoundation.test.ts`
-  (55 tests). The 3 failures in `tests/newsModule.test.ts` are pre-existing and date-dependent —
-  fixtures stamped `15 Jul 2026` now fall outside the News orchestrator's rolling 7-day window —
-  reproduced identically on a clean stash of this branch. Fixing them is News-module work, out of
-  scope here.)*
+  deliberately, never deleted to pass). *(Phase 1 boundary: 1795 tests, 1792 pass. Phase 2 boundary:
+  **1846 tests, 1843 pass** — 2 new test files (`tests/topNavigation.test.ts`, 30 tests) and 2
+  existing test files deliberately updated (`tests/responsiveLayout.test.ts`'s sidebar block
+  rewritten for the new nav conventions; `tests/fableFoundation.test.ts`'s theme-token list dropped
+  the now-deleted `--sidebar*` entries) — no test weakened or deleted to force a pass. The same 3
+  pre-existing, date-dependent `tests/newsModule.test.ts` failures from Phase 1 persist unchanged
+  (News-module work, out of scope here).)*
 - [ ] Browser responsive ladder (1728/1440/1280/1023/900/767/630/430/390) in **light + dark** and
   **EN + ES**, per route → zero page-level horizontal overflow.
+  *Phase 2 could only run HTTP/source-level checks — no interactive browser session was available
+  in this environment. A real browser ladder pass remains open.*
 - [ ] Accessibility: focus-visible ring, `aria` on toggles/dialogs, `prefers-reduced-motion`, AA
   contrast.
+  *Phase 2: the mobile drawer's dialog semantics (`role="dialog"`, `aria-modal`, focus trap, Escape,
+  restored focus, body-scroll lock) and `aria-current`/reduced-motion on the nav indicator are
+  source-verified by `tests/topNavigation.test.ts`. A live keyboard/screen-reader/contrast pass
+  remains open.*
 - [ ] Print tearsheet (Company) renders; `.no-print` chrome hidden.
 
 ### C5 · Governance & docs

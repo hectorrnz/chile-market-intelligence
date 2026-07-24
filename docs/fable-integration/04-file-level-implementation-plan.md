@@ -125,32 +125,70 @@ and page-level horizontal overflow is 0.
 
 ---
 
-## Phase 2 — App shell: nav, top bar, providers (`src/components/layout/`)
+## Phase 2 — App shell: nav, top bar, providers (`src/components/layout/`) ✓ COMPLETE (2026-07-24)
 
-Re-skin the shell **without** changing the provider tree or the responsive/drawer behavior.
+> **Status: implemented and validated.** The sidebar is gone; the shell now runs on the Fable
+> top pill navigation model (D3). See "Phase 2 — as built" below for the delivered file list
+> and the file-by-file summary presented to the user.
 
-**Files**
-- `src/components/layout/AppShell.tsx` — keep the provider nesting (Lang → MarketData →
-  MacroData → Sidebar) and `CommandPalette` mount. Apply the Fable page background
-  (`--nv-bg0`/`bg1`) and content max-width (1560px centered) to `<main>`; keep
-  `overflow-y-auto` + responsive padding + print unlocks.
-- `src/components/layout/TopBar.tsx` — Fable glass header (`.glass-header`): 30px logo crop +
-  "Inversiones Nevada"/title, glass search pill (⌘K), icon buttons (bell, lang, theme),
-  optional avatar menu. Keep the hamburger + `useSidebar().toggle` + `getPageTitle` + date.
-- `src/components/layout/Sidebar.tsx` — **decision-gated** (doc 05): either (a) restyle the
-  existing left navy column + mobile drawer in glass, or (b) convert to Fable's top pill-rail
-  with a measured sliding indicator + mobile scroll rail. Preserve `navItems`, the Macro
-  accordion + `macro:region` event, active-state logic, `useAuthDisplay` name, sign-in/out
-  link. If moving to a top rail, the `SidebarProvider` collapse/drawer semantics change — plan
-  that as an explicit sub-task.
-- `src/components/providers/SidebarProvider.tsx` — only if the nav model changes (rail vs
-  column). Otherwise untouched.
-- **New:** `src/components/fable/` directory for the sliding-nav-indicator, avatar menu, and
-  any shell-specific glass primitives.
+---
 
-**Guardrails:** `tests/responsiveLayout.test.ts` (sidebar `hidden lg:flex`, drawer,
-`min-w` table scroll, grid prefixes). If the nav model changes, update this test deliberately
-(it encodes the current conventions).
+### Phase 2 — as built (2026-07-24)
+
+**Files changed (15 — 7 modified, 2 deleted, 6 new, plus 2 tests):**
+
+| File | Change |
+|---|---|
+| `src/lib/navigation.ts` | Rewritten. `navItems: NavItem[]` (flat, 9 entries) → `navGroups: NavGroup[]` (8 groups per the brief's grouping, 3 with `children`: Markets → Stocks/Watchlist, Analysis → Compare/Charting, Macro → Indicators/Calendar). New `resolveActiveGroup`/`resolveActiveChild` (longest-prefix match, so `/companies/[ticker]` activates Markets → Stocks via `matchPrefixes` without its own nav entry). `getPageTitle` rewritten on top of these. `MACRO_REGIONS` — the Chile/US region list — moved here so both `SecondaryNav` and `MobileNavDrawer` share one definition. **Settings (`/settings/notifications`) is newly discoverable in nav** — it existed only as a direct-URL route before. |
+| `src/components/layout/PrimaryNav.tsx` | **New.** The desktop top pill rail (`hidden lg:flex`) — 8 text pills, a measured sliding active-indicator (`useNavIndicator`), horizontally scrollable with a hidden scrollbar (`.nv-scrollbar-hidden`, new in `globals.css`) rather than wrapping, per Fable's own "scrollable, scrollbar hidden" spec. |
+| `src/components/layout/SecondaryNav.tsx` | **New.** Contextual secondary pill row, rendered only when the active group has `children` (Markets/Analysis/Macro). Hosts the Macro Chile/US region control — same persisted key (`cmi.macroRegion`) and `macro:region` window event as the old Sidebar accordion, so `macro/page.tsx` needed no change. `hidden lg:flex`. |
+| `src/components/layout/MobileNavDrawer.tsx` | **New.** Replaces the old Sidebar's mobile overlay. Every group's children are listed flat (no accordion — no destination sits behind more than one interaction). Adds everything the old overlay lacked: `role="dialog" aria-modal`, Escape-to-close (`useEscape`), a real Tab focus trap, focus restored to the hamburger trigger on close, body-scroll lock while open. Closes on backdrop click and on navigation (unchanged behavior). Includes the same Macro region control as SecondaryNav. |
+| `src/components/layout/NavIcon.tsx` | **New.** Minimal stroke SVG icons (home/chart/trending/document/star/compare/gf/portfolio/notes/settings) — mobile-drawer only; the desktop rail is text-only per the Fable reference. No icon library added. |
+| `src/components/layout/useNavIndicator.ts` | **New.** Shared hook measuring the active pill's rendered position (`getBoundingClientRect`) and returning a `{left, width}` pair for the sliding indicator, remeasured on resize and on a caller-supplied token (pathname+lang, so a language switch that changes a label's width re-measures too). Used by both `PrimaryNav` and `SecondaryNav`. |
+| `src/components/providers/MobileNavProvider.tsx` | **New, replaces `SidebarProvider`.** The shell no longer has a collapsible desktop column, so the only state left is whether the mobile drawer is open — plain `useState(false)`, deliberately **not** persisted (a drawer must never restore open on load). Captures `returnFocusRef` (the element focused when the drawer opens) for focus restoration. |
+| `src/components/layout/Sidebar.tsx` | **Deleted.** Every responsibility (brand block, nav items, Macro accordion, active-state styling, mobile overlay, sign-in/out footer) migrated to `PrimaryNav`/`SecondaryNav`/`MobileNavDrawer`/`TopBar`. |
+| `src/components/providers/SidebarProvider.tsx` | **Deleted.** Collapse state had no successor (the top rail has no collapsed mode); mobile-open state moved to `MobileNavProvider`. |
+| `src/components/layout/AppShell.tsx` | Provider nesting changed from `Lang → MarketData → MacroData → Sidebar` to `Lang → MarketData → MacroData → MobileNav`. Shell layout changed from a `flex` row (`Sidebar` + column) to a `flex-col` column (`TopBar` → `SecondaryNav` → `main` → `MobileNavDrawer`, with `CommandPalette` still mounted app-wide). `<main>` gained `w-full max-w-(--content-max-w) mx-auto` — the Fable 1560px centered content width — while keeping `overflow-y-auto`, the responsive padding, and the print unlocks verbatim. |
+| `src/components/layout/TopBar.tsx` | The sidebar-toggle button became the mobile-drawer hamburger (`useMobileNav().toggleNav`, `lg:hidden`, `aria-expanded`/`aria-haspopup="dialog"`). `BrandLogo` (raster) replaced by `NevadaMark variant="symbol"` (the authoritative Fable SVG, now consumed for the first time) + "Inversiones Nevada" text, linking home. `PrimaryNav` mounted in the header center. **User identity + sign-in/out affordance added** — previously nowhere in the shell; now `useAuthDisplay` drives a display-name + sign-out link (or a sign-in link), `hidden lg:flex` (mirrored in the mobile drawer footer for narrower widths). Search pill, `NotificationBell`, `LangToggle`, `ThemeToggle`, and the date all preserved. |
+| `src/app/globals.css` | One small addition: `.nv-scrollbar-hidden` (hides the scrollbar on the horizontally-scrollable pill rail at every width, per the Fable spec) — declared unlayered so it can override the existing unlayered universal themed-scrollbar rule. **Dead-CSS cleanup**: the `--sidebar`/`--sidebar-fg`/`--sidebar-muted`/`--sidebar-active`/`--sidebar-accent`/`--sidebar-border` tokens (light + dark + their `@theme` Tailwind registration) and the `[style*="--sidebar"] :focus-visible, aside :focus-visible` focus-ring rule are removed — confirmed via a full-codebase grep that no component referenced them any longer once `Sidebar.tsx` was deleted. |
+| `src/lib/i18n.ts` | `nav.*` rewritten: `home`/`soon` removed; `overview`/`markets`/`analysis`/`macroIndicators`/`macroCalendar`/`settings` added (EN+ES); `stocks`/`watchlist`/`compare`/`charting`/`macro`/`earnings`/`portfolio`/`structuredNotes` kept (now used as child-pill labels, not top-level ones). `common.hideSidebar`/`showSidebar` replaced with `common.openMenu`/`closeMenu`/`primaryNav`/`mobileNav`/`macroRegion` (EN+ES). |
+| `tests/topNavigation.test.ts` | **New.** Real-logic tests for `resolveActiveGroup`/`resolveActiveChild`/`getPageTitle` (every route in the brief's grouping table, plus `/companies/[ticker]` and `/structured-notes/[id]` resolving to the correct parent group with no standalone nav entry) + source-scan checks for the Macro-region-preserved contract, `aria-current`, focus trap/Escape/restore/body-lock, reduced-motion gating on the indicator and drawer slide, the `NevadaMark`-not-`BrandLogo` shell requirement, and a no-hardcoded-hex/no-raw-Tailwind-scale sweep of the 4 new/changed shell files. |
+| `tests/responsiveLayout.test.ts` | The `sidebar: desktop column + mobile drawer` describe block rewritten to `primary navigation: desktop pill rail + accessible mobile drawer` — asserts the pill rail's `hidden lg:flex` + internal scroll, the secondary row's `hidden lg:flex`, the drawer's dialog semantics, that `Sidebar.tsx`/`SidebarProvider.tsx` are actually gone (not just unused), that `MobileNavProvider` open-state is plain (never persisted), that `AppShell` mounts exactly one nav system, and the new 1560px content max-width. |
+| `tests/fableFoundation.test.ts` | One line updated: the `THEME_VARYING` token list's `--sidebar*` entries removed (deliberately, alongside the CSS deletion — not weakened, the token genuinely no longer exists). |
+
+**D3 — implemented as decided (binding, doc 05).** Fable's top pill rail is now the primary
+desktop navigation model. Constraints honored: **every existing route stays reachable**
+(the 8-group table matches the brief exactly, `/companies/[ticker]` and
+`/structured-notes/[id]` resolve to their parent group's active state via `matchPrefixes`
+with no standalone nav entry — canonical full pages, never replaced by a panel); the Macro
+Chile/US sub-region control and its `macro:region` event/`cmi.macroRegion` key are preserved
+verbatim in both `SecondaryNav` (desktop) and `MobileNavDrawer` (mobile); `aria-current="page"`
+marks every active state (paired with a font-weight change, never color alone); the mobile
+drawer is a fully accessible dialog (focus trap, Escape, restored focus, body-scroll lock —
+capabilities the old Sidebar overlay never had); zero page-level horizontal overflow (verified
+by the updated `responsiveLayout.test.ts` conventions, matching the existing card/table-scroll
+patterns unchanged).
+
+**Deliberately deferred out of Phase 2** (per the brief): per-page content restyling (Phase 5),
+the cinematic login shell (Phase 6), the notification drawer / command-palette glass restyle
+(Phase 3), and an avatar menu (the brief did not require one — sign-in/out is a plain link,
+matching the pre-existing TopBar pattern for auth state).
+
+**Validation:** lint 0 · build 0 errors (19/19 static pages, full route table unchanged) ·
+suite grew to 1846 tests, 1843 pass. The 3 failures are the same pre-existing, date-dependent
+`tests/newsModule.test.ts` failures documented in Phase 1 (unrelated to this phase). No
+`src/app/api/**`, `src/middleware.ts`, `src/lib/providers|db|financials|structuredNotes|market|
+earnings|compare|ingestion|observability|portfolio/**`, `src/config/**`, `src/data/**`, or
+`package.json`/`package-lock.json` file touched (verified by a scope grep over the full
+changed-file list). HTTP-level verification against a local dev server (no interactive browser
+session was available this phase — see the validation report for the honest disclosure)
+confirmed: every public route 200s, every protected route 307-redirects to
+`/login?next=<path>` unauthenticated (including the dynamic `/structured-notes/[id]` route),
+`/companies/SQM-B` resolves the title "Stocks · SQM-B", `/macro`'s secondary row renders
+Indicators/Calendar pills plus a Chile/US `aria-pressed` toggle, `TableSourceFooter` renders
+correctly ("Source: Yahoo Finance" on `/stocks`), the shell ships `class="dark"` on `<html>`
+by default (Phase 1's dark-first default undisturbed), and the "Inversiones Nevada" brand text
+renders with no leftover "NMI" monogram.
 
 ---
 
@@ -300,7 +338,7 @@ hardcoded UI text in components. Reuse existing namespaces; add keys under `topb
 |---|---|
 | 0 | `docs/design_principles.md`, `CLAUDE.md` (docs only) |
 | 1 | `src/app/globals.css`, `src/app/layout.tsx` |
-| 2 | `src/components/layout/{AppShell,TopBar,Sidebar}.tsx`, `src/components/providers/SidebarProvider.tsx` (if nav model changes), new `src/components/fable/*` shell parts |
+| 2 ✓ | `src/lib/navigation.ts`, `src/components/layout/{AppShell,TopBar,PrimaryNav,SecondaryNav,MobileNavDrawer,NavIcon,useNavIndicator}.tsx/.ts`, `src/components/providers/MobileNavProvider.tsx` (replaces `SidebarProvider`), `src/lib/i18n.ts`, `src/app/globals.css` (small addition + sidebar-token cleanup) — `Sidebar.tsx`/`SidebarProvider.tsx` deleted |
 | 3 | `src/components/ui/*` (all 14), new `src/components/fable/*` (GlassCard, KpiCapsule/Hero, SegmentedPill, Sparkline, BarrierGauge, DetailPanel, SideScrim) |
 | 4 | `src/components/charts/*` (4), `src/components/macro/EconomicCalendarTable.tsx` |
 | 5 | `src/app/{stocks,watchlist,companies/[ticker],macro,macro/calendar,earnings,compare,chart-builder,portfolio,structured-notes,structured-notes/[id],settings/notifications}/page.tsx`, `src/app/page.tsx` |
@@ -323,7 +361,7 @@ logic · `src/lib/providers/**` · `src/lib/db/**` · `src/lib/financials/**` ·
 |---|---|---|
 | D1 | Default theme | **Dark is the first-visit default**; light fully supported; user choice persists and beats system preference |
 | D2 | Theme class mechanism | ✅ **RESOLVED in Phase 1 (2026-07-22)** — `.dark` on `<html>`, light under `:root`, dark under `.dark`. Server renders `.dark` (dark-first); the pre-paint script only removes it for a stored `'light'`. No `body.nv-light`, no second provider, no second storage key. See "Phase 1 — as built" |
-| D3 | Nav model | **Fable top pill rail is the primary desktop model** *(overrides the audit recommendation to keep the sidebar)* — every route stays reachable; scrollable rail/drawer below desktop |
+| D3 | Nav model | ✅ **IMPLEMENTED in Phase 2 (2026-07-24)** — Fable top pill rail is the primary desktop model *(overrides the audit recommendation to keep the sidebar)*; every route stays reachable; scrollable rail (desktop) + accessible dialog drawer (mobile). See "Phase 2 — as built" |
 | D4 | Detail views | **Full pages retained** for dynamic detail routes; slide-in panels supplementary only, never replacing a canonical route |
 | D5 | Logo | **Fable transparent blue/cyan SVG is authoritative**; never redraw/recolor/distort/box |
 | D6 | Motion | **Pure CSS + WAAPI**, no animation library; `prefers-reduced-motion` always honored |
