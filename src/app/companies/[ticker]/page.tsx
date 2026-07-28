@@ -26,7 +26,14 @@ import type { ValuationResult, CompareFundamentalKey } from '@/lib/compare/compa
 import type { StockSnapshot } from '@/lib/providers/market/types'
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
 import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
+import { isBankTicker } from '@/lib/financials/banks/bankRegistry'
 import type { DataSourceStatus } from '@/lib/providers/types'
+import { GlassSurface } from '@/components/fable/GlassSurface'
+import { KpiCapsule } from '@/components/fable/KpiCapsule'
+import { ChangeIndicator } from '@/components/fable/ChangeIndicator'
+import { AsyncState } from '@/components/fable/AsyncState'
+import { SegmentedControl } from '@/components/fable/SegmentedControl'
+import { Reveal } from '@/components/fable/motion'
 
 const median = (xs: number[]): number | null => {
   const v = xs.filter(n => n != null).sort((a, b) => a - b)
@@ -73,6 +80,10 @@ export default function CompanyDetailPage() {
   // the P/E / Div Yield / Market Cap / YTD KPIs for EVERY ticker.
   const [valuation, setValuation] = useState<ValuationResult | null>(null)
   const [newsResult, setNewsResult] = useState<NewsFetchResponse | null>(null)
+  // True only when the fetch itself never returned a payload (network/HTTP
+  // failure) — distinct from "still loading" (newsResult still null, fetch
+  // in flight) and from the API's own honest 'unavailable' status.
+  const [newsFailed, setNewsFailed] = useState(false)
   // Real reported quarterly financials (same live Yahoo resolver the Earnings
   // tab uses) + the CMF earnings calendar (real EEFF report dates, for the
   // chart's earnings markers). Replaces the fabricated static earnings.json
@@ -101,8 +112,10 @@ export default function CompanyDetailPage() {
       if (mounted && res.data) setSupaSnap(res.data)
     }).catch(() => {})
     fetchLiveNews().then(res => {
-      if (mounted && res) setNewsResult(res)
-    }).catch(() => {})
+      if (!mounted) return
+      if (res) setNewsResult(res)
+      else setNewsFailed(true)
+    }).catch(() => { if (mounted) setNewsFailed(true) })
     fetchEarningsResults(false).then(res => {
       if (mounted && res) setEarningsResults(res)
     }).catch(() => {})
@@ -154,7 +167,7 @@ export default function CompanyDetailPage() {
       // force=true skips the resolver's 6h cache — same as the Earnings tab's Update.
       fetchEarningsResults(true).catch(() => null),
     ])
-    if (newsRes) setNewsResult(newsRes)
+    if (newsRes) { setNewsResult(newsRes); setNewsFailed(false) } else { setNewsFailed(true) }
     if (resultsRes) setEarningsResults(resultsRes)
   }, [refresh])
 
@@ -181,6 +194,14 @@ export default function CompanyDetailPage() {
     ? earningsResults.rows.filter(r => r.ticker === sym)
     : []
   const news     = (newsResult?.data ?? []).filter(n => n.affectedTickers.includes(sym)).slice(0, 4)
+  // News always renders its own section — loading/unavailable/empty/error are
+  // distinct, honest states (never an omitted section, never a fabricated row).
+  const newsState: 'loading' | 'unavailable' | 'empty' | 'error' | null =
+    newsFailed ? 'error'
+      : newsResult === null ? 'loading'
+      : newsResult.status === 'unavailable' ? 'unavailable'
+      : news.length === 0 ? 'empty'
+      : null
   const liveStockHistory = chartHistory[sym]
   const stockHistory = liveStockHistory && liveStockHistory.points.length >= 2
     ? liveStockHistory.points
@@ -237,12 +258,14 @@ export default function CompanyDetailPage() {
   if (!company) {
     return (
       <div className="w-full">
-        <div className="text-xs text-muted-fg mb-4 flex items-center gap-1.5">
-          <Link href="/stocks" className="hover:text-foreground transition-colors">{t.company.breadcrumb}</Link>
-          <span>/</span>
-          <span className="font-mono text-primary">{sym}</span>
-        </div>
-        <EmptyState message={t.company.noData} />
+        <Reveal>
+          <div className="text-xs text-muted-fg mb-4 flex items-center gap-1.5">
+            <Link href="/stocks" className="hover:text-foreground transition-colors">{t.company.breadcrumb}</Link>
+            <span>/</span>
+            <span className="font-mono text-primary">{sym}</span>
+          </div>
+          <EmptyState message={t.company.noData} />
+        </Reveal>
       </div>
     )
   }
@@ -260,14 +283,15 @@ export default function CompanyDetailPage() {
   const mktCapVal = valuation?.marketCapCLP ?? null
   const peVal = lf('pe')
   const divVal = lf('dividendYield')
-  const kpis = [
-    { label: t.company.kpis.lastPrice, value: livePrice != null ? formatCLP(livePrice) : '—',       unit: 'CLP', color: '' },
-    { label: t.company.kpis.dayChg,   value: liveDayPct != null ? formatPct(liveDayPct) : '—',       unit: '',    color: liveDayPct != null ? changeColor(liveDayPct) : '' },
-    { label: t.company.kpis.ytd,      value: ytdVal != null ? formatPct(ytdVal) : '—',               unit: '',    color: ytdVal != null ? changeColor(ytdVal) : '' },
-    { label: t.company.kpis.marketCap,value: mktCapVal != null ? formatMarketCapMM(mktCapVal) : '—', unit: '', color: '' },
-    { label: t.company.kpis.pe,       value: peVal != null ? `${peVal}` : '—',                       unit: 'x',   color: '' },
-    { label: t.company.kpis.divYield, value: divVal != null ? `${divVal}` : '—',                     unit: '%', color: '' },
-  ]
+  // Banks: P/E is not the balance-sheet-relevant multiple — the header KPI
+  // shows P/B instead (P/TBV would be preferred, but no such field is
+  // sourced anywhere in this codebase, so precedence resolves to the existing
+  // live/derived `pb` field, never a fabricated substitute). Identity comes
+  // solely from the authoritative bank registry — never inferred from the
+  // company name — so only these four tickers are affected; every other
+  // Financials-sector company (insurers, asset managers, exchanges) keeps P/E.
+  const isBank = isBankTicker(sym)
+  const pbVal = lf('pb')
 
   return (
     <div className="w-full space-y-4">
@@ -279,261 +303,295 @@ export default function CompanyDetailPage() {
         <span className="font-mono text-primary">{sym}</span>
       </div>
 
-      <SectionHeader
-        tag={sym}
-        title={company.name}
-        subtitle={`${company.sector} · ${company.industry} · ${company.exchange}`}
-        actions={
-          <>
-            <UpdateDataButton onRefresh={doRefresh} />
-            <MarketDataSourceBadge status={priceStatus} />
-            <button
-              onClick={() => window.print()}
-              className="no-print flex items-center gap-1.5 h-7 px-2.5 rounded border border-border bg-surface text-xs text-muted-fg hover:text-foreground hover:border-accent transition-colors"
-            >
-              <span aria-hidden>⎙</span>{t.common.print}
-            </button>
-            <Link
-              href="/watchlist"
-              className="flex items-center gap-1.5 h-7 px-2.5 rounded border border-border bg-surface text-xs text-muted-fg hover:text-foreground hover:border-accent transition-colors"
-            >
-              {t.company.watchlistPill}
-            </Link>
-          </>
-        }
-      />
+      <Reveal>
+        <SectionHeader
+          tag={sym}
+          title={company.name}
+          subtitle={`${company.sector} · ${company.industry} · ${company.exchange}`}
+          actions={
+            <>
+              <UpdateDataButton onRefresh={doRefresh} />
+              <MarketDataSourceBadge status={priceStatus} />
+              <button
+                onClick={() => window.print()}
+                className="no-print inline-flex items-center gap-1.5 h-8 px-3 rounded-full border border-[var(--nv-chipbd)] bg-[var(--nv-chip)] text-xs text-muted-fg hover:text-foreground nv-transition"
+              >
+                <span aria-hidden>⎙</span>{t.common.print}
+              </button>
+              <Link
+                href="/watchlist"
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full border border-[var(--nv-chipbd)] bg-[var(--nv-chip)] text-xs text-muted-fg hover:text-foreground nv-transition"
+              >
+                {t.company.watchlistPill}
+              </Link>
+            </>
+          }
+        />
+      </Reveal>
 
       {/* KPI strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        {kpis.map(({ label, value, unit, color }) => (
-          <div key={label} className="bg-surface border border-border rounded p-3">
-            <div className="text-xs text-muted mb-1 leading-tight">{label}</div>
-            <div className={`text-sm ui-number ${color || 'text-foreground'}`}>
-              {value}
-              {unit && <span className="text-xs text-muted-fg ml-1">{unit}</span>}
-            </div>
-          </div>
-        ))}
-      </div>
-      <TableSourceFooter source={t.stocks.footer} asOf={priceAsOf} className="-mt-2" />
+      <Reveal delayMs={60}>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <KpiCapsule label={t.company.kpis.lastPrice} value={livePrice != null ? `${formatCLP(livePrice)} CLP` : null} />
+          <GlassSurface variant="kpi" className="p-3 flex flex-col gap-1 justify-center">
+            <span className="ui-label text-muted-fg">{t.company.kpis.dayChg}</span>
+            <ChangeIndicator value={liveDayPct ?? null} label={liveDayPct != null ? formatPct(liveDayPct) : undefined} />
+          </GlassSurface>
+          <GlassSurface variant="kpi" className="p-3 flex flex-col gap-1 justify-center">
+            <span className="ui-label text-muted-fg">{t.company.kpis.ytd}</span>
+            <ChangeIndicator value={ytdVal} label={ytdVal != null ? formatPct(ytdVal) : undefined} />
+          </GlassSurface>
+          <KpiCapsule label={t.company.kpis.marketCap} value={mktCapVal != null ? formatMarketCapMM(mktCapVal) : null} />
+          {isBank ? (
+            <KpiCapsule label={t.company.kpis.pb} value={pbVal != null ? `${pbVal}x` : null} />
+          ) : (
+            <KpiCapsule label={t.company.kpis.pe} value={peVal != null ? `${peVal}x` : null} />
+          )}
+          <KpiCapsule label={t.company.kpis.divYield} value={divVal != null ? `${divVal}%` : null} />
+        </div>
+        <TableSourceFooter source={t.stocks.footer} asOf={priceAsOf} className="mt-2" />
+      </Reveal>
 
       {/* Business summary */}
       {company.businessSummary && (
-        <div className="bg-surface border border-border rounded p-4">
-          <div className="ui-label text-muted-fg mb-2">{t.company.businessSummary}</div>
-          <p className="text-xs text-muted leading-relaxed">{company.businessSummary}</p>
-        </div>
+        <Reveal delayMs={110}>
+          <GlassSurface variant="card" className="p-4">
+            <div className="ui-label text-muted-fg mb-2">{t.company.businessSummary}</div>
+            <p className="text-xs text-muted leading-relaxed">{company.businessSummary}</p>
+          </GlassSurface>
+        </Reveal>
       )}
 
       {/* Business model / revenue drivers / risks — shown if available */}
       {(company.businessModel || company.keyRevenueDrivers || company.keyRisks) && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {company.businessModel && (
-            <div className="bg-surface border border-border rounded p-4">
-              <div className="ui-label text-muted-fg mb-2">{t.company.businessModel}</div>
-              <p className="text-xs text-muted leading-relaxed">{company.businessModel}</p>
-            </div>
-          )}
-          {company.keyRevenueDrivers && company.keyRevenueDrivers.length > 0 && (
-            <div className="bg-surface border border-border rounded p-4">
-              <div className="ui-label text-muted-fg mb-2">{t.company.keyRevenueDrivers}</div>
-              <ul className="space-y-1">
-                {company.keyRevenueDrivers.map((d, i) => (
-                  <li key={i} className="text-xs text-muted leading-snug flex gap-1.5">
-                    <span className="text-muted-fg shrink-0">·</span>
-                    <span>{d}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {company.keyRisks && company.keyRisks.length > 0 && (
-            <div className="bg-surface border border-border rounded p-4">
-              <div className="ui-label text-muted-fg mb-2">{t.company.keyRisks}</div>
-              <ul className="space-y-1">
-                {company.keyRisks.map((r, i) => (
-                  <li key={i} className="text-xs text-muted leading-snug flex gap-1.5">
-                    <span className="text-negative shrink-0">·</span>
-                    <span>{r}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
+        <Reveal delayMs={110}>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {company.businessModel && (
+              <GlassSurface variant="card" className="p-4">
+                <div className="ui-label text-muted-fg mb-2">{t.company.businessModel}</div>
+                <p className="text-xs text-muted leading-relaxed">{company.businessModel}</p>
+              </GlassSurface>
+            )}
+            {company.keyRevenueDrivers && company.keyRevenueDrivers.length > 0 && (
+              <GlassSurface variant="card" className="p-4">
+                <div className="ui-label text-muted-fg mb-2">{t.company.keyRevenueDrivers}</div>
+                <ul className="space-y-1">
+                  {company.keyRevenueDrivers.map((d, i) => (
+                    <li key={i} className="text-xs text-muted leading-snug flex gap-1.5">
+                      <span className="text-muted-fg shrink-0">·</span>
+                      <span>{d}</span>
+                    </li>
+                  ))}
+                </ul>
+              </GlassSurface>
+            )}
+            {company.keyRisks && company.keyRisks.length > 0 && (
+              <GlassSurface variant="card" className="p-4">
+                <div className="ui-label text-muted-fg mb-2">{t.company.keyRisks}</div>
+                <ul className="space-y-1">
+                  {company.keyRisks.map((r, i) => (
+                    <li key={i} className="text-xs text-muted leading-snug flex gap-1.5">
+                      <span className="text-negative shrink-0">·</span>
+                      <span>{r}</span>
+                    </li>
+                  ))}
+                </ul>
+              </GlassSurface>
+            )}
+          </div>
+        </Reveal>
       )}
 
       {/* Price chart */}
-      <div className="bg-surface border border-border rounded p-4">
-        <div className="flex items-start justify-between mb-3">
-          <div>
-            <div className="ui-label text-muted-fg mb-1">{t.company.priceHistory} — {sym}</div>
-            <div className="flex items-baseline gap-2.5">
-              <span className="text-xl ui-number font-semibold text-foreground">
-                {lastPrice != null ? formatFx(lastPrice, lastPrice < 1000 ? 2 : 0) : '—'}
-                <span className="text-xs text-muted-fg ml-1">CLP</span>
-              </span>
-              {periodChange != null && (
-                <span className={`text-sm ui-number ${changeColor(periodChange)}`}>
-                  {formatPct(periodChange)}
-                  <span className="text-xs text-muted-fg ml-1">{chartTimeframe}</span>
+      <Reveal delayMs={170}>
+        <GlassSurface variant="card" className="p-4">
+          <div className="flex items-start justify-between mb-3 gap-3 flex-wrap">
+            <div>
+              <div className="ui-label text-muted-fg mb-1">{t.company.priceHistory} — {sym}</div>
+              <div className="flex items-baseline gap-2.5">
+                <span className="text-xl ui-number font-semibold text-foreground">
+                  {lastPrice != null ? formatFx(lastPrice, lastPrice < 1000 ? 2 : 0) : '—'}
+                  <span className="text-xs text-muted-fg ml-1">CLP</span>
                 </span>
-              )}
+                {periodChange != null && (
+                  <ChangeIndicator value={periodChange} label={`${formatPct(periodChange)} ${chartTimeframe}`} />
+                )}
+              </div>
             </div>
+            <SegmentedControl
+              options={STOCK_TIMEFRAMES.map(tf => ({ value: tf, label: tf }))}
+              value={chartTimeframe}
+              onChange={setChartTimeframe}
+              ariaLabel={t.company.chartTimeframeLabel}
+            />
           </div>
-          <div className="flex items-center gap-1">
-            {STOCK_TIMEFRAMES.map(tf => (
-              <button
-                key={tf}
-                onClick={() => setChartTimeframe(tf)}
-                className={`px-2 py-0.5 text-xs rounded transition-colors ${
-                  chartTimeframe === tf
-                    ? 'bg-surface-2 text-foreground border border-border'
-                    : 'text-muted-fg hover:text-foreground'
-                }`}
-              >
-                {tf}
-              </button>
-            ))}
-          </div>
-        </div>
-        {stockHistory.length >= 2 ? (
-          <LineChart
-            data={chartData}
-            unit=""
-            height={240}
-            valueFormatter={priceFmt}
-            primaryLabel={sym}
-            markers={markers}
-          />
-        ) : (
-          <div className="h-36 flex items-center justify-center border border-border rounded">
-            <span className="text-xs text-muted-fg">{t.common.noData}</span>
-          </div>
-        )}
-        <div className="flex items-center justify-between mt-2 gap-3 flex-wrap">
-          <TableSourceFooter
-            source={chartStatus !== 'static' ? t.stocks.footer : t.company.stockChartSource}
-            asOf={liveStockHistory?.asOf ?? null}
-          />
-          {markers.length > 0 && (
-            <div className="flex items-center gap-3 text-xs text-muted-fg">
-              <span className="flex items-center gap-1"><span style={{ color: 'var(--primary)' }}>▲</span>EEFF</span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Recent results · Valuation — Valuation drives height, Results scrolls to match */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-
-        {/* Recent results — shows ~3 rows, scroll for the rest */}
-        <div className="bg-surface border border-border rounded flex flex-col overflow-hidden lg:h-(--pin-h)" style={pinH(valH)}>
-          <div className="px-4 py-2.5 border-b border-border shrink-0 flex items-center justify-between gap-2">
-            <span className="ui-label text-muted-fg">{t.company.earnings}</span>
-            <Link
-              href="/chart-builder"
-              onClick={() => { try { localStorage.setItem('cmi.gfTicker', JSON.stringify(sym)) } catch {} ; window.dispatchEvent(new CustomEvent('gf:ticker', { detail: sym })) }}
-              className="text-xs text-primary hover:underline whitespace-nowrap"
-            >
-              {t.charting.open}
-            </Link>
-          </div>
-          {earnings.length > 0 ? (
-            <div className="flex-1 min-h-0 overflow-auto">
-              <table className="w-full text-xs min-w-[520px]">
-                <thead>
-                  <tr className="border-b border-border bg-surface-2">
-                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.cols.period}</th>
-                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.currency}</th>
-                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.cols.revenue}</th>
-                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.cols.revenueYoy}</th>
-                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.cols.ebitda}</th>
-                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.cols.netIncome}</th>
-                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.cols.netIncomeYoy}</th>
-                    <th className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.cols.eps}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {earnings.map(e => (
-                    <tr key={`${e.ticker}-${e.periodEnd}`} className="border-b border-border last:border-0">
-                      <td className="py-2 px-2 text-center text-muted-fg whitespace-nowrap">{e.period}</td>
-                      <td className="py-2 px-2 text-center text-muted-fg">{e.currency}</td>
-                      <td className="py-2 px-2 text-center ui-number text-foreground">{fmtMM(e.revenue)}</td>
-                      <td className={`py-2 px-2 text-center ui-number ${e.revenueYoY != null ? changeColor(e.revenueYoY) : 'text-muted-fg'}`}>{e.revenueYoY != null ? formatPct(e.revenueYoY) : '—'}</td>
-                      <td className="py-2 px-2 text-center ui-number text-foreground" title={e.isBank ? t.earnings.bankNoEbitda : undefined}>{fmtMM(e.ebitda)}</td>
-                      <td className={`py-2 px-2 text-center ui-number ${e.netIncome != null && e.netIncome < 0 ? 'text-negative' : 'text-foreground'}`}>{fmtMM(e.netIncome)}</td>
-                      <td className={`py-2 px-2 text-center ui-number ${e.netIncomeYoY != null ? changeColor(e.netIncomeYoY) : 'text-muted-fg'}`}>{e.netIncomeYoY != null ? formatPct(e.netIncomeYoY) : '—'}</td>
-                      <td className={`py-2 px-2 text-center ui-number ${e.eps != null && e.eps < 0 ? 'text-negative' : 'text-foreground'}`}>{fmtEps(e.eps)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          {stockHistory.length >= 2 ? (
+            <LineChart
+              data={chartData}
+              unit=""
+              height={240}
+              valueFormatter={priceFmt}
+              primaryLabel={sym}
+              markers={markers}
+            />
           ) : (
-            <p className="px-4 py-3 text-xs text-muted-fg">{earningsResults === null ? t.common.loading : t.company.noData}</p>
+            <div className="flex items-center justify-center" style={{ minHeight: '9rem' }}>
+              <AsyncState kind="empty" message={t.common.noData} />
+            </div>
           )}
-          <div className="px-4 py-2 border-t border-border shrink-0">
-            <TableSourceFooter source={t.stocks.footer} asOf={earningsResults?.status === 'live' ? (earningsResults.asOf ?? null) : null} />
-            <p className="text-xs text-muted-fg">{t.earnings.amountsNote}</p>
-          </div>
-        </div>
-
-        {/* Valuation — 3x3 metric grid (natural height, drives the row, no scroll) */}
-        <div ref={valRef} className="bg-surface border border-border rounded flex flex-col overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-border shrink-0">
-            <span className="ui-label text-muted-fg">{t.company.valuation}</span>
-          </div>
-          <div className="p-2">
-            {valuation === null ? (
-              <div className="py-8 text-center text-xs text-muted-fg">{t.common.loading}</div>
-            ) : (
-              <div className="grid grid-cols-3 gap-2">
-                {valMetrics.map(({ label, val, med }) => (
-                  <div key={label} className="border border-border rounded flex flex-col items-center justify-center text-center px-1 py-1.5">
-                    <div className="ui-label text-muted-fg mb-0.5" style={{ fontSize: '9px' }}>{label}</div>
-                    <div className="text-sm ui-number text-foreground">{val}</div>
-                    {med && <div className="ui-number text-muted-fg" style={{ fontSize: '9px' }}>{med}</div>}
-                  </div>
-                ))}
+          <div className="flex items-center justify-between mt-2 gap-3 flex-wrap">
+            <TableSourceFooter
+              source={chartStatus !== 'static' ? t.stocks.footer : t.company.stockChartSource}
+              asOf={liveStockHistory?.asOf ?? null}
+            />
+            {markers.length > 0 && (
+              <div className="flex items-center gap-3 text-xs text-muted-fg">
+                <span className="flex items-center gap-1"><span style={{ color: 'var(--primary)' }}>▲</span>EEFF</span>
               </div>
             )}
           </div>
-          <div className="px-4 py-2 border-t border-border shrink-0">
-            <TableSourceFooter source={t.stocks.footer} />
+        </GlassSurface>
+      </Reveal>
+
+      {/* Recent results · Valuation — Valuation drives height, Results scrolls to match */}
+      <Reveal delayMs={230}>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+
+          {/* Recent results — shows ~3 rows, scroll for the rest */}
+          <GlassSurface variant="card" className="flex flex-col overflow-hidden lg:h-(--pin-h)" style={pinH(valH)}>
+            <div className="px-4 pt-3 pb-2 shrink-0 flex items-center justify-between gap-2" style={{ borderBottom: '1px solid var(--nv-line)' }}>
+              <span className="ui-label text-muted-fg">{t.company.earnings}</span>
+              <Link
+                href="/chart-builder"
+                onClick={() => { try { localStorage.setItem('cmi.gfTicker', JSON.stringify(sym)) } catch {} ; window.dispatchEvent(new CustomEvent('gf:ticker', { detail: sym })) }}
+                className="text-xs text-primary hover:underline whitespace-nowrap"
+              >
+                {t.charting.open}
+              </Link>
+            </div>
+            <GlassSurface variant="dense" className="flex-1 min-h-0 overflow-auto">
+              {earnings.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs min-w-[520px]">
+                    <caption className="sr-only">{t.company.earnings}</caption>
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th scope="col" className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.cols.period}</th>
+                        <th scope="col" className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.currency}</th>
+                        <th scope="col" className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.cols.revenue}</th>
+                        <th scope="col" className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.cols.revenueYoy}</th>
+                        <th scope="col" className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.cols.ebitda}</th>
+                        <th scope="col" className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.cols.netIncome}</th>
+                        <th scope="col" className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.cols.netIncomeYoy}</th>
+                        <th scope="col" className="text-center py-2 px-2 ui-table-header text-muted-fg">{t.earnings.cols.eps}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {earnings.map(e => (
+                        <tr key={`${e.ticker}-${e.periodEnd}`} className="border-b border-border last:border-0 nv-row-hover nv-transition">
+                          <td className="py-2 px-2 text-center text-muted-fg whitespace-nowrap">{e.period}</td>
+                          <td className="py-2 px-2 text-center text-muted-fg">{e.currency}</td>
+                          <td className="py-2 px-2 text-center ui-number text-foreground">{fmtMM(e.revenue)}</td>
+                          <td className={`py-2 px-2 text-center ui-number ${e.revenueYoY != null ? changeColor(e.revenueYoY) : 'text-muted-fg'}`}>{e.revenueYoY != null ? formatPct(e.revenueYoY) : '—'}</td>
+                          <td className="py-2 px-2 text-center ui-number text-foreground" title={e.isBank ? t.earnings.bankNoEbitda : undefined}>{fmtMM(e.ebitda)}</td>
+                          <td className={`py-2 px-2 text-center ui-number ${e.netIncome != null && e.netIncome < 0 ? 'text-negative' : 'text-foreground'}`}>{fmtMM(e.netIncome)}</td>
+                          <td className={`py-2 px-2 text-center ui-number ${e.netIncomeYoY != null ? changeColor(e.netIncomeYoY) : 'text-muted-fg'}`}>{e.netIncomeYoY != null ? formatPct(e.netIncomeYoY) : '—'}</td>
+                          <td className={`py-2 px-2 text-center ui-number ${e.eps != null && e.eps < 0 ? 'text-negative' : 'text-foreground'}`}>{fmtEps(e.eps)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <AsyncState
+                  kind={earningsResults === null ? 'loading' : 'empty'}
+                  message={earningsResults === null ? t.common.loading : t.company.noData}
+                />
+              )}
+            </GlassSurface>
+            <div className="px-4 py-2.5 shrink-0" style={{ borderTop: '1px solid var(--nv-line)' }}>
+              <TableSourceFooter source={t.stocks.footer} asOf={earningsResults?.status === 'live' ? (earningsResults.asOf ?? null) : null} />
+              <p className="text-xs text-muted-fg mt-1">{t.earnings.amountsNote}</p>
+            </div>
+          </GlassSurface>
+
+          {/* Valuation — 3x3 metric grid (natural height, drives the row, no scroll) */}
+          <div ref={valRef}>
+            <GlassSurface variant="card" className="flex flex-col overflow-hidden">
+              <div className="px-4 pt-3 pb-2 shrink-0" style={{ borderBottom: '1px solid var(--nv-line)' }}>
+                <span className="ui-label text-muted-fg">{t.company.valuation}</span>
+              </div>
+              <GlassSurface variant="dense" className="p-2">
+                {valuation === null ? (
+                  <AsyncState kind="loading" message={t.common.loading} />
+                ) : (
+                  <div className="grid grid-cols-3 gap-2">
+                    {valMetrics.map(({ label, val, med }) => (
+                      <div
+                        key={label}
+                        className="flex flex-col items-center justify-center text-center px-1 py-1.5"
+                        style={{ border: '1px solid var(--nv-line)', borderRadius: 'var(--radius-cell)' }}
+                      >
+                        <div className="ui-label text-muted-fg mb-0.5" style={{ fontSize: '9px' }}>{label}</div>
+                        <div className="text-sm ui-number text-foreground">{val}</div>
+                        {med && <div className="ui-number text-muted-fg" style={{ fontSize: '9px' }}>{med}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </GlassSurface>
+              <div className="px-4 py-2.5 shrink-0" style={{ borderTop: '1px solid var(--nv-line)' }}>
+                <TableSourceFooter source={t.stocks.footer} />
+              </div>
+            </GlassSurface>
           </div>
         </div>
-      </div>
+      </Reveal>
 
-      {/* Recent news */}
-      {news.length > 0 && (
-        <div className="bg-surface border border-border rounded overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-border bg-surface-2">
+      {/* Recent news — the section itself always renders (heading included);
+          only its body switches between the populated list and an honest
+          loading/empty/unavailable/error state. Zero articles is never an
+          omitted section. */}
+      <Reveal delayMs={290}>
+        <GlassSurface variant="card" className="overflow-hidden">
+          <div className="px-4 py-2.5" style={{ borderBottom: '1px solid var(--nv-line)' }}>
             <span className="ui-label text-muted-fg">{t.company.recentNews}</span>
           </div>
-          <div className="divide-y divide-border">
-            {news.map(item => {
-              const isHigh = item.impactLevel === 'High'
-              return (
-                <div key={item.id} className="py-1.5">
-                  <div
-                    className={`flex items-start justify-between gap-3 px-4 ${isHigh ? 'py-1' : ''}`}
-                    style={isHigh ? { backgroundColor: 'var(--negative)' } : undefined}
-                  >
-                    <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="hover:underline min-w-0">
-                      <p className="text-xs leading-snug font-medium" style={isHigh ? { color: '#fff' } : undefined}>{item.headline}</p>
-                    </a>
-                    <span className="flex items-center gap-1.5 shrink-0 whitespace-nowrap pt-px">
-                      <span className="ui-number text-[10px] font-mono font-semibold" title={item.source} style={isHigh ? { color: '#fff' } : { color: getNewsSourceColor(item.source) }}>{getNewsSourceCode(item.source)}</span>
-                      <span className="ui-number text-xs" style={isHigh ? { color: '#fff' } : { color: 'var(--muted-fg)' }}>{formatNewsTimestamp(item.publishedAt)}</span>
-                    </span>
+          {newsState ? (
+            <AsyncState
+              kind={newsState}
+              message={
+                newsState === 'loading' ? t.home.newsLoading
+                  : newsState === 'unavailable' ? t.home.newsUnavailable
+                  : newsState === 'empty' ? t.home.newsEmpty
+                  : undefined
+              }
+            />
+          ) : (
+            <div className="divide-y divide-border">
+              {news.map(item => {
+                const isHigh = item.impactLevel === 'High'
+                return (
+                  <div key={item.id} className="py-1.5">
+                    <div
+                      className={`flex items-start justify-between gap-3 px-4 ${isHigh ? 'py-1' : ''}`}
+                      style={isHigh ? { backgroundColor: 'var(--negative)' } : undefined}
+                    >
+                      <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="hover:underline min-w-0">
+                        <p className="text-xs leading-snug font-medium" style={isHigh ? { color: '#fff' } : undefined}>{item.headline}</p>
+                      </a>
+                      <span className="flex items-center gap-1.5 shrink-0 whitespace-nowrap pt-px">
+                        <span className="ui-number text-[10px] font-mono font-semibold" title={item.source} style={isHigh ? { color: '#fff' } : { color: getNewsSourceColor(item.source) }}>{getNewsSourceCode(item.source)}</span>
+                        <span className="ui-number text-xs" style={isHigh ? { color: '#fff' } : { color: 'var(--muted-fg)' }}>{formatNewsTimestamp(item.publishedAt)}</span>
+                      </span>
+                    </div>
                   </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
+                )
+              })}
+            </div>
+          )}
+        </GlassSurface>
+      </Reveal>
 
     </div>
   )

@@ -11,12 +11,14 @@ COMPLETE 2026-07-22** · **Phase 2 (app shell: top pill navigation) ✓ COMPLETE
 **Phase 3 (shared UI primitives / Fable component library) ✓ COMPLETE 2026-07-24** ·
 **Phase 4 (shared chart & financial-visualization system) ✓ COMPLETE 2026-07-24** ·
 **Phase 5A (`/stocks` page re-skin) ✓ COMPLETE 2026-07-28** ·
-**Phase 5B (`/watchlist` page re-skin) ✓ COMPLETE 2026-07-28** — see
+**Phase 5B (`/watchlist` page re-skin) ✓ COMPLETE 2026-07-28** ·
+**Phase 5C (`/companies/[ticker]` page re-skin) ✓ COMPLETE 2026-07-28** — see
 `04-file-level-implementation-plan.md` § "Phase 1 — as built" / "Phase 2 — as built" /
 "Phase 3 — as built" / "Phase 4 — as built" / "Phase 5A — `/stocks` — as built" /
-"Phase 5B — `/watchlist` — as built". Phase 5's remaining 10 pages and Phases 6–8 not started.
-Items below are ticked only where Phases 1–5B genuinely satisfy them; everything that still
-depends on the remaining page work stays `[ ]` or `[~]`.
+"Phase 5B — `/watchlist` — as built" / "Phase 5C — `/companies/[ticker]` — as built". Phase 5's
+remaining 9 pages and Phases 6–8 not started. Items below are ticked only where Phases 1–5C
+genuinely satisfy them; everything that still depends on the remaining page work stays `[ ]` or
+`[~]`.
 
 ---
 
@@ -95,8 +97,22 @@ loading state · empty state · error state · auth status — verified identica
   popup; region via sidebar `macro:region`; Update; public.
 - [ ] `/macro/calendar` — FRED calendar + FOMC outlook + Chile deferred; back link; public.
 - [ ] `/earnings` — upcoming + recent results tables; Update/CSV; loading/empty; public.
-- [ ] `/companies/[ticker]` — KPI strip + business cards + price chart (8 TF + markers) + results +
+- [x] `/companies/[ticker]` — KPI strip + business cards + price chart (8 TF + markers) + results +
   valuation grid + news; Print/Watchlist/Graph-fundamentals; `cmi.chartTimeframe`; public.
+  *Phase 5C (2026-07-28). All 7 content sections, all 6 KPIs, all 8 chart timeframes (now a
+  `SegmentedControl`), the EEFF markers, all 8 Recent Results columns, all 9 Valuation metrics +
+  sector medians, the news panel, all 4 `TableSourceFooter` instances, the `MarketDataSourceBadge`,
+  Print (`window.print()` + `.no-print`), the Watchlist link, and the "Graph fundamentals →"
+  `cmi.gfTicker`/`gf:ticker` deep-link are preserved byte-for-byte in logic — only presentation
+  changed (`KpiCapsule`/`GlassSurface`/`ChangeIndicator`/`AsyncState`/`SegmentedControl`/`Reveal`).
+  `cmi.chartTimeframe` persistence untouched. No fabricated earnings quarters, no editorial quality
+  pills (`auditSourceIntegrity.test.ts` H1 passes unchanged). Ships as a full page, not a side
+  panel, per decision D4. **Same-day repair pass** fixed a KPI-footer overlap (negative margin
+  removed), made the News section render in every state (never omitted on zero articles), gave the
+  four bank tickers a P/B header KPI instead of P/E (via the existing `bankRegistry.ts`, never a
+  fabricated P/TBV), and confirmed SONDA's chart gap is a local static-seed-coverage limitation, not
+  a code defect (Yahoo already serves it correctly in hybrid/production mode). Test suite
+  107 → 151.*
 - [x] `/watchlist` 🔒 — add-ticker form + table + remove; loading/empty/409/422; protected.
   *Phase 5B (2026-07-28). All 3 sections, all 7 columns in order, the company links, the client-side
   ticker validation, the exact POST/DELETE shapes, 409/422 handling, the 2500ms auto-dismiss, and
@@ -142,9 +158,10 @@ loading state · empty state · error state · auth status — verified identica
   *(Phase 1 shipped the `.nv-indicator` motion primitive at 380ms/primary easing. Phase 2 consumed
   it for the nav rails. Phase 3 generalized it into a reusable `SegmentedControl` component
   (`src/components/fable/SegmentedControl.tsx`, `role="radiogroup"`, keyboard-operable, reuses
-  `useNavIndicator`) — but no page has adopted it yet. Compare/Charting/Macro's own timeframe/
-  period/frequency toggles still use their original plain segmented buttons; migrating them to
-  `SegmentedControl` is Phase 5 page work, not a Phase 3 deliverable.)*
+  `useNavIndicator`). **Phase 5C adopted it for the first time** — `/companies/[ticker]`'s
+  8-timeframe chart selector — proving the component end to end on a real page. Compare/Charting/
+  Macro's own timeframe/period/frequency toggles still use their original plain segmented buttons;
+  migrating them to `SegmentedControl` remains their own Phase 5 page work.)*
 - [~] Motion (reveal, count-up, nav slide, drawer/pop) present and **`prefers-reduced-motion`-gated**.
   *(Phase 1: all 6 Fable keyframes, the duration/easing token set, the foundational utilities, and
   the reduced-motion block — which disables reveal / Ken-Burns / pulse / spin outright and collapses
@@ -178,7 +195,10 @@ loading state · empty state · error state · auth status — verified identica
   hover-dot tokens moved to a new shared `--chart-*` set; a shared `ChartTooltip` replaces four
   duplicated ad hoc tooltip boxes; each chart gained `role="img"` + `aria-describedby` + an
   `sr-only` data-driven summary + an SVG `<title>` — a real accessible alternative, not merely a
-  title. No page that consumes these charts changed.)*
+  title. No page that consumes these charts changed at the time.)* *(Phase 5C, 2026-07-28:
+  `/companies/[ticker]` — the first consuming page to be restyled — confirmed the `LineChart`
+  call (`data`/`unit`/`height`/`valueFormatter`/`primaryLabel`/`markers`) is untouched; only the
+  surrounding card material and the timeframe control changed.)*
 - [x] New: `GlassSurface`, `KpiCapsule`/`KpiHero`, `SegmentedControl`, `Sparkline`/`SparklineRow`,
   `BarrierGauge`, `DetailPanel`, `AsyncState`, `PrivacyValue`/`usePrivacyMode`, `CurrentActions`,
   `ChangeIndicator`, `useCountUp`, `motion` primitives (Reveal/Pop/SlideIn/ContentPulse).
@@ -191,16 +211,23 @@ loading state · empty state · error state · auth status — verified identica
   *Phase 2: `cmi.macroRegion` migrated verbatim into `SecondaryNav`/`MobileNavDrawer` (same key,
   same `'CL'|'US'` values). `cmi.sidebarCollapsed` has no successor — the top rail has no collapsed
   mode, so this key is now simply unused going forward (never read/written by any file); not
-  removed from client localStorage automatically, but harmless. compare/gf/ratesOrder/
-  chartTimeframe are untouched (their pages haven't changed).*
+  removed from client localStorage automatically, but harmless. Phase 5C: `cmi.chartTimeframe` is
+  now genuinely exercised by `/companies/[ticker]`'s restyled `SegmentedControl` — same
+  `usePersistentState('cmi.chartTimeframe', '1Y')` call, unchanged. compare/gf/ratesOrder are
+  otherwise untouched (their pages haven't changed).*
 - [~] Window events (`macro:region`, `gf:ticker`, `cmdk:open`) fire and are handled.
   *Phase 2: `macro:region` dispatch verified unchanged (same event name/detail shape) from both
-  the desktop and mobile nav surfaces, and `macro/page.tsx`'s listener is untouched. `gf:ticker`/
-  `cmdk:open` unaffected (their producers/consumers weren't touched this phase).*
+  the desktop and mobile nav surfaces, and `macro/page.tsx`'s listener is untouched. Phase 5C:
+  `/companies/[ticker]`'s "Graph fundamentals →" link still sets `localStorage['cmi.gfTicker']`
+  and dispatches `gf:ticker` with the same detail shape, byte-for-byte unchanged. `cmdk:open`
+  unaffected (its producer/consumer weren't touched this phase).*
 - [~] CSV export (Stocks/Compare/Charting/Earnings) and Print (Company) work.
   *Phase 5A: the Stocks export is preserved unchanged — same `chilean_stocks` filename, same nine
-  header labels, same row shape (asserted by test). Compare/Charting/Earnings/Print untouched
-  (their pages are not yet restyled).*
+  header labels, same row shape (asserted by test). Phase 5C: Company's Print button still calls
+  `window.print()` verbatim and keeps its `no-print` class (source-verified) — restyled to the
+  Fable pill shape only; a live in-browser print check was **not** run (Chrome extension not
+  connected in this session), so this stays `[~]` rather than `[x]` pending that manual check.
+  Compare/Charting/Earnings export untouched (their pages are not yet restyled).*
 - [~] `Update` buttons refresh via `useGlobalRefresh`; badges reflect live/persisted/static.
   *Phase 5A: Stocks still routes its single `UpdateDataButton` through `useGlobalRefresh()` and
   still derives `priceStatus` as live → persisted → static; both asserted by test and confirmed in
@@ -251,6 +278,10 @@ loading state · empty state · error state · auth status — verified identica
   `BarrierGauge`'s accessible text equivalent are source-verified too. A live keyboard/
   screen-reader/contrast pass remains open.*
 - [ ] Print tearsheet (Company) renders; `.no-print` chrome hidden.
+  *Phase 5C: the Print button's `onClick={() => window.print()}` and `no-print` class are
+  source-verified unchanged, and `globals.css`'s `@media print` rules were not touched by this
+  phase — but a live `window.print()` render was not exercised (Chrome extension not connected in
+  this session), so this item stays open pending that manual check.*
 
 ### C5 · Governance & docs
 - [ ] `docs/design_principles.md` + CLAUDE.md design sections rewritten to the Fable language

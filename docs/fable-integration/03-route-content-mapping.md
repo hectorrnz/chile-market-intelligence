@@ -26,7 +26,7 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
 | 5 | `/macro` | Macroeconomic Indicators | public | 7 Macro | Yes — banded indicators table, yield curve, FX depth, chart popup | Not started | Not verified |
 | 6 | `/macro/calendar` | Economic Calendar | public | 7 Macro / 9 Documents table | Yes — release calendar table, FOMC outlook card | Not started | Not verified |
 | 7 | `/earnings` | Earnings | public | 8 Research (upcoming earnings) / DataTable | Yes — upcoming + results tables | Not started | Not verified |
-| 8 | `/companies/[ticker]` | Stocks · TICKER | public | 2 Portfolio detail panel + 3 Performance | Yes — company detail (KPI capsules, chart, valuation grid, results, news) | Not started | Not verified |
+| 8 | `/companies/[ticker]` | Stocks · TICKER | public | 2 Portfolio detail panel + 3 Performance | Yes — company detail (KPI capsules, chart, valuation grid, results, news) | Done | Verified |
 | 9 | `/watchlist` 🔒 | Watchlist | protected | 2 Portfolio (DataTable) | No (reused Phase 3 `TableCard` + `AsyncState`) | **✓ Phase 5B (2026-07-28)** | **✓ Source + protected-route verified** |
 | 10 | `/portfolio` 🔒 | Portfolio | protected | 1 Overview + 2 Portfolio + 4 Risk | Yes — summary hero cards, sector exposure, positions/transactions/cash tabs | Not started | Not verified |
 | 11 | `/structured-notes` 🔒 | Structured Notes | protected | 6 Structured Notes | Yes — barrier gauge, upload/extract panel, dashboard KPIs, bar/donut | Not started | Not verified |
@@ -293,7 +293,21 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
   4× `TableSourceFooter`.
 - **New component required:** **Yes** — full company detail composition (as a full page, not
   just Fable's side panel). Reuses KPI-capsule, chart, DataTable, glass-card patterns.
-- **Impl. status:** Not started · **Verif. status:** Not verified.
+- **Impl. status:** Done (2026-07-28) · **Verif. status:** Verified (lint 0, build 0 errors, full
+  test suite green except the 3 pre-existing date-dependent News tests, unrelated). Shipped as a
+  full page — no side panel introduced, per decision D4 in the risk register. KPI strip uses
+  `KpiCapsule` (plain metrics) + `GlassSurface variant="kpi"` + `ChangeIndicator` (Day Chg./YTD, so
+  change direction is never color-only); business summary/model/drivers/risks and the price-chart
+  card use `GlassSurface variant="card"`; the 8-timeframe selector is the first production adopter
+  of `SegmentedControl`; Recent Results and the Valuation 3×3 grid are hand-composed from
+  `GlassSurface variant="card"` (header/footer) + `GlassSurface variant="dense"` (data region) —
+  matching `TableCard`'s internal material structure without altering the shared component, since
+  this page's pinned-height + internal-vertical-scroll requirement (`--pin-h`, `valH`
+  `ResizeObserver`) doesn't fit `TableCard`'s current (horizontal-only) scroll model; loading/empty
+  states route through `AsyncState` with the pre-existing exact copy passed via its `message`
+  override so wording is byte-identical to before. All 7 content sections, the 8 timeframes, EEFF
+  markers, `cmi.chartTimeframe` persistence, Print, and the Watchlist/"Graph fundamentals →" links
+  are unchanged. Zero API/provider/data-layer files touched.
 
 ## 9. `/watchlist` 🔒 — Watchlist
 

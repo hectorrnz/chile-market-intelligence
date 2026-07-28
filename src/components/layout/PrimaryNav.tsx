@@ -26,7 +26,7 @@ export function PrimaryNav() {
     <nav
       aria-label={t.common.primaryNav}
       ref={railRef as React.RefObject<HTMLElement>}
-      className="hidden lg:flex relative items-center gap-0.5 min-w-0 flex-1 rounded-full px-1 py-1 overflow-x-auto nv-scrollbar-hidden"
+      className="hidden lg:flex relative items-center gap-0.5 min-w-0 flex-1 rounded-full pl-1 pr-2.5 py-1 overflow-x-auto nv-scrollbar-hidden"
       style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' }}
     >
       {rect && (
@@ -44,7 +44,7 @@ export function PrimaryNav() {
             href={group.href}
             ref={setItemRef(group.key) as React.Ref<HTMLAnchorElement>}
             aria-current={active ? 'page' : undefined}
-            className="relative z-10 shrink-0 whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs nv-transition"
+            className="relative z-10 shrink-0 whitespace-nowrap px-3 py-1.5 rounded-full text-xs nv-transition"
             style={{ color: active ? 'var(--foreground)' : 'var(--muted-fg)', fontWeight: active ? 600 : 500 }}
           >
             {group.label(t)}

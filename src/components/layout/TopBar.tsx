@@ -28,7 +28,7 @@ export function TopBar() {
 
   return (
     <header
-      className="no-print h-14 shrink-0 flex items-center gap-2 sm:gap-4 px-3 sm:px-6 nv-glass-nav"
+      className="no-print h-14 shrink-0 flex items-center gap-1.5 sm:gap-3 px-3 sm:px-6 nv-glass-nav"
       style={{ borderBottom: '1px solid var(--nv-line)', color: 'var(--topbar-fg)' }}
     >
       {/* Left: mobile-nav trigger + brand + contextual title. min-w-0 +
@@ -63,7 +63,7 @@ export function TopBar() {
 
       {/* Right: search + icon controls + date + auth. The date and full
           brand text are the first to go on narrow viewports. */}
-      <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0 ml-auto">
+      <div className="flex items-center gap-1 sm:gap-2 shrink-0 ml-auto">
         <button
           type="button"
           onClick={() => window.dispatchEvent(new Event('cmdk:open'))}
@@ -73,7 +73,7 @@ export function TopBar() {
         >
           <span>⌕</span>
           <span className="truncate hidden md:inline">{t.common.search}</span>
-          <kbd className="border border-border rounded px-1.5 text-xs hidden md:inline">⌘K</kbd>
+          <kbd className="border border-border rounded px-1.5 text-xs hidden xl:inline">⌘K</kbd>
         </button>
 
         <NotificationBell />

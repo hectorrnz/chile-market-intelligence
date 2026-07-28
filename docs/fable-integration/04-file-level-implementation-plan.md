@@ -417,7 +417,10 @@ or any news-related source path was touched this phase).
 > **Phase 5A (`/stocks`) ✓ COMPLETE (2026-07-28)** — proves the table + toolbar + source-footer
 > recipe end to end. **Phase 5B (`/watchlist`) ✓ COMPLETE (2026-07-28)** — proves the same recipe
 > on a *protected* route, plus the add/remove form pattern and the `AsyncState` state machine.
-> See "Phase 5A — as built" and "Phase 5B — as built" below. Pages 3–12 are not started.
+> **Phase 5C (`/companies/[ticker]`) ✓ COMPLETE (2026-07-28)** — proves KPI capsules, the price
+> chart on Fable materials, `SegmentedControl`, glass business/valuation cards, and the print path
+> on a dynamic detail route. See "Phase 5A — as built", "Phase 5B — as built" and "Phase 5C — as
+> built" below. Pages 4–12 are not started.
 
 Each page: swap layout/card/table/pill classes to the new shared components; **do not change**
 data fetching, `fetch*` calls, `useMarketData`/`useMacroData`/`useGlobalRefresh`, persisted
@@ -431,7 +434,7 @@ Recommended order (low-risk → high-risk, dependency-aware):
    toolbar + source-footer recipe end to end.
 2. **`/watchlist`** — small protected table + add form; proves the recipe on a protected route
    and the add-form pattern.
-3. **`/companies/[ticker]`** — KPI capsules + chart + valuation grid + results + news; proves
+3. **`/companies/[ticker]`** ✓ — KPI capsules + chart + valuation grid + results + news; proves
    capsules, charts, glass cards, print path.
 4. **`/macro`** + **`/macro/calendar`** — direct Fable Macro map (snapshot rows + sparklines),
    banded table, yield curve, chart popup overlay, release calendar.
@@ -535,6 +538,149 @@ are not a substitute for looking at the page.
 **Live verification** against a dev server: `/watchlist` unauthenticated → **307 → `/login?next=%2Fwatchlist`** (protection and `next` preservation both intact); `/login?next=…`, `/stocks` and `/` all 200; Phase 5A `/stocks` confirmed un-regressed (9 headers, 6 `aria-sort`, 25 `nv-row-hover` rows, `min-width:760px`, "Yahoo Finance" ×2); and the new bilingual strings — `"Could not remove ticker…"` **and** `"…sigue en tu watchlist"` — were found in the served client bundle, proving both dictionaries reach the browser.
 
 **Honest gaps:** (1) the page's own rendered markup could **not** be fetched, because the route correctly redirects without a session — verification is therefore build-, source- and bundle-level plus the redirect check, not a DOM inspection of the authenticated page. (2) The interactive browser responsive ladder (1440/1280/1024/768/390, light+dark, EN+ES) was **not** run — the Chrome extension is not connected in this environment, the same limitation disclosed in Phases 2–5A. The conventions that prevent page-level overflow are source-verified (no root `min-width`; the only `min-width` is the 620px floor inside `TableCard`'s `overflow-x-auto`; the add form and footer row both `flex-wrap`), but that is not a substitute for looking at the page while signed in.
+
+---
+
+### Phase 5C — `/companies/[ticker]` — as built (2026-07-28)
+
+**Files changed (4 — 1 source, 1 i18n, 3 docs; `06` counted once):**
+
+| File | Change |
+|---|---|
+| `src/app/companies/[ticker]/page.tsx` | Re-skinned. **Every hook, state variable, effect, fetch call, computed value (`livePrice`, `liveDayPct`, `ytdVal`, `mktCapVal`, `peVal`, `divVal`, `valMetrics`, `markers`, `chartStatus`, `periodChange`, `valH`/`ResizeObserver` measurement) is byte-for-byte unchanged** — only the JSX tree changed. KPI strip: 4 tiles → `KpiCapsule`; Day Chg./YTD → `GlassSurface variant="kpi"` + `ChangeIndicator` (icon+color, not color-alone). Business summary / business model / revenue drivers / risks → `GlassSurface variant="card"`. Price chart card → `GlassSurface variant="card"`; the 8-timeframe button row → `SegmentedControl` (first production adopter); the period-change badge → `ChangeIndicator`; the "no data" box → `AsyncState kind="empty"`. Recent Results + Valuation cards are hand-composed from `GlassSurface variant="card"` (header/footer) + `GlassSurface variant="dense"` (data region) — the same material structure `TableCard` uses internally, chosen over `TableCard` itself because this page's pinned-height + internal-vertical-scroll layout (`--pin-h` CSS var bound to the Valuation card's measured height, `flex-1 min-h-0 overflow-auto` on the Results table region) doesn't fit `TableCard`'s current horizontal-only-scroll model; forcing that model to fit here would have meant changing a shared, tested component for one caller's unusual requirement. Loading/empty states route through `AsyncState`, with the pre-existing exact copy (`t.common.loading`, `t.company.noData`) passed via its `message` override so wording is unchanged. Recent news card → `GlassSurface variant="card"`; row content (headline, source-code chip, high-impact full-bleed bar) untouched. Six `Reveal` wrappers (0/60/110/170/230/290ms stagger) added for section entrance; all collapse to final state under `prefers-reduced-motion` via the existing global CSS gate — no new reduced-motion branch was needed. Print/Watchlist header actions restyled to the Fable pill shape (`rounded-full`, `--nv-chip`/`--nv-chipbd`) with `onClick={() => window.print()}`, `no-print`, and `href="/watchlist"` all unchanged. |
+| `src/lib/i18n.ts` | 1 new key × 2 languages under `company`: `chartTimeframeLabel` (Chart timeframe / Periodo del gráfico) — the `SegmentedControl`'s `ariaLabel`. No existing key touched. |
+| `docs/fable-integration/03` | Route 8 status → Done/Verified; the per-route entry rewritten with the as-built component mapping. |
+| `docs/fable-integration/04` / `06` | This as-built record; recommended-order item 3 ticked; checklist items updated. |
+
+**Files deliberately NOT changed:** `globals.css` (every token this page needed already existed), `src/components/fable/TableCard.tsx` (deliberately not used here — see above), any chart component (`LineChart.tsx` untouched, same props/call signature), any other page, `src/app/api/**`, `src/middleware.ts`, `src/lib/{providers,db,market,earnings,compare,financials}/**`, `src/config/**`, `src/data/**`, `package.json`/`package-lock.json`.
+
+**Judgement calls, stated plainly:**
+- **`TableCard` was not extended or reused for Recent Results/Valuation.** It assumes natural/page-level height with horizontal-only scroll; this page needs a fixed (measured) height with internal vertical scroll on the data region while header/footer stay pinned. Hand-composing the same `GlassSurface(card)` + `GlassSurface(dense)` + `AsyncState` primitives locally gets full material consistency without adding a new, narrowly-motivated prop surface to a component two other pages already depend on.
+- **`SegmentedControl` first adopted here**, for the 8-timeframe chart selector — exactly the candidate the acceptance checklist named. `cmi.chartTimeframe` persistence (`usePersistentState`) is untouched; the control only changes how the same `chartTimeframe`/`setChartTimeframe` pair is rendered.
+- **Day Chg./YTD KPI tiles do not use `KpiCapsule`'s own `value`+`changeValue` combination.** `KpiCapsule` shows a primary value AND, optionally, an adjacent change indicator — for a tile whose *entire* content is a signed percentage, using both slots would either duplicate the number or force a `null` primary value to show "Unavailable" beside the real figure. A plain `GlassSurface variant="kpi"` tile with just `ChangeIndicator` inside avoids both problems while staying on the exact same glass-kpi material as the other four tiles.
+- **No 52-week high/low, sparklines, or benchmark/IPSA chart series were added.** `t.company.kpis.low52`/`high52` exist in `i18n.ts` but were never rendered before this phase either — pre-existing dead keys, left untouched (out of scope: adding a metric the current APIs don't drive would violate "do not invent metrics"). `LineChart`'s `compareData`/`compareLabel` props were never passed by this page before and still aren't — no benchmark series exists in this page's data today.
+
+**Validation:** lint 0 problems · build 0 errors (full route table unchanged, `/companies/[ticker]`
+still dynamic/`ƒ`) · suite **2232 tests, 2229 pass, 3 fail** — the same pre-existing, date-dependent
+`tests/newsModule.test.ts` fixture failures documented in Phases 5A/5B (fixtures stamped `15 Jul
+2026` against the orchestrator's rolling 7-day window; today is 2026-07-28). No news-related file
+is in this phase's changed-file list, and the failure count/location is unchanged from the pre-phase
+baseline.
+
+**Live verification** against the already-running dev server: `GET /companies/SQM-B` and
+`GET /companies/BSANTANDER` both 200 with no server-rendered error markers.
+
+**Honest gap:** the interactive browser responsive ladder (1440/1280/1024/768/390, light+dark,
+EN+ES) and a manual `window.print()` check were **not** run — the Chrome extension is not
+connected in this background session, the same limitation disclosed in Phases 5A/5B. What *is*
+verified is source-level: the KPI strip, business-panel row, and results/valuation row keep their
+exact pre-existing responsive grid classes (`grid-cols-2 sm:grid-cols-3 lg:grid-cols-6`,
+`grid-cols-1 lg:grid-cols-3`, `grid-cols-1 lg:grid-cols-2`) and the pinned-height class
+(`lg:h-(--pin-h)`, no inline `style={{ height: valH`), both asserted by the pre-existing
+`tests/responsiveLayout.test.ts` suite for this route, which passes unchanged. `.no-print` and the
+print-unlock CSS in `globals.css` were not touched by this phase.
+
+#### Phase 5C — visual/data-integrity repair (2026-07-28, same day)
+
+Five defects found during manual browser validation of the completed Phase 5C page; four were real
+and fixed narrowly, one was diagnosed and found to require no code change.
+
+1. **KPI source line overlapped the KPI grid.** Root cause: the KPI-strip `TableSourceFooter` carried
+   a leftover `className="-mt-2"` (negative top margin) from the pre-Fable, shorter plain-box KPI
+   tiles — the taller `GlassSurface`/`KpiCapsule` tiles now render past that negative offset. Fixed
+   by removing the negative margin (`className="mt-2"`, normal document flow, no absolute
+   positioning) — `src/app/companies/[ticker]/page.tsx`, one line.
+2. **News section vanished on zero articles.** `{news.length > 0 && (...)}` unmounted the whole card,
+   heading included. Replaced with an always-rendered `GlassSurface` card whose body branches through
+   the shared `AsyncState` component across four honest states — `loading` / `unavailable` (from the
+   real `NewsFetchResponse.status` field) / `empty` / `error` (a new `newsFailed` flag, set only when
+   the fetch itself returns no payload) — reusing the pre-existing `t.home.newsLoading` /
+   `t.home.newsEmpty` / `t.home.newsUnavailable` strings (no new i18n keys needed). The populated
+   branch (headline, source-code chip, high-impact bar) is byte-for-byte unchanged.
+3. **Settings clipped in the top nav.** `PrimaryNav`'s 8 pills need more width than the `flex-1` rail
+   gets next to the wide right-hand icon cluster at common desktop widths, and the scroll container
+   had zero trailing padding — the last pill (Settings) sat flush against the rounded clip edge with
+   a hidden scrollbar and no affordance that more content existed. Fixed by tightening pill padding
+   (`px-3.5`→`px-3`), reserving real trailing space on the rail (`px-1`→`pl-1 pr-2.5`), and tightening
+   TopBar's own gaps (`gap-2 sm:gap-4`→`gap-1.5 sm:gap-3`, right cluster `gap-1.5 sm:gap-2.5`→
+   `gap-1 sm:gap-2`) plus deferring the `⌘K` kbd hint to `xl:` instead of `md:`. Internal
+   `overflow-x-auto nv-scrollbar-hidden` scrolling — already the documented Fable spec — is
+   unchanged and remains the fallback for genuinely narrow widths; no item, order, control, or
+   active-route behavior was touched. `src/components/layout/PrimaryNav.tsx`,
+   `src/components/layout/TopBar.tsx`.
+4. **Bank header KPI showed P/E instead of a balance-sheet multiple.** `pb` (Price/Book) already
+   exists as a live, derived `ValuationResult.fundamentals` field for all four banks (verified live:
+   BSANTANDER 3.0, CHILE 3.4, ITAUCL 1.1, BCI 1.8); no P/TBV field is sourced anywhere in the
+   codebase (grepped, zero matches), so the required precedence resolves to P/B, never a fabricated
+   substitute. Bank identity comes from the existing, authoritative `src/lib/financials/banks/
+   bankRegistry.ts` (`isBankTicker()`) — an explicit 4-ticker whitelist, never inferred from company
+   name or sector, so insurers/asset managers/exchanges are unaffected. The fifth KPI slot now
+   branches: banks render `KpiCapsule label={t.company.kpis.pb}`, everyone else keeps
+   `label={t.company.kpis.pe}` — six-KPI count/order otherwise unchanged. New i18n pair
+   `company.kpis.pb` (EN "P/B" / ES "P/VL"), matching the existing `val.pb` label convention.
+5. **SONDA's price chart showed "No data available."** Diagnosed, not a code defect — see the
+   diagnostic report in the conversation record. `TICKER_YF['SONDA'] = 'SONDA.SN'` is correct; a
+   direct, isolated Yahoo Finance probe (bypassing the app) returned 249 real daily bars for
+   `SONDA.SN`. Locally `MARKET_DATA_MODE` is unset → defaults to `'static'` (by design, zero env
+   vars), and in that mode the history resolver never attempts Yahoo — it reads
+   `src/data/stockHistory.json`, which only ever seeded 9 of 25 tickers (SONDA never among them; any
+   of the other 16 non-seeded tickers shows the identical empty chart locally). No fix applied —
+   seeding data or changing `MARKET_DATA_MODE`/env files would both violate explicit constraints, and
+   the live/production (hybrid-mode) path is already correct.
+
+New test coverage: `tests/fableCompanyDetailPage.test.ts` grew from 107 to **151 tests** (+44) —
+sections 4b, 9b, 10b, 16, 17 lock in all five diagnoses/fixes, including a bank-registry authenticity
+check, a News-always-renders check, a KPI-footer-flow check, a Settings-reachability check (source +
+`navGroups` real-logic), and a SONDA-mapping-untouched regression guard. `tests/topNavigation.test.ts`
+and `tests/responsiveLayout.test.ts` re-verified unaffected (78/78 pass, no changes needed).
+
+**Live verification** (dev server): `GET /companies/{BSANTANDER,CHILE,ITAUCL,BCI,SQM-B}` all 200, no
+server-rendered error markers. **Honest gap, unchanged from the original Phase 5C entry:** the
+interactive browser ladder and a visual print check were not run — the Chrome extension remains
+unavailable in this session.
+
+#### Phase 5C — historical-price chart follow-up (2026-07-28, same day)
+
+Empty price charts were re-reported for SONDA **and ITAUCL** after the local environment was
+configured. A full runtime trace confirmed **no code defect exists anywhere in the history path** —
+the earlier "MARKET_DATA_MODE defaults to static" note was correct but incomplete, so the verified
+evidence is recorded here in full:
+
+- **Provider symbols are correct.** `TICKER_YF['SONDA'] = 'SONDA.SN'`, `TICKER_YF['ITAUCL'] =
+  'ITAUCL.SN'`. There is no `ITAU` key and no alias pointing a second ticker at `ITAUCL.SN` — the
+  canonical NMI ticker is `ITAUCL` and it is the only route to that security.
+- **The live tier returns full data for every one of these tickers.** Executing the real
+  `getYahooStockHistory()` in-process returned, for **all five** of SQM-B / SONDA / ITAUCL /
+  BSANTANDER / CHILE, identical bar counts across all eight timeframes: 1D 2 · 5D 6 · 1M 23 ·
+  MTD 18 · YTD 142 · 1Y 251 · 3Y 748 · 5Y 1252. SONDA 1Y ran 2025-07-23 (355.99) → 2026-07-27
+  (309.99); ITAUCL 1Y ran 2025-07-23 (12,740) → 2026-07-27 (20,678). Symbol mapping, date parsing,
+  numeric parsing, and timeframe sufficiency are all verified correct.
+- **The frontend consumes the response correctly.** `fetchStockHistory` → `res.data` /
+  `res.metadata.status`, accepted when status is `live`/`persisted` and `length >= 2`, mapped as
+  `{ date, value: close }`, refetched on `[sym, chartTimeframe, live?.lastUpdated]`. Nothing
+  discards valid rows.
+- **The real blocker is environmental, in two independent layers.** (1) The running dev server was
+  started 10:53:27 local while `.env.local` was last modified 15:19:06 local — the process predated
+  the env edit by ~4.5 h. The server was restarted to remove this variable. (2) After the clean
+  restart the mode **still** resolves to `static`, because `.env.local` line 4 sets
+  `MARKET_DATA_MODE` to an unreplaced bracketed all-uppercase placeholder token rather than one of
+  `static` | `supabase` | `hybrid`; `parseMarketDataMode()` correctly treats an unrecognised value as
+  `static`. Env files are out of scope for this repair, so this is reported for the operator to set.
+- **In `static` mode the empty chart is correct, honest behaviour and is not SONDA/ITAUCL-specific.**
+  `src/data/stockHistory.json` seeds exactly **9 of 25** tickers (BCI, BSANTANDER, CHILE, CMPC,
+  COPEC, ENELCHILE, FALABELLA, IPSA, SQM-B). The other **17** — LAS-CONDES, ITAUCL, CAP, ENELAM,
+  COLBUN, AGUAS-A, CENCOSUD, RIPLEY, PARAUCO, MALLPLAZA, ENTEL, SONDA, ANDINA-B, CCU, CONCHATORO,
+  LTM, VAPORES — have no static series, so every one of them shows the same honest empty state
+  locally. No series was seeded or fabricated to mask this.
+
+**No production code was changed by this follow-up.** New guard: `tests/stockHistoryChartIntegrity.ts`
+(39 tests) locks in the verified symbol mapping, the absence of an `ITAU` alias, null-vs-falsy numeric
+parsing (a 0 close survives), date parsing, per-timeframe sufficiency incl. the coverage-ratio guard,
+the live → persisted → static precedence order, the honest unavailable/empty states, and the four
+earlier Phase 5C repairs. One pre-existing test in `tests/fableCompanyDetailPage.test.ts` was
+corrected: it asserted on the developer's gitignored `.env.local`, so it failed the moment an
+operator legitimately configured the mode — it now asserts the repository-verifiable intent (env
+files stay gitignored; no source file assigns `MARKET_DATA_MODE`).
 
 ---
 
