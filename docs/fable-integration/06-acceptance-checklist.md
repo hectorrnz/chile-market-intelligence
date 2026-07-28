@@ -10,12 +10,13 @@ Status key: `[ ]` not done · `[~]` in progress · `[x]` verified.
 COMPLETE 2026-07-22** · **Phase 2 (app shell: top pill navigation) ✓ COMPLETE 2026-07-24** ·
 **Phase 3 (shared UI primitives / Fable component library) ✓ COMPLETE 2026-07-24** ·
 **Phase 4 (shared chart & financial-visualization system) ✓ COMPLETE 2026-07-24** ·
-**Phase 5A (`/stocks` page re-skin) ✓ COMPLETE 2026-07-28** — see
+**Phase 5A (`/stocks` page re-skin) ✓ COMPLETE 2026-07-28** ·
+**Phase 5B (`/watchlist` page re-skin) ✓ COMPLETE 2026-07-28** — see
 `04-file-level-implementation-plan.md` § "Phase 1 — as built" / "Phase 2 — as built" /
-"Phase 3 — as built" / "Phase 4 — as built" / "Phase 5A — `/stocks` — as built". Phase 5's
-remaining 11 pages and Phases 6–8 not started. Items below are ticked only where Phases 1–5A
-genuinely satisfy them; everything that still depends on the remaining page work stays `[ ]` or
-`[~]`.
+"Phase 3 — as built" / "Phase 4 — as built" / "Phase 5A — `/stocks` — as built" /
+"Phase 5B — `/watchlist` — as built". Phase 5's remaining 10 pages and Phases 6–8 not started.
+Items below are ticked only where Phases 1–5B genuinely satisfy them; everything that still
+depends on the remaining page work stays `[ ]` or `[~]`.
 
 ---
 
@@ -96,7 +97,18 @@ loading state · empty state · error state · auth status — verified identica
 - [ ] `/earnings` — upcoming + recent results tables; Update/CSV; loading/empty; public.
 - [ ] `/companies/[ticker]` — KPI strip + business cards + price chart (8 TF + markers) + results +
   valuation grid + news; Print/Watchlist/Graph-fundamentals; `cmi.chartTimeframe`; public.
-- [ ] `/watchlist` 🔒 — add-ticker form + table + remove; loading/empty/409/422; protected.
+- [x] `/watchlist` 🔒 — add-ticker form + table + remove; loading/empty/409/422; protected.
+  *Phase 5B (2026-07-28). All 3 sections, all 7 columns in order, the company links, the client-side
+  ticker validation, the exact POST/DELETE shapes, 409/422 handling, the 2500ms auto-dismiss, and
+  the single `TableSourceFooter` are preserved — locked by 81 tests in
+  `tests/fableWatchlistPage.test.ts`. Protected-route redirect verified live
+  (307 → `/login?next=%2Fwatchlist`). Restyled onto `TableCard` + `AsyncState`; the five async
+  situations (loading / empty / no-watchlist / load-error / expired-session) are now distinct
+  instead of all showing "your watchlist is empty", and the source footer survives the empty state.
+  No watchlist selector, sorting, filtering, or source badge was invented — none existed, and a
+  badge would contradict the honest `Static sample` footer. Three pre-existing defects fixed:
+  a failed remove no longer drops the row, three untranslated English literals are now bilingual,
+  and the Add button's dark-mode contrast token is corrected.*
 - [ ] `/portfolio` 🔒 — 7 summary cards + sector exposure + Positions/Transactions/Cash tabs +
   forms; Update; all validation states; protected.
 - [ ] `/structured-notes` 🔒 — dashboard KPIs + bar/donut + monitoring line + upload/extract/import
@@ -199,7 +211,7 @@ loading state · empty state · error state · auth status — verified identica
   static pages, full route list unchanged. Phase 2 boundary: 0 errors, 19/19 static pages, full
   route list unchanged. Phase 3 boundary: 0 errors, full route table unchanged. Phase 4 boundary:
   0 errors, full route table unchanged — no page route touched.)*
-- [x] `npm run lint` → 0 problems. *(Phase 1, Phase 2, Phase 3, Phase 4, and Phase 5A boundaries.)*
+- [x] `npm run lint` → 0 problems. *(Phase 1–4, 5A and 5B boundaries.)*
 - [~] `npm test` → all files pass (business-logic tests untouched; DOM tests updated only
   deliberately, never deleted to pass). *(Phase 1 boundary: 1795 tests, 1792 pass. Phase 2 boundary:
   1846 tests, 1843 pass. Phase 3 boundary: 1980 tests, 1977 pass. Phase 4 boundary: 2074 tests,
@@ -208,10 +220,15 @@ loading state · empty state · error state · auth status — verified identica
   `tests/responsiveLayout.test.ts`. One existing test was updated **deliberately**: that file's
   dense-table matcher now also recognises `TableCard`'s `minWidth={…}` delegation, and the two new
   tests prove the delegation is real (`TableCard` owns the `overflow-x-auto`; `/stocks` still
-  passes `minWidth={760}`) — net coverage increased, nothing was relaxed. The same 3 pre-existing,
-  date-dependent `tests/newsModule.test.ts` failures from Phases 1–4 persist unchanged (fixtures
-  stamped `15 Jul 2026` vs a rolling 7-day window; today is 2026-07-28). No news-related file is in
-  Phase 5A's changed-file list.)*
+  passes `minWidth={760}`) — net coverage increased, nothing was relaxed. **Phase 5B boundary:
+  2232 tests, 2229 pass** — 1 new test file (`tests/fableWatchlistPage.test.ts`, 81 tests) plus a
+  620px-floor test in `responsiveLayout`. One existing test was updated **deliberately**:
+  `fableStocksPage`'s "redesigns no other page" guard listed `/watchlist`, which Phase 5B migrated
+  under its own brief — the entry moved out, the other five pages still hold the line, and
+  `/watchlist` gained its own 81-test suite. A phase boundary moving, not an assertion relaxed.
+  The same 3 pre-existing, date-dependent `tests/newsModule.test.ts` failures from Phases 1–4
+  persist unchanged (fixtures stamped `15 Jul 2026` vs a rolling 7-day window; today is
+  2026-07-28). No news-related file is in Phase 5A's or 5B's changed-file list.)*
 - [ ] Browser responsive ladder (1728/1440/1280/1023/900/767/630/430/390) in **light + dark** and
   **EN + ES**, per route → zero page-level horizontal overflow.
   *Phases 3/4/5A, like Phase 2, could only run source-level, build, and rendered-markup checks —
@@ -221,7 +238,9 @@ loading state · empty state · error state · auth status — verified identica
   `overflow-x-auto` container, no root `min-width`, no fixed pixel width — the search field caps at
   `max-width:220px` and shrinks, the toolbar wraps). Those are the conventions whose breakage
   causes page-level overflow, but they are **not** a substitute for viewing the page. A real
-  browser ladder pass remains genuinely open.*
+  browser ladder pass remains genuinely open. Phase 5B could verify even less at the markup level:
+  `/watchlist` correctly redirects without a session, so its rendered DOM was never fetched —
+  verification there is build-, source- and bundle-level plus the 307 redirect check.*
 - [~] Accessibility: focus-visible ring, `aria` on toggles/dialogs, `prefers-reduced-motion`, AA
   contrast.
   *Phase 2: the mobile drawer's dialog semantics and nav-indicator `aria-current`/reduced-motion are
@@ -238,8 +257,8 @@ loading state · empty state · error state · auth status — verified identica
   (Phase 0) — the app no longer contradicts its own design authority.
 - [ ] `docs/data_source_status.md` current (no module static as terminal state).
 - [~] `docs/fable-integration/03` implementation/verification columns updated per route.
-  *(Phase 5A: `/stocks` is the first route marked ✓ Complete / ✓ Verified, with a full "as built"
-  record in its section. The other 15 routes remain Not started / Not verified.)*
+  *(Phase 5A: `/stocks` marked ✓ Complete / ✓ Verified. Phase 5B: `/watchlist` likewise, each with
+  a full "as built" record in its section. The other 14 routes remain Not started / Not verified.)*
 - [x] No new runtime dependency added without an explicit, documented decision (D6).
   *(Phases 1, 3, 4, and 5A all added none; `package.json`/`package-lock.json` unchanged every
   time — no chart library was added, per the brief's explicit instruction to keep the existing

@@ -27,7 +27,7 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
 | 6 | `/macro/calendar` | Economic Calendar | public | 7 Macro / 9 Documents table | Yes — release calendar table, FOMC outlook card | Not started | Not verified |
 | 7 | `/earnings` | Earnings | public | 8 Research (upcoming earnings) / DataTable | Yes — upcoming + results tables | Not started | Not verified |
 | 8 | `/companies/[ticker]` | Stocks · TICKER | public | 2 Portfolio detail panel + 3 Performance | Yes — company detail (KPI capsules, chart, valuation grid, results, news) | Not started | Not verified |
-| 9 | `/watchlist` 🔒 | Watchlist | protected | 2 Portfolio (DataTable) | Yes — add-ticker form | Not started | Not verified |
+| 9 | `/watchlist` 🔒 | Watchlist | protected | 2 Portfolio (DataTable) | No (reused Phase 3 `TableCard` + `AsyncState`) | **✓ Phase 5B (2026-07-28)** | **✓ Source + protected-route verified** |
 | 10 | `/portfolio` 🔒 | Portfolio | protected | 1 Overview + 2 Portfolio + 4 Risk | Yes — summary hero cards, sector exposure, positions/transactions/cash tabs | Not started | Not verified |
 | 11 | `/structured-notes` 🔒 | Structured Notes | protected | 6 Structured Notes | Yes — barrier gauge, upload/extract panel, dashboard KPIs, bar/donut | Not started | Not verified |
 | 12 | `/structured-notes/[id]` 🔒 | note ISIN/name | protected | 6 SN detail panel | Yes — terms grid, current-levels table, schedule, allocation grid | Not started | Not verified |
@@ -311,8 +311,54 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
 - **Fable destination:** **2 Portfolio** (DataTable).
 - **Fable component mapping:** glass DataTable; add-ticker → glass input + primary pill button;
   remove → icon button. Preserve `TableSourceFooter` (`t.watchlist.source`).
-- **New component required:** **Yes** — add-ticker form in glass language (minor).
-- **Impl. status:** Not started · **Verif. status:** Not verified.
+- **New component required:** No — reused Phase 3 `TableCard` + `AsyncState`; the add-ticker form
+  was restyled in place with Fable pill controls.
+- **Impl. status:** **✓ COMPLETE — Phase 5B (2026-07-28)** · **Verif. status:** **✓ verified**
+  (81 new source-scan tests; protected-route redirect and bilingual bundle strings confirmed
+  against a live dev server; browser responsive ladder still outstanding — see below).
+
+**Phase 5B — as built.** Presentation re-skinned; all four API calls, their request shapes and
+their status-code mapping are unchanged.
+- **Container:** `bg-surface border border-border rounded overflow-x-auto` → Phase 3 **`TableCard`**
+  (`minWidth={620}` preserved, footer slot, `state`/`stateMessage`). The card `title` now shows
+  `watchlist.name` — real API data that was already fetched but never displayed, giving the page
+  the "selected-watchlist identity" it previously lacked.
+- **Async states split apart.** "No watchlist", "load failed", and "session expired (401)" all used
+  to render the *same* "your watchlist is empty" message. A new `LoadOutcome` (`ok`/`none`/`error`/
+  `blocked`) — set inside the **same** effect, from the **same** two fetches — now drives
+  `AsyncState` `unavailable`/`error`/`blocked` respectively, each with its own bilingual message.
+  `empty` keeps its original `t.watchlist.emptyWatchlist` wording verbatim.
+- **The source footer no longer disappears when the list is empty.** Previously the empty state
+  replaced the whole card, taking `TableSourceFooter` with it; `TableCard` renders the state
+  *instead of the table body* while the footer slot still renders.
+- **Item count added** to the footer (`items.length` — real data already on screen, mirroring
+  `/stocks`), and deliberately **suppressed** for the error/blocked/unavailable states so a "0"
+  can never be mistaken for "you have no tickers".
+- **Add form** restyled to Fable pill controls (999px mono input + primary pill button), now
+  `flex-wrap` so it stays usable at 390px, with `aria-label`/`aria-invalid`/`aria-describedby` and
+  a permanently-mounted `role="status" aria-live="polite"` feedback region.
+- **Table:** header row on `var(--surface-table)` (§8), rows on `nv-row-hover nv-transition`,
+  `<th scope="col">`, `sr-only <caption>`, and the previously-nameless action column header now
+  carries an `sr-only` label. All seven columns, their order, their formatters and every `—`
+  fallback are unchanged.
+- **Remove control** is now a labelled `<button type="button">` with
+  `aria-label="{Remove} {TICKER}"`; the `×` glyph is `aria-hidden`. No confirmation dialog was
+  added (none existed).
+- **Deliberately NOT added:** no watchlist selector / create / rename / delete UI. The page has
+  only ever used `watchlists[0]`; building multi-watchlist management is a **new feature**, not a
+  re-skin. No sorting and no filtering (neither existed — and a test now asserts no hidden default
+  filtering crept in). No source badge (adding one would contradict the honest "Static sample"
+  footer — prices on this route are the static sample by design, per the Phase 8A audit). No
+  `asOf` (there is no meaningful timestamp for static sample prices). No `notes`/`added_at` column.
+
+**Three pre-existing defects corrected in this phase** (each locked by a test):
+1. **`DELETE` ignored its response** — a failed remove still dropped the row from the table, so the
+   ticker silently reappeared on the next load. The request is unchanged; the result is now checked,
+   the item stays on failure, and the failure is stated.
+2. **Untranslated English literals** — `'Loading…'`, `json.error ?? 'Error'` (which also leaked a raw
+   server error code into the UI) and `'Network error'` now resolve through new bilingual keys.
+3. **`bg-primary text-surface`** on the Add button — `--surface` is dark in dark mode, so this was a
+   latent contrast failure. Corrected to the proper `text-primary-fg` token pair.
 
 ## 10. `/portfolio` 🔒 — Portfolio
 

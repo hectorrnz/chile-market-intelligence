@@ -414,9 +414,10 @@ or any news-related source path was touched this phase).
 
 ## Phase 5 — Page-by-page re-skin (recommended order)
 
-> **Phase 5A (`/stocks`) ✓ COMPLETE (2026-07-28).** The first page is migrated and proves the
-> table + toolbar + source-footer recipe end to end. See "Phase 5A — as built" below. Pages 2–12
-> in the list are not started.
+> **Phase 5A (`/stocks`) ✓ COMPLETE (2026-07-28)** — proves the table + toolbar + source-footer
+> recipe end to end. **Phase 5B (`/watchlist`) ✓ COMPLETE (2026-07-28)** — proves the same recipe
+> on a *protected* route, plus the add/remove form pattern and the `AsyncState` state machine.
+> See "Phase 5A — as built" and "Phase 5B — as built" below. Pages 3–12 are not started.
 
 Each page: swap layout/card/table/pill classes to the new shared components; **do not change**
 data fetching, `fetch*` calls, `useMarketData`/`useMacroData`/`useGlobalRefresh`, persisted
@@ -508,6 +509,35 @@ are not a substitute for looking at the page.
 
 ---
 
+### Phase 5B — `/watchlist` — as built (2026-07-28)
+
+**Files changed (6 — 2 source, 2 tests, 3 docs; `03` counted once):**
+
+| File | Change |
+|---|---|
+| `src/app/watchlist/page.tsx` | Re-skinned onto `TableCard` + `AsyncState` + `Reveal` + Fable pill controls. **All four API calls, their request shapes, headers, bodies and status-code mapping are unchanged**; so are the client-side `VALID_TICKERS` validation, the datalist, the 2500ms auto-dismiss, the seven columns and their formatters, the company links, and the single `TableSourceFooter`. New: a `LoadOutcome` state that tells "no watchlist" / "load error" / "expired session" apart instead of showing all three as "empty"; a footer item count (suppressed when the count isn't knowable); `res.ok` handling on remove; `role="status" aria-live` regions for add and remove; `scope="col"`, `sr-only <caption>`, an `sr-only` label on the action column, and an `aria-label` naming the ticker on each remove button. |
+| `src/lib/i18n.ts` | 6 new keys × 2 languages under `watchlist`: `addError`, `removeError`, `networkError`, `loadError`, `noWatchlist`, `sessionExpired`. No existing key touched; the previously-unused `watchlist.removed` key is now wired to real remove-success feedback. |
+| `tests/fableWatchlistPage.test.ts` | **New, 81 tests** — section/column/order preservation, cell values and formatters, "—"-never-zero, add workflow (validation, POST shape, 409/422, success path, no optimistic insert), remove workflow (DELETE shape, `res.ok` gate, item retained on failure, busy state, labelled control, no invented confirm), the five distinct async states, links/source/protection, API-contract immutability, Fable material/pill/token rules, motion restraint, a11y, responsive, EN+ES, and a scope guard. |
+| `tests/responsiveLayout.test.ts` | One new test: `/watchlist` keeps its 620px table floor under the `TableCard` delegation (mirrors the 760px Stocks assertion added in 5A). |
+| `tests/fableStocksPage.test.ts` | **Deliberate boundary update.** Its "redesigns no other page" guard listed `/watchlist`; Phase 5B legitimately migrated that page under its own brief, so the entry moved out and the test was renamed to "redesigns no page that has not had its own phase". The other five pages still hold the line, and `/watchlist` is now guarded by its own suite — a phase boundary moving, not an assertion relaxed. |
+| `docs/fable-integration/03` / `04` / `06` | Route status → complete/verified; this as-built record; checklist items updated. |
+
+**Files deliberately NOT changed:** `globals.css` (no new token or utility needed), `src/app/api/watchlists/**` (all three route files), `src/middleware.ts`, `src/lib/db/repositories/watchlistRepository.ts`, every other page, `package.json`/`package-lock.json`.
+
+**Judgement calls, stated plainly:**
+- **No watchlist selector was built.** The page has only ever read `watchlists[0]`. The API supports multiple lists, but no switch/create/rename/delete UI has ever existed — adding one is a feature, not a re-skin. The selected list's *identity* is now shown (`TableCard title={watchlist?.name}`) from data that was already fetched.
+- **No sorting or filtering was added.** Neither existed; a test asserts the rows render the API order verbatim with no filter or sort interposed.
+- **No source badge was added.** Prices here are the static sample by design (Phase 8A audit: membership is Supabase-persisted, prices are not). A "Live"/"Persisted" badge would contradict the honest `Static sample` footer, and there is no as-of to show.
+- **Three pre-existing defects were fixed** (silent failed remove; three untranslated English literals incl. a raw server error code leaking to the UI; `text-surface` on `bg-primary` failing dark-mode contrast). The first is a behaviour change and is called out explicitly for review — the brief required remove-failure to be a distinguishable state, which is impossible without checking the response.
+
+**Validation:** lint 0 · build 0 errors (19/19 static pages, `/watchlist` still in the route table, full table unchanged) · suite 2150 → **2232 tests, 2229 pass** (+82: 81 new + 1 new responsive test). The 3 failures are the same pre-existing, date-dependent `tests/newsModule.test.ts` fixture failures documented in Phases 1–5A (fixtures stamped `15 Jul 2026`; today is 2026-07-28, outside the rolling 7-day window). No news-related file is in this phase's changed-file list.
+
+**Live verification** against a dev server: `/watchlist` unauthenticated → **307 → `/login?next=%2Fwatchlist`** (protection and `next` preservation both intact); `/login?next=…`, `/stocks` and `/` all 200; Phase 5A `/stocks` confirmed un-regressed (9 headers, 6 `aria-sort`, 25 `nv-row-hover` rows, `min-width:760px`, "Yahoo Finance" ×2); and the new bilingual strings — `"Could not remove ticker…"` **and** `"…sigue en tu watchlist"` — were found in the served client bundle, proving both dictionaries reach the browser.
+
+**Honest gaps:** (1) the page's own rendered markup could **not** be fetched, because the route correctly redirects without a session — verification is therefore build-, source- and bundle-level plus the redirect check, not a DOM inspection of the authenticated page. (2) The interactive browser responsive ladder (1440/1280/1024/768/390, light+dark, EN+ES) was **not** run — the Chrome extension is not connected in this environment, the same limitation disclosed in Phases 2–5A. The conventions that prevent page-level overflow are source-verified (no root `min-width`; the only `min-width` is the 620px floor inside `TableCard`'s `overflow-x-auto`; the add form and footer row both `flex-wrap`), but that is not a substitute for looking at the page while signed in.
+
+---
+
 ## Phase 6 — Auth pages + login shell (highest-visibility, distinct layout)
 
 Do together, after shared components exist. The login is the marquee Fable moment and needs a
@@ -573,7 +603,8 @@ hardcoded UI text in components. Reuse existing namespaces; add keys under `topb
 | 3 ✓ | `src/components/ui/{StatusPill,NotificationBell,CommandPalette}.tsx` (restyled in place), new `src/components/fable/*` (GlassSurface, KpiCapsule/Hero, ChangeIndicator, Sparkline, SparklineRow, useCountUp, CurrentActions, SegmentedControl, BarrierGauge, TableCard, PrivacyValue, usePrivacyMode, DetailPanel, AsyncState, motion), `src/app/globals.css` (`.nv-action-card`, `.nv-content-pulse`), `src/lib/i18n.ts` (`fable` namespace) |
 | 4 ✓ | `src/components/charts/{LineChart,CompareChart,FundamentalsChart,YieldCurveChart}.tsx` (restyled in place, props unchanged), new `src/components/fable/chart/{ChartTooltip.tsx,chartA11y.ts}`, `src/components/macro/EconomicCalendarTable.tsx` (row-hover utility swap), `src/app/globals.css` (chart semantic token block), `src/lib/formatters.ts` (`formatChartValue`), `src/lib/i18n.ts` (`fable.chart` namespace) |
 | 5A ✓ | `src/app/stocks/page.tsx`, `src/components/ui/SearchInput.tsx` (only `/stocks` consumes it), `src/lib/i18n.ts` (3 keys ×2 langs), new `tests/fableStocksPage.test.ts`, `tests/responsiveLayout.test.ts` (deliberate `TableCard` scroll-delegation update + 2 new tests) |
-| 5 (rest) | `src/app/{watchlist,companies/[ticker],macro,macro/calendar,earnings,compare,chart-builder,portfolio,structured-notes,structured-notes/[id],settings/notifications}/page.tsx`, `src/app/page.tsx` |
+| 5B ✓ | `src/app/watchlist/page.tsx`, `src/lib/i18n.ts` (6 keys ×2 langs), new `tests/fableWatchlistPage.test.ts`, `tests/responsiveLayout.test.ts` (620px floor), `tests/fableStocksPage.test.ts` (phase-boundary guard update) |
+| 5 (rest) | `src/app/{companies/[ticker],macro,macro/calendar,earnings,compare,chart-builder,portfolio,structured-notes,structured-notes/[id],settings/notifications}/page.tsx`, `src/app/page.tsx` |
 | 6 | new `src/app/(auth)/layout.tsx`, `src/app/{login,forgot-password,auth/reset-password}/page.tsx`, `src/components/ui/BrandLogo.tsx`, `public/*` (login photo, logo) |
 | 7 | `src/lib/i18n.ts` |
 | 8 | `tests/*` (deliberate updates), `docs/*` |

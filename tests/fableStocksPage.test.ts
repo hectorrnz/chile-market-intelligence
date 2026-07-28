@@ -449,15 +449,20 @@ describe('Phase 5A — scope held', () => {
     ])
   })
 
-  it('redesigns no other page', () => {
+  it('redesigns no page that has not had its own phase', () => {
     // Phase 5A is /stocks only. SearchInput is in scope solely because /stocks
     // is its only consumer in the whole repo (verified below).
+    //
+    // `/watchlist` was removed from this list in Phase 5B, which migrated it to
+    // `TableCard` under its own brief — a real phase boundary moving, not a
+    // relaxed assertion. It is guarded by `tests/fableWatchlistPage.test.ts`,
+    // and the pages below still hold the line.
     for (const other of [
-      'src/app/page.tsx', 'src/app/watchlist/page.tsx', 'src/app/compare/page.tsx',
+      'src/app/page.tsx', 'src/app/compare/page.tsx',
       'src/app/earnings/page.tsx', 'src/app/macro/page.tsx', 'src/app/portfolio/page.tsx',
     ]) {
       assert.ok(existsSync(join(ROOT, other)), `${other} must still exist`)
-      assert.ok(!read(other).includes('@/components/fable/TableCard'), `${other} is not part of Phase 5A`)
+      assert.ok(!read(other).includes('@/components/fable/TableCard'), `${other} has had no re-skin phase yet`)
     }
   })
 

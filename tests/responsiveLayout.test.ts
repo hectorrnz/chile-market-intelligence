@@ -190,6 +190,11 @@ describe('dense tables scroll inside their card', () => {
   test('Stocks keeps its 760px table floor while scrolling inside the card', () => {
     assert.match(read('src/app/stocks/page.tsx'), /minWidth=\{760\}/)
   })
+
+  // Phase 5B: same delegation, same guarantee, the watchlist table's own floor.
+  test('Watchlist keeps its 620px table floor while scrolling inside the card', () => {
+    assert.match(read('src/app/watchlist/page.tsx'), /minWidth=\{620\}/)
+  })
 })
 
 describe('shared components wrap instead of overflowing', () => {
