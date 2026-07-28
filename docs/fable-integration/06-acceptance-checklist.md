@@ -12,11 +12,14 @@ COMPLETE 2026-07-22** · **Phase 2 (app shell: top pill navigation) ✓ COMPLETE
 **Phase 4 (shared chart & financial-visualization system) ✓ COMPLETE 2026-07-24** ·
 **Phase 5A (`/stocks` page re-skin) ✓ COMPLETE 2026-07-28** ·
 **Phase 5B (`/watchlist` page re-skin) ✓ COMPLETE 2026-07-28** ·
-**Phase 5C (`/companies/[ticker]` page re-skin) ✓ COMPLETE 2026-07-28** — see
+**Phase 5C (`/companies/[ticker]` page re-skin) ✓ COMPLETE 2026-07-28** ·
+**Phase 5D (`/compare` page re-skin) ✓ COMPLETE 2026-07-28** ·
+**Phase 5E (`/chart-builder` page re-skin) ✓ COMPLETE 2026-07-28** — see
 `04-file-level-implementation-plan.md` § "Phase 1 — as built" / "Phase 2 — as built" /
 "Phase 3 — as built" / "Phase 4 — as built" / "Phase 5A — `/stocks` — as built" /
-"Phase 5B — `/watchlist` — as built" / "Phase 5C — `/companies/[ticker]` — as built". Phase 5's
-remaining 9 pages and Phases 6–8 not started. Items below are ticked only where Phases 1–5C
+"Phase 5B — `/watchlist` — as built" / "Phase 5C — `/companies/[ticker]` — as built" /
+"Phase 5D — `/compare` — as built" / "Phase 5E — `/chart-builder` — as built". Phase 5's
+remaining 7 pages and Phases 6–8 not started. Items below are ticked only where Phases 1–5E
 genuinely satisfy them; everything that still depends on the remaining page work stays `[ ]` or
 `[~]`.
 
@@ -100,8 +103,22 @@ loading state · empty state · error state · auth status — verified identica
   `nv-scrim`/`nv-glass-overlay nv-pop` overlay recipe. Two genuine pre-existing bilingual/hex
   defects fixed in passing (`title="Clear range"` → `t.compare.clearRange`; a redundant hex
   literal → `PRESET[0]`).*
-- [ ] `/chart-builder` — toolbar + metric picker + dual-axis chart + underlying table + settings;
+- [x] `/chart-builder` — toolbar + metric picker + dual-axis chart + underlying table + settings;
   `cmi.gf*` persisted; `gf:ticker` deep-link; noData/selectMetric; public.
+  *Phase 5E (2026-07-28). All 6 sections, the 2-ticker (primary + optional overlay) configuration,
+  all 21 metrics across 4 categories, the Absolute/Indexed and TTM/Annual toggles (now
+  `SegmentedControl`), the fixed per-metric left/right axis assignment, the MM/CLP/%/"MM sh"
+  formatter set shared by axis/tooltip/table, add/remove-metric and overlay-ticker behaviour, all
+  8 `cmi.gf*` persisted keys with original defaults, the `gf:ticker` deep-link, the 1
+  `SourceStateBadge` + 2 `TableSourceFooter` instances, and both empty states (now routed through
+  `AsyncState` with the original exact copy) are preserved — locked by 112 tests in
+  `tests/fableChartBuilderPage.test.ts`. Restyled onto `GlassSurface`(×3) + `TableCard` +
+  `SegmentedControl`(×2, 3rd/4th production adopter) + the established Settings-modal overlay
+  recipe. A genuine pre-existing responsive gap was closed (the underlying-data table had no
+  `min-w`, unlike every other migrated table) via `TableCard minWidth={640}`. Two pre-existing
+  hardcoded-English defects fixed in passing (the `vs` ticker separator; the metric-chip remove
+  button's `aria-label="Remove"`). No reset/save/print action was invented (none existed); no
+  `asOf` timestamp was invented (this route never had one).*
 - [ ] `/macro` — calendar embed (US) + banded indicators + yield curve + FX depth (US) + chart
   popup; region via sidebar `macro:region`; Update; public.
 - [ ] `/macro/calendar` — FRED calendar + FOMC outlook + Chile deferred; back link; public.
@@ -169,9 +186,10 @@ loading state · empty state · error state · auth status — verified identica
   (`src/components/fable/SegmentedControl.tsx`, `role="radiogroup"`, keyboard-operable, reuses
   `useNavIndicator`). **Phase 5C adopted it for the first time** — `/companies/[ticker]`'s
   8-timeframe chart selector — proving the component end to end on a real page. **Phase 5D adopted
-  it twice more** — `/compare`'s TF (1M/YTD/1Y/3Y/5Y) and Period (D/W/M) toggles. Charting/Macro's
-  own timeframe/period/frequency toggles still use their original plain segmented buttons;
-  migrating them to `SegmentedControl` remains their own Phase 5 page work.)*
+  it twice more** — `/compare`'s TF (1M/YTD/1Y/3Y/5Y) and Period (D/W/M) toggles. **Phase 5E adopted
+  it twice more again** — `/chart-builder`'s Absolute/Indexed and TTM/Annual toggles (5th/6th
+  adopter overall). Macro's own timeframe/period/frequency toggles still use their original plain
+  segmented buttons; migrating them to `SegmentedControl` remains its own Phase 5 page work.)*
 - [~] Motion (reveal, count-up, nav slide, drawer/pop) present and **`prefers-reduced-motion`-gated**.
   *(Phase 1: all 6 Fable keyframes, the duration/easing token set, the foundational utilities, and
   the reduced-motion block — which disables reveal / Ken-Burns / pulse / spin outright and collapses
@@ -240,8 +258,9 @@ loading state · empty state · error state · auth status — verified identica
   Fable pill shape only; a live in-browser print check was **not** run (Chrome extension not
   connected in this session), so this stays `[~]` rather than `[x]` pending that manual check.
   Phase 5D: Compare's Fundamentals CSV export (`handleExportFund` → `exportCSV`) is preserved
-  byte-for-byte, same filename/headers/row-shape, asserted by test. Charting/Earnings export
-  untouched (their pages are not yet restyled).*
+  byte-for-byte, same filename/headers/row-shape, asserted by test. Phase 5E: Charting's Export CSV
+  (`handleExport` → `exportCSV`, `fundamentals_{ticker}` filename) is likewise preserved
+  byte-for-byte, asserted by test. Earnings export untouched (its page is not yet restyled).*
 - [~] `Update` buttons refresh via `useGlobalRefresh`; badges reflect live/persisted/static.
   *Phase 5A: Stocks still routes its single `UpdateDataButton` through `useGlobalRefresh()` and
   still derives `priceStatus` as live → persisted → static; both asserted by test and confirmed in
@@ -252,7 +271,7 @@ loading state · empty state · error state · auth status — verified identica
   static pages, full route list unchanged. Phase 2 boundary: 0 errors, 19/19 static pages, full
   route list unchanged. Phase 3 boundary: 0 errors, full route table unchanged. Phase 4 boundary:
   0 errors, full route table unchanged — no page route touched.)*
-- [x] `npm run lint` → 0 problems. *(Phase 1–4, 5A and 5B boundaries.)*
+- [x] `npm run lint` → 0 problems. *(Phase 1–4, 5A, 5B, 5C, 5D and 5E boundaries.)*
 - [~] `npm test` → all files pass (business-logic tests untouched; DOM tests updated only
   deliberately, never deleted to pass). *(Phase 1 boundary: 1795 tests, 1792 pass. Phase 2 boundary:
   1846 tests, 1843 pass. Phase 3 boundary: 1980 tests, 1977 pass. Phase 4 boundary: 2074 tests,
@@ -267,9 +286,17 @@ loading state · empty state · error state · auth status — verified identica
   `fableStocksPage`'s "redesigns no other page" guard listed `/watchlist`, which Phase 5B migrated
   under its own brief — the entry moved out, the other five pages still hold the line, and
   `/watchlist` gained its own 81-test suite. A phase boundary moving, not an assertion relaxed.
-  The same 3 pre-existing, date-dependent `tests/newsModule.test.ts` failures from Phases 1–4
-  persist unchanged (fixtures stamped `15 Jul 2026` vs a rolling 7-day window; today is
-  2026-07-28). No news-related file is in Phase 5A's or 5B's changed-file list.)*
+  **Phase 5C boundary: 2232 → 2276 → 2232 tests, 2229 pass** (144 new across the initial pass plus
+  the same-day repair pass, net `tests/fableCompanyDetailPage.test.ts` at 151 tests). **Phase 5D
+  boundary: 2422 → 2543 tests, 2540 pass** — 1 new test file (`tests/fableComparePage.test.ts`,
+  121 tests); `fableWatchlistPage`/`fableStocksPage`/`fableCompanyDetailPage`'s phase-boundary
+  guards updated deliberately to remove `/compare`. **Phase 5E boundary: 2543 → 2655 tests, 2652
+  pass** — 1 new test file (`tests/fableChartBuilderPage.test.ts`, 112 tests);
+  `fableComparePage`/`fableCompanyDetailPage`'s phase-boundary guards updated deliberately to remove
+  `/chart-builder`, the same precedent Phase 5B/5D set. The same 3 pre-existing, date-dependent
+  `tests/newsModule.test.ts` failures persist unchanged across every one of these boundaries
+  (fixtures stamped `15 Jul 2026` vs a rolling 7-day window; today is 2026-07-28). No news-related
+  file is in any Phase 5 sub-phase's changed-file list.)*
 - [ ] Browser responsive ladder (1728/1440/1280/1023/900/767/630/430/390) in **light + dark** and
   **EN + ES**, per route → zero page-level horizontal overflow.
   *Phases 3/4/5A, like Phase 2, could only run source-level, build, and rendered-markup checks —
@@ -281,7 +308,11 @@ loading state · empty state · error state · auth status — verified identica
   causes page-level overflow, but they are **not** a substitute for viewing the page. A real
   browser ladder pass remains genuinely open. Phase 5B could verify even less at the markup level:
   `/watchlist` correctly redirects without a session, so its rendered DOM was never fetched —
-  verification there is build-, source- and bundle-level plus the 307 redirect check.*
+  verification there is build-, source- and bundle-level plus the 307 redirect check. Phase 5E
+  (`/chart-builder`) verification is source- and build-level only — unlike 5A–5D, no live dev-server
+  fetch was performed this phase, so even the HTTP/markup-level check available to public routes was
+  not exercised; the 12-col grid classes, the `TableCard minWidth={640}` floor, and the toolbar/
+  metric-picker wrap/scroll conventions are asserted by test but not visually confirmed.*
 - [~] Accessibility: focus-visible ring, `aria` on toggles/dialogs, `prefers-reduced-motion`, AA
   contrast.
   *Phase 2: the mobile drawer's dialog semantics and nav-indicator `aria-current`/reduced-motion are
@@ -302,8 +333,9 @@ loading state · empty state · error state · auth status — verified identica
   (Phase 0) — the app no longer contradicts its own design authority.
 - [ ] `docs/data_source_status.md` current (no module static as terminal state).
 - [~] `docs/fable-integration/03` implementation/verification columns updated per route.
-  *(Phase 5A: `/stocks` marked ✓ Complete / ✓ Verified. Phase 5B: `/watchlist` likewise, each with
-  a full "as built" record in its section. The other 14 routes remain Not started / Not verified.)*
+  *(Phase 5A: `/stocks`. Phase 5B: `/watchlist`. Phase 5C: `/companies/[ticker]`. Phase 5D:
+  `/compare`. Phase 5E: `/chart-builder` — each marked ✓ Complete / ✓ Verified with a full
+  "as built" record in its section. The other 11 routes remain Not started / Not verified.)*
 - [x] No new runtime dependency added without an explicit, documented decision (D6).
   *(Phases 1, 3, 4, and 5A all added none; `package.json`/`package-lock.json` unchanged every
   time — no chart library was added, per the brief's explicit instruction to keep the existing

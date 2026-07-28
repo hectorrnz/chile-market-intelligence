@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import { useLang } from '@/components/providers/LangProvider'
 import { usePersistentState } from '@/lib/usePersistentState'
 import { useEscape } from '@/lib/useEscape'
@@ -8,6 +8,11 @@ import { SectionHeader } from '@/components/ui/SectionHeader'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { SourceStateBadge } from '@/components/ui/SourceStateBadge'
 import { FundamentalsChart, type FundSeries } from '@/components/charts/FundamentalsChart'
+import { TableCard } from '@/components/fable/TableCard'
+import { GlassSurface } from '@/components/fable/GlassSurface'
+import { SegmentedControl } from '@/components/fable/SegmentedControl'
+import { AsyncState } from '@/components/fable/AsyncState'
+import { Reveal } from '@/components/fable/motion'
 import { getAllCompanies } from '@/lib/data/companies'
 import { getFundamentals, type FundamentalRecord } from '@/lib/data/fundamentals'
 import { fetchFinancialStatements, type FinancialsSourceStatus, type FinancialsSourceType } from '@/lib/data/financialsData'
@@ -89,16 +94,6 @@ function aggVal(w: FundamentalRecord[], m: Metric): number | null {
   if (m.agg === 'margin') { const re = sumOrNull(w, 'revenue'), eb = sumOrNull(w, 'ebitda'); return re && eb != null ? Math.round((eb / re) * 1000) / 10 : null }
   if (m.agg === 'yoy') return null
   return sumOrNull(w, m.key)
-}
-
-/** Segmented toggle button (module-scope so its identity is stable across renders). */
-function Seg({ active, onClick, disabled, title, children }: { active: boolean; onClick: () => void; disabled?: boolean; title?: string; children: ReactNode }) {
-  return (
-    <button onClick={onClick} disabled={disabled} title={title}
-      className={`px-2.5 py-0.5 text-xs rounded transition-colors ${disabled ? 'text-muted-fg opacity-40 cursor-not-allowed' : active ? 'bg-surface-2 text-foreground border border-border' : 'text-muted-fg hover:text-foreground'}`}>
-      {children}
-    </button>
-  )
 }
 
 export default function ChartBuilderPage() {
@@ -287,132 +282,190 @@ export default function ChartBuilderPage() {
 
   return (
     <div className="w-full space-y-4">
-      <SectionHeader tag={t.charting.tag} title={t.charting.title} subtitle={t.charting.subtitle} />
+      <Reveal>
+        <SectionHeader tag={t.charting.tag} title={t.charting.title} subtitle={t.charting.subtitle} />
+      </Reveal>
 
       <datalist id="gf-tickers">{companies.map(c => <option key={c.ticker} value={c.ticker}>{c.shortName}</option>)}</datalist>
 
       {/* Toolbar */}
-      <div className="bg-surface border border-border rounded px-4 py-2.5 flex items-center gap-4 flex-wrap text-xs">
-        <div className="flex items-center gap-2">
-          <span className="ui-label text-muted-fg">{t.charting.company}</span>
-          <input value={typed} list="gf-tickers" placeholder={t.charting.tickerPh} spellCheck={false}
-            onChange={e => { const v = e.target.value.toUpperCase(); setTyped(v); if (compMap[v]) setTicker(v) }}
-            className="h-7 w-28 bg-surface border border-border rounded px-2 font-mono text-primary outline-none focus:border-accent placeholder:font-sans placeholder:text-muted-fg" />
-          <span className="text-muted-fg">vs</span>
-          <input value={typedB} list="gf-tickers" placeholder="—" spellCheck={false}
-            onChange={e => { const v = e.target.value.toUpperCase(); setTypedB(v); if (v === '') setTickerB(''); else if (compMap[v] && v !== ticker) setTickerB(v) }}
-            className="h-7 w-28 bg-surface border border-border rounded px-2 font-mono text-primary outline-none focus:border-accent placeholder:font-sans placeholder:text-muted-fg" />
-          {overlay && <span className="text-muted-fg hidden lg:inline">{t.charting.dashed} = {tickerB}</span>}
-        </div>
-        <span className="w-px h-4 bg-border" />
-        <div className="flex items-center gap-1"><Seg active={mode === 'abs'} onClick={() => setMode('abs')}>{t.charting.absolute}</Seg><Seg active={mode === 'idx'} onClick={() => setMode('idx')}>{t.charting.indexed}</Seg></div>
-        <span className="w-px h-4 bg-border" />
-        <div className="flex items-center gap-1">
-          <Seg active={effFreq === 'TTM'} onClick={() => setFreq('TTM')} disabled={!canTTM} title={canTTM ? undefined : t.charting.ttmUnavailable}>{t.charting.ttm}</Seg>
-          <Seg active={effFreq === 'A'} onClick={() => setFreq('A')}>{t.charting.annual}</Seg>
-        </div>
-        <SourceStateBadge sourceKey={financialsBadgeKey} className="ml-auto" />
-        <button onClick={() => setSettingsOpen(true)} className="flex items-center gap-1.5 h-6 px-2 rounded border border-border bg-surface-2 text-muted-fg hover:text-foreground hover:border-accent transition-colors"><span>⚙</span><span>{t.charting.settings}</span></button>
-      </div>
-
-      {/* Selected chips */}
-      {chosen.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap">
-          {chosen.map(m => (
-            <span key={m.key} className="inline-flex items-center gap-1.5 pl-2 pr-1 py-1 rounded text-xs text-primary-fg" style={{ backgroundColor: colorOf(m.key) }}>
-              {t.charting.m[m.key as keyof typeof t.charting.m]}
-              <button onClick={() => toggle(m.key)} className="px-1 opacity-80 hover:opacity-100" aria-label="Remove">×</button>
-            </span>
-          ))}
-        </div>
-      )}
-
-      <div className="grid grid-cols-12 gap-4 items-start">
-        {/* Metric picker */}
-        <div className="col-span-12 lg:col-span-3 bg-surface border border-border rounded p-3 max-h-[520px] overflow-y-auto">
-          {CATS.map(({ cat, key }) => (
-            <div key={cat} className="mb-3 last:mb-0">
-              <div className="ui-label text-muted-fg px-1 mb-1">{t.charting[key]}</div>
-              {METRICS.filter(m => m.cat === cat).map(m => {
-                const on = selected.includes(m.key)
-                return (
-                  <button key={m.key} onClick={() => toggle(m.key)}
-                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-left transition-colors ${on ? 'bg-surface-2 text-foreground font-medium' : 'text-muted hover:bg-surface-2 hover:text-foreground'}`}>
-                    <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: on ? colorOf(m.key) : 'transparent', border: on ? 'none' : '1px solid var(--border)' }} />
-                    {t.charting.m[m.key as keyof typeof t.charting.m]}
-                  </button>
-                )
-              })}
+      <Reveal delayMs={70}>
+        <div className="space-y-3">
+          <GlassSurface variant="card" className="px-4 py-2.5 flex items-center gap-4 flex-wrap text-xs">
+            <div className="flex items-center gap-2">
+              <span className="ui-label text-muted-fg">{t.charting.company}</span>
+              <input value={typed} list="gf-tickers" placeholder={t.charting.tickerPh} spellCheck={false}
+                aria-label={t.charting.company}
+                onChange={e => { const v = e.target.value.toUpperCase(); setTyped(v); if (compMap[v]) setTicker(v) }}
+                className="h-7 w-28 rounded-full px-2.5 font-mono text-primary outline-none focus:border-accent placeholder:font-sans placeholder:text-muted-fg nv-transition"
+                style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' }} />
+              <span className="text-muted-fg" aria-hidden="true">{t.charting.vs}</span>
+              <input value={typedB} list="gf-tickers" placeholder="—" spellCheck={false}
+                aria-label={t.charting.compareTicker}
+                onChange={e => { const v = e.target.value.toUpperCase(); setTypedB(v); if (v === '') setTickerB(''); else if (compMap[v] && v !== ticker) setTickerB(v) }}
+                className="h-7 w-28 rounded-full px-2.5 font-mono text-primary outline-none focus:border-accent placeholder:font-sans placeholder:text-muted-fg nv-transition"
+                style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' }} />
+              {overlay && <span className="text-muted-fg hidden lg:inline">{t.charting.dashed} = {tickerB}</span>}
             </div>
-          ))}
-        </div>
+            <span className="w-px h-4 bg-border" aria-hidden="true" />
+            <SegmentedControl
+              options={[
+                { value: 'abs', label: t.charting.absolute },
+                { value: 'idx', label: t.charting.indexed },
+              ]}
+              value={mode}
+              onChange={setMode}
+              ariaLabel={t.charting.modeLabel}
+            />
+            <span className="w-px h-4 bg-border" aria-hidden="true" />
+            <span title={canTTM ? undefined : t.charting.ttmUnavailable}>
+              <SegmentedControl
+                options={[
+                  { value: 'TTM', label: t.charting.ttm, disabled: !canTTM },
+                  { value: 'A', label: t.charting.annual },
+                ]}
+                value={effFreq}
+                onChange={setFreq}
+                ariaLabel={t.charting.freqLabel}
+              />
+            </span>
+            <SourceStateBadge sourceKey={financialsBadgeKey} className="ml-auto" />
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              className="flex items-center gap-1.5 h-7 px-2.5 rounded-full text-xs text-muted-fg hover:text-foreground nv-transition"
+              style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' }}
+            >
+              <span aria-hidden="true">⚙</span><span>{t.charting.settings}</span>
+            </button>
+          </GlassSurface>
 
-        {/* Chart */}
-        <div className="col-span-12 lg:col-span-9 bg-surface border border-border rounded p-4">
-          {labels.length === 0 || chosen.length === 0 ? (
-            <div className="py-16 text-center text-xs text-muted-fg">{records.length === 0 ? t.charting.noData : t.charting.selectMetric}</div>
-          ) : (
-            <FundamentalsChart labels={labels} series={series} height={360} indexed={mode === 'idx'} chartType={chartType} showLegend={legend} showGrid={grid} fmtBar={fmtBar} fmtLine={fmtLine} fmtAxis={fmtAxis} />
+          {/* Selected chips */}
+          {chosen.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {chosen.map(m => (
+                <span key={m.key} className="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-full text-xs text-primary-fg" style={{ backgroundColor: colorOf(m.key) }}>
+                  {t.charting.m[m.key as keyof typeof t.charting.m]}
+                  <button
+                    type="button"
+                    onClick={() => toggle(m.key)}
+                    className="px-1 opacity-80 hover:opacity-100"
+                    aria-label={`${t.charting.removeMetric} ${t.charting.m[m.key as keyof typeof t.charting.m]}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
           )}
-          <p className="text-xs text-muted-fg mt-2">
-            {[mode === 'idx' ? 'indexed = 100' : null, effFreq === 'TTM' ? 'TTM' : t.charting.annual]
-              .filter(Boolean).join(' · ')}
-          </p>
-          <TableSourceFooter
-            source={sourceStatusA === 'persisted' ? persistedA!.source : t.charting.source}
-            className="mt-2"
-          />
         </div>
-      </div>
+      </Reveal>
+
+      <Reveal delayMs={130}>
+        <div className="grid grid-cols-12 gap-4 items-start">
+          {/* Metric picker */}
+          <GlassSurface variant="card" className="col-span-12 lg:col-span-3 p-3 max-h-[520px] overflow-y-auto">
+            {CATS.map(({ cat, key }) => (
+              <div key={cat} className="mb-3 last:mb-0">
+                <div className="ui-label text-muted-fg px-1 mb-1">{t.charting[key]}</div>
+                {METRICS.filter(m => m.cat === cat).map(m => {
+                  const on = selected.includes(m.key)
+                  return (
+                    <button key={m.key} type="button" onClick={() => toggle(m.key)} aria-pressed={on}
+                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-left nv-transition ${on ? 'bg-surface-2 text-foreground font-medium' : 'text-muted hover:bg-surface-2 hover:text-foreground'}`}>
+                      <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: on ? colorOf(m.key) : 'transparent', border: on ? 'none' : '1px solid var(--border)' }} />
+                      {t.charting.m[m.key as keyof typeof t.charting.m]}
+                    </button>
+                  )
+                })}
+              </div>
+            ))}
+          </GlassSurface>
+
+          {/* Chart */}
+          <GlassSurface variant="card" className="col-span-12 lg:col-span-9 p-4">
+            {labels.length === 0 || chosen.length === 0 ? (
+              <AsyncState kind="empty" message={records.length === 0 ? t.charting.noData : t.charting.selectMetric} />
+            ) : (
+              <FundamentalsChart labels={labels} series={series} height={360} indexed={mode === 'idx'} chartType={chartType} showLegend={legend} showGrid={grid} fmtBar={fmtBar} fmtLine={fmtLine} fmtAxis={fmtAxis} />
+            )}
+            <p className="text-xs text-muted-fg mt-2">
+              {[mode === 'idx' ? 'indexed = 100' : null, effFreq === 'TTM' ? 'TTM' : t.charting.annual]
+                .filter(Boolean).join(' · ')}
+            </p>
+            <TableSourceFooter
+              source={sourceStatusA === 'persisted' ? persistedA!.source : t.charting.source}
+              className="mt-2"
+            />
+          </GlassSurface>
+        </div>
+      </Reveal>
 
       {/* Underlying data */}
       {labels.length > 0 && chosen.length > 0 && (
-        <div className="bg-surface border border-border rounded overflow-x-auto">
-          <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-3">
-            <span className="ui-label text-muted-fg">{t.charting.table}</span>
-            <button
-              onClick={handleExport}
-              className="flex items-center gap-1.5 h-6 px-2 rounded border border-border bg-surface text-xs text-muted-fg hover:text-foreground hover:border-accent transition-colors"
-            >
-              <span aria-hidden>⤓</span>{t.common.exportCsv}
-            </button>
-          </div>
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border bg-surface-2">
-                <th className="text-left py-2.5 px-3 pl-4 ui-table-header text-muted-fg sticky left-0 bg-surface-2 z-10">{t.charting.metrics}</th>
-                {labels.map(l => <th key={l} className="text-center py-2.5 px-3 ui-table-header text-muted-fg whitespace-nowrap">{l}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {chosen.map(m => (
-                <tr key={m.key} className="border-b border-border last:border-0">
-                  <td className="py-2 px-3 pl-4 sticky left-0 bg-surface z-10 whitespace-nowrap">
-                    <span className="inline-flex items-center gap-1.5 text-muted"><span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: colorOf(m.key) }} />{t.charting.m[m.key as keyof typeof t.charting.m]}</span>
-                  </td>
-                  {periods.map((p, i) => <td key={i} className="py-2 px-3 text-center ui-number text-foreground">{fmtCell(m, valueOf(m, p))}</td>)}
+        <Reveal delayMs={190}>
+          <TableCard
+            title={t.charting.table}
+            minWidth={640}
+            controls={
+              <button
+                type="button"
+                onClick={handleExport}
+                className="flex items-center gap-1.5 h-7 px-2.5 rounded-full text-xs text-muted-fg hover:text-foreground nv-transition"
+                style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' }}
+              >
+                <span aria-hidden>⤓</span>{t.common.exportCsv}
+              </button>
+            }
+            footer={<TableSourceFooter source={sourceStatusA === 'persisted' ? persistedA!.source : t.charting.source} />}
+          >
+            <table className="w-full" style={{ fontSize: 'var(--fs-table-cell)' }}>
+              <caption className="sr-only">{t.charting.table}</caption>
+              <thead>
+                <tr>
+                  <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-left py-2.5 px-3 pl-4 ui-table-header text-muted-fg sticky left-0 z-10 border-b border-border">{t.charting.metrics}</th>
+                  {labels.map(l => <th key={l} scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-center py-2.5 px-3 ui-table-header text-muted-fg whitespace-nowrap border-b border-border">{l}</th>)}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="px-4 py-2 border-t border-border">
-            <TableSourceFooter source={sourceStatusA === 'persisted' ? persistedA!.source : t.charting.source} />
-          </div>
-        </div>
+              </thead>
+              <tbody>
+                {chosen.map(m => (
+                  <tr key={m.key} className="border-b border-border last:border-0 nv-row-hover nv-transition">
+                    <td style={{ backgroundColor: 'var(--surface-table)' }} className="py-2 px-3 pl-4 sticky left-0 z-10 whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5 text-muted"><span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: colorOf(m.key) }} />{t.charting.m[m.key as keyof typeof t.charting.m]}</span>
+                    </td>
+                    {periods.map((p, i) => <td key={i} className="py-2 px-3 text-center ui-number text-foreground">{fmtCell(m, valueOf(m, p))}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableCard>
+        </Reveal>
       )}
 
       {/* Settings modal */}
       {settingsOpen && (
-        <div className="fixed inset-0 z-[90] flex items-start justify-center pt-[10vh] px-4" style={{ backgroundColor: 'color-mix(in oklab, var(--foreground) 40%, transparent)' }} onClick={() => setSettingsOpen(false)} role="dialog" aria-modal="true" aria-label={t.charting.settings}>
-          <div className="bg-surface border border-border rounded-lg shadow-xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
-            <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+        <div
+          className="no-print nv-scrim fixed inset-0 z-[90] flex items-start justify-center pt-[8vh] px-4"
+          onClick={() => setSettingsOpen(false)}
+        >
+          <div
+            role="dialog" aria-modal="true" aria-label={t.charting.settings}
+            className="nv-glass-overlay nv-pop w-full max-w-sm"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 flex items-center justify-between" style={{ backgroundColor: 'var(--nv-hdrbg)', borderBottom: '1px solid var(--nv-line)' }}>
               <span className="ui-label text-foreground">{t.charting.settings}</span>
-              <button onClick={() => setSettingsOpen(false)} className="text-muted-fg hover:text-foreground text-sm px-1">✕</button>
+              <button type="button" onClick={() => setSettingsOpen(false)} aria-label={t.fable.panel.close} className="text-muted-fg hover:text-foreground text-sm px-1">✕</button>
             </div>
             <div className="p-4 space-y-3 text-xs">
               <label className="flex items-center justify-between gap-2">
                 <span className="text-foreground">{t.charting.chartType}</span>
-                <select value={chartType} onChange={e => setChartType(e.target.value as 'auto' | 'lines' | 'bars')} className="h-7 bg-surface border border-border rounded px-1.5 text-foreground outline-none focus:border-accent">
+                <select
+                  value={chartType} onChange={e => setChartType(e.target.value as 'auto' | 'lines' | 'bars')}
+                  aria-label={t.charting.chartType}
+                  className="h-7 rounded-full px-2.5 text-foreground outline-none focus:border-accent nv-transition"
+                  style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' }}
+                >
                   <option value="auto">{t.charting.auto}</option>
                   <option value="lines">{t.charting.lines}</option>
                   <option value="bars">{t.charting.barsType}</option>
@@ -421,8 +474,8 @@ export default function ChartBuilderPage() {
               <label className="flex items-center justify-between"><span className="text-foreground">{t.charting.legend}</span><input type="checkbox" checked={legend} onChange={e => setLegend(e.target.checked)} className="accent-[var(--primary)]" /></label>
               <label className="flex items-center justify-between"><span className="text-foreground">{t.charting.gridlines}</span><input type="checkbox" checked={grid} onChange={e => setGrid(e.target.checked)} className="accent-[var(--primary)]" /></label>
             </div>
-            <div className="px-4 py-3 border-t border-border flex justify-end">
-              <button onClick={() => setSettingsOpen(false)} className="text-xs px-3 py-1 rounded bg-primary text-primary-fg">{t.charting.done}</button>
+            <div className="px-4 py-3 flex justify-end" style={{ backgroundColor: 'var(--nv-hdrbg)', borderTop: '1px solid var(--nv-line)' }}>
+              <button type="button" onClick={() => setSettingsOpen(false)} className="text-xs px-3 py-1.5 rounded-full bg-primary text-primary-fg">{t.charting.done}</button>
             </div>
           </div>
         </div>

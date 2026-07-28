@@ -421,9 +421,11 @@ or any news-related source path was touched this phase).
 > chart on Fable materials, `SegmentedControl`, glass business/valuation cards, and the print path
 > on a dynamic detail route. **Phase 5D (`/compare`) ✓ COMPLETE (2026-07-28)** — proves a
 > multi-table analytical page (3 `TableCard`s), a second `SegmentedControl` adopter, and a
-> from-scratch settings-modal restyle onto the established overlay pattern. See "Phase 5A — as
-> built", "Phase 5B — as built", "Phase 5C — as built" and "Phase 5D — as built" below. Pages
-> 4, 7–12 are not started.
+> from-scratch settings-modal restyle onto the established overlay pattern. **Phase 5E
+> (`/chart-builder`) ✓ COMPLETE (2026-07-28)** — proves the metric-picker + dual-axis-chart pattern
+> and closes a genuine pre-existing responsive gap (the underlying-data table had no `min-w`). See
+> "Phase 5A — as built", "Phase 5B — as built", "Phase 5C — as built", "Phase 5D — as built" and
+> "Phase 5E — as built" below. Pages 7–12 are not started.
 
 Each page: swap layout/card/table/pill classes to the new shared components; **do not change**
 data fetching, `fetch*` calls, `useMarketData`/`useMacroData`/`useGlobalRefresh`, persisted
@@ -433,9 +435,9 @@ data, exclude it (merge point 4).
 
 Recommended order (low-risk → high-risk, dependency-aware):
 
-1. **`/stocks`** — cleanest DataTable, direct Fable Portfolio-table map; proves the table +
+1. **`/stocks`** ✓ — cleanest DataTable, direct Fable Portfolio-table map; proves the table +
    toolbar + source-footer recipe end to end.
-2. **`/watchlist`** — small protected table + add form; proves the recipe on a protected route
+2. **`/watchlist`** ✓ — small protected table + add form; proves the recipe on a protected route
    and the add-form pattern.
 3. **`/companies/[ticker]`** ✓ — KPI capsules + chart + valuation grid + results + news; proves
    capsules, charts, glass cards, print path.
@@ -444,7 +446,7 @@ Recommended order (low-risk → high-risk, dependency-aware):
 5. **`/earnings`** — two glass DataTables + upcoming module.
 6. **`/compare`** ✓ — multi-slot returns table, settings modal (glass overlay), compare chart,
    segmented pills.
-7. **`/chart-builder`** — metric picker + dual-axis chart + underlying table + settings.
+7. **`/chart-builder`** ✓ — metric picker + dual-axis chart + underlying table + settings.
 8. **`/portfolio`** — hero/capsule summary, exposure bars, three tabbed tables + forms
    (biggest single page; do after capsules/tables are proven).
 9. **`/structured-notes`** — barrier gauge, upload/extract panel, dashboard KPIs, bar/donut.
@@ -747,6 +749,61 @@ substitute for looking at the page.
 
 ---
 
+### Phase 5E — `/chart-builder` — as built (2026-07-28)
+
+**Files changed (5 — 1 source, 1 i18n, 2 test scope-boundary corrections, 1 new test; `03`/`04`/`06`
+counted once):**
+
+| File | Change |
+|---|---|
+| `src/app/chart-builder/page.tsx` | Re-skinned. **Every hook, state variable, computed value (`records`, `periods`/`periodsB`, `series`, `canTTM`/`effFreq`, `financialsBadgeKey`, `sourceStatusA`, `fmtBar`/`fmtAxis`/`fmtLine`/`fmtCell`, `handleExport`) and fetch effect is byte-for-byte unchanged** — only the JSX tree changed. The page-local `Seg` segmented-button component is deleted (no longer used anywhere). Toolbar/metric-picker/chart panel → `GlassSurface variant="card"` (3 instances, replacing the hand-rolled `bg-surface border border-border rounded` recipe). Absolute/Indexed and TTM/Annual → `SegmentedControl` (3rd/4th production adopter after Company's chart-timeframe and Compare's TF/Period); the TTM-disabled explanatory tooltip (`t.charting.ttmUnavailable`) is preserved via a wrapping `<span title=…>` around the control rather than a new per-option prop on the shared component. Ticker inputs, the Settings gear button, the Export CSV button, and the Settings modal's chart-type `<select>` all restyled to the established Fable chip recipe (`--nv-chip`/`--nv-chipbd`, `rounded-full`), matching Compare's exact ticker-slot/control-bar styling. The underlying-data table → `TableCard` (`minWidth={640}`) — this closes a genuine pre-existing responsive gap: the table previously had **no** `min-w` at all, so a ticker with many TTM/annual periods could force page-level horizontal scroll rather than scrolling inside its own card, the one thing `design_principles.md` §19 calls "never acceptable." The chart panel's "no data"/"select a metric" empty states now route through `AsyncState kind="empty"` with a `message` override carrying the exact original copy. The Settings modal restyled onto the exact `nv-scrim` + `nv-glass-overlay nv-pop` recipe `CommandPalette`/Compare established — same content (chart type, legend, gridlines), only the container material and control chrome changed. Three `Reveal` wrappers (0/70/130/190ms — header unstaggered, toolbar+chips, picker+chart row, underlying table) match the Compare/Company stagger cadence exactly. |
+| `src/lib/i18n.ts` | 5 new keys × 2 languages under `charting`: `vs` (the ticker-separator, previously hardcoded English — a genuine pre-existing i18n gap fixed while already on this line), `compareTicker` (the "vs" ticker input's `aria-label`, since it previously had none), `removeMetric` (the metric-chip remove button's `aria-label`, previously a hardcoded English `"Remove"`), `modeLabel`/`freqLabel` (the two new `SegmentedControl`s' `ariaLabel`s, since the original button rows had no group label at all). No existing key touched. |
+| `tests/fableComparePage.test.ts`, `tests/fableCompanyDetailPage.test.ts` | **Deliberate scope-boundary updates, not weakened assertions** — the exact precedent Phase 5B/5D set. `/chart-builder` is removed from both "this page has had no re-skin phase yet" arrays (it now legitimately uses `SegmentedControl`, which those assertions exist specifically to rule out for *not-yet-migrated* pages) — the remaining pages in each list still hold the line, and `/chart-builder` is now guarded by its own suite below. |
+| `tests/fableChartBuilderPage.test.ts` | **New, 112 tests** — every section/config-slot/metric/chart-type/frequency preserved, the 21-metric × 4-category inventory verified exhaustively, fixed left/right axis assignment and the MM/CLP/%/"MM sh" formatter set shared by axis/tooltip/table, Absolute/Indexed normalization delegated to the untouched `FundamentalsChart`, add/remove-metric and overlay-ticker behaviour, the absence of any reset/save/print action (none existed — none invented), the 8 `cmi.gf*` persisted keys with original defaults, the `gf:ticker` deep-link, chart series/legend/tooltip delegation with no marker prop (never existed), 1 `SourceStateBadge` + 2 `TableSourceFooter` instances with the unchanged source-precedence ternary, no fabricated `asOf`, all 7 async/data-quality state checks (no loading spinner, 2 distinct empty states, TTM-disabled-not-hidden, silent provider-failure fallback, no null-to-zero, no series dropped when a sibling has no data), Fable material/pill/token/radius rules, motion restraint + reduced-motion collapse, full a11y (labelled ticker inputs and segmented controls, `aria-pressed` on metric buttons, localized remove-button names, dialog semantics), responsive containment (12-col grid, `TableCard` `minWidth={640}` closing the pre-existing gap, no root min-width), and complete EN/ES coverage including every per-metric label and a scan for hardcoded literals in both JSX text *and* `title`/`aria-label` attributes (which caught the `vs`/`removeMetric` defects above). |
+| `docs/fable-integration/03` / `04` / `06` | Route 4 status → Done/Verified; this as-built record; recommended-order item 7 ticked; checklist items updated. |
+
+**Files deliberately NOT changed:** `globals.css` (every token this page needed already existed),
+`src/components/charts/FundamentalsChart.tsx` (same props/call signature — untouched since Phase 4),
+any other page, `src/app/api/**`, `src/middleware.ts`, `src/lib/{providers,db,financials}/**`,
+`src/config/**`, `src/data/**`, `package.json`/`package-lock.json`.
+
+**Judgement calls, stated plainly:**
+- **The underlying-data table's conditional hide-when-empty behaviour is preserved exactly**, not
+  converted to an always-visible `TableCard` empty state the way Compare's Fundamentals table was.
+  That was Compare's own explicit judgement call for *that* table (it gains a visible section title
+  while empty); Chart Builder's table never showed a bare container when nothing was selected, and
+  changing that now would be a new UI decision, not a re-skin.
+- **`SegmentedControl`'s `disabled` option carries no per-option tooltip prop.** Rather than extend
+  the shared component (used by 3 other pages) for one caller's explanatory-text need, the TTM
+  toggle is wrapped in a plain `<span title={…}>` — the same hover behaviour the original `Seg`
+  button's own `title` attribute gave, achieved without touching a shared component for a feature
+  addition rather than a verified defect.
+- **No reset/clear-all, save, or print action was added.** None of the three existed on this route
+  before, and the brief is explicit that inventing one would violate content preservation.
+- **`minWidth={640}` is a deliberate, reasoned choice, not an arbitrary one.** The table has one
+  sticky metric-label column plus N period columns of variable count (TTM/Annual periods, unlike
+  Compare's fixed 6 slots) — 640px is in the same order of magnitude as this app's other dense-table
+  floors (Stocks 760, Watchlist 620, Compare 440–620) and comfortably fits the label column plus a
+  handful of period columns before the card-level scroll takes over.
+
+**Validation:** lint 0 problems · full suite **2543 → 2655 tests, 2652 pass, 3 fail** (+112, all in
+the new file) · build 0 errors (full route table unchanged, `/chart-builder` still static/`○`). The
+3 failures are the same pre-existing, date-dependent `tests/newsModule.test.ts` fixture failures
+documented in every phase since Phase 1 (fixtures stamped `15 Jul 2026` against the orchestrator's
+rolling 7-day window; today is 2026-07-28) — no news-related file is in this phase's changed-file
+list, and the failure count/location is unchanged from the pre-phase baseline.
+
+**Honest gap:** the interactive browser responsive ladder (1920/1600/1440/1280/1024/768/390,
+light+dark, EN+ES, reduced motion) was **not** run — the Chrome extension is not connected in this
+background session, the same limitation disclosed in every prior Phase 5 pass. What *is* verified is
+source-level: the 12-col responsive grid classes (`grid-cols-12`, `col-span-12 lg:col-span-3/9`), the
+`TableCard` `minWidth={640}` floor, the toolbar's `flex-wrap`, and the metric picker's internal
+`max-h-[520px] overflow-y-auto` scroll are all present and asserted by the new test suite, and no
+live dev-server rendered-markup check was performed this phase (unlike 5A–5D, which each fetched
+their route against a running server) — this is a source-and-build-level verification only.
+
+---
+
 ## Phase 6 — Auth pages + login shell (highest-visibility, distinct layout)
 
 Do together, after shared components exist. The login is the marquee Fable moment and needs a
@@ -813,7 +870,10 @@ hardcoded UI text in components. Reuse existing namespaces; add keys under `topb
 | 4 ✓ | `src/components/charts/{LineChart,CompareChart,FundamentalsChart,YieldCurveChart}.tsx` (restyled in place, props unchanged), new `src/components/fable/chart/{ChartTooltip.tsx,chartA11y.ts}`, `src/components/macro/EconomicCalendarTable.tsx` (row-hover utility swap), `src/app/globals.css` (chart semantic token block), `src/lib/formatters.ts` (`formatChartValue`), `src/lib/i18n.ts` (`fable.chart` namespace) |
 | 5A ✓ | `src/app/stocks/page.tsx`, `src/components/ui/SearchInput.tsx` (only `/stocks` consumes it), `src/lib/i18n.ts` (3 keys ×2 langs), new `tests/fableStocksPage.test.ts`, `tests/responsiveLayout.test.ts` (deliberate `TableCard` scroll-delegation update + 2 new tests) |
 | 5B ✓ | `src/app/watchlist/page.tsx`, `src/lib/i18n.ts` (6 keys ×2 langs), new `tests/fableWatchlistPage.test.ts`, `tests/responsiveLayout.test.ts` (620px floor), `tests/fableStocksPage.test.ts` (phase-boundary guard update) |
-| 5 (rest) | `src/app/{companies/[ticker],macro,macro/calendar,earnings,compare,chart-builder,portfolio,structured-notes,structured-notes/[id],settings/notifications}/page.tsx`, `src/app/page.tsx` |
+| 5C ✓ | `src/app/companies/[ticker]/page.tsx`, `src/lib/i18n.ts` (2 keys ×2 langs), new `tests/fableCompanyDetailPage.test.ts` |
+| 5D ✓ | `src/app/compare/page.tsx`, `src/lib/i18n.ts` (2 keys ×2 langs), new `tests/fableComparePage.test.ts`, `tests/{fableWatchlistPage,fableStocksPage,fableCompanyDetailPage}.test.ts` (phase-boundary guard updates) |
+| 5E ✓ | `src/app/chart-builder/page.tsx`, `src/lib/i18n.ts` (5 keys ×2 langs), new `tests/fableChartBuilderPage.test.ts`, `tests/{fableComparePage,fableCompanyDetailPage}.test.ts` (phase-boundary guard updates) |
+| 5 (rest) | `src/app/{macro,macro/calendar,earnings,portfolio,structured-notes,structured-notes/[id],settings/notifications}/page.tsx`, `src/app/page.tsx` |
 | 6 | new `src/app/(auth)/layout.tsx`, `src/app/{login,forgot-password,auth/reset-password}/page.tsx`, `src/components/ui/BrandLogo.tsx`, `public/*` (login photo, logo) |
 | 7 | `src/lib/i18n.ts` |
 | 8 | `tests/*` (deliberate updates), `docs/*` |

@@ -22,7 +22,7 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
 | 1 | `/` | Market Overview | public | 1 Overview (visual lang.) | Yes — News feed, Sector heat map, Chilean-rates DnD, band-macro card | Not started | Not verified |
 | 2 | `/stocks` | Stocks | public | 2 Portfolio (DataTable) | No (reused Phase 3 `TableCard`) | **✓ Phase 5A (2026-07-28)** | **✓ Source + rendered-markup verified** |
 | 3 | `/compare` | Compare | public | 3 Performance (chart+table) | No (reused Phase 3 `TableCard`/`GlassSurface`/`SegmentedControl`) | **✓ Phase 5D (2026-07-28)** | **✓ Source + rendered-markup verified** |
-| 4 | `/chart-builder` | Charting | public | 3 Performance (chart) | Yes — metric picker, dual-axis chart, underlying table | Not started | Not verified |
+| 4 | `/chart-builder` | Charting | public | 3 Performance (chart) | No (reused Phase 3 `TableCard`/`GlassSurface`/`SegmentedControl`) | **✓ Phase 5E (2026-07-28)** | **✓ Source-scan verified** |
 | 5 | `/macro` | Macroeconomic Indicators | public | 7 Macro | Yes — banded indicators table, yield curve, FX depth, chart popup | Not started | Not verified |
 | 6 | `/macro/calendar` | Economic Calendar | public | 7 Macro / 9 Documents table | Yes — release calendar table, FOMC outlook card | Not started | Not verified |
 | 7 | `/earnings` | Earnings | public | 8 Research (upcoming earnings) / DataTable | Yes — upcoming + results tables | Not started | Not verified |
@@ -197,9 +197,48 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
 - **Fable component mapping:** `FundamentalsChart` → Fable chart SVG (dual-axis, bars+lines,
   chart palette); metric picker → glass list with color dots + chips; toggles → segmented
   pills; `SourceStateBadge` → status chip; underlying table → glass DataTable.
-- **New component required:** **Yes** — metric-picker panel, dual-axis chart restyle,
-  underlying-data table. Preserve source-state badge/footer.
-- **Impl. status:** Not started · **Verif. status:** Not verified.
+- **New component required:** **No** — every primitive already existed from Phase 3/4;
+  `SourceStateBadge`/`TableSourceFooter` preserved exactly (1 badge, 2 footers).
+- **Impl. status:** ✓ Phase 5E (2026-07-28) · **Verif. status:** ✓ Source-level (112 new tests in
+  `tests/fableChartBuilderPage.test.ts`; build 0 errors, `/chart-builder` still static/`○`).
+
+**Phase 5E — as built.** Presentation only; every hook, computed value (`records`, `periods`,
+`series`, `canTTM`/`effFreq`, `financialsBadgeKey`, `fmtBar`/`fmtAxis`/`fmtLine`/`fmtCell`,
+`handleExport`) and fetch effect is byte-for-byte unchanged.
+- **Container:** toolbar/metric-picker/chart panel moved from hand-rolled `bg-surface
+  border border-border rounded` divs to `GlassSurface variant="card"` (3 instances); the
+  underlying-data table moved to `TableCard` (`minWidth={640}`) — closing a genuine pre-existing
+  gap (this table previously had no `min-w`, so a ticker with many TTM/annual periods could force
+  page-level horizontal scroll; it now scrolls card-level like every other migrated table).
+- **Toggles:** Absolute/Indexed and TTM/Annual moved from the page-local `Seg` button component
+  (now deleted — no longer used anywhere) to two `SegmentedControl` adopters (3rd/4th after
+  Company's chart-timeframe and Compare's TF/Period). The TTM option's disabled-state explanation
+  (`t.charting.ttmUnavailable`) is preserved via a wrapping `<span title=…>` around the control,
+  since disabling a reason string per-option isn't part of the shared component's contract and
+  changing it would be a new feature to a component two other pages depend on, not a re-skin.
+- **Ticker inputs, settings gear, Export CSV button, chartType select:** restyled to the
+  established Fable chip recipe (`rounded-full`, `--nv-chip`/`--nv-chipbd`), matching Compare's
+  ticker-slot and control-bar inputs exactly.
+- **Settings modal:** restyled onto the exact `nv-scrim` + `nv-glass-overlay nv-pop` overlay recipe
+  `CommandPalette`/Compare established — same content (chart type, legend, gridlines), only the
+  container material and control chrome changed.
+- **Empty states:** the "no data" / "select a metric" message now routes through the shared
+  `AsyncState kind="empty"` component (message override, exact original copy preserved) instead of
+  a bare `<div>` — same trigger condition, now with proper `role="status" aria-live="polite"`.
+- **Two real, pre-existing i18n gaps fixed in passing** (found while already on these exact lines,
+  same as Compare's `clearRange` fix): the literal `vs` separator between the two ticker inputs and
+  the metric-chip remove button's hardcoded `aria-label="Remove"` were both English-only; now
+  `t.charting.vs` and `t.charting.removeMetric` (EN+ES). Two new `SegmentedControl` `ariaLabel`
+  keys added: `t.charting.modeLabel`, `t.charting.freqLabel`. Metric-picker buttons gained
+  `aria-pressed` (their selected state was previously colour/weight-only).
+- **Deliberately NOT changed:** `FundamentalsChart.tsx` (same props/call signature, untouched since
+  Phase 4); no reset/clear-all/save/print action was invented (none existed); no `asOf` timestamp
+  was invented (this route never had one); the underlying-table's conditional hide-when-empty
+  behaviour is preserved exactly (not converted to an always-visible `TableCard` empty state, unlike
+  Compare's Fundamentals table — that was Compare's own judgement call for that specific table, not
+  a new platform default).
+- All 8 `cmi.gf*` persisted keys and the `gf:ticker` deep-link window event (Company page's "Graph
+  fundamentals →" link) are unchanged.
 
 ## 5. `/macro` — Macroeconomic Indicators
 
