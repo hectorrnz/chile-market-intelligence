@@ -9,10 +9,12 @@ Status key: `[ ]` not done · `[~]` in progress · `[x]` verified.
 **Phase progress:** Phase 0 (design governance) ✓ · **Phase 1 (shared visual foundation) ✓
 COMPLETE 2026-07-22** · **Phase 2 (app shell: top pill navigation) ✓ COMPLETE 2026-07-24** ·
 **Phase 3 (shared UI primitives / Fable component library) ✓ COMPLETE 2026-07-24** ·
-**Phase 4 (shared chart & financial-visualization system) ✓ COMPLETE 2026-07-24** — see
+**Phase 4 (shared chart & financial-visualization system) ✓ COMPLETE 2026-07-24** ·
+**Phase 5A (`/stocks` page re-skin) ✓ COMPLETE 2026-07-28** — see
 `04-file-level-implementation-plan.md` § "Phase 1 — as built" / "Phase 2 — as built" /
-"Phase 3 — as built" / "Phase 4 — as built". Phases 5–8 not started. Items below are ticked only
-where Phase 1–4 genuinely satisfy them; everything that still depends on page work stays `[ ]` or
+"Phase 3 — as built" / "Phase 4 — as built" / "Phase 5A — `/stocks` — as built". Phase 5's
+remaining 11 pages and Phases 6–8 not started. Items below are ticked only where Phases 1–5A
+genuinely satisfy them; everything that still depends on the remaining page work stays `[ ]` or
 `[~]`.
 
 ---
@@ -76,7 +78,14 @@ loading state · empty state · error state · auth status — verified identica
 
 - [ ] `/` — Market Overview: macro card, watchlist+FX, earnings, sector heat map, Chilean rates
   (DnD), markets, news; `UpdateDataButton`, sort, DnD; loading/empty/error; public.
-- [ ] `/stocks` — toolbar + 9-col sortable table; search/sector/sort/CSV/Update; noResults; public.
+- [x] `/stocks` — toolbar + 9-col sortable table; search/sector/sort/CSV/Update; noResults; public.
+  *Phase 5A (2026-07-28). All 4 sections, all 9 columns in their original order, both filters, all
+  6 sort keys + the derived default + the refresh-clears-manual-sort rule, the CSV export, the
+  ticker links, the live→persisted→static merge, the single badge / single footer / single as-of,
+  and the "—"-never-zero fallbacks are preserved — locked by 74 tests in
+  `tests/fableStocksPage.test.ts`. Restyled onto `TableCard` + Fable pill toolbar; empty state now
+  runs through `AsyncState` while keeping its own exact `noResults` wording. No KPI, chart, or heat
+  map was invented (no data on this route backs one).*
 - [ ] `/compare` — market data + returns (6 slots) + fundamentals + control bar + chart + settings
   modal; all `cmi.compare*` persisted; empty `—`; public.
 - [ ] `/chart-builder` — toolbar + metric picker + dual-axis chart + underlying table + settings;
@@ -138,7 +147,10 @@ loading state · empty state · error state · auth status — verified identica
 - [~] `ThemeToggle`, `LangToggle`, `SectionHeader`, `EmptyState`, `StatusPill`, `UpdateDataButton`.
   *(Phase 3: `StatusPill` extended with 8 new semantic variants, same `{label, variant?}` signature.
   `ThemeToggle`/`LangToggle`/`SectionHeader`/`EmptyState`/`UpdateDataButton` visual restyle deferred
-  — they already consume semantic tokens from Phase 1 and were left out of Phase 3's explicit scope.)*
+  — they already consume semantic tokens from Phase 1 and were left out of Phase 3's explicit scope.
+  Phase 5A restyled `SearchInput` to the Fable search pill — in scope for a page phase because
+  `/stocks` is its only consumer repo-wide, which a test now locks. `SectionHeader` is consumed
+  as-is by the new `/stocks` (it already wraps correctly); its own restyle is still open.)*
 - [x] `DataSourceBadge`, `MarketDataSourceBadge`, `SourceStateBadge`, `TableSourceFooter` — states,
   labels, tooltips, one-footer-per-table preserved.
   *(Phase 3: confirmed untouched — `tests/fableComponents.test.ts` locks this in.)*
@@ -173,27 +185,43 @@ loading state · empty state · error state · auth status — verified identica
   *Phase 2: `macro:region` dispatch verified unchanged (same event name/detail shape) from both
   the desktop and mobile nav surfaces, and `macro/page.tsx`'s listener is untouched. `gf:ticker`/
   `cmdk:open` unaffected (their producers/consumers weren't touched this phase).*
-- [ ] CSV export (Stocks/Compare/Charting/Earnings) and Print (Company) work.
-- [ ] `Update` buttons refresh via `useGlobalRefresh`; badges reflect live/persisted/static.
+- [~] CSV export (Stocks/Compare/Charting/Earnings) and Print (Company) work.
+  *Phase 5A: the Stocks export is preserved unchanged — same `chilean_stocks` filename, same nine
+  header labels, same row shape (asserted by test). Compare/Charting/Earnings/Print untouched
+  (their pages are not yet restyled).*
+- [~] `Update` buttons refresh via `useGlobalRefresh`; badges reflect live/persisted/static.
+  *Phase 5A: Stocks still routes its single `UpdateDataButton` through `useGlobalRefresh()` and
+  still derives `priceStatus` as live → persisted → static; both asserted by test and confirmed in
+  the rendered markup.*
 
 ### C4 · Engineering gates (run at each phase boundary)
 - [x] `npm run build` → 0 errors, all routes present. *(Phase 1 boundary: compiled in 6.4s, 19/19
   static pages, full route list unchanged. Phase 2 boundary: 0 errors, 19/19 static pages, full
   route list unchanged. Phase 3 boundary: 0 errors, full route table unchanged. Phase 4 boundary:
   0 errors, full route table unchanged — no page route touched.)*
-- [x] `npm run lint` → 0 problems. *(Phase 1, Phase 2, Phase 3, and Phase 4 boundaries.)*
+- [x] `npm run lint` → 0 problems. *(Phase 1, Phase 2, Phase 3, Phase 4, and Phase 5A boundaries.)*
 - [~] `npm test` → all files pass (business-logic tests untouched; DOM tests updated only
   deliberately, never deleted to pass). *(Phase 1 boundary: 1795 tests, 1792 pass. Phase 2 boundary:
-  1846 tests, 1843 pass. Phase 3 boundary: 1980 tests, 1977 pass. Phase 4 boundary: **2074 tests,
-  2071 pass** — 1 new test file (`tests/fableCharts.test.ts`, 94 tests); no existing test was
-  modified this phase. The same 3 pre-existing, date-dependent `tests/newsModule.test.ts` failures
-  from Phases 1–3 persist unchanged (News-module work, out of scope here; no news-related file was
-  touched this phase, confirmed via `git status`).)*
+  1846 tests, 1843 pass. Phase 3 boundary: 1980 tests, 1977 pass. Phase 4 boundary: 2074 tests,
+  2071 pass. **Phase 5A boundary: 2150 tests, 2147 pass** — 1 new test file
+  (`tests/fableStocksPage.test.ts`, 74 tests) plus 2 new tests added to
+  `tests/responsiveLayout.test.ts`. One existing test was updated **deliberately**: that file's
+  dense-table matcher now also recognises `TableCard`'s `minWidth={…}` delegation, and the two new
+  tests prove the delegation is real (`TableCard` owns the `overflow-x-auto`; `/stocks` still
+  passes `minWidth={760}`) — net coverage increased, nothing was relaxed. The same 3 pre-existing,
+  date-dependent `tests/newsModule.test.ts` failures from Phases 1–4 persist unchanged (fixtures
+  stamped `15 Jul 2026` vs a rolling 7-day window; today is 2026-07-28). No news-related file is in
+  Phase 5A's changed-file list.)*
 - [ ] Browser responsive ladder (1728/1440/1280/1023/900/767/630/430/390) in **light + dark** and
   **EN + ES**, per route → zero page-level horizontal overflow.
-  *Phase 3/4, like Phase 2, could only run source-level/build checks — no interactive browser
-  session was available in this environment, and no page was restyled yet to ladder-test. A real
-  browser pass remains open until Phase 5 renders the restyled charts on real pages.*
+  *Phases 3/4/5A, like Phase 2, could only run source-level, build, and rendered-markup checks —
+  **the Chrome extension is not connected in this environment**, so no interactive browser session
+  was available. Phase 5A did verify `/stocks` at the HTTP/markup level against a live dev server
+  (200; 9 headers, 6 `aria-sort` headers, 25 rows/links, `min-width:760px` inside an
+  `overflow-x-auto` container, no root `min-width`, no fixed pixel width — the search field caps at
+  `max-width:220px` and shrinks, the toolbar wraps). Those are the conventions whose breakage
+  causes page-level overflow, but they are **not** a substitute for viewing the page. A real
+  browser ladder pass remains genuinely open.*
 - [~] Accessibility: focus-visible ring, `aria` on toggles/dialogs, `prefers-reduced-motion`, AA
   contrast.
   *Phase 2: the mobile drawer's dialog semantics and nav-indicator `aria-current`/reduced-motion are
@@ -209,12 +237,13 @@ loading state · empty state · error state · auth status — verified identica
 - [ ] `docs/design_principles.md` + CLAUDE.md design sections rewritten to the Fable language
   (Phase 0) — the app no longer contradicts its own design authority.
 - [ ] `docs/data_source_status.md` current (no module static as terminal state).
-- [ ] `docs/fable-integration/03` implementation/verification columns updated per route.
-  *(Untouched by Phase 1 — no route changed.)*
+- [~] `docs/fable-integration/03` implementation/verification columns updated per route.
+  *(Phase 5A: `/stocks` is the first route marked ✓ Complete / ✓ Verified, with a full "as built"
+  record in its section. The other 15 routes remain Not started / Not verified.)*
 - [x] No new runtime dependency added without an explicit, documented decision (D6).
-  *(Phase 1, Phase 3, and Phase 4 all added none; `package.json`/`package-lock.json` unchanged
-  every time — no chart library was added, per the brief's explicit instruction to keep the
-  existing pure-SVG approach. Asserted by test in every phase.)*
+  *(Phases 1, 3, 4, and 5A all added none; `package.json`/`package-lock.json` unchanged every
+  time — no chart library was added, per the brief's explicit instruction to keep the existing
+  pure-SVG approach. Asserted by test in every phase.)*
 
 ### C6 · Security & privacy (merge point 12)
 - [ ] No secrets/credentials in client bundles; no `NEXT_PUBLIC_` provider key.

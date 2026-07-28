@@ -16,6 +16,9 @@ import type { StockSnapshot } from '@/lib/providers/market/types'
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
 import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
+import { TableCard } from '@/components/fable/TableCard'
+import { AsyncState } from '@/components/fable/AsyncState'
+import { Reveal } from '@/components/fable/motion'
 import type { DataSourceStatus } from '@/lib/providers/types'
 
 type SortKey = 'ticker' | 'dayChangePct' | 'ytdChangePct' | 'marketCapCLP' | 'pe' | 'dividendYield'
@@ -126,7 +129,15 @@ export default function StocksPage() {
     )
   }
 
-  const arrow = (key: SortKey) => sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''
+  const arrow = (key: SortKey) => sortKey === key ? (sortDir === 'asc' ? '↑' : '↓') : ''
+
+  // Sort state is announced, not inferred from the arrow glyph alone (a11y:
+  // never meaning by colour or ornament alone). Sortable-but-inactive columns
+  // report 'none' so a screen reader knows they are sortable at all.
+  const ariaSort = (key: SortKey | null) =>
+    !key ? undefined
+      : sortKey === key ? (sortDir === 'asc' ? 'ascending' as const : 'descending' as const)
+      : 'none' as const
 
   const handleExport = () => {
     exportCSV(
@@ -142,112 +153,173 @@ export default function StocksPage() {
     )
   }
 
-  const headers: { key: SortKey | null; label: string }[] = [
+  // Column order is unchanged. `numeric` only drives alignment (Fable
+  // right-aligns figures so tabular numerals line up) — it never changes which
+  // columns exist, their order, or their sortability.
+  const headers: { key: SortKey | null; label: string; numeric?: boolean }[] = [
     { key: 'ticker',        label: t.stocks.cols.ticker },
     { key: null,            label: t.stocks.cols.company },
     { key: null,            label: t.stocks.cols.sector },
-    { key: null,            label: t.stocks.cols.price },
-    { key: 'dayChangePct',  label: t.stocks.cols.dayChg },
-    { key: 'ytdChangePct',  label: t.stocks.cols.ytd },
-    { key: 'marketCapCLP',  label: t.stocks.cols.marketCap },
-    { key: 'pe',            label: t.stocks.cols.pe },
-    { key: 'dividendYield', label: t.stocks.cols.divYield },
+    { key: null,            label: t.stocks.cols.price,     numeric: true },
+    { key: 'dayChangePct',  label: t.stocks.cols.dayChg,    numeric: true },
+    { key: 'ytdChangePct',  label: t.stocks.cols.ytd,       numeric: true },
+    { key: 'marketCapCLP',  label: t.stocks.cols.marketCap, numeric: true },
+    { key: 'pe',            label: t.stocks.cols.pe,        numeric: true },
+    { key: 'dividendYield', label: t.stocks.cols.divYield,  numeric: true },
   ]
+
+  const cellPad = 'py-2.5 px-3 first:pl-4 last:pr-4'
 
   return (
     <div className="w-full">
-      <SectionHeader
-        tag={t.stocks.tag}
-        title={t.stocks.title}
-        subtitle={t.stocks.subtitle}
-        actions={<UpdateDataButton onRefresh={refresh} />}
-      />
+      <Reveal>
+        <SectionHeader
+          tag={t.stocks.tag}
+          title={t.stocks.title}
+          subtitle={t.stocks.subtitle}
+          actions={<UpdateDataButton onRefresh={refresh} />}
+        />
+      </Reveal>
 
-      <div className="flex items-center gap-2.5 mb-4 flex-wrap">
-        <SearchInput value={search} onChange={setSearch} placeholder={t.common.search} width={220} />
-        <select
-          value={sector}
-          onChange={e => setSector(e.target.value)}
-          className="h-7 bg-surface border border-border rounded px-2 text-xs text-foreground outline-none focus:border-accent"
-        >
-          <option value="">{t.stocks.allSectors}</option>
-          {sectors.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <MarketDataSourceBadge status={priceStatus} />
-        <button
-          onClick={handleExport}
-          className="ml-auto flex items-center gap-1.5 h-7 px-2.5 rounded border border-border bg-surface text-xs text-muted-fg hover:text-foreground hover:border-accent transition-colors"
-        >
-          <span aria-hidden>⤓</span>{t.common.exportCsv}
-        </button>
-      </div>
+      {/* 70ms stagger — the Fable section-reveal cadence. Both wrappers collapse
+          to their final state under prefers-reduced-motion (globals.css §8), so
+          no data is ever hidden behind an entrance animation. */}
+      <Reveal delayMs={70}>
+        <TableCard
+          minWidth={760}
+          controls={
+            <div className="flex flex-wrap items-center gap-2.5 w-full">
+              <div role="group" aria-label={t.stocks.filters} className="flex flex-wrap items-center gap-2.5 min-w-0">
+                <SearchInput
+                  value={search}
+                  onChange={setSearch}
+                  placeholder={t.common.search}
+                  ariaLabel={t.common.search}
+                  width={220}
+                />
+                <div className="relative shrink-0">
+                  <select
+                    value={sector}
+                    onChange={e => setSector(e.target.value)}
+                    aria-label={t.stocks.sectorFilter}
+                    className="h-8 max-w-[200px] appearance-none rounded-full border border-[var(--nv-chipbd)] bg-[var(--nv-chip)] pl-3 pr-8 text-xs text-foreground outline-none focus:border-accent nv-transition"
+                  >
+                    <option value="">{t.stocks.allSectors}</option>
+                    {sectors.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <svg
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    aria-hidden="true"
+                    className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-fg"
+                  >
+                    <polyline points="4,6.5 8,10.5 12,6.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+              </div>
 
-      {/* overflow-x-auto: below ~760px the 9-column table scrolls inside the
-          card instead of pushing page width; when it fits, no scrollbar shows
-          and this clips exactly like the old overflow-hidden. */}
-      <div className="bg-surface border border-border rounded overflow-x-auto">
-        <table className="w-full text-xs min-w-[760px]">
-          <thead>
-            <tr className="border-b border-border bg-surface-2">
-              {headers.map(({ key, label }) => (
-                <th
-                  key={label}
-                  onClick={key ? () => toggleSort(key) : undefined}
-                  className={[
-                    'text-left py-2.5 px-3 first:pl-4 ui-table-header text-muted-fg sticky top-0 z-10 bg-surface-2',
-                    key ? 'cursor-pointer hover:text-foreground select-none' : '',
-                  ].join(' ')}
-                >
-                  {label}{key ? arrow(key) : ''}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(({ c, s }) => {
-              const lv = live?.stocks[c.ticker]
-              const ss = supaSnapMap[c.ticker]
-              const price  = lv?.price        ?? ss?.price        ?? s?.price
-              const dayPct = lv?.dayChangePct ?? ss?.dayChangePct ?? s?.dayChangePct
-              const mktCap = lv?.marketCapCLP ?? ss?.marketCapCLP ?? c.marketCapCLP
-              return (
-                <tr key={c.ticker} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
-                  <td className="py-2.5 pl-4 pr-3">
-                    <Link href={`/companies/${c.ticker}`} className="font-mono text-primary hover:underline">{c.ticker}</Link>
-                  </td>
-                  <td className="py-2.5 px-3 text-foreground">{c.shortName}</td>
-                  <td className="py-2.5 px-3 text-muted-fg">{c.sector}</td>
-                  <td className="py-2.5 px-3 ui-number text-foreground">{price != null ? formatCLP(price) : '—'}</td>
-                  <td className={`py-2.5 px-3 ui-number ${dayPct != null ? changeColor(dayPct) : 'text-muted-fg'}`}>
-                    {dayPct != null ? formatPct(dayPct) : '—'}
-                  </td>
-                  <td className={`py-2.5 px-3 ui-number ${s?.ytdChangePct != null ? changeColor(s.ytdChangePct) : 'text-muted-fg'}`}>
-                    {s?.ytdChangePct != null ? formatPct(s.ytdChangePct) : '—'}
-                  </td>
-                  <td className="py-2.5 px-3 ui-number text-foreground">
-                    {mktCap ? formatLargeCLP(mktCap) : '—'}
-                  </td>
-                  <td className="py-2.5 px-3 ui-number text-foreground">
-                    {s?.pe != null ? `${s.pe}x` : '—'}
-                  </td>
-                  <td className="py-2.5 px-3 ui-number text-foreground">
-                    {s?.dividendYield != null ? `${s.dividendYield}%` : '—'}
+              <MarketDataSourceBadge status={priceStatus} className="ml-auto" />
+
+              <button
+                type="button"
+                onClick={handleExport}
+                className="inline-flex shrink-0 items-center gap-1.5 h-8 px-3 rounded-full border border-[var(--nv-chipbd)] bg-[var(--nv-chip)] text-xs text-muted-fg hover:text-foreground nv-transition"
+              >
+                <span aria-hidden>⤓</span>{t.common.exportCsv}
+              </button>
+            </div>
+          }
+          footer={
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+              <TableSourceFooter source={t.stocks.footer} asOf={priceAsOf} />
+              <span className="ui-meta ui-number text-muted-fg" aria-live="polite">
+                {rows.length} {t.common.companies}
+              </span>
+            </div>
+          }
+        >
+          <table className="w-full" style={{ fontSize: 'var(--fs-table-cell)' }}>
+            <caption className="sr-only">{t.stocks.title}</caption>
+            <thead>
+              <tr>
+                {headers.map(({ key, label, numeric }) => (
+                  <th
+                    key={label}
+                    scope="col"
+                    aria-sort={ariaSort(key)}
+                    // Sticky header sits on the near-opaque dense surface, never
+                    // on low-opacity glass — column labels stay legible over
+                    // scrolling rows (design_principles §8).
+                    style={{ backgroundColor: 'var(--surface-table)' }}
+                    className={[
+                      cellPad, 'sticky top-0 z-10 border-b border-border',
+                      numeric ? 'text-right' : 'text-left',
+                    ].join(' ')}
+                  >
+                    {key ? (
+                      <button
+                        type="button"
+                        onClick={() => toggleSort(key)}
+                        title={`${t.stocks.sortBy} ${label}`}
+                        className="ui-table-header text-muted-fg hover:text-foreground nv-transition inline-flex items-center gap-1 whitespace-nowrap select-none"
+                      >
+                        {label}
+                        {arrow(key) && <span aria-hidden="true">{arrow(key)}</span>}
+                      </button>
+                    ) : (
+                      <span className="ui-table-header text-muted-fg whitespace-nowrap">{label}</span>
+                    )}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ c, s }) => {
+                const lv = live?.stocks[c.ticker]
+                const ss = supaSnapMap[c.ticker]
+                const price  = lv?.price        ?? ss?.price        ?? s?.price
+                const dayPct = lv?.dayChangePct ?? ss?.dayChangePct ?? s?.dayChangePct
+                const mktCap = lv?.marketCapCLP ?? ss?.marketCapCLP ?? c.marketCapCLP
+                return (
+                  <tr key={c.ticker} className="border-b border-border last:border-0 nv-row-hover nv-transition">
+                    <td className={cellPad}>
+                      <Link href={`/companies/${c.ticker}`} className="font-mono text-primary hover:underline">{c.ticker}</Link>
+                    </td>
+                    <td className={`${cellPad} text-foreground`}>{c.shortName}</td>
+                    <td className={`${cellPad} text-muted-fg`}>{c.sector}</td>
+                    <td className={`${cellPad} text-right ui-number text-foreground`}>{price != null ? formatCLP(price) : '—'}</td>
+                    <td className={`${cellPad} text-right ui-number ${dayPct != null ? changeColor(dayPct) : 'text-muted-fg'}`}>
+                      {dayPct != null ? formatPct(dayPct) : '—'}
+                    </td>
+                    <td className={`${cellPad} text-right ui-number ${s?.ytdChangePct != null ? changeColor(s.ytdChangePct) : 'text-muted-fg'}`}>
+                      {s?.ytdChangePct != null ? formatPct(s.ytdChangePct) : '—'}
+                    </td>
+                    <td className={`${cellPad} text-right ui-number text-foreground`}>
+                      {mktCap ? formatLargeCLP(mktCap) : '—'}
+                    </td>
+                    <td className={`${cellPad} text-right ui-number text-foreground`}>
+                      {s?.pe != null ? `${s.pe}x` : '—'}
+                    </td>
+                    <td className={`${cellPad} text-right ui-number text-foreground`}>
+                      {s?.dividendYield != null ? `${s.dividendYield}%` : '—'}
+                    </td>
+                  </tr>
+                )
+              })}
+              {rows.length === 0 && (
+                <tr>
+                  {/* The filtered-to-nothing state keeps its own precise wording
+                      (`noResults`), rendered through the shared AsyncState so it
+                      can never be confused with "loading" or "failed". */}
+                  <td colSpan={headers.length} className="p-0">
+                    <AsyncState kind="empty" message={t.common.noResults} />
                   </td>
                 </tr>
-              )
-            })}
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={headers.length} className="py-6 text-center text-xs text-muted-fg">{t.common.noResults}</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-        <div className="px-4 py-2.5 border-t border-border flex items-center justify-between bg-surface">
-          <TableSourceFooter source={t.stocks.footer} asOf={priceAsOf} />
-          <span className="text-xs ui-number text-muted-fg">{rows.length} {t.common.companies}</span>
-        </div>
-      </div>
+              )}
+            </tbody>
+          </table>
+        </TableCard>
+      </Reveal>
     </div>
   )
 }

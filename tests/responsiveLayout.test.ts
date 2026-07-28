@@ -165,12 +165,31 @@ describe('dense tables scroll inside their card', () => {
     { file: 'src/app/structured-notes/[id]/page.tsx', minCount: 3 },
     { file: 'src/app/page.tsx', minCount: 1 },
   ]
+  // Phase 5A (Fable /stocks re-skin): a page may now satisfy this either by
+  // owning an `overflow-x-auto` wrapper itself, or by delegating to the shared
+  // <TableCard minWidth={…}> container — which supplies exactly the same
+  // in-card scroll. The guarantee is unchanged; the assertion follows where it
+  // now lives (and the delegation itself is proven by the test below, so this
+  // is not an escape hatch).
+  const scrollWrappers = (file: string) =>
+    (read(file).match(/overflow-x-auto|minWidth=\{/g) ?? []).length
+
   for (const { file, minCount } of CASES) {
-    test(`${file} has ≥${minCount} overflow-x-auto table wrapper(s)`, () => {
-      const n = (read(file).match(/overflow-x-auto/g) ?? []).length
+    test(`${file} has ≥${minCount} card-level horizontal scroll wrapper(s)`, () => {
+      const n = scrollWrappers(file)
       assert.ok(n >= minCount, `${file}: found ${n}, expected ≥${minCount}`)
     })
   }
+
+  test('TableCard really provides the in-card scroll it is trusted with', () => {
+    const src = read('src/components/fable/TableCard.tsx')
+    assert.match(src, /overflow-x-auto/, 'TableCard must own the horizontal scroll container')
+    assert.match(src, /minWidth\s*\?\s*\{\s*minWidth\s*\}/, 'TableCard must apply the caller-supplied minWidth')
+  })
+
+  test('Stocks keeps its 760px table floor while scrolling inside the card', () => {
+    assert.match(read('src/app/stocks/page.tsx'), /minWidth=\{760\}/)
+  })
 })
 
 describe('shared components wrap instead of overflowing', () => {

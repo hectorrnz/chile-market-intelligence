@@ -414,6 +414,10 @@ or any news-related source path was touched this phase).
 
 ## Phase 5 — Page-by-page re-skin (recommended order)
 
+> **Phase 5A (`/stocks`) ✓ COMPLETE (2026-07-28).** The first page is migrated and proves the
+> table + toolbar + source-footer recipe end to end. See "Phase 5A — as built" below. Pages 2–12
+> in the list are not started.
+
 Each page: swap layout/card/table/pill classes to the new shared components; **do not change**
 data fetching, `fetch*` calls, `useMarketData`/`useMacroData`/`useGlobalRefresh`, persisted
 `cmi.*` keys, loading/empty/error branches, source badges/footers, or `t.*` usage. Where NMI
@@ -442,6 +446,67 @@ Recommended order (low-risk → high-risk, dependency-aware):
 11. **`/settings/notifications`** — recipients table + toggle switch (Admin language).
 12. **Home `/`** — LAST among content pages: it's the densest, most-composed page (7 modules,
     News, heat map, DnD rates) and benefits from every component proven above.
+
+---
+
+### Phase 5A — `/stocks` — as built (2026-07-28)
+
+**Files changed (7 — 3 source, 2 tests, 2 docs; `06-acceptance-checklist.md` makes 3 docs):**
+
+| File | Change |
+|---|---|
+| `src/app/stocks/page.tsx` | Re-skinned. **Every hook, state variable, `useMemo`, merge expression, sort comparator, CSV builder, and fetch call is byte-for-byte unchanged.** Presentation moved to `TableCard` + Fable pill toolbar + tokenised sticky header/row hover + `AsyncState` empty + two `Reveal` wrappers. New: `aria-sort`, `<th scope="col">`, real sort `<button>`s, `role="group"` filter set, `sr-only <caption>`, `aria-live` row count, right-aligned numeric columns. |
+| `src/components/ui/SearchInput.tsx` | Restyled to the Fable search pill (999px, `--nv-chip`/`--nv-chipbd`, inline glyph). `width` now caps the field (`min-w-0 flex-1` + `maxWidth`) instead of pinning it — better narrow-width behavior, same `value`/`onChange`/`type="text"` contract. Added optional `ariaLabel` (a placeholder alone is not a label). **In scope because `/stocks` is its only consumer repo-wide** (grep-verified; a test now locks that). |
+| `src/lib/i18n.ts` | 3 new keys × 2 languages under `stocks`: `filters` (Filters / Filtros), `sectorFilter` (Sector filter / Filtro de sector), `sortBy` (Sort by / Ordenar por). No existing key touched. |
+| `tests/fableStocksPage.test.ts` | **New, 74 tests** — section/column/order/CSV preservation, live→persisted→static merge, formatter usage, "—"-never-zero, filter + sort semantics, links, one-footer/one-as-of/one-badge, async-state distinctness, Fable material + pill + radius + token rules, no-hardcoded-hex/no-raw-Tailwind-scale, motion restraint, a11y (aria-sort/scope/caption/labels/live/focus), responsive, EN+ES completeness, and a scope guard (no API/provider/db import, no new dependency, no other page touched, middleware untouched). |
+| `tests/responsiveLayout.test.ts` | **Deliberate update, not a weakening.** The dense-table CASES matcher now counts `overflow-x-auto` **or** `minWidth={` — because `/stocks` delegates its in-card scroll to the shared `TableCard`. Two **new** tests keep the guarantee real: one asserts `TableCard` genuinely owns an `overflow-x-auto` container and applies the caller's `minWidth`, the other asserts `/stocks` still passes `minWidth={760}`. Net: the file gained coverage. |
+| `docs/fable-integration/03` / `04` / `06` | Route status → complete/verified; this as-built record; checklist items ticked with Phase 5A notes. |
+
+**Files deliberately NOT changed:** `globals.css` (every token this page needed already existed —
+no new token, no new utility), any chart component, any other page, `src/app/api/**`,
+`src/middleware.ts`, `src/lib/{providers,db,market,...}/**`, `src/config/**`, `src/data/**`,
+`package.json`/`package-lock.json`.
+
+**Judgement calls, stated plainly:**
+- **Sector filter stays a `<select>`.** A `SegmentedControl` rail with 10+ sectors would wrap into
+  a multi-row block or scroll options out of reach — a direct conflict with the zero-page-overflow
+  and reachability rules. It is restyled as a Fable pill instead; semantics unchanged.
+- **Numeric columns are now right-aligned.** Fable's own holdings table right-aligns figures and
+  this is what makes body-wide tabular numerals actually pay off. It is an alignment change only —
+  no column was added, removed, reordered, renamed, or made unsortable, and the CSV export is
+  untouched.
+- **No KPI/summary strip was invented.** `/stocks` has no financial summary data; the brief's KPI
+  section is conditional ("where current summary metrics exist"). The one real summary — the
+  filtered row count — is preserved and now announced politely.
+- **No loading state was invented.** The page renders static data synchronously; a spinner would
+  delay readable data (§12.2). The pre-existing silent `.catch(() => {})` degrade is preserved,
+  honestly carried by the `Static` badge.
+
+**Validation:** lint 0 problems · build 0 errors (19/19 static pages, `/stocks` still static, full
+route table unchanged) · suite 2074 → **2150 tests, 2147 pass** (+76: 74 new + 2 new responsive
+tests). The 3 failures are the same pre-existing, date-dependent `tests/newsModule.test.ts`
+fixture failures documented in Phases 1–4 — fixtures stamped `15 Jul 2026` against the
+orchestrator's rolling 7-day window, and today is 2026-07-28. No news-related file is in this
+phase's changed-file list.
+
+**Rendered-markup verification** against a live dev server (`GET /stocks` → 200): 9 column headers,
+6 sortable headers carrying `aria-sort` (1 active `descending`, 5 `none`), 25 company links, 25
+`nv-row-hover` rows, `nv-glass-card` + `nv-surface-dense` from `TableCard`, `min-width:760px`
+inside an `overflow-x-auto` container, the source badge, "Yahoo Finance" twice (subtitle +
+footer), `aria-live="polite"` on the count, `role="group"` on the filter set, and 14 honest `—`
+placeholders (proving nulls never render as 0). A sampled row confirms the Chilean locale and
+formatters survived intact: `63.851` / `-2,4%` (negative token) / `+4,0%` (positive token) /
+`15.0 MM` / `14.2x` / `8.1%`.
+
+**Honest gap:** the interactive browser responsive ladder (1440/1280/1024/768/390, light+dark,
+EN+ES) was **not** run — the Chrome extension is not connected in this environment, the same
+limitation disclosed in Phases 2–4. What *is* verified is source- and markup-level: no root
+`min-width`, no fixed pixel width on any page element (the search field caps at `max-width:220px`
+and shrinks), the only `min-width` is the 760px table floor **inside** the scroll container, and
+the toolbar wraps. Those are the conventions that cause page-level overflow when broken, but they
+are not a substitute for looking at the page.
+
+---
 
 ## Phase 6 — Auth pages + login shell (highest-visibility, distinct layout)
 
@@ -507,7 +572,8 @@ hardcoded UI text in components. Reuse existing namespaces; add keys under `topb
 | 2 ✓ | `src/lib/navigation.ts`, `src/components/layout/{AppShell,TopBar,PrimaryNav,SecondaryNav,MobileNavDrawer,NavIcon,useNavIndicator}.tsx/.ts`, `src/components/providers/MobileNavProvider.tsx` (replaces `SidebarProvider`), `src/lib/i18n.ts`, `src/app/globals.css` (small addition + sidebar-token cleanup) — `Sidebar.tsx`/`SidebarProvider.tsx` deleted |
 | 3 ✓ | `src/components/ui/{StatusPill,NotificationBell,CommandPalette}.tsx` (restyled in place), new `src/components/fable/*` (GlassSurface, KpiCapsule/Hero, ChangeIndicator, Sparkline, SparklineRow, useCountUp, CurrentActions, SegmentedControl, BarrierGauge, TableCard, PrivacyValue, usePrivacyMode, DetailPanel, AsyncState, motion), `src/app/globals.css` (`.nv-action-card`, `.nv-content-pulse`), `src/lib/i18n.ts` (`fable` namespace) |
 | 4 ✓ | `src/components/charts/{LineChart,CompareChart,FundamentalsChart,YieldCurveChart}.tsx` (restyled in place, props unchanged), new `src/components/fable/chart/{ChartTooltip.tsx,chartA11y.ts}`, `src/components/macro/EconomicCalendarTable.tsx` (row-hover utility swap), `src/app/globals.css` (chart semantic token block), `src/lib/formatters.ts` (`formatChartValue`), `src/lib/i18n.ts` (`fable.chart` namespace) |
-| 5 | `src/app/{stocks,watchlist,companies/[ticker],macro,macro/calendar,earnings,compare,chart-builder,portfolio,structured-notes,structured-notes/[id],settings/notifications}/page.tsx`, `src/app/page.tsx` |
+| 5A ✓ | `src/app/stocks/page.tsx`, `src/components/ui/SearchInput.tsx` (only `/stocks` consumes it), `src/lib/i18n.ts` (3 keys ×2 langs), new `tests/fableStocksPage.test.ts`, `tests/responsiveLayout.test.ts` (deliberate `TableCard` scroll-delegation update + 2 new tests) |
+| 5 (rest) | `src/app/{watchlist,companies/[ticker],macro,macro/calendar,earnings,compare,chart-builder,portfolio,structured-notes,structured-notes/[id],settings/notifications}/page.tsx`, `src/app/page.tsx` |
 | 6 | new `src/app/(auth)/layout.tsx`, `src/app/{login,forgot-password,auth/reset-password}/page.tsx`, `src/components/ui/BrandLogo.tsx`, `public/*` (login photo, logo) |
 | 7 | `src/lib/i18n.ts` |
 | 8 | `tests/*` (deliberate updates), `docs/*` |

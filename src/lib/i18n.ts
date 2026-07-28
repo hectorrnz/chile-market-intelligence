@@ -383,6 +383,9 @@ export const dict = {
         updated:   'Updated',
       },
       allSectors: 'All Sectors',
+      filters:      'Filters',
+      sectorFilter: 'Sector filter',
+      sortBy:       'Sort by',
     },
     macro: {
       tag:         'Macro',
@@ -1139,6 +1142,9 @@ export const dict = {
         updated:   'Actualizado',
       },
       allSectors: 'Todos los sectores',
+      filters:      'Filtros',
+      sectorFilter: 'Filtro de sector',
+      sortBy:       'Ordenar por',
     },
     macro: {
       tag:         'Macro',

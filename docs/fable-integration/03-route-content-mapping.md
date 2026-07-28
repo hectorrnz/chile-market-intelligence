@@ -20,7 +20,7 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
 | # | Route | Page title | Auth | Fable destination | New component(s) required? | Impl. status | Verif. status |
 |---|---|---|---|---|---|---|---|
 | 1 | `/` | Market Overview | public | 1 Overview (visual lang.) | Yes — News feed, Sector heat map, Chilean-rates DnD, band-macro card | Not started | Not verified |
-| 2 | `/stocks` | Stocks | public | 2 Portfolio (DataTable) | No (reuse glass DataTable) | Not started | Not verified |
+| 2 | `/stocks` | Stocks | public | 2 Portfolio (DataTable) | No (reused Phase 3 `TableCard`) | **✓ Phase 5A (2026-07-28)** | **✓ Source + rendered-markup verified** |
 | 3 | `/compare` | Compare | public | 3 Performance (chart+table) | Yes — multi-slot returns table, settings modal, compare chart | Not started | Not verified |
 | 4 | `/chart-builder` | Charting | public | 3 Performance (chart) | Yes — metric picker, dual-axis chart, underlying table | Not started | Not verified |
 | 5 | `/macro` | Macroeconomic Indicators | public | 7 Macro | Yes — banded indicators table, yield curve, FX depth, chart popup | Not started | Not verified |
@@ -101,7 +101,46 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
   Export chip; `MarketDataSourceBadge` → status chip; footer → meta line.
 - **New component required:** No (reuse the glass DataTable + toolbar patterns; preserve NMI
   source badge/footer semantics).
-- **Impl. status:** Not started · **Verif. status:** Not verified.
+- **Impl. status:** **✓ COMPLETE — Phase 5A (2026-07-28)** · **Verif. status:** **✓ verified**
+  (74 new source-scan tests + rendered-markup checks against a live dev server; browser
+  responsive ladder still outstanding — see below).
+
+**Phase 5A — as built.** Presentation only; every data line is byte-for-byte unchanged.
+- **Container:** the hand-rolled `bg-surface border border-border rounded overflow-x-auto` card
+  became the Phase 3 **`TableCard`** (`GlassSurface card` shell → `GlassSurface dense` body →
+  `minWidth={760}` scroll → one designated footer slot). The 760px floor and the in-card scroll
+  are preserved exactly, now supplied by the shared component.
+- **Toolbar** moved into `TableCard`'s `controls` slot as Fable's in-card toolbar: search pill +
+  pill sector select inside a `role="group" aria-label={t.stocks.filters}`, then
+  `MarketDataSourceBadge` (`ml-auto`) and the Export CSV chip.
+- **Sector filter stays a `<select>`**, restyled as a Fable pill (`appearance-none` + token
+  chevron). Deliberately **not** `SegmentedControl`: the sector list is 10+ entries and a pill
+  rail that long would either wrap into a multi-row block or scroll away the later sectors,
+  against the zero-page-overflow rule. Semantics (single-select, keyboard, mobile-native picker,
+  `All Sectors` default) are unchanged.
+- **Table:** sticky header now sits on `var(--surface-table)` (§8 near-opaque, was
+  `bg-surface-2`); sortable `<th scope="col">` carry `aria-sort` (`ascending`/`descending`/`none`)
+  and wrap a real `<button>` with a `Sort by {column}` title; the `↑/↓` glyph is `aria-hidden`
+  (decorative — `aria-sort` is authoritative); rows use `nv-row-hover nv-transition` (tint, never
+  blur/shadow); the six numeric columns are right-aligned so tabular numerals line up (**alignment
+  only — no column added, removed, reordered, renamed, or de-sorted**); cell type moved to
+  `var(--fs-table-cell)`; an `sr-only <caption>` names the table.
+- **Empty state** renders through Phase 3 `AsyncState kind="empty"` **carrying its own exact
+  message** (`t.common.noResults`), so it stays distinguishable from loading/error/unavailable.
+- **Motion:** two `Reveal` wrappers (0ms header / 70ms card — the Fable stagger). No count-up, no
+  pulse, nothing animating a market value (§12.2). Reduced motion is handled by the global block.
+- **Deliberately NOT added:** no KPI strip, hero, chart, sparkline, or sector heat map. `/stocks`
+  has never carried any of them and no data on this route backs one — inventing market-summary
+  numbers here would be fabricated content, not a re-skin. The only summary figure that exists
+  (the filtered row count) is preserved, now with `aria-live="polite"`.
+- **Deliberately NOT changed:** the silent `fetchStockSnapshots().catch(() => {})` fallback. The
+  page has no loading state today because static data renders synchronously; adding a spinner
+  would delay readable data for no gain (§12.2), and the `Static` badge is already the honest
+  carrier of the degraded state.
+- `SearchInput` was restyled in place to the Fable search pill (999px, chip fill/border, inline
+  glyph, `aria-label`, `min-w-0 flex-1` + `max-width` instead of a fixed pixel width). In scope
+  because **`/stocks` is its only consumer in the entire repo** (grep-verified, and locked by a
+  test).
 
 ## 3. `/compare` — Compare
 
