@@ -453,12 +453,13 @@ describe('Phase 5A — scope held', () => {
     // Phase 5A is /stocks only. SearchInput is in scope solely because /stocks
     // is its only consumer in the whole repo (verified below).
     //
-    // `/watchlist` was removed from this list in Phase 5B, which migrated it to
-    // `TableCard` under its own brief — a real phase boundary moving, not a
-    // relaxed assertion. It is guarded by `tests/fableWatchlistPage.test.ts`,
+    // `/watchlist` was removed from this list in Phase 5B and `/compare` in
+    // Phase 5D, both migrated to `TableCard` under their own briefs — real
+    // phase boundaries moving, not a relaxed assertion. They are guarded by
+    // `tests/fableWatchlistPage.test.ts` / `tests/fableComparePage.test.ts`,
     // and the pages below still hold the line.
     for (const other of [
-      'src/app/page.tsx', 'src/app/compare/page.tsx',
+      'src/app/page.tsx',
       'src/app/earnings/page.tsx', 'src/app/macro/page.tsx', 'src/app/portfolio/page.tsx',
     ]) {
       assert.ok(existsSync(join(ROOT, other)), `${other} must still exist`)

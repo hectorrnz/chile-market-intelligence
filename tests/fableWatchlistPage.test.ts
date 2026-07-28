@@ -493,8 +493,12 @@ describe('Phase 5B — English and Spanish complete', () => {
 
 describe('Phase 5B — scope held', () => {
   it('redesigns no other page', () => {
+    // `/compare` was removed from this list in Phase 5D, which migrated it to
+    // `TableCard` under its own brief — a real phase boundary moving, not a
+    // relaxed assertion. It is guarded by `tests/fableComparePage.test.ts`,
+    // and the pages below still hold the line.
     for (const other of [
-      'src/app/page.tsx', 'src/app/compare/page.tsx', 'src/app/earnings/page.tsx',
+      'src/app/page.tsx', 'src/app/earnings/page.tsx',
       'src/app/macro/page.tsx', 'src/app/portfolio/page.tsx', 'src/app/structured-notes/page.tsx',
     ]) {
       assert.ok(!read(other).includes('@/components/fable/TableCard'), `${other} is not part of Phase 5B`)

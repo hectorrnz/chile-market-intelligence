@@ -86,8 +86,12 @@ describe('Phase 5C — route and scope', () => {
   })
 
   it('redesigns no other page — Phase 5C is /companies/[ticker] only', () => {
+    // `/compare` was removed from this list in Phase 5D, which migrated it
+    // under its own brief (SegmentedControl included) — a real phase boundary
+    // moving, not a relaxed assertion. It is guarded by
+    // `tests/fableComparePage.test.ts`.
     for (const other of [
-      'src/app/page.tsx', 'src/app/compare/page.tsx', 'src/app/earnings/page.tsx',
+      'src/app/page.tsx', 'src/app/earnings/page.tsx',
       'src/app/macro/page.tsx', 'src/app/portfolio/page.tsx', 'src/app/structured-notes/page.tsx',
       'src/app/chart-builder/page.tsx', 'src/app/macro/calendar/page.tsx',
     ]) {
@@ -925,7 +929,9 @@ describe('Phase 5C — integrity boundaries', () => {
   })
 
   it('no unrelated page migration occurred alongside this phase', () => {
-    for (const other of ['src/app/compare/page.tsx', 'src/app/earnings/page.tsx', 'src/app/macro/page.tsx']) {
+    // `/compare` was removed from this list in Phase 5D (its own, later
+    // brief) — see the scope-held guard above for the same boundary note.
+    for (const other of ['src/app/earnings/page.tsx', 'src/app/macro/page.tsx']) {
       assert.ok(!read(other).includes("from '@/components/fable/GlassSurface'"), `${other} is out of scope for Phase 5C`)
     }
   })

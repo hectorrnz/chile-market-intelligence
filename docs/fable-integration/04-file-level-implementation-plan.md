@@ -419,8 +419,11 @@ or any news-related source path was touched this phase).
 > on a *protected* route, plus the add/remove form pattern and the `AsyncState` state machine.
 > **Phase 5C (`/companies/[ticker]`) ✓ COMPLETE (2026-07-28)** — proves KPI capsules, the price
 > chart on Fable materials, `SegmentedControl`, glass business/valuation cards, and the print path
-> on a dynamic detail route. See "Phase 5A — as built", "Phase 5B — as built" and "Phase 5C — as
-> built" below. Pages 4–12 are not started.
+> on a dynamic detail route. **Phase 5D (`/compare`) ✓ COMPLETE (2026-07-28)** — proves a
+> multi-table analytical page (3 `TableCard`s), a second `SegmentedControl` adopter, and a
+> from-scratch settings-modal restyle onto the established overlay pattern. See "Phase 5A — as
+> built", "Phase 5B — as built", "Phase 5C — as built" and "Phase 5D — as built" below. Pages
+> 4, 7–12 are not started.
 
 Each page: swap layout/card/table/pill classes to the new shared components; **do not change**
 data fetching, `fetch*` calls, `useMarketData`/`useMacroData`/`useGlobalRefresh`, persisted
@@ -439,7 +442,7 @@ Recommended order (low-risk → high-risk, dependency-aware):
 4. **`/macro`** + **`/macro/calendar`** — direct Fable Macro map (snapshot rows + sparklines),
    banded table, yield curve, chart popup overlay, release calendar.
 5. **`/earnings`** — two glass DataTables + upcoming module.
-6. **`/compare`** — multi-slot returns table, settings modal (glass overlay), compare chart,
+6. **`/compare`** ✓ — multi-slot returns table, settings modal (glass overlay), compare chart,
    segmented pills.
 7. **`/chart-builder`** — metric picker + dual-axis chart + underlying table + settings.
 8. **`/portfolio`** — hero/capsule summary, exposure bars, three tabbed tables + forms
@@ -681,6 +684,66 @@ earlier Phase 5C repairs. One pre-existing test in `tests/fableCompanyDetailPage
 corrected: it asserted on the developer's gitignored `.env.local`, so it failed the moment an
 operator legitimately configured the mode — it now asserts the repository-verifiable intent (env
 files stay gitignored; no source file assigns `MARKET_DATA_MODE`).
+
+---
+
+### Phase 5D — `/compare` — as built (2026-07-28)
+
+**Files changed (9 — 1 source, 1 i18n, 3 test scope-boundary corrections, 1 new test, 3 docs;
+`06` counted once):**
+
+| File | Change |
+|---|---|
+| `src/app/compare/page.tsx` | Re-skinned. **Every hook, state variable, computed value (`valids`, `compareData`, `persistedHistory`, `rowData`, `returnsStatus`, `returnsAsOf`, `historyAccumulating`, `chartSeries`, `fund`, `cellStyle`, `handleExportFund`) and fetch/effect is byte-for-byte unchanged** — only the JSX tree changed. All 3 tables (Market Data, Comparative Returns, Fundamentals) → `TableCard` (dense near-opaque surface + card-level scroll via `minWidth={620/440/560}`); the Fundamentals table's 0-valid-slot empty state now routes through `TableCard`'s own `state="empty"`/`AsyncState`, replacing the old bare `<div>` — same message (`t.compare.empty`), same trigger condition. TF (1M/YTD/1Y/3Y/5Y) and Period (D/W/M) button/select rows → `SegmentedControl` (2nd/3rd production adopters after Company's chart-timeframe control); the TF control's `value` is deliberately set to a non-matching sentinel (`(usingCustom ? '' : tf) as CmpTf`) when a custom date range is active, reproducing the original `!usingCustom && tf === x` "no button reads active" behaviour that a plain `value`-bound radiogroup can't otherwise express. Control bar + chart card → `GlassSurface variant="card"`. The Settings modal (⚙, opened from the Returns table header) was restyled onto the exact `nv-scrim` + `nv-glass-overlay nv-pop` overlay recipe `CommandPalette` established in Phase 3 — same structural content (Difference vs, Series colors ×6, Chart options, Table options, Reset/Done), only the container material and control chrome changed. Ticker-slot inputs, color swatches, date-range inputs, and pill buttons restyled to the Fable chip language (`--nv-chip`/`--nv-chipbd`, `rounded-full`). Three staggered `Reveal` wrappers (0/70/130/190ms — header unstaggered, Market Data, Returns+Fundamentals row, control bar+chart). Two small, genuine pre-existing defects fixed while already on these exact lines: a hardcoded English `title="Clear range"` (no Spanish translation existed) → `t.compare.clearRange`; a redundant hex literal (`'#004A64'`, the color-picker's fallback value, which already exactly equalled `PRESET[0]`) → `PRESET[0]`. |
+| `src/lib/i18n.ts` | 2 new keys × 2 languages under `compare`: `timeframeLabel` (Timeframe / Periodo — the TF `SegmentedControl`'s `ariaLabel`, since the button row previously had no group label at all) and `clearRange` (Clear range / Limpiar rango — the pre-existing hardcoded-English fix above). No existing key touched. |
+| `tests/fableWatchlistPage.test.ts`, `tests/fableStocksPage.test.ts`, `tests/fableCompanyDetailPage.test.ts` | **Deliberate scope-boundary updates, not weakened assertions** — matching the exact precedent Phase 5B set when it migrated `/watchlist` out of Phase 5A's "untouched pages" list. `/compare` is removed from all four "this page has had no re-skin phase yet" arrays across these three files (it now legitimately uses `TableCard`/`GlassSurface`/`SegmentedControl`, which those assertions exist specifically to rule out for *not-yet-migrated* pages) — the six other pages in each list still hold the line, and `/compare` is now guarded by its own suite below. |
+| `tests/fableComparePage.test.ts` | **New, 121 tests** — every section/slot/metric/mode/timeframe/setting/reset preserved, all 6 comparison slots + duplicate handling + dedup-first-wins, all 12 Fundamentals rows in original order + all 10 derived-field keys, the exact `TF` array and `cmi.compare*` 11-key persistence, chart series/legend/tooltip/axis delegation to the untouched `CompareChart`, return-math delegation to `lib/returns` (no inlined CAGR formula), Fundamentals rounding (`fmtX`/`fmtPctCell`/`toFixed(1)`) and the derived-field `•` marker, 2 `MarketDataSourceBadge` + 4 `TableSourceFooter` instances with the exact source-precedence ternaries, the `historyAccumulating` note under both footers, async-state distinctness (loading/empty/partial/stale/error — no zero-fallback, no dropped valid ticker), API/provider/dependency scope guards, Fable material/pill/token/radius rules, motion restraint + reduced-motion collapse, full a11y (labelled slots/controls/dialog, keyboard-operable `SegmentedControl`, sign never color-only), responsive containment (12-col grid, 3× `TableCard` `minWidth`, no root min-width), and complete EN/ES coverage including a scan for hardcoded literals in both JSX text *and* `title`/`aria-label` attributes (which caught the `clearRange` defect above). |
+| `docs/fable-integration/03` / `04` / `06` | Route 3 status → Done/Verified; this as-built record; checklist items updated. |
+
+**Files deliberately NOT changed:** `globals.css` (every token this page needed already existed),
+`src/components/charts/CompareChart.tsx` (same props/call signature — untouched since Phase 4), any
+other page, `src/app/api/**`, `src/middleware.ts`, `src/lib/{providers,db,market,compare,financials}/**`,
+`src/config/**`, `src/data/**`, `package.json`/`package-lock.json`.
+
+**Judgement calls, stated plainly:**
+- **Period (D/W/M) was promoted from a `<select>` to a `SegmentedControl`.** With only 3 options
+  and ample control-bar width, it is exactly the case the Fable component catalog names ("used for
+  currency, period (1M/3M/YTD/1Y/3Y/SI), frequency (D/W/M)") — unlike Stocks' 10+-option sector
+  filter, which stayed a `<select>` for the identical wrap/reachability reason. The visible "Period:"
+  text label is kept alongside it (redundant with the control's own `ariaLabel`, but harmless and
+  matches the existing "TF | Period: … | Range: … | Legend" scannable-groups layout).
+- **`diffRef` and line-thickness stayed `<select>`s inside the Settings modal.** `diffRef`'s options
+  are dynamic, variable-length ticker labels with `disabled` states depending on which slots are
+  valid — a poor fit for a fixed-width pill rail. Thickness is a minor, infrequently-touched control
+  tucked inside a modal, not a primary surface control.
+- **No focus trap was added to the Settings modal.** It follows `CommandPalette`'s exact
+  scrim+pop+dialog-role precedent (Phase 3), which likewise has no full Tab-trap — `DetailPanel`'s
+  fuller trap is reserved for supplementary side panels, a different interaction shape than this
+  centered settings dialog. Esc-to-close and backdrop-click-to-close are both preserved unchanged.
+- **The Fundamentals empty state gained a visible "Fundamentals" title bar it didn't have before**
+  (via `TableCard`'s own header, always rendered). Previously, 0 valid slots showed only a bare
+  centered message with no section title at all. This is a strict improvement in orientation (the
+  section is now nameable while empty), not a removed feature — the identical `t.compare.empty`
+  message, at the identical trigger condition, still renders.
+
+**Validation:** lint 0 problems · full suite **2422 → 2543 tests, 2540 pass, 3 fail** (+121, all in
+the new file) · build 0 errors (full route table unchanged, `/compare` still static/`○`). The 3
+failures are the same pre-existing, date-dependent `tests/newsModule.test.ts` fixture failures
+documented in every phase since Phase 1 (fixtures stamped `15 Jul 2026` against the orchestrator's
+rolling 7-day window; today is 2026-07-28) — no news-related file is in this phase's changed-file
+list, and the failure count/location is unchanged from the pre-phase baseline.
+
+**Live verification** against the running dev server: `GET /compare` → 200; the served HTML contains
+`nv-glass-card`/`nv-surface-dense` (the `TableCard`/`GlassSurface` materials), and both `Comparative
+Returns` and `Fundamentals` section titles.
+
+**Honest gap:** the interactive browser responsive ladder (1920/1600/1440/1280/1024/768/390,
+light+dark, EN+ES, reduced motion) was **not** run — the Chrome extension is not connected in this
+background session, the same limitation disclosed in every prior Phase 5 pass. What *is* verified is
+source-level: the 12-col responsive grid classes (`grid-cols-12`, `col-span-12 xl:col-span-5/7`), the
+3 `TableCard` `minWidth` floors, the control-bar/settings-modal `flex-wrap`, and the settings modal's
+`max-h-[80vh]` viewport cap are all present and asserted by the new test suite, but that is not a
+substitute for looking at the page.
 
 ---
 

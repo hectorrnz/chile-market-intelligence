@@ -11,6 +11,10 @@ import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
 import { useMarketData } from '@/components/providers/MarketDataProvider'
 import { useGlobalRefresh } from '@/components/providers/useGlobalRefresh'
 import { CompareChart } from '@/components/charts/CompareChart'
+import { TableCard } from '@/components/fable/TableCard'
+import { GlassSurface } from '@/components/fable/GlassSurface'
+import { SegmentedControl } from '@/components/fable/SegmentedControl'
+import { Reveal } from '@/components/fable/motion'
 import { getAllCompanies } from '@/lib/data/companies'
 import { getAllSnapshots } from '@/lib/data/stocks'
 import { getStockSeriesByPeriod } from '@/lib/data/stockHistory'
@@ -259,9 +263,14 @@ export default function ComparePage() {
     return {}
   }
 
+  const cellPad = 'py-2 px-3 first:pl-4 last:pr-4'
+  const stickyBg = { backgroundColor: 'var(--surface-table)' } as const
+
   return (
     <div className="w-full space-y-4">
-      <SectionHeader tag={t.compare.tag} title={t.compare.title} subtitle={t.compare.subtitle} actions={<UpdateDataButton onRefresh={doRefresh} />} />
+      <Reveal>
+        <SectionHeader tag={t.compare.tag} title={t.compare.title} subtitle={t.compare.subtitle} actions={<UpdateDataButton onRefresh={doRefresh} />} />
+      </Reveal>
 
       <datalist id="cmp-tickers">
         {companies.map(c => <option key={c.ticker} value={c.ticker}>{c.shortName}</option>)}
@@ -269,144 +278,162 @@ export default function ComparePage() {
 
       {/* Market Data — persisted/live Supabase fields (Phase 8B) */}
       {valids.length > 0 && (
-        <div className="bg-surface border border-border rounded overflow-x-auto">
-          <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-3 flex-wrap">
-            <span className="ui-label text-muted-fg">{t.compare.marketDataTitle}</span>
-            <MarketDataSourceBadge status={marketStatus} />
-          </div>
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border bg-surface-2">
-                <th className="text-left py-2 px-3 pl-4 ui-table-header text-muted-fg">{t.compare.security}</th>
-                <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.stocks.cols.price}</th>
-                {/* Day Chg. removed — it duplicated 1D (both are the 1-day
-                    change; 1D is the one wired to a real computed return,
-                    see resolveCompareData.ts's classifyPerformance). */}
-                <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.compare.perf1d}</th>
-                <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.compare.perf5d}</th>
-                <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.compare.perf1m}</th>
-                <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.compare.perfYtd}</th>
-                <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.compare.perf1y}</th>
-                <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{`${t.home.marketCap} (Bn)`}</th>
-                <th className="text-left py-2 px-2 pr-4 ui-table-header text-muted-fg">{t.common.sector}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {valids.map(({ ticker }) => {
-                const entry = compareData[ticker]
-                // Price + market cap come from /api/compare's live Yahoo
-                // valuation — the SAME resolved entry the Fundamentals table
-                // reads, so the two tables always agree (item-4 fix).
-                const price = entry?.latestPrice
-                const marketCapCLP = entry?.marketCapCLP
-                const p1d = perfCell(entry?.performance.oneDay)
-                const p5d = perfCell(entry?.performance.fiveDay)
-                const p1m = perfCell(entry?.performance.oneMonth)
-                const pytd = perfCell(entry?.performance.ytd)
-                const p1y = perfCell(entry?.performance.oneYear)
-                return (
-                  <tr key={ticker} className="border-b border-border last:border-0">
-                    <td className="py-1.5 px-3 pl-4 font-mono text-primary">{ticker}</td>
-                    <td className="py-1.5 px-2 text-right ui-number text-foreground">{price != null ? formatFx(price, price < 1000 ? 2 : 0) : '—'}</td>
-                    <td className={`py-1.5 px-2 text-right ui-number ${p1d.className}`} title={p1d.title}>{p1d.label}</td>
-                    <td className={`py-1.5 px-2 text-right ui-number ${p5d.className}`} title={p5d.title}>{p5d.label}</td>
-                    <td className={`py-1.5 px-2 text-right ui-number ${p1m.className}`} title={p1m.title}>{p1m.label}</td>
-                    <td className={`py-1.5 px-2 text-right ui-number ${pytd.className}`} title={pytd.title}>{pytd.label}</td>
-                    <td className={`py-1.5 px-2 text-right ui-number ${p1y.className}`} title={p1y.title}>{p1y.label}</td>
-                    {/* Same billions treatment as the Fundamentals table's
-                        "Mkt Cap (Bn)" row — the two sit on one screen and
-                        previously disagreed (4.5 MM here vs 4.499,9 there for
-                        the identical figure). */}
-                    <td className="py-1.5 px-2 text-right ui-number text-foreground">{marketCapCLP != null ? formatCLP(marketCapCLP / 1000, 1) : '—'}</td>
-                    <td className="py-1.5 px-2 pr-4 text-muted-fg whitespace-nowrap">{entry?.sector ?? compMap[ticker]?.sector ?? '—'}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-          <div className="px-4 py-2 border-t border-border">
-            <TableSourceFooter source={t.compare.marketSource} asOf={compareMetaStatus?.latestSnapshotDate ?? null} />
-          </div>
-        </div>
+        <Reveal delayMs={70}>
+          <TableCard
+            minWidth={620}
+            title={t.compare.marketDataTitle}
+            controls={<MarketDataSourceBadge status={marketStatus} />}
+            footer={<TableSourceFooter source={t.compare.marketSource} asOf={compareMetaStatus?.latestSnapshotDate ?? null} />}
+          >
+            <table className="w-full" style={{ fontSize: 'var(--fs-table-cell)' }}>
+              <caption className="sr-only">{t.compare.marketDataTitle}</caption>
+              <thead>
+                <tr>
+                  <th scope="col" style={stickyBg} className={`${cellPad} sticky top-0 z-10 border-b border-border text-left ui-table-header text-muted-fg`}>{t.compare.security}</th>
+                  <th scope="col" style={stickyBg} className={`${cellPad} sticky top-0 z-10 border-b border-border text-right ui-table-header text-muted-fg`}>{t.stocks.cols.price}</th>
+                  {/* Day Chg. removed — it duplicated 1D (both are the 1-day
+                      change; 1D is the one wired to a real computed return,
+                      see resolveCompareData.ts's classifyPerformance). */}
+                  <th scope="col" style={stickyBg} className={`${cellPad} sticky top-0 z-10 border-b border-border text-right ui-table-header text-muted-fg`}>{t.compare.perf1d}</th>
+                  <th scope="col" style={stickyBg} className={`${cellPad} sticky top-0 z-10 border-b border-border text-right ui-table-header text-muted-fg`}>{t.compare.perf5d}</th>
+                  <th scope="col" style={stickyBg} className={`${cellPad} sticky top-0 z-10 border-b border-border text-right ui-table-header text-muted-fg`}>{t.compare.perf1m}</th>
+                  <th scope="col" style={stickyBg} className={`${cellPad} sticky top-0 z-10 border-b border-border text-right ui-table-header text-muted-fg`}>{t.compare.perfYtd}</th>
+                  <th scope="col" style={stickyBg} className={`${cellPad} sticky top-0 z-10 border-b border-border text-right ui-table-header text-muted-fg`}>{t.compare.perf1y}</th>
+                  <th scope="col" style={stickyBg} className={`${cellPad} sticky top-0 z-10 border-b border-border text-right ui-table-header text-muted-fg`}>{`${t.home.marketCap} (Bn)`}</th>
+                  <th scope="col" style={stickyBg} className={`${cellPad} sticky top-0 z-10 border-b border-border text-left ui-table-header text-muted-fg`}>{t.common.sector}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {valids.map(({ ticker }) => {
+                  const entry = compareData[ticker]
+                  // Price + market cap come from /api/compare's live Yahoo
+                  // valuation — the SAME resolved entry the Fundamentals table
+                  // reads, so the two tables always agree (item-4 fix).
+                  const price = entry?.latestPrice
+                  const marketCapCLP = entry?.marketCapCLP
+                  const p1d = perfCell(entry?.performance.oneDay)
+                  const p5d = perfCell(entry?.performance.fiveDay)
+                  const p1m = perfCell(entry?.performance.oneMonth)
+                  const pytd = perfCell(entry?.performance.ytd)
+                  const p1y = perfCell(entry?.performance.oneYear)
+                  return (
+                    <tr key={ticker} className="border-b border-border last:border-0 nv-row-hover nv-transition">
+                      <td className={`${cellPad} font-mono text-primary`}>{ticker}</td>
+                      <td className={`${cellPad} text-right ui-number text-foreground`}>{price != null ? formatFx(price, price < 1000 ? 2 : 0) : '—'}</td>
+                      <td className={`${cellPad} text-right ui-number ${p1d.className}`} title={p1d.title}>{p1d.label}</td>
+                      <td className={`${cellPad} text-right ui-number ${p5d.className}`} title={p5d.title}>{p5d.label}</td>
+                      <td className={`${cellPad} text-right ui-number ${p1m.className}`} title={p1m.title}>{p1m.label}</td>
+                      <td className={`${cellPad} text-right ui-number ${pytd.className}`} title={pytd.title}>{pytd.label}</td>
+                      <td className={`${cellPad} text-right ui-number ${p1y.className}`} title={p1y.title}>{p1y.label}</td>
+                      {/* Same billions treatment as the Fundamentals table's
+                          "Mkt Cap (Bn)" row — the two sit on one screen and
+                          previously disagreed (4.5 MM here vs 4.499,9 there for
+                          the identical figure). */}
+                      <td className={`${cellPad} text-right ui-number text-foreground`}>{marketCapCLP != null ? formatCLP(marketCapCLP / 1000, 1) : '—'}</td>
+                      <td className={`${cellPad} text-muted-fg whitespace-nowrap`}>{entry?.sector ?? compMap[ticker]?.sector ?? '—'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </TableCard>
+        </Reveal>
       )}
 
       {/* Top: returns (left) + fundamentals (right) */}
-      <div className="grid grid-cols-12 gap-4 items-start">
+      <Reveal delayMs={130}>
+        <div className="grid grid-cols-12 gap-4 items-start">
 
-        {/* Returns table */}
-        <div className="col-span-12 xl:col-span-5 bg-surface border border-border rounded overflow-x-auto">
-          <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-2">
-              <span className="ui-label text-muted-fg">{t.compare.returnsTitle}</span>
-              {!usingCustom && <MarketDataSourceBadge status={returnsStatus} />}
-            </div>
-            <div className="flex items-center gap-3">
-              <button onClick={() => setSettingsOpen(true)} className="flex items-center gap-1.5 h-6 px-2 rounded border border-border bg-surface-2 text-xs text-muted-fg hover:text-foreground hover:border-accent transition-colors">
-                <span>⚙</span><span>{t.compare.settings}</span>
-              </button>
-            </div>
-          </div>
-          <table className="w-full text-xs min-w-[440px]">
-            <thead>
-              <tr className="border-b border-border bg-surface-2">
-                <th className="text-left py-2 pl-4 pr-1 ui-table-header text-muted-fg w-6">#</th>
-                <th className="text-left py-2 px-2 ui-table-header text-muted-fg">{t.compare.security}</th>
-                <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.compare.totalReturn}</th>
-                <th className="text-right py-2 px-2 ui-table-header text-muted-fg">{t.compare.difference}</th>
-                <th className="text-right py-2 px-2 pr-4 ui-table-header text-muted-fg">{t.compare.annualized}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {s6.map((val, i) => {
-                const isValid = valids.some(v => v.slot === i)
-                const r = isValid ? rowData.find(x => x.slot === i) : undefined
-                const isRef = r && r.slot === refSlot
-                const diff = r && r.tr != null && refTR != null && !isRef ? r.tr - refTR : null
-                return (
-                  <tr key={i} className="border-b border-border last:border-0">
-                    <td className="py-1.5 pl-4 pr-1 text-muted-fg ui-number">{i + 1}</td>
-                    <td className="py-1.5 px-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: isValid ? colorForSlot(i) : 'transparent', border: isValid ? 'none' : '1px solid var(--border)' }} />
-                        <input value={val} onChange={e => setSlot(i, e.target.value)} list="cmp-tickers" placeholder={t.compare.addTicker} spellCheck={false}
-                          className="bg-transparent outline-none font-mono text-primary placeholder:text-muted-fg placeholder:font-sans w-28 border-b border-transparent focus:border-accent" />
-                      </div>
-                    </td>
-                    <td className={`py-1.5 px-2 text-right ui-number ${colored(r?.tr ?? null)}`} title={r?.source === 'live' || r?.source === 'persisted' ? t.compare.marketSource : undefined}>{r ? fmtPct(r.tr) : ''}</td>
-                    <td className={`py-1.5 px-2 text-right ui-number ${isRef ? 'text-muted-fg' : colored(diff)}`}>{isValid ? (isRef ? '--' : fmtPct(diff)) : ''}</td>
-                    <td className={`py-1.5 px-2 pr-4 text-right ui-number ${colored(r?.annual ?? null)}`}>{r ? fmtPct(r.annual) : ''}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-          <div className="px-4 py-2 border-t border-border">
-            <TableSourceFooter source={returnsStatus !== 'static' ? t.compare.marketSource : t.compare.source} asOf={returnsAsOf} />
-            {historyAccumulating && <p className="text-xs text-muted-fg mt-0.5">{t.compare.historyAccumulating}</p>}
-          </div>
-        </div>
-
-        {/* Fundamentals — centered data */}
-        <div className="col-span-12 xl:col-span-7">
-          {valids.length === 0 ? (
-            <div className="bg-surface border border-border rounded p-10 text-center text-xs text-muted-fg">{t.compare.empty}</div>
-          ) : (
-            <div className="bg-surface border border-border rounded overflow-x-auto">
-              <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-3 flex-wrap">
-                <span className="ui-label text-muted-fg">{t.compare.fundamentals}</span>
+          {/* Returns table */}
+          <div className="col-span-12 xl:col-span-5">
+            <TableCard
+              minWidth={440}
+              title={t.compare.returnsTitle}
+              controls={<>
+                {!usingCustom && <MarketDataSourceBadge status={returnsStatus} />}
                 <button
+                  type="button"
+                  onClick={() => setSettingsOpen(true)}
+                  className="flex items-center gap-1.5 h-7 px-2.5 rounded-full text-xs text-muted-fg hover:text-foreground nv-transition"
+                  style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' }}
+                >
+                  <span aria-hidden="true">⚙</span><span>{t.compare.settings}</span>
+                </button>
+              </>}
+              footer={
+                <>
+                  <TableSourceFooter source={returnsStatus !== 'static' ? t.compare.marketSource : t.compare.source} asOf={returnsAsOf} />
+                  {historyAccumulating && <p className="ui-meta text-muted-fg mt-0.5">{t.compare.historyAccumulating}</p>}
+                </>
+              }
+            >
+              <table className="w-full" style={{ fontSize: 'var(--fs-table-cell)' }}>
+                <caption className="sr-only">{t.compare.returnsTitle}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col" style={stickyBg} className="py-2 pl-4 pr-1 sticky top-0 z-10 border-b border-border text-left ui-table-header text-muted-fg w-6">#</th>
+                    <th scope="col" style={stickyBg} className="py-2 px-2 sticky top-0 z-10 border-b border-border text-left ui-table-header text-muted-fg">{t.compare.security}</th>
+                    <th scope="col" style={stickyBg} className="py-2 px-2 sticky top-0 z-10 border-b border-border text-right ui-table-header text-muted-fg">{t.compare.totalReturn}</th>
+                    <th scope="col" style={stickyBg} className="py-2 px-2 sticky top-0 z-10 border-b border-border text-right ui-table-header text-muted-fg">{t.compare.difference}</th>
+                    <th scope="col" style={stickyBg} className="py-2 px-2 pr-4 sticky top-0 z-10 border-b border-border text-right ui-table-header text-muted-fg">{t.compare.annualized}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {s6.map((val, i) => {
+                    const isValid = valids.some(v => v.slot === i)
+                    const r = isValid ? rowData.find(x => x.slot === i) : undefined
+                    const isRef = r && r.slot === refSlot
+                    const diff = r && r.tr != null && refTR != null && !isRef ? r.tr - refTR : null
+                    return (
+                      <tr key={i} className="border-b border-border last:border-0 nv-row-hover nv-transition">
+                        <td className="py-2 pl-4 pr-1 text-muted-fg ui-number">{i + 1}</td>
+                        <td className="py-2 px-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: isValid ? colorForSlot(i) : 'transparent', border: isValid ? 'none' : '1px solid var(--border)' }} />
+                            <input value={val} onChange={e => setSlot(i, e.target.value)} list="cmp-tickers" placeholder={t.compare.addTicker} spellCheck={false}
+                              aria-label={`${t.compare.security} ${i + 1}`}
+                              className="bg-transparent outline-none font-mono text-primary placeholder:text-muted-fg placeholder:font-sans w-28 border-b border-transparent focus:border-accent" />
+                          </div>
+                        </td>
+                        <td className={`py-2 px-2 text-right ui-number ${colored(r?.tr ?? null)}`} title={r?.source === 'live' || r?.source === 'persisted' ? t.compare.marketSource : undefined}>{r ? fmtPct(r.tr) : ''}</td>
+                        <td className={`py-2 px-2 text-right ui-number ${isRef ? 'text-muted-fg' : colored(diff)}`}>{isValid ? (isRef ? '--' : fmtPct(diff)) : ''}</td>
+                        <td className={`py-2 px-2 pr-4 text-right ui-number ${colored(r?.annual ?? null)}`}>{r ? fmtPct(r.annual) : ''}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </TableCard>
+          </div>
+
+          {/* Fundamentals — centered data */}
+          <div className="col-span-12 xl:col-span-7">
+            <TableCard
+              minWidth={560}
+              title={t.compare.fundamentals}
+              state={valids.length === 0 ? 'empty' : undefined}
+              stateMessage={t.compare.empty}
+              controls={valids.length > 0 ? (
+                <button
+                  type="button"
                   onClick={handleExportFund}
-                  className="flex items-center gap-1.5 h-6 px-2 rounded border border-border bg-surface text-xs text-muted-fg hover:text-foreground hover:border-accent transition-colors"
+                  className="flex items-center gap-1.5 h-7 px-2.5 rounded-full text-xs text-muted-fg hover:text-foreground nv-transition"
+                  style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' }}
                 >
                   <span aria-hidden>⤓</span>{t.common.exportCsv}
                 </button>
-              </div>
-              <table className="w-full text-xs">
+              ) : undefined}
+              footer={valids.length > 0 ? (
+                <TableSourceFooter source={marketStatus === 'live' ? t.compare.marketSource : (hasDerivedFundamentals ? t.compare.fundamentalsSource : t.common.staticSample)} />
+              ) : undefined}
+            >
+              <table className="w-full" style={{ fontSize: 'var(--fs-table-cell)' }}>
+                <caption className="sr-only">{t.compare.fundamentals}</caption>
                 <thead>
-                  <tr className="border-b border-border bg-surface-2">
-                    <th className="text-left py-2.5 px-3 pl-4 ui-table-header text-muted-fg sticky left-0 bg-surface-2 z-10">{t.compare.metric}</th>
+                  <tr>
+                    <th scope="col" style={stickyBg} className="text-left py-2.5 px-3 pl-4 sticky top-0 left-0 z-20 border-b border-border ui-table-header text-muted-fg">{t.compare.metric}</th>
                     {valids.map(({ slot, ticker }) => (
-                      <th key={ticker} className="text-center py-2.5 px-3 ui-table-header text-muted-fg whitespace-nowrap">
+                      <th key={ticker} scope="col" style={stickyBg} className="text-center py-2.5 px-3 sticky top-0 z-10 border-b border-border ui-table-header text-muted-fg whitespace-nowrap">
                         <span className="inline-flex items-center gap-1.5">
                           <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: colorForSlot(slot) }} />
                           <span className="font-mono text-primary">{ticker}</span>
@@ -419,8 +446,8 @@ export default function ComparePage() {
                   {fund.map(row => {
                     const values = valids.map(({ ticker }) => row.get(compareData[ticker], snapMap[ticker], compMap[ticker]))
                     return (
-                      <tr key={row.label} className="border-b border-border last:border-0">
-                        <td className="py-2 px-3 pl-4 text-muted sticky left-0 bg-surface z-10 whitespace-nowrap">{row.label}</td>
+                      <tr key={row.label} className="border-b border-border last:border-0 nv-row-hover nv-transition">
+                        <td style={stickyBg} className="py-2 px-3 pl-4 text-muted sticky left-0 z-10 whitespace-nowrap">{row.label}</td>
                         {values.map((v, i) => {
                           const isDerived = !!row.key && !!compareData[valids[i].ticker]?.fundamentals.derivedFields.includes(row.key)
                           return (
@@ -435,72 +462,101 @@ export default function ComparePage() {
                   })}
                 </tbody>
               </table>
-              <div className="px-4 py-2 border-t border-border">
-                <TableSourceFooter source={marketStatus === 'live' ? t.compare.marketSource : (hasDerivedFundamentals ? t.compare.fundamentalsSource : t.common.staticSample)} />
-              </div>
-            </div>
-          )}
+            </TableCard>
+          </div>
         </div>
-      </div>
+      </Reveal>
 
       {valids.length > 0 && (
-        <>
-          {/* Control bar */}
-          <div className="bg-surface border border-border rounded px-4 py-2.5 flex items-center gap-4 flex-wrap text-xs">
-            <div className="flex items-center gap-1">
-              {TF.map(x => (
-                <button key={x} onClick={() => { setTf(x); setCStart(''); setCEnd('') }}
-                  className={`px-2 py-0.5 rounded transition-colors ${!usingCustom && tf === x ? 'bg-surface-2 text-foreground border border-border' : 'text-muted-fg hover:text-foreground'}`}>
-                  {x}
-                </button>
-              ))}
-            </div>
-            <span className="w-px h-4 bg-border" />
-            <label className="flex items-center gap-1.5">
-              <span className="text-muted-fg">{t.compare.period}:</span>
-              <select value={period} onChange={e => setPeriod(e.target.value as Period)} className="h-6 bg-surface border border-border rounded px-1.5 text-foreground outline-none focus:border-accent">
-                <option value="D">{t.compare.daily}</option>
-                <option value="W">{t.compare.weekly}</option>
-                <option value="M">{t.compare.monthly}</option>
-              </select>
-            </label>
-            <span className="w-px h-4 bg-border" />
-            <div className="flex items-center gap-2">
-              <span className="text-muted-fg">{t.compare.range}:</span>
-              <input type="date" value={cStart} min={DATA_START} max={DATA_END} onChange={e => setCStart(e.target.value)} className="h-6 bg-surface border border-border rounded px-1.5 text-foreground outline-none focus:border-accent" />
-              <span className="text-muted-fg">–</span>
-              <input type="date" value={cEnd} min={DATA_START} max={DATA_END} onChange={e => setCEnd(e.target.value)} className="h-6 bg-surface border border-border rounded px-1.5 text-foreground outline-none focus:border-accent" />
-              {usingCustom && <button onClick={() => { setCStart(''); setCEnd('') }} className="text-muted-fg hover:text-foreground px-1" title="Clear range">×</button>}
-            </div>
-            <span className="w-px h-4 bg-border" />
-            <label className="flex items-center gap-1.5 cursor-pointer select-none">
-              <input type="checkbox" checked={showLegend} onChange={e => setShowLegend(e.target.checked)} className="accent-[var(--primary)]" />
-              <span className="text-foreground">{t.compare.legendLabel}</span>
-            </label>
-          </div>
+        <Reveal delayMs={190}>
+          <div className="space-y-4">
+            {/* Control bar */}
+            <GlassSurface variant="card" className="px-4 py-2.5 flex items-center gap-4 flex-wrap">
+              <SegmentedControl
+                options={TF.map(x => ({ value: x, label: x }))}
+                // A custom date range overrides the TF buttons entirely — no
+                // button should read as "active" while usingCustom is true,
+                // matching the original `!usingCustom && tf === x` logic.
+                value={(usingCustom ? '' : tf) as CmpTf}
+                onChange={x => { setTf(x); setCStart(''); setCEnd('') }}
+                ariaLabel={t.compare.timeframeLabel}
+              />
+              <span className="w-px h-4 bg-border" aria-hidden="true" />
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-muted-fg">{t.compare.period}:</span>
+                <SegmentedControl
+                  options={[
+                    { value: 'D', label: t.compare.daily },
+                    { value: 'W', label: t.compare.weekly },
+                    { value: 'M', label: t.compare.monthly },
+                  ]}
+                  value={period}
+                  onChange={setPeriod}
+                  ariaLabel={t.compare.period}
+                />
+              </div>
+              <span className="w-px h-4 bg-border" aria-hidden="true" />
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-fg">{t.compare.range}:</span>
+                <input
+                  type="date" value={cStart} min={DATA_START} max={DATA_END} onChange={e => setCStart(e.target.value)}
+                  aria-label={t.compare.start}
+                  className="h-7 rounded-full px-2.5 text-xs text-foreground outline-none focus:border-accent nv-transition"
+                  style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' }}
+                />
+                <span className="text-muted-fg" aria-hidden="true">–</span>
+                <input
+                  type="date" value={cEnd} min={DATA_START} max={DATA_END} onChange={e => setCEnd(e.target.value)}
+                  aria-label={t.compare.end}
+                  className="h-7 rounded-full px-2.5 text-xs text-foreground outline-none focus:border-accent nv-transition"
+                  style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' }}
+                />
+                {usingCustom && (
+                  <button type="button" onClick={() => { setCStart(''); setCEnd('') }} title={t.compare.clearRange} aria-label={t.compare.clearRange} className="text-muted-fg hover:text-foreground px-1">×</button>
+                )}
+              </div>
+              <span className="w-px h-4 bg-border" aria-hidden="true" />
+              <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                <input type="checkbox" checked={showLegend} onChange={e => setShowLegend(e.target.checked)} className="accent-[var(--primary)]" />
+                <span className="text-foreground text-xs">{t.compare.legendLabel}</span>
+              </label>
+            </GlassSurface>
 
-          {/* Chart */}
-          <div className="bg-surface border border-border rounded p-4">
-            <div className="ui-label text-muted-fg mb-3">{t.compare.perfTitle}</div>
-            <CompareChart series={chartSeries} height={340} showGrid={showGrid} lineWidth={lineW} legend={showLegend} />
-            <TableSourceFooter source={returnsStatus !== 'static' ? t.compare.marketSource : t.compare.source} asOf={returnsAsOf} className="mt-2" />
-            {historyAccumulating && <p className="text-xs text-muted-fg mt-0.5">{t.compare.historyAccumulating}</p>}
+            {/* Chart */}
+            <GlassSurface variant="card" className="p-4">
+              <div className="ui-label text-muted-fg mb-3">{t.compare.perfTitle}</div>
+              <CompareChart series={chartSeries} height={340} showGrid={showGrid} lineWidth={lineW} legend={showLegend} />
+              <TableSourceFooter source={returnsStatus !== 'static' ? t.compare.marketSource : t.compare.source} asOf={returnsAsOf} className="mt-2" />
+              {historyAccumulating && <p className="ui-meta text-muted-fg mt-0.5">{t.compare.historyAccumulating}</p>}
+            </GlassSurface>
           </div>
-        </>
+        </Reveal>
       )}
 
       {/* Settings modal */}
       {settingsOpen && (
-        <div className="fixed inset-0 z-[90] flex items-start justify-center pt-[8vh] px-4" style={{ backgroundColor: 'color-mix(in oklab, var(--foreground) 40%, transparent)' }} onClick={() => setSettingsOpen(false)} role="dialog" aria-modal="true" aria-label={t.compare.settings}>
-          <div className="bg-surface border border-border rounded-lg shadow-xl w-full max-w-lg max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="px-4 py-3 border-b border-border flex items-center justify-between sticky top-0 bg-surface z-10">
+        <div
+          className="no-print nv-scrim fixed inset-0 z-[90] flex items-start justify-center pt-[8vh] px-4"
+          onClick={() => setSettingsOpen(false)}
+        >
+          <div
+            role="dialog" aria-modal="true" aria-label={t.compare.settings}
+            className="nv-glass-overlay nv-pop w-full max-w-lg max-h-[80vh] overflow-y-auto flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 flex items-center justify-between sticky top-0 z-10" style={{ backgroundColor: 'var(--nv-hdrbg)', borderBottom: '1px solid var(--nv-line)' }}>
               <span className="ui-label text-foreground">{t.compare.settings}</span>
-              <button onClick={() => setSettingsOpen(false)} className="text-muted-fg hover:text-foreground text-sm px-1">✕</button>
+              <button type="button" onClick={() => setSettingsOpen(false)} aria-label={t.fable.panel.close} className="text-muted-fg hover:text-foreground text-sm px-1">✕</button>
             </div>
             <div className="p-4 space-y-5">
               <div>
                 <div className="ui-label text-muted-fg mb-2">{t.compare.diffRef}</div>
-                <select value={diffRef} onChange={e => setDiffRef(e.target.value)} className="w-full h-8 bg-surface border border-border rounded px-2 text-xs text-foreground outline-none focus:border-accent">
+                <select
+                  value={diffRef} onChange={e => setDiffRef(e.target.value)}
+                  aria-label={t.compare.diffRef}
+                  className="w-full h-8 rounded-full px-3 text-xs text-foreground outline-none focus:border-accent nv-transition"
+                  style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' }}
+                >
                   {[0, 1, 2, 3, 4, 5].map(i => {
                     const tk = norm(s6[i]); const valid = !!compMap[tk] && valids.some(v => v.slot === i)
                     return <option key={i} value={String(i)} disabled={!valid}>{`${t.compare.security} ${i + 1}${valid ? ` · ${tk}` : ''}`}</option>
@@ -517,10 +573,10 @@ export default function ComparePage() {
                         <span className="text-xs text-muted-fg w-20 shrink-0">{valid ? tk : `${t.compare.security} ${i + 1}`}</span>
                         <div className="flex items-center gap-1 flex-wrap">
                           {SWATCHES.map(sw => (
-                            <button key={sw} onClick={() => setColor(i, sw)} title={sw} className="w-5 h-5 rounded border" style={{ backgroundColor: sw, borderColor: c6[i].toLowerCase() === sw.toLowerCase() ? 'var(--foreground)' : 'var(--border)' }} />
+                            <button key={sw} type="button" onClick={() => setColor(i, sw)} title={sw} className="w-5 h-5 rounded-full border" style={{ backgroundColor: sw, borderColor: c6[i].toLowerCase() === sw.toLowerCase() ? 'var(--foreground)' : 'var(--border)' }} />
                           ))}
-                          <label className="w-5 h-5 rounded border border-border overflow-hidden relative cursor-pointer" title={t.compare.customColor}>
-                            <input type="color" value={c6[i].startsWith('#') ? c6[i] : '#004A64'} onChange={e => setColor(i, e.target.value)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                          <label className="w-5 h-5 rounded-full border border-border overflow-hidden relative cursor-pointer" title={t.compare.customColor}>
+                            <input type="color" value={c6[i].startsWith('#') ? c6[i] : PRESET[0]} onChange={e => setColor(i, e.target.value)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                             <span className="absolute inset-0 flex items-center justify-center text-[9px] text-muted-fg">+</span>
                           </label>
                         </div>
@@ -536,7 +592,11 @@ export default function ComparePage() {
                   <label className="flex items-center justify-between"><span className="text-foreground">{t.compare.gridlines}</span><input type="checkbox" checked={showGrid} onChange={e => setShowGrid(e.target.checked)} className="accent-[var(--primary)]" /></label>
                   <label className="flex items-center justify-between gap-2">
                     <span className="text-foreground">{t.compare.thickness}</span>
-                    <select value={String(lineW)} onChange={e => setLineW(parseFloat(e.target.value))} className="h-7 bg-surface border border-border rounded px-1.5 text-foreground outline-none focus:border-accent">
+                    <select
+                      value={String(lineW)} onChange={e => setLineW(parseFloat(e.target.value))}
+                      className="h-7 rounded-full px-2.5 text-foreground outline-none focus:border-accent nv-transition"
+                      style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' }}
+                    >
                       <option value="1.25">{t.compare.thin}</option>
                       <option value="1.75">{t.compare.medium}</option>
                       <option value="2.5">{t.compare.thick}</option>
@@ -549,9 +609,9 @@ export default function ComparePage() {
                 <label className="flex items-center justify-between text-xs"><span className="text-foreground">{t.compare.highlight}</span><input type="checkbox" checked={highlight} onChange={e => setHighlight(e.target.checked)} className="accent-[var(--primary)]" /></label>
               </div>
             </div>
-            <div className="px-4 py-3 border-t border-border flex items-center justify-between sticky bottom-0 bg-surface">
-              <button onClick={resetDefaults} className="text-xs text-muted-fg hover:text-foreground">{t.compare.reset}</button>
-              <button onClick={() => setSettingsOpen(false)} className="text-xs px-3 py-1 rounded bg-primary text-primary-fg">{t.compare.done}</button>
+            <div className="px-4 py-3 flex items-center justify-between sticky bottom-0" style={{ backgroundColor: 'var(--nv-hdrbg)', borderTop: '1px solid var(--nv-line)' }}>
+              <button type="button" onClick={resetDefaults} className="text-xs text-muted-fg hover:text-foreground">{t.compare.reset}</button>
+              <button type="button" onClick={() => setSettingsOpen(false)} className="text-xs px-3 py-1.5 rounded-full bg-primary text-primary-fg">{t.compare.done}</button>
             </div>
           </div>
         </div>

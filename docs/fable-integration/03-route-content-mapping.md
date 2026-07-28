@@ -21,7 +21,7 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
 |---|---|---|---|---|---|---|---|
 | 1 | `/` | Market Overview | public | 1 Overview (visual lang.) | Yes — News feed, Sector heat map, Chilean-rates DnD, band-macro card | Not started | Not verified |
 | 2 | `/stocks` | Stocks | public | 2 Portfolio (DataTable) | No (reused Phase 3 `TableCard`) | **✓ Phase 5A (2026-07-28)** | **✓ Source + rendered-markup verified** |
-| 3 | `/compare` | Compare | public | 3 Performance (chart+table) | Yes — multi-slot returns table, settings modal, compare chart | Not started | Not verified |
+| 3 | `/compare` | Compare | public | 3 Performance (chart+table) | No (reused Phase 3 `TableCard`/`GlassSurface`/`SegmentedControl`) | **✓ Phase 5D (2026-07-28)** | **✓ Source + rendered-markup verified** |
 | 4 | `/chart-builder` | Charting | public | 3 Performance (chart) | Yes — metric picker, dual-axis chart, underlying table | Not started | Not verified |
 | 5 | `/macro` | Macroeconomic Indicators | public | 7 Macro | Yes — banded indicators table, yield curve, FX depth, chart popup | Not started | Not verified |
 | 6 | `/macro/calendar` | Economic Calendar | public | 7 Macro / 9 Documents table | Yes — release calendar table, FOMC outlook card | Not started | Not verified |
@@ -163,13 +163,19 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
   accumulating" note when persisted history genuinely insufficient.
 - **Auth:** public.
 - **Fable destination:** **3 Performance** (chart + comparison tables).
-- **Fable component mapping:** `CompareChart` → Fable performance-chart SVG (gridlines, dashed
-  zero, multi-series colors from chart palette, crosshair tooltip); tables → glass DataTable
-  w/ best/worst tinting (like monthly-returns grid); control bar → segmented pill toggles
-  (timeframe/period); Settings modal → glass overlay/side panel; ticker slots → chip inputs.
-- **New component required:** **Yes** — 6-slot editable returns table, settings modal (in glass
-  language), compare chart restyle. Preserve `MarketDataSourceBadge`/`TableSourceFooter`.
-- **Impl. status:** Not started · **Verif. status:** Not verified.
+- **Fable component mapping (as-built, Phase 5D):** all 3 tables (Market Data, Comparative
+  Returns, Fundamentals) → `TableCard` (dense near-opaque surface, sticky headers, card-level
+  `overflow-x-auto` via `minWidth`); control bar + chart card → `GlassSurface variant="card"`;
+  TF (1M/YTD/1Y/3Y/5Y) and Period (D/W/M) → `SegmentedControl`; Settings modal → the established
+  `nv-scrim` + `nv-glass-overlay nv-pop` overlay pattern (same recipe as `CommandPalette`);
+  ticker slot inputs, color swatches, date-range inputs, and pill buttons → Fable chip
+  (`--nv-chip`/`--nv-chipbd`) styling; section entrance → 3 staggered `Reveal` wrappers (header
+  at 0ms is un-staggered; Market Data 70ms; Returns+Fundamentals row 130ms; control bar+chart
+  190ms). `CompareChart` itself was untouched (already Fable-tokenized in Phase 4).
+- **New component required:** **No** — every primitive already existed from Phase 3/4;
+  `MarketDataSourceBadge`/`TableSourceFooter` preserved exactly (2 badges, 4 footers).
+- **Impl. status:** ✓ Phase 5D (2026-07-28) · **Verif. status:** ✓ Source + rendered-markup
+  verified (`GET /compare` → 200, Fable material classes present in the served HTML).
 
 ## 4. `/chart-builder` — Charting (Graph Fundamentals)
 

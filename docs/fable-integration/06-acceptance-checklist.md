@@ -89,8 +89,17 @@ loading state · empty state · error state · auth status — verified identica
   `tests/fableStocksPage.test.ts`. Restyled onto `TableCard` + Fable pill toolbar; empty state now
   runs through `AsyncState` while keeping its own exact `noResults` wording. No KPI, chart, or heat
   map was invented (no data on this route backs one).*
-- [ ] `/compare` — market data + returns (6 slots) + fundamentals + control bar + chart + settings
+- [x] `/compare` — market data + returns (6 slots) + fundamentals + control bar + chart + settings
   modal; all `cmi.compare*` persisted; empty `—`; public.
+  *Phase 5D (2026-07-28). All 6 slots + dedup/validation, all 12 fundamentals rows in order + all
+  10 derived-field keys, the exact 5-timeframe array, all 11 `cmi.compare*` keys, 2 badges + 4
+  footers with unchanged source-precedence, the chart's untouched series/legend/tooltip/axis
+  delegation, and the historyAccumulating note under both footers are preserved — locked by 121
+  tests in `tests/fableComparePage.test.ts`. All 3 tables restyled onto `TableCard`; TF and Period
+  onto `SegmentedControl` (2nd/3rd adopter); the Settings modal onto the established
+  `nv-scrim`/`nv-glass-overlay nv-pop` overlay recipe. Two genuine pre-existing bilingual/hex
+  defects fixed in passing (`title="Clear range"` → `t.compare.clearRange`; a redundant hex
+  literal → `PRESET[0]`).*
 - [ ] `/chart-builder` — toolbar + metric picker + dual-axis chart + underlying table + settings;
   `cmi.gf*` persisted; `gf:ticker` deep-link; noData/selectMetric; public.
 - [ ] `/macro` — calendar embed (US) + banded indicators + yield curve + FX depth (US) + chart
@@ -159,8 +168,9 @@ loading state · empty state · error state · auth status — verified identica
   it for the nav rails. Phase 3 generalized it into a reusable `SegmentedControl` component
   (`src/components/fable/SegmentedControl.tsx`, `role="radiogroup"`, keyboard-operable, reuses
   `useNavIndicator`). **Phase 5C adopted it for the first time** — `/companies/[ticker]`'s
-  8-timeframe chart selector — proving the component end to end on a real page. Compare/Charting/
-  Macro's own timeframe/period/frequency toggles still use their original plain segmented buttons;
+  8-timeframe chart selector — proving the component end to end on a real page. **Phase 5D adopted
+  it twice more** — `/compare`'s TF (1M/YTD/1Y/3Y/5Y) and Period (D/W/M) toggles. Charting/Macro's
+  own timeframe/period/frequency toggles still use their original plain segmented buttons;
   migrating them to `SegmentedControl` remains their own Phase 5 page work.)*
 - [~] Motion (reveal, count-up, nav slide, drawer/pop) present and **`prefers-reduced-motion`-gated**.
   *(Phase 1: all 6 Fable keyframes, the duration/easing token set, the foundational utilities, and
@@ -213,8 +223,10 @@ loading state · empty state · error state · auth status — verified identica
   mode, so this key is now simply unused going forward (never read/written by any file); not
   removed from client localStorage automatically, but harmless. Phase 5C: `cmi.chartTimeframe` is
   now genuinely exercised by `/companies/[ticker]`'s restyled `SegmentedControl` — same
-  `usePersistentState('cmi.chartTimeframe', '1Y')` call, unchanged. compare/gf/ratesOrder are
-  otherwise untouched (their pages haven't changed).*
+  `usePersistentState('cmi.chartTimeframe', '1Y')` call, unchanged. Phase 5D: all 11
+  `cmi.compare*` keys are now genuinely exercised by `/compare`'s restyled page (2 of them via
+  `SegmentedControl`) — same `usePersistentState` calls, unchanged, asserted by test. gf/ratesOrder
+  are otherwise untouched (their pages haven't changed).*
 - [~] Window events (`macro:region`, `gf:ticker`, `cmdk:open`) fire and are handled.
   *Phase 2: `macro:region` dispatch verified unchanged (same event name/detail shape) from both
   the desktop and mobile nav surfaces, and `macro/page.tsx`'s listener is untouched. Phase 5C:
@@ -227,7 +239,9 @@ loading state · empty state · error state · auth status — verified identica
   `window.print()` verbatim and keeps its `no-print` class (source-verified) — restyled to the
   Fable pill shape only; a live in-browser print check was **not** run (Chrome extension not
   connected in this session), so this stays `[~]` rather than `[x]` pending that manual check.
-  Compare/Charting/Earnings export untouched (their pages are not yet restyled).*
+  Phase 5D: Compare's Fundamentals CSV export (`handleExportFund` → `exportCSV`) is preserved
+  byte-for-byte, same filename/headers/row-shape, asserted by test. Charting/Earnings export
+  untouched (their pages are not yet restyled).*
 - [~] `Update` buttons refresh via `useGlobalRefresh`; badges reflect live/persisted/static.
   *Phase 5A: Stocks still routes its single `UpdateDataButton` through `useGlobalRefresh()` and
   still derives `priceStatus` as live → persisted → static; both asserted by test and confirmed in
