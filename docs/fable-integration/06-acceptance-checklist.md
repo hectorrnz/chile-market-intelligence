@@ -16,14 +16,16 @@ COMPLETE 2026-07-22** · **Phase 2 (app shell: top pill navigation) ✓ COMPLETE
 **Phase 5D (`/compare` page re-skin) ✓ COMPLETE 2026-07-28** ·
 **Phase 5E (`/chart-builder` page re-skin) ✓ COMPLETE 2026-07-28** ·
 **Phase 5F (`/macro` + `/macro/calendar` page re-skin) ✓ COMPLETE 2026-07-28** ·
-**Phase 5G (`/earnings` page re-skin) ✓ COMPLETE 2026-07-29** — see
+**Phase 5G (`/earnings` page re-skin) ✓ COMPLETE 2026-07-29** ·
+**Phase 5H (`/portfolio` page re-skin) ✓ COMPLETE 2026-07-29** — see
 `04-file-level-implementation-plan.md` § "Phase 1 — as built" / "Phase 2 — as built" /
 "Phase 3 — as built" / "Phase 4 — as built" / "Phase 5A — `/stocks` — as built" /
 "Phase 5B — `/watchlist` — as built" / "Phase 5C — `/companies/[ticker]` — as built" /
 "Phase 5D — `/compare` — as built" / "Phase 5E — `/chart-builder` — as built" /
-"Phase 5F — `/macro` + `/macro/calendar` — as built" / "Phase 5G — `/earnings` — as built".
-Phase 5's remaining 4 pages and Phases 6–8 not started. Items below are ticked only where
-Phases 1–5G genuinely satisfy them; everything that still depends on the remaining page work
+"Phase 5F — `/macro` + `/macro/calendar` — as built" / "Phase 5G — `/earnings` — as built" /
+"Phase 5H — `/portfolio` — as built".
+Phase 5's remaining 3 pages and Phases 6–8 not started. Items below are ticked only where
+Phases 1–5H genuinely satisfy them; everything that still depends on the remaining page work
 stays `[ ]` or `[~]`.
 
 ---
@@ -188,8 +190,30 @@ loading state · empty state · error state · auth status — verified identica
   badge would contradict the honest `Static sample` footer. Three pre-existing defects fixed:
   a failed remove no longer drops the row, three untranslated English literals are now bilingual,
   and the Add button's dark-mode contrast token is corrected.*
-- [ ] `/portfolio` 🔒 — 7 summary cards + sector exposure + Positions/Transactions/Cash tabs +
+- [x] `/portfolio` 🔒 — 7 summary cards + sector exposure + Positions/Transactions/Cash tabs +
   forms; Update; all validation states; protected.
+  *Phase 5H (2026-07-29), **recomposed** after a same-day Fable-parity audit. All 7 summary
+  metrics, the sector-exposure panel, all 3 tabs, all 3 tables (12/10/4 columns in order), all 3
+  add-forms, every fetch endpoint/payload shape/validation message/status-code branch, the
+  transaction-derived read-only lock, the 6 write calls, and the single `MarketDataSourceBadge`/
+  `TableSourceFooter` are preserved byte-for-byte in logic — the **layout** is what changed. The
+  first pass applied the Nevada components to the old full-width vertical stack; the audit
+  established that this was not parity, so the page was rebuilt to the approved export's own
+  composition: Fable header architecture (inline identity/meta on the title baseline) → asymmetric
+  hero row (single primary metric at `ui-kpi-hero` scale + `ChangeIndicator` delta pill + 5
+  secondary minis in an auto-fit grid, beside the sector **exposure meter panel**) → Fable
+  analytical workspace (wide `TableCard` column at `flex 2.6` with the `SegmentedControl` in the
+  card's own toolbar, beside a `flex 1` right rail holding the add-form **side panel** and the
+  **CONCENTRATION** meter panel). Removed: the flat 7-across capsule grid, the hand-rolled
+  underline tab band, and the full-width sector band. Omitted with documented reasons (each
+  asserted absent by test): hero sparkline, currency mix, search/asset-class filters, sortable
+  headers, row-click detail panel, and every performance/attribution/benchmark/risk visual — none
+  has authoritative NMI data. CONCENTRATION is a sort+slice of the weights `valuePositions`
+  already computes, with no new aggregate. A pre-existing dark-mode contrast bug (`bg-primary
+  text-surface`, the same defect Phase 5B fixed on Watchlist) was corrected on all 3 submit
+  buttons. No confirmation dialog, persistence key, new calculation, or fabricated figure was
+  invented — locked by 123 tests in `tests/fablePortfolioPage.test.ts`, roughly half of which
+  assert real structural containment and ordering rather than component-name presence.*
 - [ ] `/structured-notes` 🔒 — dashboard KPIs + bar/donut + monitoring line + upload/extract/import
   + filters + Live/Archived + sortable table; protected.
 - [ ] `/structured-notes/[id]` 🔒 — metrics strip + terms + current levels + underlyings + schedule
@@ -345,7 +369,19 @@ loading state · empty state · error state · auth status — verified identica
   deliberately to remove `/earnings` (the only 3 of its 8 list occurrences that checked `TableCard`
   specifically — the other 5, checking `SegmentedControl`/`KpiCapsule`/a direct `GlassSurface`
   import, remain true unmodified since `/earnings` adopts none of those three), the same precedent
-  every prior Phase 5 sub-phase set. The same 3 pre-existing, date-dependent `tests/newsModule.test.ts`
+  every prior Phase 5 sub-phase set. **Phase 5H boundary: 2877 → 3000 tests, 2997 pass** — 1 new
+  test file (`tests/fablePortfolioPage.test.ts`, 123 tests after the Fable-parity repair, roughly
+  half of them asserting real structural containment/ordering rather than component-name
+  presence); `fableComparePage`/`fableChartBuilderPage`/`fableMacroCalendarPage`/
+  `fableWatchlistPage`/`fableMacroPage`/`fableCompanyDetailPage`/`fableStocksPage`'s
+  phase-boundary guards updated deliberately to remove `/portfolio` (all 7 of the lists that would
+  actually have broken), the same precedent every prior Phase 5 sub-phase set. One further test
+  was updated **deliberately**: `responsiveLayout`'s Portfolio case asserted the pre-Fable
+  `xl:grid-cols-7` capsule grid, which the Fable recomposition removes — it now asserts the new
+  intrinsically-responsive conventions (all four Fable columns carry a `min(100%, …)` collapse
+  basis, both regions are wrapping flex rows, the minis grid is `auto-fit`, the cash grid still
+  reflows 2→3→5) **plus** a `doesNotMatch(/xl:grid-cols-7/)` guard so the old grid cannot return.
+  Net coverage increased; nothing was relaxed. The same 3 pre-existing, date-dependent `tests/newsModule.test.ts`
   failures persist unchanged across every one of these boundaries (fixtures stamped `15 Jul 2026` vs
   a rolling 7-day window; today is 2026-07-29). No news-related file is in any Phase 5 sub-phase's
   changed-file list.)*
@@ -386,9 +422,9 @@ loading state · empty state · error state · auth status — verified identica
 - [ ] `docs/data_source_status.md` current (no module static as terminal state).
 - [~] `docs/fable-integration/03` implementation/verification columns updated per route.
   *(Phase 5A: `/stocks`. Phase 5B: `/watchlist`. Phase 5C: `/companies/[ticker]`. Phase 5D:
-  `/compare`. Phase 5E: `/chart-builder`. Phase 5F: `/macro` + `/macro/calendar` — each marked
-  ✓ Complete / ✓ Verified with a full "as built" record in its section. The other 9 routes remain
-  Not started / Not verified.)*
+  `/compare`. Phase 5E: `/chart-builder`. Phase 5F: `/macro` + `/macro/calendar`. Phase 5G:
+  `/earnings`. Phase 5H: `/portfolio` — each marked ✓ Complete / ✓ Verified with a full
+  "as built" record in its section. The other 6 routes remain Not started / Not verified.)*
 - [x] No new runtime dependency added without an explicit, documented decision (D6).
   *(Phases 1, 3, 4, and 5A all added none; `package.json`/`package-lock.json` unchanged every
   time — no chart library was added, per the brief's explicit instruction to keep the existing

@@ -430,10 +430,18 @@ or any news-related source path was touched this phase).
 > **Phase 5G (`/earnings`) ✓ COMPLETE (2026-07-29)** — proves the smallest/simplest remaining
 > two-table page, closes one more pre-existing no-`min-w` gap, and adopts the
 > loading/empty `AsyncState` convention already established on the same data source in
-> `/companies/[ticker]`. See "Phase 5A — as built" through "Phase 5F — as built" and "Phase 5G — as
-> built" below. Pages 8–11 are not started.
+> `/companies/[ticker]`. **Phase 5H (`/portfolio`) ✓ COMPLETE (2026-07-29)** — the largest
+> remaining page (7 summary metrics, a sector-exposure panel, 3 tabbed tables + 3 forms), and the
+> first sub-phase to be **recomposed** rather than only re-skinned: a follow-up Fable-parity audit
+> established that adopting the Nevada components on the old layout was not parity, so the page was
+> rebuilt to the approved export's own composition (asymmetric hero row + two-column analytical
+> workspace with a right rail). **Lesson for the remaining pages: start from the Fable
+> composition, not from the existing layout.** See "Phase 5A — as built" through "Phase 5H — as
+> built" below. Pages 9–11 are not started.
 
-Each page: swap layout/card/table/pill classes to the new shared components; **do not change**
+Each page: adopt the **Fable composition** for the route (section grouping, grid proportions,
+primary/secondary hierarchy, component placement), then swap layout/card/table/pill classes to the
+new shared components; **do not change**
 data fetching, `fetch*` calls, `useMarketData`/`useMacroData`/`useGlobalRefresh`, persisted
 `cmi.*` keys, loading/empty/error branches, source badges/footers, or `t.*` usage. Where NMI
 has more content than Fable, keep it (merge point 3). Where Fable sample content has no NMI
@@ -453,8 +461,8 @@ Recommended order (low-risk → high-risk, dependency-aware):
 6. **`/compare`** ✓ — multi-slot returns table, settings modal (glass overlay), compare chart,
    segmented pills.
 7. **`/chart-builder`** ✓ — metric picker + dual-axis chart + underlying table + settings.
-8. **`/portfolio`** — hero/capsule summary, exposure bars, three tabbed tables + forms
-   (biggest single page; do after capsules/tables are proven).
+8. **`/portfolio`** ✓ — hero/capsule summary, exposure bars, three tabbed tables + forms
+   (biggest single page; done after capsules/tables were proven).
 9. **`/structured-notes`** — barrier gauge, upload/extract panel, dashboard KPIs, bar/donut.
 10. **`/structured-notes/[id]`** — terms grid, current-levels table, schedule, allocation grid,
     optional detail-panel language.
@@ -948,6 +956,91 @@ the same disclosed limitation as every prior Phase 5 sub-phase. What *is* verifi
 build-level: the `minWidth={360}` floor and `TableCard`'s own card-level `overflow-x-auto` for the
 (previously unbounded) Recent Results table are both present and asserted by the new test suite.
 
+---
+
+### Phase 5H — `/portfolio` — as built (2026-07-29)
+
+> **Two passes.** The first pass applied the Nevada components to the existing layout. A
+> follow-up **Fable-parity audit** found that component adoption alone had not achieved
+> structural parity — the page still followed the pre-Fable full-width vertical stack — and the
+> page was **recomposed** against the approved export (`nmi-fable-v1` `SPECS.md` §2 *"the table
+> IS the page"* + §1 Overview hero language, per doc 03's route mapping). What follows is the
+> post-repair state.
+
+**Files changed (11 — 1 source, 1 i18n, 8 test updates, 1 new test; `03`/`04`/`06` counted once):**
+
+| File | Change |
+|---|---|
+| `src/app/portfolio/page.tsx` | **Recomposed to the Fable Portfolio layout.** Every hook, effect, fetch call, computed value, validation rule, and mutation payload is byte-for-byte unchanged; the JSX tree was rebuilt. **Header** → Fable header architecture (eyebrow, 19px `ui-page-title`, identity/meta inline on the baseline — `{positionCount} holdings` + `MarketDataSourceBadge` — actions right). **Region A** → asymmetric hero row: total-value hero (`flex 1.7 1 400px`, single `ui-kpi-hero` value + `color-mix`-tinted `ChangeIndicator` delta pill + 5 secondary minis in Fable's `repeat(auto-fit,minmax(120px,1fr))` grid under a divider) beside the sector **exposure meter panel** (`flex 1 1 250px`). **Region B** → Fable workspace: wide `TableCard` column (`flex 2.6 1 620px`) with the tab `SegmentedControl` moved **into the card's own toolbar**, beside a narrow right rail (`flex 1 1 280px`) holding the active tab's add-form as a **side panel** (vertically-stacked full-width chip inputs) plus the **CONCENTRATION** meter panel. Two page-local primitives added — `RailPanel` and `MeterRow` — composed entirely from `GlassSurface` + tokens. Cash-tab summary metrics moved into the left column adjacent to their table. Removed: the flat 7-across `KpiCapsule` grid, the hand-rolled underline tab band, the `space-y-5` single-column container, and the full-width sector band. Contrast fix carried over: all 3 submit buttons on `bg-primary text-primary-fg`. |
+| `src/lib/i18n.ts` | 6 new keys × 2 languages: `tabsAriaLabel`, `holdings`, `vsCostBasis`, `concentration`, `largestPosition`, `noExposure`. No existing key touched. |
+| `tests/fablePortfolioPage.test.ts` | **New — 123 tests.** Roughly half assert **structural parity** via real containment/ordering (`bodyOf()` component-body extraction and first-index ordering), not component-name presence: the Fable flex ratios and which surface each is applied to, section order, header architecture, primary-vs-secondary metric hierarchy (exactly one `ui-kpi-hero`; 5 minis under a divider), meter-panel anatomy, concentration = sort+slice of existing weights with no `reduce`, segmented control in the card toolbar, forms in the rail, and that each omitted Fable element is genuinely absent. The other half assert content/behaviour preservation exactly as before. |
+| `tests/responsiveLayout.test.ts` | **Deliberate convention update, not a weakening.** The pre-Fable `xl:grid-cols-7` assertion is replaced by checks on the new intrinsically-responsive composition: all four Fable columns carry a `min(100%, …)` basis, both regions are wrapping flex rows, the minis grid is `auto-fit`, the cash grid still reflows 2→3→5, **and** `xl:grid-cols-7` must not return. Net coverage increased. |
+| `tests/fableComparePage.test.ts`, `fableChartBuilderPage.test.ts`, `fableMacroCalendarPage.test.ts`, `fableWatchlistPage.test.ts`, `fableMacroPage.test.ts`, `fableCompanyDetailPage.test.ts`, `fableStocksPage.test.ts` | Scope-boundary updates — `/portfolio` removed from each file's "not yet migrated" guard array, the precedent every prior Phase 5 sub-phase set. |
+| `docs/fable-integration/03` / `04` / `06` | Route 10 → Done/Verified with the full parity record; recommended-order item 8 ticked. |
+
+**Files deliberately NOT changed:** `globals.css` (**no CSS was added** — the meter fill reuses the
+existing `.nv-transition-state` width transition, already reduced-motion-gated globally), every
+shared Fable component (`TableCard`/`AsyncState`/`GlassSurface`/`ChangeIndicator`/
+`SegmentedControl` signatures asserted unchanged by test), `src/lib/portfolio/valuation.ts`, all 7
+`src/app/api/portfolios/**` route files, `src/middleware.ts`, any other page,
+`package.json`/`package-lock.json`.
+
+**Fable elements incorporated (Class A/B):** header architecture with inline identity/meta ·
+asymmetric hero row · single primary metric at hero scale · delta pill · secondary minis grid ·
+exposure meter panel · CONCENTRATION rail panel · two-column analytical workspace at the Fable
+2.6/1 ratio · segmented control inside the card toolbar · forms as a rail side panel · Fable
+source/action placement · 14px gutter rhythm · intrinsic `min(100%, …)` responsive collapse.
+
+**Fable elements omitted, with the precise missing authoritative data:**
+
+| Fable element | Missing data / functionality |
+|---|---|
+| Hero sparkline | No portfolio-value time series exists — no history table, no endpoint, no accumulated snapshots for a portfolio (only per-ticker `stock_snapshots`). |
+| Currency mix panel | `valuation.ts` is CLP-first and implements **no FX conversion**; every covered ticker is CLP, so the panel would be a single decorative 100% bar. |
+| Search + asset-class filter row | No filter state, handler, or asset-class field exists on this route. Adding one is new functionality. |
+| Sortable table headers ("weight default desc") | No sort state or comparator exists for Portfolio (Stocks has one; Portfolio never did). |
+| Row-click position detail panel | No position-detail payload/endpoint exists, and the row already owns an inline-edit interaction that a row-click would conflict with. |
+| Performance / attribution / benchmark / risk charts, monthly-returns grid, statistics list | None of that data exists for a portfolio here — no return series, no benchmark, no attribution decomposition, no risk metrics. |
+| "Sample data" chips and footnotes | Fable sample-data disclosure; NMI's real source disclosure is the `MarketDataSourceBadge` + `TableSourceFooter`, which are preserved. |
+
+Each omission is asserted by test **and** written into the page's own header comment, so no empty
+decorative shell was created and the reason is discoverable from the source.
+
+**Judgement calls, stated plainly:**
+- **`SectionHeader` was replaced by a page-local header block on this route only.** Fable's header
+  puts identity/meta *inline on the title's baseline*; the shared `SectionHeader` stacks a
+  subtitle beneath. Forking the shared component would have restyled seven already-migrated
+  routes — out of scope for a Portfolio-only phase — so the Fable architecture was reproduced
+  locally at identical type scales (`ui-label` / `ui-page-title` / `ui-meta`). All three original
+  strings (`tag`/`title`/`subtitle`) are preserved.
+- **CONCENTRATION uses a sort + slice, never a new calculation.** Every number it renders is
+  `position.weight` exactly as `valuePositions` produced it, and the headline stat is the single
+  largest existing weight — deliberately **not** Fable's top-10 weight sum, which would be a new
+  aggregate. A test asserts the panel contains no `reduce(`.
+- **Cash summary cards keep their fixed per-card colours.** Each carries a *cash-flow direction*
+  (deposits/sells green, withdrawals/buys red, net neutral), not a sign-derived one, so neither
+  `KpiCapsule`'s single foreground nor `ChangeIndicator`'s sign colour models them. Feeding
+  `ChangeIndicator` a synthetic "change value" purely to obtain a colour would misrepresent
+  figures that are always non-negative `Math.abs()` display magnitudes.
+- **No confirmation dialog and no tab-persistence key were invented** — neither existed, and the
+  brief forbids adding mutations or persisted state for visual parity.
+
+**Validation:** lint 0 problems · full suite **2877 → 3000 tests, 2997 pass, 3 fail** · build 0
+errors (`/portfolio` still static/`○`). The 3 failures are the same pre-existing, date-dependent
+`tests/newsModule.test.ts` fixture failures documented in every phase since Phase 1. No new
+`tsc` nits were introduced (the 32 remaining are all pre-existing in other test files).
+
+**Honest gap:** the interactive browser responsive ladder (1920/1600/1440/1280/1024/768/390,
+light+dark, EN+ES) was **not** run — no Chrome extension is connected in this environment, the
+same disclosed limitation as every prior Phase 5 sub-phase, and `/portfolio` is additionally
+protected so its rendered DOM is unreachable without a session (as for `/watchlist` in Phase 5B).
+What *was* verified beyond source scanning: a live dev server returned `307 →
+/login?next=%2Fportfolio` for the protected route; the shipped client chunk contains all four
+Fable flex ratios, the `min(100%, …)` collapse bases, the auto-fit minis grid, `ui-kpi-hero` and
+`nv-transition-state`; all 12 new EN+ES strings appear in the shipped bundles; and the served
+stylesheet contains every utility the page uses plus a `prefers-reduced-motion` block that forces
+`transition-duration:.01ms` universally (covering the meter-fill width transition) and renders
+`.nv-reveal` at its final state.
 ---
 
 ## Phase 6 — Auth pages + login shell (highest-visibility, distinct layout)

@@ -87,15 +87,15 @@ describe('Phase 5C — route and scope', () => {
 
   it('redesigns no other page — Phase 5C is /companies/[ticker] only', () => {
     // `/compare` was removed from this list in Phase 5D, `/chart-builder` in
-    // Phase 5E, and `/macro` + `/macro/calendar` in Phase 5F, each migrated
-    // under its own brief (SegmentedControl included) — real phase boundaries
-    // moving, not relaxed assertions. They are guarded by
-    // `tests/fableComparePage.test.ts`, `tests/fableChartBuilderPage.test.ts`,
-    // `tests/fableMacroPage.test.ts` and `tests/fableMacroCalendarPage.test.ts`
-    // respectively.
+    // Phase 5E, `/macro` + `/macro/calendar` in Phase 5F, and `/portfolio` in
+    // Phase 5H, each migrated under its own brief (SegmentedControl included)
+    // — real phase boundaries moving, not relaxed assertions. They are
+    // guarded by `tests/fableComparePage.test.ts`, `tests/fableChartBuilderPage.test.ts`,
+    // `tests/fableMacroPage.test.ts`, `tests/fableMacroCalendarPage.test.ts`,
+    // and `tests/fablePortfolioPage.test.ts` respectively.
     for (const other of [
       'src/app/page.tsx', 'src/app/earnings/page.tsx',
-      'src/app/portfolio/page.tsx', 'src/app/structured-notes/page.tsx',
+      'src/app/structured-notes/page.tsx',
     ]) {
       const otherSrc = read(other)
       assert.ok(!otherSrc.includes('KpiCapsule'), `${other} is not part of Phase 5C`)

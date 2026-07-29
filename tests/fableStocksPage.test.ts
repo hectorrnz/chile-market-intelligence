@@ -454,14 +454,15 @@ describe('Phase 5A — scope held', () => {
     // is its only consumer in the whole repo (verified below).
     //
     // `/watchlist` was removed from this list in Phase 5B, `/compare` in
-    // Phase 5D, `/macro` in Phase 5F, and `/earnings` in Phase 5G, each
-    // migrated to `TableCard` under its own brief — real phase boundaries
-    // moving, not a relaxed assertion. They are guarded by
-    // `tests/fableWatchlistPage.test.ts` / `tests/fableComparePage.test.ts` /
-    // `tests/fableMacroPage.test.ts` / `tests/fableEarningsPage.test.ts`, and
-    // the pages below still hold the line.
+    // Phase 5D, `/macro` in Phase 5F, `/earnings` in Phase 5G, and
+    // `/portfolio` in Phase 5H, each migrated to `TableCard` under its own
+    // brief — real phase boundaries moving, not a relaxed assertion. They are
+    // guarded by `tests/fableWatchlistPage.test.ts` /
+    // `tests/fableComparePage.test.ts` / `tests/fableMacroPage.test.ts` /
+    // `tests/fableEarningsPage.test.ts` / `tests/fablePortfolioPage.test.ts`,
+    // and the pages below still hold the line.
     for (const other of [
-      'src/app/page.tsx', 'src/app/portfolio/page.tsx',
+      'src/app/page.tsx',
     ]) {
       assert.ok(existsSync(join(ROOT, other)), `${other} must still exist`)
       assert.ok(!read(other).includes('@/components/fable/TableCard'), `${other} has had no re-skin phase yet`)

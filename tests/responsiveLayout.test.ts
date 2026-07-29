@@ -127,10 +127,25 @@ describe('dashboard grids collapse', () => {
     assert.match(src, /grid grid-cols-1 lg:grid-cols-2 gap-4 items-start/)
   })
 
-  test('Portfolio summary cards collapse', () => {
+  // Phase 5H rebuilt Portfolio onto the Fable composition, which is
+  // intrinsically responsive (wrapping flex rows with `min(100%, …)` bases and
+  // an auto-fit minis grid) rather than breakpoint-classed. Updated
+  // deliberately to the new conventions — the guarantee is unchanged and, if
+  // anything, stronger: every column is asserted to collapse to full width.
+  test('Portfolio Fable columns collapse to full width, and the metric grids reflow', () => {
     const src = read('src/app/portfolio/page.tsx')
-    assert.match(src, /grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3/)
-    assert.match(src, /grid grid-cols-2 sm:grid-cols-5 gap-3/)
+    // All four Fable columns (hero, aside, table column, rail) carry a
+    // `min(100%, …)` basis, so each wraps to full width below its threshold.
+    assert.equal((src.match(/minWidth: 'min\(100%,/g) ?? []).length, 4, 'every Fable column collapses')
+    // Both regions are wrapping flex rows, never fixed-column grids.
+    assert.match(src, /flex flex-wrap items-stretch gap-3\.5/)
+    assert.match(src, /flex flex-wrap items-start gap-3\.5/)
+    // The hero's secondary-metric grid is auto-fit, never a fixed column count.
+    assert.match(src, /repeat\(auto-fit, minmax\(120px, 1fr\)\)/)
+    // The cash secondary metrics still reflow across breakpoints.
+    assert.match(src, /grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3/)
+    // The pre-Fable fixed 7-across capsule grid must not come back.
+    assert.doesNotMatch(src, /xl:grid-cols-7/)
   })
 
   test('Macro US region stacks below xl', () => {

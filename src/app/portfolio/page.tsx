@@ -9,11 +9,33 @@
 // history (positionSource: 'transactions') are read-only in the Positions tab —
 // edit/remove there is reserved for manual positions, to avoid a manual edit
 // silently diverging from the reconciled transaction-derived state.
+//
+// Phase 5H — Fable composition. Presentation only: every hook, effect, fetch
+// call, computed value, validation rule, and mutation payload below is
+// byte-for-byte unchanged. What changed is the LAYOUT, rebuilt to the approved
+// Fable Portfolio composition (nmi-fable-v1 SPECS.md §2 "the table IS the page"
+// + §1 Overview hero language, per docs/fable-integration/03's route mapping):
+//
+//   Header      — Fable header architecture: eyebrow + 19px title with the
+//                 identity/meta (holdings count, source badge) inline on the
+//                 baseline, actions right.
+//   Region A    — asymmetric hero row (Fable Overview §1 "no equal-card grid"):
+//                 total-value hero card (flex 1.7) + exposure meter panel
+//                 (flex 1). Replaces the old flat 7-across capsule grid.
+//   Region B    — Fable Portfolio workspace: wide table card (flex 2.6) with
+//                 the segmented control in its own toolbar, beside a narrow
+//                 right rail (flex 1) holding the add-form side panel and the
+//                 concentration meters.
+//
+// Fable elements with no authoritative NMI data are OMITTED, never faked:
+// the hero sparkline (no portfolio value time series exists), currency mix
+// (valuation.ts is CLP-first with no FX conversion), the asset-class/search
+// filter row and sortable headers (no filter/sort state exists on this route),
+// and the row-click position detail panel (no position-detail payload exists).
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useLang } from '@/components/providers/LangProvider'
-import { SectionHeader } from '@/components/ui/SectionHeader'
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
 import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
 import { getAllCompanies } from '@/lib/data/companies'
@@ -23,9 +45,39 @@ import { useGlobalRefresh } from '@/components/providers/useGlobalRefresh'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { valuePositions, calculatePortfolioTotals, calculateSectorExposure, type LatestPrice } from '@/lib/portfolio/valuation'
 import type { DataSourceStatus } from '@/lib/providers/types'
+import { TableCard } from '@/components/fable/TableCard'
+import { AsyncState } from '@/components/fable/AsyncState'
+import { GlassSurface } from '@/components/fable/GlassSurface'
+import { ChangeIndicator } from '@/components/fable/ChangeIndicator'
+import { SegmentedControl } from '@/components/fable/SegmentedControl'
+import { Reveal } from '@/components/fable/motion'
 
 const ALL_COMPANIES = getAllCompanies()
 const VALID_TICKERS = new Set(ALL_COMPANIES.map(c => c.ticker.toUpperCase()))
+
+// Fable composition ratios, transcribed from the approved export's Portfolio
+// and Overview screens. Layout proportions only — no color/material value.
+const FABLE_HERO  = { flex: '1.7 1 400px', minWidth: 'min(100%, 340px)' } as const
+const FABLE_ASIDE = { flex: '1 1 250px',   minWidth: 'min(100%, 240px)' } as const
+const FABLE_MAIN  = { flex: '2.6 1 620px', minWidth: 'min(100%, 340px)' } as const
+const FABLE_RAIL  = { flex: '1 1 280px',   minWidth: 'min(100%, 260px)' } as const
+
+// Fable chip-input recipe (established in Phase 5D/5E/5F/5G) — pill-shaped
+// controls, `--nv-chip`/`--nv-chipbd` fill, tokenised focus/transition. In the
+// Fable right-rail side panel these stack full-width rather than sitting on one
+// horizontal row.
+const CHIP_INPUT =
+  'h-8 w-full px-3 rounded-full text-xs text-foreground placeholder:text-muted outline-none focus:border-accent nv-transition'
+const CHIP_STYLE = { backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' } as const
+const PILL_BUTTON = 'h-8 w-full px-4 rounded-full bg-primary text-primary-fg text-xs font-medium disabled:opacity-50 nv-transition'
+
+/** Presentational tint only — mirrors ChangeIndicator's own direction→token map for a pill backdrop. */
+function toneToken(v: number | null | undefined): string {
+  if (v === null || v === undefined || !Number.isFinite(v)) return 'var(--muted-fg)'
+  if (v > 0) return 'var(--positive)'
+  if (v < 0) return 'var(--negative)'
+  return 'var(--muted-fg)'
+}
 
 type PositionSource = 'manual' | 'transactions'
 
@@ -118,7 +170,38 @@ interface CashEntryOut {
   description: string | null
 }
 
-// ─── Add-position form ────────────────────────────────────────────────────────
+// ─── Shared rail primitives (Fable right-rail panel + meter row) ──────────────
+
+/** Fable right-rail panel: 22px-radius glass card, section label, optional right-aligned stat. */
+function RailPanel({ label, stat, children }: { label: string; stat?: ReactNode; children: ReactNode }) {
+  return (
+    <GlassSurface variant="card" className="px-5 py-4">
+      <div className="flex items-center justify-between gap-2">
+        <div className="ui-label text-muted-fg">{label}</div>
+        {stat && <span className="ui-meta text-muted-fg">{stat}</span>}
+      </div>
+      <div className="mt-2">{children}</div>
+    </GlassSurface>
+  )
+}
+
+/** Fable meter row: truncating name · 6px bar track · right-aligned value. */
+function MeterRow({ name, pct, value }: { name: string; pct: number | null; value: string }) {
+  return (
+    <div className="flex items-center gap-2.5 py-1.5 text-xs">
+      <span className="flex-[0_0_92px] min-w-0 truncate text-foreground" title={name}>{name}</span>
+      <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--nv-chip)' }}>
+        <div
+          className="h-full rounded-full nv-transition-state"
+          style={{ width: `${pct ?? 0}%`, backgroundColor: 'var(--accent)' }}
+        />
+      </div>
+      <span className="ui-number text-muted-fg w-12 text-right shrink-0">{value}</span>
+    </div>
+  )
+}
+
+// ─── Add-position form (Fable right-rail side panel) ──────────────────────────
 
 function AddPositionForm({
   portfolioId,
@@ -185,72 +268,79 @@ function AddPositionForm({
   }
 
   return (
-    <form onSubmit={handleAdd} className="flex flex-wrap items-center gap-2">
-      <input
-        type="text"
-        list="portfolio-ticker-suggestions"
-        value={ticker}
-        onChange={e => setTicker(e.target.value.toUpperCase())}
-        placeholder={t.portfolio.tickerPlaceholder}
-        className="h-8 px-3 rounded border border-border bg-surface-2 text-xs font-mono text-foreground placeholder:text-muted focus:outline-none focus:border-accent w-28"
-        autoComplete="off"
-        spellCheck={false}
-      />
-      <datalist id="portfolio-ticker-suggestions">
-        {ALL_COMPANIES.map(c => (
-          <option key={c.ticker} value={c.ticker}>{c.shortName}</option>
-        ))}
-      </datalist>
+    <RailPanel label={t.portfolio.addPosition}>
+      <form onSubmit={handleAdd} className="flex flex-col gap-2">
+        <input
+          type="text"
+          list="portfolio-ticker-suggestions"
+          value={ticker}
+          onChange={e => setTicker(e.target.value.toUpperCase())}
+          placeholder={t.portfolio.tickerPlaceholder}
+          aria-label={t.portfolio.cols.ticker}
+          className={`${CHIP_INPUT} font-mono`}
+          style={CHIP_STYLE}
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <datalist id="portfolio-ticker-suggestions">
+          {ALL_COMPANIES.map(c => (
+            <option key={c.ticker} value={c.ticker}>{c.shortName}</option>
+          ))}
+        </datalist>
 
-      <input
-        type="number"
-        min="0"
-        step="any"
-        value={quantity}
-        onChange={e => setQuantity(e.target.value)}
-        placeholder={t.portfolio.quantityLabel}
-        className="h-8 px-3 rounded border border-border bg-surface-2 text-xs ui-number text-foreground placeholder:text-muted focus:outline-none focus:border-accent w-24"
-      />
+        <input
+          type="number"
+          min="0"
+          step="any"
+          value={quantity}
+          onChange={e => setQuantity(e.target.value)}
+          placeholder={t.portfolio.quantityLabel}
+          aria-label={t.portfolio.quantityLabel}
+          className={`${CHIP_INPUT} ui-number`}
+          style={CHIP_STYLE}
+        />
 
-      <input
-        type="number"
-        min="0"
-        step="any"
-        value={avgCost}
-        onChange={e => setAvgCost(e.target.value)}
-        placeholder={t.portfolio.averageCostLabel}
-        className="h-8 px-3 rounded border border-border bg-surface-2 text-xs ui-number text-foreground placeholder:text-muted focus:outline-none focus:border-accent w-32"
-      />
+        <input
+          type="number"
+          min="0"
+          step="any"
+          value={avgCost}
+          onChange={e => setAvgCost(e.target.value)}
+          placeholder={t.portfolio.averageCostLabel}
+          aria-label={t.portfolio.averageCostLabel}
+          className={`${CHIP_INPUT} ui-number`}
+          style={CHIP_STYLE}
+        />
 
-      <input
-        type="text"
-        value={notes}
-        onChange={e => setNotes(e.target.value)}
-        placeholder={t.portfolio.notesLabel}
-        className="h-8 px-3 rounded border border-border bg-surface-2 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-accent w-36"
-      />
+        <input
+          type="text"
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+          placeholder={t.portfolio.notesLabel}
+          aria-label={t.portfolio.notesLabel}
+          className={CHIP_INPUT}
+          style={CHIP_STYLE}
+        />
 
-      <button
-        type="submit"
-        disabled={loading || !ticker.trim() || !quantity.trim()}
-        className="h-8 px-3 rounded bg-primary text-surface text-xs font-medium disabled:opacity-50 transition-opacity"
-        style={{ backgroundColor: 'var(--primary)' }}
-      >
-        {loading ? '…' : t.portfolio.addPosition}
-      </button>
+        <button
+          type="submit"
+          disabled={loading || !ticker.trim() || !quantity.trim()}
+          className={PILL_BUTTON}
+        >
+          {loading ? '…' : t.portfolio.addPosition}
+        </button>
 
-      {feedback && (
-        <span className={`text-xs ${feedback.type === 'ok' ? 'text-positive' : 'text-negative'}`}>
-          {feedback.msg}
+        <span role="status" aria-live="polite" className={feedback ? (feedback.type === 'ok' ? 'text-positive text-xs' : 'text-negative text-xs') : 'sr-only'}>
+          {feedback?.msg ?? ''}
         </span>
-      )}
-    </form>
+      </form>
+    </RailPanel>
   )
 }
 
-// ─── Summary cards ─────────────────────────────────────────────────────────────
+// ─── Region A · total-value hero (Fable Overview §1 hero language) ────────────
 
-function SummaryCards({
+function PortfolioHero({
   totals,
   realizedPnl,
   cashBalance,
@@ -263,53 +353,96 @@ function SummaryCards({
   const pnl = totals.totalUnrealizedPnL
   const pnlPct = totals.totalUnrealizedPnLPct
 
-  const cards = [
-    { label: t.portfolio.totalMarketValue, value: formatCLP(totals.totalMarketValue), color: 'text-foreground' },
-    { label: t.portfolio.totalCostBasis, value: formatCLP(totals.totalCostBasis), color: 'text-foreground' },
-    { label: t.portfolio.unrealizedPnL, value: pnl !== null ? formatCLP(pnl) : '—', color: pnl !== null ? changeColor(pnl) : 'text-muted-fg' },
-    { label: t.portfolio.unrealizedPnLPct, value: pnlPct !== null ? formatPct(pnlPct) : '—', color: pnlPct !== null ? changeColor(pnlPct) : 'text-muted-fg' },
-    { label: t.portfolio.realizedPnL, value: formatCLP(realizedPnl), color: changeColor(realizedPnl) },
-    { label: t.portfolio.cashBalance, value: formatCLP(cashBalance), color: 'text-foreground' },
-    { label: t.portfolio.positionCount, value: String(totals.positionCount), color: 'text-foreground' },
-  ]
-
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3">
-      {cards.map((c) => (
-        <div key={c.label} className="bg-surface border border-border rounded px-4 py-3">
-          <div className="ui-label text-muted-fg mb-1">{c.label}</div>
-          <div className={`ui-number text-lg font-semibold ${c.color}`}>{c.value}</div>
+    <GlassSurface variant="card" className="px-5 py-5" style={FABLE_HERO}>
+      <div className="ui-label text-muted-fg">{t.portfolio.totalMarketValue}</div>
+      <div className="ui-kpi-hero ui-number text-foreground mt-2">{formatCLP(totals.totalMarketValue)}</div>
+
+      <div className="mt-3 flex items-center gap-2 flex-wrap">
+        <span
+          className="inline-flex items-center rounded-full px-3 py-1"
+          style={{ backgroundColor: `color-mix(in oklab, ${toneToken(pnl)} 14%, transparent)` }}
+        >
+          <ChangeIndicator value={pnl} label={pnl !== null ? formatCLP(pnl) : undefined} />
+        </span>
+        <span className="ui-meta text-muted-fg">
+          {t.portfolio.unrealizedPnL} · {t.portfolio.vsCostBasis}
+        </span>
+      </div>
+
+      <div
+        className="mt-4 pt-3.5 border-t border-border grid gap-3"
+        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))' }}
+      >
+        <div>
+          <div className="ui-micro-label text-muted-fg">{t.portfolio.unrealizedPnLPct}</div>
+          <div className="mt-1"><ChangeIndicator value={pnlPct} label={pnlPct !== null ? formatPct(pnlPct) : undefined} /></div>
         </div>
-      ))}
-    </div>
+        <div>
+          <div className="ui-micro-label text-muted-fg">{t.portfolio.totalCostBasis}</div>
+          <div className="ui-card-value ui-number text-foreground mt-1">{formatCLP(totals.totalCostBasis)}</div>
+        </div>
+        <div>
+          <div className="ui-micro-label text-muted-fg">{t.portfolio.realizedPnL}</div>
+          <div className="mt-1"><ChangeIndicator value={realizedPnl} label={formatCLP(realizedPnl)} /></div>
+        </div>
+        <div>
+          <div className="ui-micro-label text-muted-fg">{t.portfolio.cashBalance}</div>
+          <div className="ui-card-value ui-number text-foreground mt-1">{formatCLP(cashBalance)}</div>
+        </div>
+        <div>
+          <div className="ui-micro-label text-muted-fg">{t.portfolio.positionCount}</div>
+          <div className="ui-card-value ui-number text-foreground mt-1">{totals.positionCount}</div>
+        </div>
+      </div>
+    </GlassSurface>
   )
 }
 
-// ─── Sector exposure ────────────────────────────────────────────────────────────
+// ─── Region A · sector exposure panel (Fable exposure-meter language) ─────────
 
-function SectorExposureList({ sectors }: { sectors: SectorExposureOut[] }) {
+function SectorExposurePanel({ sectors }: { sectors: SectorExposureOut[] }) {
   const { t } = useLang()
-  if (sectors.length === 0) return null
   return (
-    <div className="bg-surface border border-border rounded px-4 py-3">
-      <div className="ui-label text-muted-fg mb-2">{t.portfolio.sectorExposure}</div>
-      <div className="space-y-1.5">
-        {sectors.map((s) => (
-          <div key={s.sector} className="flex items-center gap-3 text-xs">
-            <span className="w-32 shrink-0 text-foreground truncate">{s.sector}</span>
-            <div className="flex-1 h-1.5 rounded-full bg-surface-2 overflow-hidden">
-              <div
-                className="h-full rounded-full"
-                style={{ width: `${s.weight ?? 0}%`, backgroundColor: 'var(--accent)' }}
-              />
-            </div>
-            <span className="ui-number text-muted-fg w-14 text-right shrink-0">
-              {s.weight !== null ? formatPct(s.weight, 1).replace('+', '') : '—'}
-            </span>
-          </div>
-        ))}
+    <GlassSurface variant="card" className="px-5 py-4" style={FABLE_ASIDE}>
+      <div className="ui-label text-muted-fg">{t.portfolio.sectorExposure}</div>
+      <div className="mt-2">
+        {sectors.length === 0 ? (
+          <AsyncState kind="empty" message={t.portfolio.noExposure} />
+        ) : (
+          sectors.map(s => (
+            <MeterRow
+              key={s.sector}
+              name={s.sector}
+              pct={s.weight}
+              value={s.weight !== null ? formatPct(s.weight, 1).replace('+', '') : '—'}
+            />
+          ))
+        )}
       </div>
-    </div>
+    </GlassSurface>
+  )
+}
+
+// ─── Region B rail · concentration panel (existing position weights) ──────────
+
+function ConcentrationPanel({ top }: { top: PositionOut[] }) {
+  const { t } = useLang()
+  const largest = top[0]?.weight ?? null
+  return (
+    <RailPanel
+      label={t.portfolio.concentration}
+      stat={<>{t.portfolio.largestPosition} <b className="text-foreground">{largest !== null ? formatPct(largest, 1).replace('+', '') : '—'}</b></>}
+    >
+      {top.map(p => (
+        <MeterRow
+          key={p.id}
+          name={p.ticker}
+          pct={p.weight}
+          value={p.weight !== null ? formatPct(p.weight, 1).replace('+', '') : '—'}
+        />
+      ))}
+    </RailPanel>
   )
 }
 
@@ -387,14 +520,18 @@ function PositionRow({
           <input
             type="number" min="0" step="any" value={quantity}
             onChange={e => setQuantity(e.target.value)}
-            className="h-7 w-20 px-2 rounded border border-border bg-surface text-xs ui-number text-right focus:outline-none focus:border-accent"
+            aria-label={t.portfolio.quantityLabel}
+            className="h-7 w-20 px-2 rounded-full ui-number text-right text-foreground outline-none focus:border-accent nv-transition"
+            style={CHIP_STYLE}
           />
         </td>
         <td className="py-2 px-3 text-right">
           <input
             type="number" min="0" step="any" value={avgCost}
             onChange={e => setAvgCost(e.target.value)}
-            className="h-7 w-24 px-2 rounded border border-border bg-surface text-xs ui-number text-right focus:outline-none focus:border-accent"
+            aria-label={t.portfolio.averageCostLabel}
+            className="h-7 w-24 px-2 rounded-full ui-number text-right text-foreground outline-none focus:border-accent nv-transition"
+            style={CHIP_STYLE}
           />
         </td>
         <td className="py-2 px-3 text-right ui-number text-foreground">{position.latestPrice !== null ? formatCLP(position.latestPrice) : '—'}</td>
@@ -403,7 +540,9 @@ function PositionRow({
             type="text" value={notes}
             onChange={e => setNotes(e.target.value)}
             placeholder={t.portfolio.notesLabel}
-            className="h-7 w-full px-2 rounded border border-border bg-surface text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-accent"
+            aria-label={t.portfolio.notesLabel}
+            className="h-7 w-full px-2 rounded-full text-foreground outline-none focus:border-accent nv-transition"
+            style={CHIP_STYLE}
           />
         </td>
         <td className="py-2 px-3 text-right ui-number text-negative" colSpan={2}>{error}</td>
@@ -416,7 +555,7 @@ function PositionRow({
   }
 
   return (
-    <tr className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
+    <tr className="border-b border-border last:border-0 nv-row-hover nv-transition">
       <td className="py-2.5 pl-4 pr-3">
         <Link href={`/companies/${position.ticker}`} className="font-mono text-primary hover:underline">
           {position.ticker}
@@ -467,38 +606,40 @@ function PositionsTable({
   positions,
   portfolioId,
   onChanged,
+  controls,
 }: {
   positions: PositionOut[]
   portfolioId: string
   onChanged: () => void
+  controls: ReactNode
 }) {
   const { t } = useLang()
 
-  if (positions.length === 0) {
-    return (
-      <div className="bg-surface border border-border rounded px-5 py-8 text-center">
-        <p className="text-xs text-muted-fg">{t.portfolio.emptyPortfolio}</p>
-      </div>
-    )
-  }
-
   return (
-    <div className="bg-surface border border-border rounded overflow-x-auto">
-      <table className="w-full text-xs min-w-[720px]">
+    <TableCard
+      title={t.portfolio.tabPositions}
+      controls={controls}
+      minWidth={720}
+      state={positions.length === 0 ? 'empty' : undefined}
+      stateMessage={t.portfolio.emptyPortfolio}
+      footer={<TableSourceFooter source={t.portfolio.source} />}
+    >
+      <table className="w-full text-xs" style={{ fontSize: 'var(--fs-table-cell)' }}>
+        <caption className="sr-only">{t.portfolio.tabPositions}</caption>
         <thead>
-          <tr className="border-b border-border bg-surface-2">
-            <th className="text-left py-2.5 pl-4 pr-3 ui-table-header text-muted-fg">{t.portfolio.cols.ticker}</th>
-            <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.cols.company}</th>
-            <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.cols.sector}</th>
-            <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.cols.quantity}</th>
-            <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.cols.avgCost}</th>
-            <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.cols.latestPrice}</th>
-            <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.cols.marketValue}</th>
-            <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.cols.pnl}</th>
-            <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.cols.pnlPct}</th>
-            <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.cols.weight}</th>
-            <th className="text-center py-2.5 px-3 ui-table-header text-muted-fg"></th>
-            <th className="text-right py-2.5 pr-4 px-3 ui-table-header text-muted-fg"></th>
+          <tr>
+            <th scope="col" className="text-left py-2.5 pl-4 pr-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}>{t.portfolio.cols.ticker}</th>
+            <th scope="col" className="text-left py-2.5 px-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}>{t.portfolio.cols.company}</th>
+            <th scope="col" className="text-left py-2.5 px-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}>{t.portfolio.cols.sector}</th>
+            <th scope="col" className="text-right py-2.5 px-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}>{t.portfolio.cols.quantity}</th>
+            <th scope="col" className="text-right py-2.5 px-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}>{t.portfolio.cols.avgCost}</th>
+            <th scope="col" className="text-right py-2.5 px-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}>{t.portfolio.cols.latestPrice}</th>
+            <th scope="col" className="text-right py-2.5 px-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}>{t.portfolio.cols.marketValue}</th>
+            <th scope="col" className="text-right py-2.5 px-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}>{t.portfolio.cols.pnl}</th>
+            <th scope="col" className="text-right py-2.5 px-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}>{t.portfolio.cols.pnlPct}</th>
+            <th scope="col" className="text-right py-2.5 px-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}>{t.portfolio.cols.weight}</th>
+            <th scope="col" className="text-center py-2.5 px-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}><span className="sr-only">{t.portfolio.cols.company}</span></th>
+            <th scope="col" className="text-right py-2.5 pr-4 px-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}><span className="sr-only">{t.portfolio.editPosition}</span></th>
           </tr>
         </thead>
         <tbody>
@@ -507,14 +648,11 @@ function PositionsTable({
           ))}
         </tbody>
       </table>
-      <div className="px-4 py-2 border-t border-border bg-surface">
-        <TableSourceFooter source={t.portfolio.source} />
-      </div>
-    </div>
+    </TableCard>
   )
 }
 
-// ─── Transactions: add form ─────────────────────────────────────────────────────
+// ─── Transactions: add form (Fable right-rail side panel) ─────────────────────
 
 function AddTransactionForm({
   portfolioId,
@@ -593,75 +731,90 @@ function AddTransactionForm({
   }
 
   return (
-    <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-2 bg-surface border border-border rounded px-4 py-3">
-      <input
-        type="text"
-        list="portfolio-ticker-suggestions"
-        value={ticker}
-        onChange={e => setTicker(e.target.value.toUpperCase())}
-        placeholder={t.portfolio.tickerPlaceholder}
-        className="h-8 px-3 rounded border border-border bg-surface-2 text-xs font-mono text-foreground placeholder:text-muted focus:outline-none focus:border-accent w-28"
-        autoComplete="off"
-        spellCheck={false}
-      />
-      <select
-        value={transactionType}
-        onChange={e => setTransactionType(e.target.value as TransactionType)}
-        className="h-8 px-2 rounded border border-border bg-surface-2 text-xs text-foreground focus:outline-none focus:border-accent"
-      >
-        <option value="buy">{t.portfolio.tx.buy}</option>
-        <option value="sell">{t.portfolio.tx.sell}</option>
-      </select>
-      <input
-        type="date"
-        value={tradeDate}
-        onChange={e => setTradeDate(e.target.value)}
-        className="h-8 px-2 rounded border border-border bg-surface-2 text-xs ui-number text-foreground focus:outline-none focus:border-accent"
-      />
-      <input
-        type="number" min="0" step="any" value={quantity}
-        onChange={e => setQuantity(e.target.value)}
-        placeholder={t.portfolio.tx.quantityLabel}
-        className="h-8 px-3 rounded border border-border bg-surface-2 text-xs ui-number text-foreground placeholder:text-muted focus:outline-none focus:border-accent w-24"
-      />
-      <input
-        type="number" min="0" step="any" value={price}
-        onChange={e => setPrice(e.target.value)}
-        placeholder={t.portfolio.tx.priceLabel}
-        className="h-8 px-3 rounded border border-border bg-surface-2 text-xs ui-number text-foreground placeholder:text-muted focus:outline-none focus:border-accent w-28"
-      />
-      <input
-        type="number" min="0" step="any" value={fees}
-        onChange={e => setFees(e.target.value)}
-        placeholder={t.portfolio.tx.feesLabel}
-        className="h-8 px-3 rounded border border-border bg-surface-2 text-xs ui-number text-foreground placeholder:text-muted focus:outline-none focus:border-accent w-20"
-      />
-      <input
-        type="number" min="0" step="any" value={taxes}
-        onChange={e => setTaxes(e.target.value)}
-        placeholder={t.portfolio.tx.taxesLabel}
-        className="h-8 px-3 rounded border border-border bg-surface-2 text-xs ui-number text-foreground placeholder:text-muted focus:outline-none focus:border-accent w-20"
-      />
-      <input
-        type="text" value={notes}
-        onChange={e => setNotes(e.target.value)}
-        placeholder={t.portfolio.tx.notesLabel}
-        className="h-8 px-3 rounded border border-border bg-surface-2 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-accent w-32"
-      />
-      <button
-        type="submit"
-        disabled={loading || !ticker.trim() || !quantity.trim() || !price.trim()}
-        className="h-8 px-3 rounded bg-primary text-surface text-xs font-medium disabled:opacity-50 transition-opacity"
-        style={{ backgroundColor: 'var(--primary)' }}
-      >
-        {loading ? '…' : t.portfolio.tx.addTransaction}
-      </button>
-      {feedback && (
-        <span className={`text-xs ${feedback.type === 'ok' ? 'text-positive' : 'text-negative'}`}>
-          {feedback.msg}
+    <RailPanel label={t.portfolio.tx.addTransaction}>
+      <form onSubmit={handleAdd} className="flex flex-col gap-2">
+        <input
+          type="text"
+          list="portfolio-ticker-suggestions"
+          value={ticker}
+          onChange={e => setTicker(e.target.value.toUpperCase())}
+          placeholder={t.portfolio.tickerPlaceholder}
+          aria-label={t.portfolio.cols.ticker}
+          className={`${CHIP_INPUT} font-mono`}
+          style={CHIP_STYLE}
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <select
+          value={transactionType}
+          onChange={e => setTransactionType(e.target.value as TransactionType)}
+          aria-label={t.portfolio.tx.type}
+          className={CHIP_INPUT}
+          style={CHIP_STYLE}
+        >
+          <option value="buy">{t.portfolio.tx.buy}</option>
+          <option value="sell">{t.portfolio.tx.sell}</option>
+        </select>
+        <input
+          type="date"
+          value={tradeDate}
+          onChange={e => setTradeDate(e.target.value)}
+          aria-label={t.portfolio.tx.tradeDate}
+          className={`${CHIP_INPUT} ui-number`}
+          style={CHIP_STYLE}
+        />
+        <input
+          type="number" min="0" step="any" value={quantity}
+          onChange={e => setQuantity(e.target.value)}
+          placeholder={t.portfolio.tx.quantityLabel}
+          aria-label={t.portfolio.tx.quantityLabel}
+          className={`${CHIP_INPUT} ui-number`}
+          style={CHIP_STYLE}
+        />
+        <input
+          type="number" min="0" step="any" value={price}
+          onChange={e => setPrice(e.target.value)}
+          placeholder={t.portfolio.tx.priceLabel}
+          aria-label={t.portfolio.tx.priceLabel}
+          className={`${CHIP_INPUT} ui-number`}
+          style={CHIP_STYLE}
+        />
+        <input
+          type="number" min="0" step="any" value={fees}
+          onChange={e => setFees(e.target.value)}
+          placeholder={t.portfolio.tx.feesLabel}
+          aria-label={t.portfolio.tx.feesLabel}
+          className={`${CHIP_INPUT} ui-number`}
+          style={CHIP_STYLE}
+        />
+        <input
+          type="number" min="0" step="any" value={taxes}
+          onChange={e => setTaxes(e.target.value)}
+          placeholder={t.portfolio.tx.taxesLabel}
+          aria-label={t.portfolio.tx.taxesLabel}
+          className={`${CHIP_INPUT} ui-number`}
+          style={CHIP_STYLE}
+        />
+        <input
+          type="text" value={notes}
+          onChange={e => setNotes(e.target.value)}
+          placeholder={t.portfolio.tx.notesLabel}
+          aria-label={t.portfolio.tx.notesLabel}
+          className={CHIP_INPUT}
+          style={CHIP_STYLE}
+        />
+        <button
+          type="submit"
+          disabled={loading || !ticker.trim() || !quantity.trim() || !price.trim()}
+          className={PILL_BUTTON}
+        >
+          {loading ? '…' : t.portfolio.tx.addTransaction}
+        </button>
+        <span role="status" aria-live="polite" className={feedback ? (feedback.type === 'ok' ? 'text-positive text-xs' : 'text-negative text-xs') : 'sr-only'}>
+          {feedback?.msg ?? ''}
         </span>
-      )}
-    </form>
+      </form>
+    </RailPanel>
   )
 }
 
@@ -671,10 +824,12 @@ function TransactionsTable({
   transactions,
   portfolioId,
   onChanged,
+  controls,
 }: {
   transactions: TransactionOut[]
   portfolioId: string
   onChanged: () => void
+  controls: ReactNode
 }) {
   const { t } = useLang()
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -689,34 +844,33 @@ function TransactionsTable({
     }
   }
 
-  if (transactions.length === 0) {
-    return (
-      <div className="bg-surface border border-border rounded px-5 py-8 text-center">
-        <p className="text-xs text-muted-fg">{t.portfolio.tx.empty}</p>
-      </div>
-    )
-  }
-
   return (
-    <div className="bg-surface border border-border rounded overflow-x-auto">
-      <table className="w-full text-xs min-w-[720px]">
+    <TableCard
+      title={t.portfolio.tabTransactions}
+      controls={controls}
+      minWidth={720}
+      state={transactions.length === 0 ? 'empty' : undefined}
+      stateMessage={t.portfolio.tx.empty}
+    >
+      <table className="w-full text-xs" style={{ fontSize: 'var(--fs-table-cell)' }}>
+        <caption className="sr-only">{t.portfolio.tabTransactions}</caption>
         <thead>
-          <tr className="border-b border-border bg-surface-2">
-            <th className="text-left py-2.5 pl-4 pr-3 ui-table-header text-muted-fg">{t.portfolio.tx.cols.date}</th>
-            <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.tx.cols.ticker}</th>
-            <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.tx.cols.type}</th>
-            <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.tx.cols.quantity}</th>
-            <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.tx.cols.price}</th>
-            <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.tx.cols.fees}</th>
-            <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.tx.cols.taxes}</th>
-            <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.tx.cols.net}</th>
-            <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.tx.cols.realizedPnl}</th>
-            <th className="text-right py-2.5 pr-4 px-3 ui-table-header text-muted-fg"></th>
+          <tr>
+            <th scope="col" className="text-left py-2.5 pl-4 pr-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}>{t.portfolio.tx.cols.date}</th>
+            <th scope="col" className="text-left py-2.5 px-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}>{t.portfolio.tx.cols.ticker}</th>
+            <th scope="col" className="text-left py-2.5 px-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}>{t.portfolio.tx.cols.type}</th>
+            <th scope="col" className="text-right py-2.5 px-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}>{t.portfolio.tx.cols.quantity}</th>
+            <th scope="col" className="text-right py-2.5 px-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}>{t.portfolio.tx.cols.price}</th>
+            <th scope="col" className="text-right py-2.5 px-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}>{t.portfolio.tx.cols.fees}</th>
+            <th scope="col" className="text-right py-2.5 px-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}>{t.portfolio.tx.cols.taxes}</th>
+            <th scope="col" className="text-right py-2.5 px-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}>{t.portfolio.tx.cols.net}</th>
+            <th scope="col" className="text-right py-2.5 px-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}>{t.portfolio.tx.cols.realizedPnl}</th>
+            <th scope="col" className="text-right py-2.5 pr-4 px-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}><span className="sr-only">{t.portfolio.removePosition}</span></th>
           </tr>
         </thead>
         <tbody>
           {transactions.map((tx) => (
-            <tr key={tx.id} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
+            <tr key={tx.id} className="border-b border-border last:border-0 nv-row-hover nv-transition">
               <td className="py-2.5 pl-4 pr-3 ui-number text-foreground">{tx.tradeDate}</td>
               <td className="py-2.5 px-3">
                 <Link href={`/companies/${tx.ticker}`} className="font-mono text-primary hover:underline">{tx.ticker}</Link>
@@ -737,6 +891,7 @@ function TransactionsTable({
                   onClick={() => handleRemove(tx.id)}
                   disabled={busyId === tx.id}
                   className="text-muted-fg hover:text-negative text-xs disabled:opacity-40"
+                  aria-label={`${t.portfolio.removePosition} ${tx.ticker} ${tx.tradeDate}`}
                 >
                   ×
                 </button>
@@ -745,11 +900,11 @@ function TransactionsTable({
           ))}
         </tbody>
       </table>
-    </div>
+    </TableCard>
   )
 }
 
-// ─── Cash: add form ─────────────────────────────────────────────────────────────
+// ─── Cash: add form (Fable right-rail side panel) ─────────────────────────────
 
 function AddCashForm({
   portfolioId,
@@ -799,48 +954,55 @@ function AddCashForm({
   }
 
   return (
-    <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-2 bg-surface border border-border rounded px-4 py-3">
-      <select
-        value={entryType}
-        onChange={e => setEntryType(e.target.value as 'deposit' | 'withdrawal' | 'adjustment')}
-        className="h-8 px-2 rounded border border-border bg-surface-2 text-xs text-foreground focus:outline-none focus:border-accent"
-      >
-        <option value="deposit">{t.portfolio.cash.deposit}</option>
-        <option value="withdrawal">{t.portfolio.cash.withdrawal}</option>
-        <option value="adjustment">{t.portfolio.cash.adjustment}</option>
-      </select>
-      <input
-        type="date"
-        value={ledgerDate}
-        onChange={e => setLedgerDate(e.target.value)}
-        className="h-8 px-2 rounded border border-border bg-surface-2 text-xs ui-number text-foreground focus:outline-none focus:border-accent"
-      />
-      <input
-        type="number" step="any" value={amount}
-        onChange={e => setAmount(e.target.value)}
-        placeholder={t.portfolio.cash.amountLabel}
-        className="h-8 px-3 rounded border border-border bg-surface-2 text-xs ui-number text-foreground placeholder:text-muted focus:outline-none focus:border-accent w-32"
-      />
-      <input
-        type="text" value={description}
-        onChange={e => setDescription(e.target.value)}
-        placeholder={t.portfolio.cash.descriptionLabel}
-        className="h-8 px-3 rounded border border-border bg-surface-2 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-accent w-48"
-      />
-      <button
-        type="submit"
-        disabled={loading || !amount.trim()}
-        className="h-8 px-3 rounded bg-primary text-surface text-xs font-medium disabled:opacity-50 transition-opacity"
-        style={{ backgroundColor: 'var(--primary)' }}
-      >
-        {loading ? '…' : t.portfolio.cash.addEntry}
-      </button>
-      {feedback && (
-        <span className={`text-xs ${feedback.type === 'ok' ? 'text-positive' : 'text-negative'}`}>
-          {feedback.msg}
+    <RailPanel label={t.portfolio.cash.addEntry}>
+      <form onSubmit={handleAdd} className="flex flex-col gap-2">
+        <select
+          value={entryType}
+          onChange={e => setEntryType(e.target.value as 'deposit' | 'withdrawal' | 'adjustment')}
+          aria-label={t.portfolio.cash.type}
+          className={CHIP_INPUT}
+          style={CHIP_STYLE}
+        >
+          <option value="deposit">{t.portfolio.cash.deposit}</option>
+          <option value="withdrawal">{t.portfolio.cash.withdrawal}</option>
+          <option value="adjustment">{t.portfolio.cash.adjustment}</option>
+        </select>
+        <input
+          type="date"
+          value={ledgerDate}
+          onChange={e => setLedgerDate(e.target.value)}
+          aria-label={t.portfolio.cash.date}
+          className={`${CHIP_INPUT} ui-number`}
+          style={CHIP_STYLE}
+        />
+        <input
+          type="number" step="any" value={amount}
+          onChange={e => setAmount(e.target.value)}
+          placeholder={t.portfolio.cash.amountLabel}
+          aria-label={t.portfolio.cash.amountLabel}
+          className={`${CHIP_INPUT} ui-number`}
+          style={CHIP_STYLE}
+        />
+        <input
+          type="text" value={description}
+          onChange={e => setDescription(e.target.value)}
+          placeholder={t.portfolio.cash.descriptionLabel}
+          aria-label={t.portfolio.cash.descriptionLabel}
+          className={CHIP_INPUT}
+          style={CHIP_STYLE}
+        />
+        <button
+          type="submit"
+          disabled={loading || !amount.trim()}
+          className={PILL_BUTTON}
+        >
+          {loading ? '…' : t.portfolio.cash.addEntry}
+        </button>
+        <span role="status" aria-live="polite" className={feedback ? (feedback.type === 'ok' ? 'text-positive text-xs' : 'text-negative text-xs') : 'sr-only'}>
+          {feedback?.msg ?? ''}
         </span>
-      )}
-    </form>
+      </form>
+    </RailPanel>
   )
 }
 
@@ -848,6 +1010,11 @@ function AddCashForm({
 
 function CashSummaryCards({ summary }: { summary: CashSummary }) {
   const { t } = useLang()
+  // Secondary metrics, kept adjacent to the table they describe (Fable's
+  // secondary-information placement). Each figure carries a FIXED cash-flow
+  // direction colour in the original design (deposits/sells green,
+  // withdrawals/buys red, net balance neutral) — a semantic distinct from a
+  // sign-derived ChangeIndicator, so the original colour array is preserved.
   const cards = [
     { label: t.portfolio.cash.totalDeposits, value: formatCLP(summary.totalDeposits), color: 'text-positive' },
     { label: t.portfolio.cash.totalWithdrawals, value: formatCLP(Math.abs(summary.totalWithdrawals)), color: 'text-negative' },
@@ -856,12 +1023,12 @@ function CashSummaryCards({ summary }: { summary: CashSummary }) {
     { label: t.portfolio.cash.netBalance, value: formatCLP(summary.netCashBalance), color: 'text-foreground' },
   ]
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
       {cards.map((c) => (
-        <div key={c.label} className="bg-surface border border-border rounded px-4 py-3">
-          <div className="ui-label text-muted-fg mb-1">{c.label}</div>
-          <div className={`ui-number text-lg font-semibold ${c.color}`}>{c.value}</div>
-        </div>
+        <GlassSurface key={c.label} variant="kpi" className="p-3 flex flex-col gap-1">
+          <span className="ui-micro-label text-muted-fg">{c.label}</span>
+          <span className={`ui-card-value ui-number ${c.color}`}>{c.value}</span>
+        </GlassSurface>
       ))}
     </div>
   )
@@ -879,31 +1046,30 @@ function cashEntryLabel(t: ReturnType<typeof useLang>['t'], entryType: CashEntry
   }
 }
 
-function CashLedgerTable({ entries }: { entries: CashEntryOut[] }) {
+function CashLedgerTable({ entries, controls }: { entries: CashEntryOut[]; controls: ReactNode }) {
   const { t } = useLang()
 
-  if (entries.length === 0) {
-    return (
-      <div className="bg-surface border border-border rounded px-5 py-8 text-center">
-        <p className="text-xs text-muted-fg">{t.portfolio.cash.empty}</p>
-      </div>
-    )
-  }
-
   return (
-    <div className="bg-surface border border-border rounded overflow-x-auto">
-      <table className="w-full text-xs min-w-[440px]">
+    <TableCard
+      title={t.portfolio.tabCash}
+      controls={controls}
+      minWidth={440}
+      state={entries.length === 0 ? 'empty' : undefined}
+      stateMessage={t.portfolio.cash.empty}
+    >
+      <table className="w-full text-xs" style={{ fontSize: 'var(--fs-table-cell)' }}>
+        <caption className="sr-only">{t.portfolio.tabCash}</caption>
         <thead>
-          <tr className="border-b border-border bg-surface-2">
-            <th className="text-left py-2.5 pl-4 pr-3 ui-table-header text-muted-fg">{t.portfolio.cash.cols.date}</th>
-            <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.cash.cols.type}</th>
-            <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.portfolio.cash.cols.amount}</th>
-            <th className="text-left py-2.5 pr-4 px-3 ui-table-header text-muted-fg">{t.portfolio.cash.cols.description}</th>
+          <tr>
+            <th scope="col" className="text-left py-2.5 pl-4 pr-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}>{t.portfolio.cash.cols.date}</th>
+            <th scope="col" className="text-left py-2.5 px-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}>{t.portfolio.cash.cols.type}</th>
+            <th scope="col" className="text-right py-2.5 px-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}>{t.portfolio.cash.cols.amount}</th>
+            <th scope="col" className="text-left py-2.5 pr-4 px-3 border-b border-border ui-table-header text-muted-fg" style={{ backgroundColor: 'var(--surface-table)' }}>{t.portfolio.cash.cols.description}</th>
           </tr>
         </thead>
         <tbody>
           {entries.map((e) => (
-            <tr key={e.id} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
+            <tr key={e.id} className="border-b border-border last:border-0 nv-row-hover nv-transition">
               <td className="py-2.5 pl-4 pr-3 ui-number text-foreground">{e.ledgerDate}</td>
               <td className="py-2.5 px-3 text-muted-fg">{cashEntryLabel(t, e.entryType)}</td>
               <td className={`py-2.5 px-3 text-right ui-number ${changeColor(e.amount)}`}>{formatCLP(e.amount)}</td>
@@ -912,7 +1078,7 @@ function CashLedgerTable({ entries }: { entries: CashEntryOut[] }) {
           ))}
         </tbody>
       </table>
-    </div>
+    </TableCard>
   )
 }
 
@@ -978,6 +1144,14 @@ export default function PortfolioPage() {
     }
   }, [detail, live])
 
+  // Fable CONCENTRATION rail: the largest holdings by the weight ALREADY
+  // computed by valuePositions. Sort + slice only — every number rendered is
+  // `position.weight` verbatim; no new value is derived.
+  const topByWeight = useMemo(() => {
+    const withWeight = (displayed?.positions ?? []).filter(p => p.weight !== null)
+    return [...withWeight].sort((a, b) => (b.weight as number) - (a.weight as number)).slice(0, 5)
+  }, [displayed])
+
   async function loadDetail(id: string, cancelled: { value: boolean }) {
     const [detailRes, txRes, cashRes] = await Promise.all([
       fetch(`/api/portfolios/${id}`, { cache: 'no-store' }),
@@ -1030,90 +1204,103 @@ export default function PortfolioPage() {
     void loadDetail(portfolioId, { value: false })
   }
 
-  const tabs: { key: Tab; label: string }[] = [
-    { key: 'positions', label: t.portfolio.tabPositions },
-    { key: 'transactions', label: t.portfolio.tabTransactions },
-    { key: 'cash', label: t.portfolio.tabCash },
+  const tabs: { value: Tab; label: string }[] = [
+    { value: 'positions', label: t.portfolio.tabPositions },
+    { value: 'transactions', label: t.portfolio.tabTransactions },
+    { value: 'cash', label: t.portfolio.tabCash },
   ]
 
-  return (
-    <div className="w-full space-y-5">
-      <SectionHeader
-        tag={t.portfolio.tag}
-        title={t.portfolio.title}
-        subtitle={t.portfolio.subtitle}
-        actions={!loading && detail ? <UpdateDataButton onRefresh={doRefresh} /> : undefined}
-      />
+  // Fable places the segmented group inside the analytical card's own toolbar,
+  // not on a separate band above the workspace.
+  const tabControl = (
+    <SegmentedControl
+      options={tabs}
+      value={tab}
+      onChange={setTab}
+      ariaLabel={t.portfolio.tabsAriaLabel}
+    />
+  )
 
-      {!loading && detail && (
-        <div className="flex items-center gap-1.5">
-          <MarketDataSourceBadge status={priceStatus} />
+  return (
+    <div className="w-full">
+      {/* Header — Fable header architecture: eyebrow, 19px title, inline
+          identity/meta on the baseline, actions right. */}
+      <Reveal>
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 mb-5">
+          <div className="min-w-0">
+            <div className="ui-label text-muted-fg mb-1">{t.portfolio.tag}</div>
+            <h1 className="ui-page-title text-foreground">{t.portfolio.title}</h1>
+            <div className="flex items-baseline flex-wrap gap-x-3 gap-y-1 mt-1">
+              <p className="text-xs text-muted">{t.portfolio.subtitle}</p>
+              {!loading && detail && (
+                <>
+                  <span className="ui-meta text-muted-fg ui-number">
+                    {displayed?.totals.positionCount ?? 0} {t.portfolio.holdings}
+                  </span>
+                  <MarketDataSourceBadge status={priceStatus} />
+                </>
+              )}
+            </div>
+          </div>
+          {!loading && detail && (
+            <div className="flex flex-wrap items-center gap-2 shrink-0 ml-auto">
+              <UpdateDataButton onRefresh={doRefresh} />
+            </div>
+          )}
         </div>
-      )}
+      </Reveal>
 
       {loading ? (
-        <div className="bg-surface border border-border rounded px-5 py-8 text-center">
-          <p className="text-xs text-muted-fg">Loading…</p>
-        </div>
+        <AsyncState kind="loading" message={t.common.loading} />
       ) : (
         <>
+          {/* Region A — asymmetric hero row (Fable Overview §1: no equal-card grid) */}
           {displayed && (
-            <SummaryCards
-              totals={displayed.totals}
-              realizedPnl={detail?.realizedPnl?.totalRealizedPnl ?? 0}
-              cashBalance={detail?.cashSummary?.netCashBalance ?? 0}
-            />
-          )}
-          {displayed && displayed.sectorExposure.length > 0 && (
-            <SectorExposureList sectors={displayed.sectorExposure} />
+            <Reveal delayMs={70}>
+              <div className="flex flex-wrap items-stretch gap-3.5">
+                <PortfolioHero
+                  totals={displayed.totals}
+                  realizedPnl={detail?.realizedPnl?.totalRealizedPnl ?? 0}
+                  cashBalance={detail?.cashSummary?.netCashBalance ?? 0}
+                />
+                <SectorExposurePanel sectors={displayed.sectorExposure} />
+              </div>
+            </Reveal>
           )}
 
-          <div className="flex items-center gap-1 border-b border-border">
-            {tabs.map((tb) => (
-              <button
-                key={tb.key}
-                onClick={() => setTab(tb.key)}
-                className="px-3 py-2 text-xs border-b-2 transition-colors -mb-px"
-                style={
-                  tab === tb.key
-                    ? { borderColor: 'var(--accent)', color: 'var(--foreground)' }
-                    : { borderColor: 'transparent', color: 'var(--muted-fg)' }
-                }
-              >
-                {tb.label}
-              </button>
-            ))}
-          </div>
+          {/* Region B — Fable Portfolio workspace: wide table + narrow right rail */}
+          <Reveal delayMs={130}>
+            <div className="flex flex-wrap items-start gap-3.5 mt-3.5">
+              <div style={FABLE_MAIN} className="flex flex-col gap-3">
+                {tab === 'cash' && detail && <CashSummaryCards summary={detail.cashSummary} />}
 
-          {tab === 'positions' && (
-            <div className="space-y-3">
-              {portfolioId && <AddPositionForm portfolioId={portfolioId} onAdded={refresh} />}
-              <PositionsTable
-                positions={displayed?.positions ?? []}
-                portfolioId={portfolioId ?? ''}
-                onChanged={refresh}
-              />
+                {tab === 'positions' && (
+                  <PositionsTable
+                    positions={displayed?.positions ?? []}
+                    portfolioId={portfolioId ?? ''}
+                    onChanged={refresh}
+                    controls={tabControl}
+                  />
+                )}
+                {tab === 'transactions' && (
+                  <TransactionsTable
+                    transactions={transactions}
+                    portfolioId={portfolioId ?? ''}
+                    onChanged={refresh}
+                    controls={tabControl}
+                  />
+                )}
+                {tab === 'cash' && <CashLedgerTable entries={cashEntries} controls={tabControl} />}
+              </div>
+
+              <div style={FABLE_RAIL} className="flex flex-col gap-3.5">
+                {portfolioId && tab === 'positions' && <AddPositionForm portfolioId={portfolioId} onAdded={refresh} />}
+                {portfolioId && tab === 'transactions' && <AddTransactionForm portfolioId={portfolioId} onAdded={refresh} />}
+                {portfolioId && tab === 'cash' && <AddCashForm portfolioId={portfolioId} onAdded={refresh} />}
+                {topByWeight.length > 0 && <ConcentrationPanel top={topByWeight} />}
+              </div>
             </div>
-          )}
-
-          {tab === 'transactions' && (
-            <div className="space-y-3">
-              {portfolioId && <AddTransactionForm portfolioId={portfolioId} onAdded={refresh} />}
-              <TransactionsTable
-                transactions={transactions}
-                portfolioId={portfolioId ?? ''}
-                onChanged={refresh}
-              />
-            </div>
-          )}
-
-          {tab === 'cash' && (
-            <div className="space-y-3">
-              {detail && <CashSummaryCards summary={detail.cashSummary} />}
-              {portfolioId && <AddCashForm portfolioId={portfolioId} onAdded={refresh} />}
-              <CashLedgerTable entries={cashEntries} />
-            </div>
-          )}
+          </Reveal>
         </>
       )}
     </div>

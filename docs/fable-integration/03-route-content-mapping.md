@@ -28,7 +28,7 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
 | 7 | `/earnings` | Earnings | public | 8 Research (upcoming earnings) / DataTable | No (reused Phase 3 `TableCard`/`AsyncState`) | **✓ Phase 5G (2026-07-29)** | **✓ Source-scan verified** |
 | 8 | `/companies/[ticker]` | Stocks · TICKER | public | 2 Portfolio detail panel + 3 Performance | Yes — company detail (KPI capsules, chart, valuation grid, results, news) | Done | Verified |
 | 9 | `/watchlist` 🔒 | Watchlist | protected | 2 Portfolio (DataTable) | No (reused Phase 3 `TableCard` + `AsyncState`) | **✓ Phase 5B (2026-07-28)** | **✓ Source + protected-route verified** |
-| 10 | `/portfolio` 🔒 | Portfolio | protected | 1 Overview + 2 Portfolio + 4 Risk | Yes — summary hero cards, sector exposure, positions/transactions/cash tabs | Not started | Not verified |
+| 10 | `/portfolio` 🔒 | Portfolio | protected | 1 Overview + 2 Portfolio + 4 Risk | No (reused Phase 3 `TableCard`/`KpiCapsule`/`ChangeIndicator`/`SegmentedControl`/`GlassSurface`/`AsyncState`) | **✓ Phase 5H (2026-07-29)** | **✓ Source-scan verified** |
 | 11 | `/structured-notes` 🔒 | Structured Notes | protected | 6 Structured Notes | Yes — barrier gauge, upload/extract panel, dashboard KPIs, bar/donut | Not started | Not verified |
 | 12 | `/structured-notes/[id]` 🔒 | note ISIN/name | protected | 6 SN detail panel | Yes — terms grid, current-levels table, schedule, allocation grid | Not started | Not verified |
 | 13 | `/settings/notifications` 🔒 | Notification Settings | protected | 10 Administration | Yes — recipients table, add form | Not started | Not verified |
@@ -530,14 +530,75 @@ their status-code mapping are unchanged.
 - **Auth:** **protected**.
 - **Fable destination:** **1 Overview** (hero + exposure) + **2 Portfolio** (positions table)
   + **4 Risk** (capsule language for summary cards).
-- **Fable component mapping:** summary cards → **KPI capsule row / hero card** (P&L delta
-  capsules, count-up); sector exposure → **allocation bars**; positions/transactions/cash →
-  glass DataTables; tab bar → segmented pill toggle; add forms → glass inputs. Preserve
-  `MarketDataSourceBadge` + `TableSourceFooter`. (Fable's privacy-mask `•••••` is an optional
-  additive fit here.)
-- **New component required:** **Yes** — summary hero cards, sector-exposure bars, three
-  tabbed tables + their add forms. Strong Fable-language reuse.
-- **Impl. status:** Not started · **Verif. status:** Not verified.
+- **Fable component mapping (as-built, Phase 5H + parity repair):** the page is rebuilt to the
+  Fable **composition**, not merely re-skinned. Header → Fable header architecture (eyebrow,
+  19px `ui-page-title`, identity/meta inline on the baseline, actions right). Region A →
+  Fable Overview §1 hero language: total-value hero card (`flex 1.7 1 400px`, `ui-kpi-hero`
+  value + tinted `ChangeIndicator` delta pill + auto-fit secondary-minis grid under a divider)
+  beside the exposure meter panel (`flex 1 1 250px`). Region B → Fable Portfolio §2 workspace:
+  wide `TableCard` column (`flex 2.6 1 620px`) with the `SegmentedControl` in the card's own
+  toolbar, beside a narrow right rail (`flex 1 1 280px`) holding the add-form side panel and the
+  CONCENTRATION meter panel. `MarketDataSourceBadge` + `TableSourceFooter` preserved.
+- **New component required:** **No** — reused Phase 3 `TableCard`/`ChangeIndicator`/
+  `SegmentedControl`/`GlassSurface`/`AsyncState`/`Reveal`, plus two page-local primitives
+  (`RailPanel`, `MeterRow`) composed entirely from those.
+- **Impl. status:** ✓ Phase 5H (2026-07-29) · **Verif. status:** ✓ Source-scan + bundle verified
+  (123 tests in `tests/fablePortfolioPage.test.ts`; build 0 errors, `/portfolio` still static/`○`).
+
+**Phase 5H — `/portfolio` as built (incl. the same-day Fable-parity repair).** Every hook, state
+variable, effect, and computed value (`displayed` `useMemo`, `loadDetail`, `refresh`, `doRefresh`,
+every form's validation/fetch logic) is byte-for-byte unchanged — the **layout** is what changed.
+
+**The composition (Fable-authoritative):**
+- **Header** — eyebrow + 19px title with the identity/meta (`{positionCount} holdings` +
+  `MarketDataSourceBadge`) **inline on the baseline**, `UpdateDataButton` right. This is Fable's
+  own `h1` + meta-span header, replacing the stacked tag/title/subtitle/badge-on-its-own-line
+  block. All three original strings (`tag`/`title`/`subtitle`) are preserved.
+- **Region A — asymmetric hero row** (Fable §1: *"deliberate asymmetry — no equal-card grid"*).
+  The old flat 7-across `KpiCapsule` grid is **gone**. Market Value is now the single primary
+  metric at `ui-kpi-hero` scale; Unrealized P&L is the Fable delta pill directly beneath it
+  (a `ChangeIndicator` inside a `color-mix` tinted capsule, so direction is never colour-alone);
+  the remaining five metrics are **secondary**, under a divider in Fable's
+  `repeat(auto-fit, minmax(120px,1fr))` minis grid. Beside it, sector exposure moved out of its
+  full-width band into the Fable exposure **meter panel** (`flex 1 1 250px`).
+- **Region B — analytical workspace** (Fable §2: *"the table IS the page"*). A wide `TableCard`
+  column (`flex 2.6 1 620px`) with the tab `SegmentedControl` relocated **into the card's own
+  toolbar**, beside a narrow right rail (`flex 1 1 280px`) carrying (a) the active tab's add-form
+  as a Fable **side panel** with vertically-stacked full-width chip inputs, and (b) the Fable
+  **CONCENTRATION** panel. The Cash tab's 5 summary metrics stay in the left column, adjacent to
+  the table they describe (Fable's secondary-information placement).
+- **CONCENTRATION** renders the five largest holdings using the `weight` **already computed by
+  `valuePositions`** — a sort + slice only; every number shown is `position.weight` verbatim, and
+  its headline stat is the single largest existing weight, deliberately **not** a top-10 sum
+  (that would be a new calculation).
+
+**Fable elements omitted, with the precise missing data:** hero **sparkline** (no portfolio-value
+time series exists — no history table, no endpoint); **currency mix** (`valuation.ts` is CLP-first
+and implements no FX conversion, so the panel would be a single 100% CLP bar); **search + asset-class
+filter row** and **sortable headers** (no filter/sort state or handler exists on this route —
+adding one is new functionality, not a re-skin); **row-click position detail panel** (no
+position-detail payload/endpoint exists, and the row already owns an inline-edit interaction);
+**performance / attribution / benchmark / risk charts and monthly-return grids** (none of that data
+exists for a portfolio here). Each is asserted absent by test, and the omission reason is written
+into the page's own header comment.
+
+**Preserved verbatim:** all 3 tables (12/10/4 columns in order), all 3 add-forms with their exact
+endpoints/payloads/validation/409-422 branches/2500ms auto-dismiss, the transaction-derived
+read-only lock, the 6 write calls, the single `MarketDataSourceBadge` and single
+`TableSourceFooter`, all 3 distinct empty-state messages, and the `TableCard` empty-state fix so
+the Positions source footer survives a zero-position portfolio.
+
+**Fixed in passing** (same pre-existing defect Phase 5B fixed on Watchlist): all 3 submit buttons
+moved off `bg-primary text-surface` (a latent dark-mode contrast failure) onto
+`bg-primary text-primary-fg`. **Accessibility added:** `aria-label` on every form control, a
+permanently-mounted `role="status" aria-live="polite"` feedback region per form, a descriptive
+`aria-label` on the transaction remove button, `scope="col"` + `sr-only <caption>` on every table,
+and `title` on truncated meter names.
+
+**Deliberately NOT changed:** no confirmation dialog on removal (none existed); no persistence key
+for the active tab (it has always reset to Positions on mount); no FX/dividend/attribution field;
+no shared Fable component modified; no CSS added (the meter fill reuses the existing
+`.nv-transition-state` width transition, already reduced-motion-gated globally).
 
 ## 11. `/structured-notes` 🔒 — Structured Notes (dashboard)
 
