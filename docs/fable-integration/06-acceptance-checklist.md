@@ -15,14 +15,16 @@ COMPLETE 2026-07-22** · **Phase 2 (app shell: top pill navigation) ✓ COMPLETE
 **Phase 5C (`/companies/[ticker]` page re-skin) ✓ COMPLETE 2026-07-28** ·
 **Phase 5D (`/compare` page re-skin) ✓ COMPLETE 2026-07-28** ·
 **Phase 5E (`/chart-builder` page re-skin) ✓ COMPLETE 2026-07-28** ·
-**Phase 5F (`/macro` + `/macro/calendar` page re-skin) ✓ COMPLETE 2026-07-28** — see
+**Phase 5F (`/macro` + `/macro/calendar` page re-skin) ✓ COMPLETE 2026-07-28** ·
+**Phase 5G (`/earnings` page re-skin) ✓ COMPLETE 2026-07-29** — see
 `04-file-level-implementation-plan.md` § "Phase 1 — as built" / "Phase 2 — as built" /
 "Phase 3 — as built" / "Phase 4 — as built" / "Phase 5A — `/stocks` — as built" /
 "Phase 5B — `/watchlist` — as built" / "Phase 5C — `/companies/[ticker]` — as built" /
 "Phase 5D — `/compare` — as built" / "Phase 5E — `/chart-builder` — as built" /
-"Phase 5F — `/macro` + `/macro/calendar` — as built". Phase 5's remaining 5 pages and Phases 6–8
-not started. Items below are ticked only where Phases 1–5F genuinely satisfy them; everything
-that still depends on the remaining page work stays `[ ]` or `[~]`.
+"Phase 5F — `/macro` + `/macro/calendar` — as built" / "Phase 5G — `/earnings` — as built".
+Phase 5's remaining 4 pages and Phases 6–8 not started. Items below are ticked only where
+Phases 1–5G genuinely satisfy them; everything that still depends on the remaining page work
+stays `[ ]` or `[~]`.
 
 ---
 
@@ -147,7 +149,17 @@ loading state · empty state · error state · auth status — verified identica
   the same pass: near-opaque header, `scope="col"`/`sr-only` caption, its own empty state now routed
   through the shared `AsyncState` component. No forecast/consensus/synthetic-event was invented;
   no Chile row fabricated.*
-- [ ] `/earnings` — upcoming + recent results tables; Update/CSV; loading/empty; public.
+- [x] `/earnings` — upcoming + recent results tables; Update/CSV; loading/empty; public.
+  *Phase 5G (2026-07-29). Both tables, all 3 Upcoming columns and all 11 Recent Results columns in
+  their original order, every ticker link, per-row currency, YoY field, the bank-no-EBITDA tooltip,
+  both `MarketDataSourceBadge`/`TableSourceFooter` instances, the amounts note, the record count,
+  and the Export CSV action are preserved byte-for-byte in logic — only presentation changed
+  (`TableCard`/`AsyncState`/`Reveal`). Restyled onto `TableCard`(×2, closing one more pre-existing
+  no-`min-w` gap — Recent Results had none before). The loading/empty rows now route through the
+  shared `AsyncState`, adopting the exact convention already used for this same data source on
+  `/companies/[ticker]`. No consensus/surprise/beat-miss field, no fabricated quarter, no
+  reintroduced Clean/Mixed/Weak label, no use of the dead `earnings.json` file (confirmed via a
+  repo-wide scan) — locked by 57 tests in `tests/fableEarningsPage.test.ts`.*
 - [x] `/companies/[ticker]` — KPI strip + business cards + price chart (8 TF + markers) + results +
   valuation grid + news; Print/Watchlist/Graph-fundamentals; `cmi.chartTimeframe`; public.
   *Phase 5C (2026-07-28). All 7 content sections, all 6 KPIs, all 8 chart timeframes (now a
@@ -286,7 +298,9 @@ loading state · empty state · error state · auth status — verified identica
   Phase 5D: Compare's Fundamentals CSV export (`handleExportFund` → `exportCSV`) is preserved
   byte-for-byte, same filename/headers/row-shape, asserted by test. Phase 5E: Charting's Export CSV
   (`handleExport` → `exportCSV`, `fundamentals_{ticker}` filename) is likewise preserved
-  byte-for-byte, asserted by test. Earnings export untouched (its page is not yet restyled).*
+  byte-for-byte, asserted by test. Phase 5G: Earnings' Export CSV (`handleExport` → `exportCSV`,
+  `earnings_recent_results` filename, same 11 header labels/row shape) is likewise preserved
+  byte-for-byte, asserted by test.*
 - [~] `Update` buttons refresh via `useGlobalRefresh`; badges reflect live/persisted/static.
   *Phase 5A: Stocks still routes its single `UpdateDataButton` through `useGlobalRefresh()` and
   still derives `priceStatus` as live → persisted → static; both asserted by test and confirmed in
@@ -324,10 +338,17 @@ loading state · empty state · error state · auth status — verified identica
   `tests/fableMacroCalendarPage.test.ts` 56 tests);
   `fableComparePage`/`fableStocksPage`/`fableWatchlistPage`/`fableChartBuilderPage`/
   `fableCompanyDetailPage`'s phase-boundary guards updated deliberately to remove `/macro` and/or
-  `/macro/calendar`, the same precedent Phase 5B/5D/5E set. The same 3 pre-existing, date-dependent
-  `tests/newsModule.test.ts` failures persist unchanged across every one of these boundaries
-  (fixtures stamped `15 Jul 2026` vs a rolling 7-day window; today is 2026-07-28). No news-related
-  file is in any Phase 5 sub-phase's changed-file list.)*
+  `/macro/calendar`, the same precedent Phase 5B/5D/5E set. **Phase 5G boundary: 2820 → 2877 tests,
+  2874 pass** (a manual chart-modal opacity repair landed between 5F and 5G, +14 tests, folded into
+  the 2806→2820 count above) — 1 new test file (`tests/fableEarningsPage.test.ts`, 57 tests);
+  `fableMacroCalendarPage`/`fableStocksPage`/`fableWatchlistPage`'s phase-boundary guards updated
+  deliberately to remove `/earnings` (the only 3 of its 8 list occurrences that checked `TableCard`
+  specifically — the other 5, checking `SegmentedControl`/`KpiCapsule`/a direct `GlassSurface`
+  import, remain true unmodified since `/earnings` adopts none of those three), the same precedent
+  every prior Phase 5 sub-phase set. The same 3 pre-existing, date-dependent `tests/newsModule.test.ts`
+  failures persist unchanged across every one of these boundaries (fixtures stamped `15 Jul 2026` vs
+  a rolling 7-day window; today is 2026-07-29). No news-related file is in any Phase 5 sub-phase's
+  changed-file list.)*
 - [ ] Browser responsive ladder (1728/1440/1280/1023/900/767/630/430/390) in **light + dark** and
   **EN + ES**, per route → zero page-level horizontal overflow.
   *Phases 3/4/5A, like Phase 2, could only run source-level, build, and rendered-markup checks —

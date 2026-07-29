@@ -427,8 +427,11 @@ or any news-related source path was touched this phase).
 > **Phase 5F (`/macro` + `/macro/calendar`) ✓ COMPLETE (2026-07-28)** — proves a two-route phase
 > sharing one restyled component (`EconomicCalendarTable`), closes two more pre-existing no-`min-w`
 > gaps, and adds real keyboard operability to a mouse-only interaction (chartable indicator rows).
-> See "Phase 5A — as built", "Phase 5B — as built", "Phase 5C — as built", "Phase 5D — as built",
-> "Phase 5E — as built" and "Phase 5F — as built" below. Pages 8–12 are not started.
+> **Phase 5G (`/earnings`) ✓ COMPLETE (2026-07-29)** — proves the smallest/simplest remaining
+> two-table page, closes one more pre-existing no-`min-w` gap, and adopts the
+> loading/empty `AsyncState` convention already established on the same data source in
+> `/companies/[ticker]`. See "Phase 5A — as built" through "Phase 5F — as built" and "Phase 5G — as
+> built" below. Pages 8–11 are not started.
 
 Each page: swap layout/card/table/pill classes to the new shared components; **do not change**
 data fetching, `fetch*` calls, `useMarketData`/`useMacroData`/`useGlobalRefresh`, persisted
@@ -446,7 +449,7 @@ Recommended order (low-risk → high-risk, dependency-aware):
    capsules, charts, glass cards, print path.
 4. **`/macro`** + **`/macro/calendar`** ✓ — banded table, yield curve, chart popup overlay,
    release calendar, FOMC outlook, Chile-deferred disclosure.
-5. **`/earnings`** — two glass DataTables + upcoming module.
+5. **`/earnings`** ✓ — two glass DataTables + upcoming module.
 6. **`/compare`** ✓ — multi-slot returns table, settings modal (glass overlay), compare chart,
    segmented pills.
 7. **`/chart-builder`** ✓ — metric picker + dual-axis chart + underlying table + settings.
@@ -892,6 +895,58 @@ the dense tier, scrim/shape/chart/controls/footer/close/async-state/responsivene
 preserved, no API/data/other-Phase-5F-section change, unrelated modal consumers unchanged). Full
 suite: 2806 → **2820 tests, 2817 pass, 3 fail** (+14, all in the new file) — same 3 pre-existing
 date-dependent `tests/newsModule.test.ts` failures, unchanged. Lint 0 · build 0 errors.
+
+---
+
+### Phase 5G — `/earnings` — as built (2026-07-29)
+
+**Files changed (5 — 1 source, 3 test scope-boundary corrections, 1 new test; `03`/`04`/`06`
+counted once):**
+
+| File | Change |
+|---|---|
+| `src/app/earnings/page.tsx` | Re-skinned. **Every hook, state variable, effect, and computed value (`cal`, `results`, `loading`, `upcoming`, `rows`, `live`, `handleExport`, `pctCell`, `fmtMM`, `fmtEps`) is byte-for-byte unchanged** — only the JSX tree changed. Both tables (raw `bg-surface border` divs, ad hoc `overflow-x-auto`) → `TableCard`. The Upcoming table's `min-w-[360px]` is preserved via `minWidth={360}`; the Recent Results table had **no `min-w` at all** — a genuine pre-existing responsive gap, now closed, the same shape of fix every prior Phase 5 sub-phase made. `MarketDataSourceBadge` (×2, unchanged component/props) and the Export CSV button moved into `TableCard`'s `controls` slot; `TableSourceFooter` (×2) + the amounts note + the record-count span moved into its `footer` slot. The bare `<td>{loading ? ... : ...}</td>` empty/loading cells were replaced with the shared `AsyncState` component, `kind={loading ? 'loading' : 'empty'}` — **adopting the exact convention already established** on this same data source in `src/app/companies/[ticker]/page.tsx` (`kind={earningsResults === null ? 'loading' : 'empty'}`), not inventing a new one. Semantic table markup added: `scope="col"`, `sr-only <caption>` on each table, near-opaque `var(--surface-table)` header background, tokenised `var(--fs-table-cell)` body type, `nv-row-hover nv-transition` (was `hover:bg-surface-2 transition-colors`). Three `Reveal` wrappers (0/70/130ms — header, Upcoming, Recent Results). |
+| `tests/fableMacroCalendarPage.test.ts`, `tests/fableStocksPage.test.ts`, `tests/fableWatchlistPage.test.ts` | **Deliberate scope-boundary updates, not weakened assertions** — the exact precedent every prior Phase 5 sub-phase set. `/earnings` removed from each file's `TableCard`-absence "not yet migrated" guard array (the only three lists that would actually have broken — checked all 8 occurrences of `'src/app/earnings/page.tsx'` across the fable test suite; the other 5, checking `SegmentedControl`/`KpiCapsule`/a direct `GlassSurface` import, remain true unmodified since this page adopts none of those three). |
+| `tests/fableEarningsPage.test.ts` | **New — 57 tests.** Every section/table/column-order/ticker-link/period/date/currency/YoY-field/metric preserved; no consensus/surprise/beat-miss field, no fabricated quarter, no `earnings.json` import (confirmed both on this page and via a repo-wide `src/` scan — the file is a dead, zero-import orphan), no Clean/Mixed/Weak label, no metric coerced to zero; confirms no filter/sort/persistence was invented (none existed); confirms the loading/empty `AsyncState` mapping matches the company-detail page's own convention exactly; confirms partial/stale/unavailable/provider-error remain exactly as unified as they already were (not a new distinction); Fable material/pill/token/radius rules; motion restraint + reduced-motion collapse; full a11y; responsive containment; complete EN/ES (zero new keys needed — every string reused); scope guards (Macro/Macro Calendar/company-detail/middleware/API-contract untouched). |
+| `docs/fable-integration/03` / `04` / `06` | Route 7 status → Done/Verified (and the pre-existing missing `## 7.` section header in doc 03 fixed); this as-built record; recommended-order item 5 ticked; checklist items updated. |
+
+**Files deliberately NOT changed:** `globals.css` (every token this page needed already existed),
+`src/lib/data/{earningsCalendar,earningsResults}.ts` (client-safe fetch helpers, untouched),
+`src/lib/earnings/{resolveEarningsResults,earningsResultsCore}.ts` (calculations/rolling-window/
+YoY/bank-EBITDA-suppression logic, untouched), `src/lib/providers/earnings/earningsCalendarProvider.ts`
+(CMF orchestration, untouched), `src/app/api/earnings/{calendar,results}/route.ts` (untouched), any
+other page, `src/middleware.ts`, `package.json`/`package-lock.json`.
+
+**Judgement calls, stated plainly:**
+- **Partial/stale/unavailable/provider-error states were not newly distinguished.** The brief listed
+  these as required coverage, but the current NMI implementation genuinely does not visually
+  distinguish them — a `results.status === 'unavailable'` response and a `results === null` client
+  fetch failure render identically (`rows.length === 0` → the same "empty" message) today. Per the
+  authority model ("existing NMI is authoritative for … all asynchronous and data-quality states"),
+  inventing a new distinction here would have been a functional change disguised as a re-skin, so the
+  existing conflated behavior was preserved exactly and is asserted as such by the new test suite,
+  rather than papered over with a cosmetically "complete"-looking set of AsyncState kinds the data
+  layer doesn't actually produce.
+- **A pre-existing, unrelated loose end was found and deliberately left alone**: `/api/earnings/route.ts`
+  (a different, orphaned Phase 8C route — `/api/earnings`, no trailing segment, reading persisted
+  `earnings_events` from manual-CSV ingestion) carries a stale comment claiming the page "falls back to
+  earnings.json" for uncovered tickers. Verified this route is **not called anywhere** by the
+  `/earnings` page (which only ever calls `/api/earnings/calendar` and `/api/earnings/results`) and that
+  `src/data/earnings.json` itself has **zero import statements** anywhere in `src/` — a dead file, not a
+  live production source. Out of scope to fix (a backend API file, and no verified defect was raised
+  against it) — documented here rather than silently left for a future session to rediscover.
+- **No new i18n keys were needed.** Every visible string on the re-skinned page already existed in
+  `t.earnings`/`t.common`/`t.home`/`t.stocks` before this phase.
+
+**Validation:** lint 0 problems · full suite **2820 → 2877 tests, 2874 pass, 3 fail** (+57, all in the
+new file) · build 0 errors (`/earnings` still static/`○`). The 3 failures are the same pre-existing,
+date-dependent `tests/newsModule.test.ts` fixture failures documented in every phase since Phase 1.
+
+**Honest gap:** the interactive browser responsive ladder (1920/1600/1440/1280/1024/768/390,
+light+dark, EN+ES, reduced motion) was **not** run — no connected browser in this background session,
+the same disclosed limitation as every prior Phase 5 sub-phase. What *is* verified is source-and-
+build-level: the `minWidth={360}` floor and `TableCard`'s own card-level `overflow-x-auto` for the
+(previously unbounded) Recent Results table are both present and asserted by the new test suite.
 
 ---
 

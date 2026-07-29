@@ -25,7 +25,7 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
 | 4 | `/chart-builder` | Charting | public | 3 Performance (chart) | No (reused Phase 3 `TableCard`/`GlassSurface`/`SegmentedControl`) | **✓ Phase 5E (2026-07-28)** | **✓ Source-scan verified** |
 | 5 | `/macro` | Macroeconomic Indicators | public | 7 Macro | No (reused Phase 3 `TableCard`/`GlassSurface`/`SegmentedControl`) | **✓ Phase 5F (2026-07-28)** | **✓ Source-scan verified** |
 | 6 | `/macro/calendar` | Economic Calendar | public | 7 Macro / 9 Documents table | No (reused Phase 3 `TableCard`) | **✓ Phase 5F (2026-07-28)** | **✓ Source-scan verified** |
-| 7 | `/earnings` | Earnings | public | 8 Research (upcoming earnings) / DataTable | Yes — upcoming + results tables | Not started | Not verified |
+| 7 | `/earnings` | Earnings | public | 8 Research (upcoming earnings) / DataTable | No (reused Phase 3 `TableCard`/`AsyncState`) | **✓ Phase 5G (2026-07-29)** | **✓ Source-scan verified** |
 | 8 | `/companies/[ticker]` | Stocks · TICKER | public | 2 Portfolio detail panel + 3 Performance | Yes — company detail (KPI capsules, chart, valuation grid, results, news) | Done | Verified |
 | 9 | `/watchlist` 🔒 | Watchlist | protected | 2 Portfolio (DataTable) | No (reused Phase 3 `TableCard` + `AsyncState`) | **✓ Phase 5B (2026-07-28)** | **✓ Source + protected-route verified** |
 | 10 | `/portfolio` 🔒 | Portfolio | protected | 1 Overview + 2 Portfolio + 4 Risk | Yes — summary hero cards, sector exposure, positions/transactions/cash tabs | Not started | Not verified |
@@ -347,6 +347,8 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
   card's honest unavailable copy is untouched; the FOMC "NOT CME FedWatch / NOT a per-meeting
   forecast" disclaimer is untouched; no filtering/sorting/search UI was invented (none existed).
 
+## 7. `/earnings` — Earnings
+
 - **Page title:** `SectionHeader` `t.earnings.tag`/`title`/`subtitle`.
 - **Content sections:** (1) Upcoming table (CMF EEFF next 45d: Ticker·Period·Expected); (2)
   Recent Results table (rolling 2 quarters/ticker: Ticker·Company·Period·Cur.·Revenue·Rev.YoY·
@@ -354,16 +356,50 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
 - **Data source / API:** `useGlobalRefresh`; `fetchEarningsCalendar`→`/api/earnings/calendar`,
   `fetchEarningsResults(force)`→`/api/earnings/results` (6h cache).
 - **User interactions:** `UpdateDataButton` (force-refetch both), Export CSV, ticker links.
-- **Loading state:** `t.common.loading` in cells.
-- **Empty state:** `t.earnings.noUpcoming`; `t.common.noResults`.
-- **Error state:** all fetches `.catch(()=>null)`.
+- **Loading state:** shared `AsyncState kind="loading"`, `t.common.loading`.
+- **Empty state:** shared `AsyncState kind="empty"`, `t.earnings.noUpcoming`; `t.common.noResults`.
+- **Error state:** all fetches `.catch(()=>null)` — unchanged; a fetch failure and an explicit
+  `status:'unavailable'` from either resolver render identically to "empty" today (a pre-existing
+  NMI behavior, not invented or altered this phase).
 - **Auth:** public.
 - **Fable destination:** **8 Research** (Upcoming-earnings module) + glass DataTable.
-- **Fable component mapping:** Upcoming → event/timeline chips or glass DataTable; Recent
-  Results → glass DataTable w/ signed-delta coloring; `MarketDataSourceBadge` → status chip.
-  Preserve bank-no-EBITDA tooltip + `TableSourceFooter`.
-- **New component required:** **Yes** — upcoming + results tables in glass language.
-- **Impl. status:** Not started · **Verif. status:** Not verified.
+- **Fable component mapping:** both tables → `TableCard` (near-opaque dense body, `scope="col"` +
+  `sr-only` caption headers); `MarketDataSourceBadge` stays the status chip (unchanged component);
+  loading/empty rows → shared `AsyncState`. Preserve bank-no-EBITDA tooltip + `TableSourceFooter`.
+- **New component required:** **No** — reused Phase 3 `TableCard`/`AsyncState`/`Reveal`.
+- **Impl. status:** ✓ Phase 5G (2026-07-29) · **Verif. status:** ✓ Source-scan verified (57 new
+  tests in `tests/fableEarningsPage.test.ts`; build 0 errors, `/earnings` still static/`○`).
+
+**Phase 5G — `/earnings` as built.** Presentation only; every hook, state variable, effect, and
+computed value (`cal`, `results`, `loading`, `upcoming`, `rows`, `live`, `handleExport`, `pctCell`,
+`fmtMM`, `fmtEps`) is byte-for-byte unchanged — only the JSX tree changed.
+- **Container:** both tables (previously raw `bg-surface border` divs with ad hoc
+  `overflow-x-auto`) moved to `TableCard` — the Upcoming table had `min-w-[360px]` (preserved via
+  `minWidth={360}`), the Recent Results table had **no `min-w` at all**, a genuine pre-existing
+  responsive gap now closed by `TableCard`'s own scroll container, matching the exact pattern from
+  every prior Phase 5 sub-phase. `MarketDataSourceBadge` + (on Recent Results) the Export CSV button
+  moved into `TableCard`'s `controls` slot; `TableSourceFooter` + the amounts note + the record
+  count moved into its `footer` slot — same components, same props, same conditions.
+- **Loading/empty rows:** the bare `<td>{loading ? t.common.loading : ...}</td>` text cells were
+  replaced with the shared `AsyncState` component (`kind={loading ? 'loading' : 'empty'}`),
+  mirroring the **exact same convention already established** in
+  `src/app/companies/[ticker]/page.tsx`'s own earnings-results section
+  (`kind={earningsResults === null ? 'loading' : 'empty'}`) — this page's migration did not invent
+  a new idiom, it adopted the one the company-detail page already uses for the identical data
+  source. The two messages (`t.earnings.noUpcoming` / `t.common.noResults`) are unchanged.
+- **Semantic table markup:** `scope="col"` on every header cell, `<caption className="sr-only">`
+  on each table, near-opaque `var(--surface-table)` header background, tokenised
+  `var(--fs-table-cell)` body type, `nv-row-hover nv-transition` row hover (was
+  `hover:bg-surface-2 transition-colors`).
+- **Deliberately NOT changed:** no consensus/surprise/beat/miss field exists or was added; no
+  editorial Clean/Mixed/Weak quality label was reintroduced; `earnings.json` (a dead, orphaned file
+  with zero import statements anywhere in `src/` — confirmed by a repo-wide scan, not just for this
+  page) was not touched or reimported; no filter/sort/segmented control was invented (none existed —
+  the resolver's fixed sort order is the only ordering); no summary KPI strip was added; the
+  `/api/earnings/route.ts` orphaned legacy route (unrelated to this page, reads persisted
+  `earnings_events` from Phase 8C manual-CSV ingestion, carries a stale comment referencing the
+  long-deleted `earnings.json` fallback) was noted as a pre-existing loose end but is out of scope
+  (backend API file) and was left untouched.
 
 ## 8. `/companies/[ticker]` — Company Detail
 

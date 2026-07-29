@@ -12,6 +12,9 @@ import { fetchEarningsCalendar, upcomingWithinDays, type EarningsCalendarResult 
 import { fetchEarningsResults, type EarningsResultsPayload } from '@/lib/data/earningsResults'
 import { formatPct, changeColor } from '@/lib/formatters'
 import { exportCSV } from '@/lib/export'
+import { TableCard } from '@/components/fable/TableCard'
+import { AsyncState } from '@/components/fable/AsyncState'
+import { Reveal } from '@/components/fable/motion'
 
 /** Millions of the row's own reporting currency (Yahoo reports some issuers in USD). */
 function fmtMM(v: number | null): string {
@@ -100,81 +103,100 @@ export default function EarningsPage() {
 
   return (
     <div className="w-full space-y-5">
-      <SectionHeader
-        tag={t.earnings.tag}
-        title={t.earnings.title}
-        subtitle={t.earnings.subtitle}
-        actions={<UpdateDataButton onRefresh={refreshEarnings} />}
-      />
+      <Reveal>
+        <SectionHeader
+          tag={t.earnings.tag}
+          title={t.earnings.title}
+          subtitle={t.earnings.subtitle}
+          actions={<UpdateDataButton onRefresh={refreshEarnings} />}
+        />
+      </Reveal>
 
       {/* Upcoming — real CMF report dates */}
-      <div className="bg-surface border border-border rounded overflow-x-auto">
-        <div className="px-4 py-2.5 border-b border-border bg-surface-2 flex items-center gap-2">
-          <span className="ui-label text-muted-fg">{t.earnings.upcomingLabel}</span>
-          <MarketDataSourceBadge status={cal?.status === 'live' ? 'live' : 'static'} />
-        </div>
-        <table className="w-full text-xs min-w-[360px]">
-          <thead>
-            <tr className="border-b border-border">
-              <th className="text-left py-2.5 pl-4 pr-3 ui-table-header text-muted-fg">{t.earnings.calCols.ticker}</th>
-              <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.calCols.period}</th>
-              <th className="text-left py-2.5 px-3 pr-4 ui-table-header text-muted-fg">{t.earnings.calCols.expected}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {upcoming.map(e => (
-              <tr key={`${e.ticker}-${e.reportDate}`} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
-                <td className="py-2.5 pl-4 pr-3">
-                  <Link href={`/companies/${e.ticker}`} className="font-mono text-primary hover:underline">{e.ticker}</Link>
-                </td>
-                <td className="py-2.5 px-3 text-muted-fg">{e.period}</td>
-                <td className="py-2.5 px-3 pr-4 ui-number text-muted-fg">{e.reportDate}</td>
+      <Reveal delayMs={70}>
+        <TableCard
+          title={t.earnings.upcomingLabel}
+          controls={<MarketDataSourceBadge status={cal?.status === 'live' ? 'live' : 'static'} />}
+          minWidth={360}
+          footer={<TableSourceFooter source={t.home.earningsCalSource} asOf={cal?.asOf ?? null} />}
+        >
+          <table className="w-full" style={{ fontSize: 'var(--fs-table-cell)' }}>
+            <caption className="sr-only">{t.earnings.upcomingLabel}</caption>
+            <thead>
+              <tr>
+                <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-left py-2.5 pl-4 pr-3 border-b border-border ui-table-header text-muted-fg">{t.earnings.calCols.ticker}</th>
+                <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-left py-2.5 px-3 border-b border-border ui-table-header text-muted-fg">{t.earnings.calCols.period}</th>
+                <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-left py-2.5 px-3 pr-4 border-b border-border ui-table-header text-muted-fg">{t.earnings.calCols.expected}</th>
               </tr>
-            ))}
-            {upcoming.length === 0 && (
-              <tr><td colSpan={3} className="py-6 text-center text-xs text-muted-fg">{loading ? t.common.loading : t.earnings.noUpcoming}</td></tr>
-            )}
-          </tbody>
-        </table>
-        <div className="px-4 py-2 border-t border-border">
-          <TableSourceFooter source={t.home.earningsCalSource} asOf={cal?.asOf ?? null} />
-        </div>
-      </div>
+            </thead>
+            <tbody>
+              {upcoming.map(e => (
+                <tr key={`${e.ticker}-${e.reportDate}`} className="border-b border-border last:border-0 nv-row-hover nv-transition">
+                  <td className="py-2.5 pl-4 pr-3">
+                    <Link href={`/companies/${e.ticker}`} className="font-mono text-primary hover:underline">{e.ticker}</Link>
+                  </td>
+                  <td className="py-2.5 px-3 text-muted-fg">{e.period}</td>
+                  <td className="py-2.5 px-3 pr-4 ui-number text-muted-fg">{e.reportDate}</td>
+                </tr>
+              ))}
+              {upcoming.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="p-0">
+                    <AsyncState kind={loading ? 'loading' : 'empty'} message={loading ? t.common.loading : t.earnings.noUpcoming} />
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </TableCard>
+      </Reveal>
 
       {/* Recent results — real reported quarterly financials, rolling last 2 quarters */}
-      <div className="bg-surface border border-border rounded overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-border bg-surface-2 flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <span className="ui-label text-muted-fg">{t.earnings.recentResults}</span>
+      <Reveal delayMs={130}>
+        <TableCard
+          title={t.earnings.recentResults}
+          minWidth={720}
+          controls={<>
             <MarketDataSourceBadge status={live ? 'live' : 'static'} />
-          </div>
-          <button
-            onClick={handleExport}
-            className="flex items-center gap-1.5 h-6 px-2 rounded border border-border bg-surface text-xs text-muted-fg hover:text-foreground hover:border-accent transition-colors"
-          >
-            <span aria-hidden>⤓</span>{t.common.exportCsv}
-          </button>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
+            <button
+              type="button"
+              onClick={handleExport}
+              className="flex items-center gap-1.5 h-7 px-2.5 rounded-full text-xs text-muted-fg hover:text-foreground nv-transition"
+              style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' }}
+            >
+              <span aria-hidden>⤓</span>{t.common.exportCsv}
+            </button>
+          </>}
+          footer={
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+              <div className="space-y-0.5">
+                <TableSourceFooter source={t.stocks.footer} asOf={results?.asOf ?? null} />
+                <p className="text-xs text-muted-fg">{t.earnings.amountsNote}</p>
+              </div>
+              <span className="ui-meta ui-number text-muted-fg" aria-live="polite">{rows.length} {t.common.records}</span>
+            </div>
+          }
+        >
+          <table className="w-full" style={{ fontSize: 'var(--fs-table-cell)' }}>
+            <caption className="sr-only">{t.earnings.recentResults}</caption>
             <thead>
-              <tr className="border-b border-border">
-                <th className="text-left py-2.5 pl-4 pr-3 ui-table-header text-muted-fg">{t.earnings.calCols.ticker}</th>
-                <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.cols.company}</th>
-                <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.cols.period}</th>
-                <th className="text-center py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.currency}</th>
-                <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.cols.revenue}</th>
-                <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.cols.revenueYoy}</th>
-                <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.cols.ebitda}</th>
-                <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.cols.ebitdaYoy}</th>
-                <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.cols.netIncome}</th>
-                <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.earnings.cols.netIncomeYoy}</th>
-                <th className="text-right py-2.5 px-3 pr-4 ui-table-header text-muted-fg">{t.earnings.cols.eps}</th>
+              <tr>
+                <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-left py-2.5 pl-4 pr-3 border-b border-border ui-table-header text-muted-fg">{t.earnings.calCols.ticker}</th>
+                <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-left py-2.5 px-3 border-b border-border ui-table-header text-muted-fg">{t.earnings.cols.company}</th>
+                <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-left py-2.5 px-3 border-b border-border ui-table-header text-muted-fg">{t.earnings.cols.period}</th>
+                <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-center py-2.5 px-3 border-b border-border ui-table-header text-muted-fg">{t.earnings.currency}</th>
+                <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-right py-2.5 px-3 border-b border-border ui-table-header text-muted-fg">{t.earnings.cols.revenue}</th>
+                <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-right py-2.5 px-3 border-b border-border ui-table-header text-muted-fg">{t.earnings.cols.revenueYoy}</th>
+                <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-right py-2.5 px-3 border-b border-border ui-table-header text-muted-fg">{t.earnings.cols.ebitda}</th>
+                <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-right py-2.5 px-3 border-b border-border ui-table-header text-muted-fg">{t.earnings.cols.ebitdaYoy}</th>
+                <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-right py-2.5 px-3 border-b border-border ui-table-header text-muted-fg">{t.earnings.cols.netIncome}</th>
+                <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-right py-2.5 px-3 border-b border-border ui-table-header text-muted-fg">{t.earnings.cols.netIncomeYoy}</th>
+                <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-right py-2.5 px-3 pr-4 border-b border-border ui-table-header text-muted-fg">{t.earnings.cols.eps}</th>
               </tr>
             </thead>
             <tbody>
               {rows.map(e => (
-                <tr key={`${e.ticker}-${e.periodEnd}`} className="border-b border-border last:border-0 hover:bg-surface-2 transition-colors">
+                <tr key={`${e.ticker}-${e.periodEnd}`} className="border-b border-border last:border-0 nv-row-hover nv-transition">
                   <td className="py-2.5 pl-4 pr-3">
                     <Link href={`/companies/${e.ticker}`} className="font-mono text-primary hover:underline">{e.ticker}</Link>
                   </td>
@@ -193,19 +215,16 @@ export default function EarningsPage() {
                 </tr>
               ))}
               {rows.length === 0 && (
-                <tr><td colSpan={11} className="py-6 text-center text-xs text-muted-fg">{loading ? t.common.loading : t.common.noResults}</td></tr>
+                <tr>
+                  <td colSpan={11} className="p-0">
+                    <AsyncState kind={loading ? 'loading' : 'empty'} message={loading ? t.common.loading : t.common.noResults} />
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
-        </div>
-        <div className="px-4 py-2.5 border-t border-border bg-surface flex items-center justify-between gap-3 flex-wrap">
-          <div className="space-y-0.5">
-            <TableSourceFooter source={t.stocks.footer} asOf={results?.asOf ?? null} />
-            <p className="text-xs text-muted-fg">{t.earnings.amountsNote}</p>
-          </div>
-          <span className="text-xs ui-number text-muted-fg">{rows.length} {t.common.records}</span>
-        </div>
-      </div>
+        </TableCard>
+      </Reveal>
     </div>
   )
 }

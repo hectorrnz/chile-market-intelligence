@@ -375,8 +375,11 @@ describe('Phase 5F — scope held', () => {
   })
 
   it('redesigns no page outside its own phase', () => {
+    // `/earnings` was removed from this list in Phase 5G, migrated to
+    // `TableCard` under its own brief — a real phase boundary moving, not a
+    // relaxed assertion. It is guarded by `tests/fableEarningsPage.test.ts`.
     for (const other of [
-      'src/app/page.tsx', 'src/app/earnings/page.tsx',
+      'src/app/page.tsx',
       'src/app/portfolio/page.tsx', 'src/app/structured-notes/page.tsx',
     ]) {
       assert.ok(existsSync(join(ROOT, other)), `${other} must still exist`)
