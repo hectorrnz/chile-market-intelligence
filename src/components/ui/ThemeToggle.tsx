@@ -56,15 +56,15 @@ export function ThemeToggle() {
     <div
       role="group"
       aria-label={t.topbar.theme}
-      className="inline-flex items-center h-7 p-0.5 rounded-full border border-border gap-px"
-      style={{ backgroundColor: 'var(--surface-2)' }}
+      className="inline-flex items-center h-7 p-0.5 rounded-full border gap-px"
+      style={{ backgroundColor: 'var(--nv-chip)', borderColor: 'var(--nv-chipbd)' }}
     >
       {/* Light segment */}
       <button
         onClick={() => setTheme(false)}
         aria-pressed={!isDark}
         title={t.topbar.switchToLight}
-        className="inline-flex items-center gap-1.5 h-full px-2.5 rounded-full text-xs transition-colors"
+        className="inline-flex items-center gap-1.5 h-full px-2.5 rounded-full text-xs nv-transition"
         style={
           !isDark
             ? { backgroundColor: 'var(--surface)', color: 'var(--foreground)' }
@@ -80,7 +80,7 @@ export function ThemeToggle() {
         onClick={() => setTheme(true)}
         aria-pressed={isDark}
         title={t.topbar.switchToDark}
-        className="inline-flex items-center gap-1.5 h-full px-2.5 rounded-full text-xs transition-colors"
+        className="inline-flex items-center gap-1.5 h-full px-2.5 rounded-full text-xs nv-transition"
         style={
           isDark
             ? { backgroundColor: 'var(--surface)', color: 'var(--foreground)' }

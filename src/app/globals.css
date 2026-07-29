@@ -298,6 +298,10 @@
   --chart-selected-point: var(--surface);
   --chart-reference-line: var(--border-strong);
   --chart-threshold-line: var(--warning);
+  /* Full-height highlight band behind the hovered category column
+     (FundamentalsChart) — the chart-namespace alias of the row-hover tint,
+     so charts never reach for a bare interaction token directly. */
+  --chart-hover-column:   var(--hover);
   /* Reserved — no chart in this app renders a confidence band today; declared
      so one added later has an immediate, correctly-themed token to consume
      rather than inventing an ad hoc color. */

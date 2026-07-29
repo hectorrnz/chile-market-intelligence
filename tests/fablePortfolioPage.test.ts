@@ -852,7 +852,12 @@ describe('Phase 5H — scope held', () => {
   })
 
   it('modifies no shared Fable component — TableCard/AsyncState/GlassSurface/SegmentedControl untouched', () => {
-    assert.match(read('src/components/fable/TableCard.tsx'), /export function TableCard\(\{ title, controls, state, stateMessage, stateSource, stateAsOf, minWidth, footer, children, className = '' \}: TableCardProps\)/)
+    // TableCard's signature gained the optional `maxHeight` vertical-scroll
+    // prop in phase R0 (Stage 5R normalized program) — a deliberate shared
+    // extension AFTER 5H, guarded by tests/fableR0Primitives.test.ts. The
+    // Portfolio page itself still passes no maxHeight, so 5H behavior is
+    // unchanged; this guard now pins the R0 signature.
+    assert.match(read('src/components/fable/TableCard.tsx'), /export function TableCard\(\{ title, controls, state, stateMessage, stateSource, stateAsOf, minWidth, maxHeight, footer, children, className = '' \}: TableCardProps\)/)
     assert.match(read('src/components/fable/AsyncState.tsx'), /export function AsyncState\(\{ kind, message, source, asOf, className = '' \}: AsyncStateProps\)/)
     assert.match(read('src/components/fable/GlassSurface.tsx'), /export function GlassSurface\(\{ variant = 'card', as: Tag = 'div', className = '', style, children \}: GlassSurfaceProps\)/)
     assert.match(read('src/components/fable/ChangeIndicator.tsx'), /export function ChangeIndicator\(\{ value, label, className = '' \}: ChangeIndicatorProps\)/)

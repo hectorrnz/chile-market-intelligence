@@ -236,7 +236,7 @@ export function LineChart({
           <path
             key={i}
             d={`M${m.x.toFixed(1)},${(baseline - 7).toFixed(1)} L${(m.x - 4).toFixed(1)},${baseline.toFixed(1)} L${(m.x + 4).toFixed(1)},${baseline.toFixed(1)} Z`}
-            fill="var(--primary)"
+            fill="var(--chart-primary)"
           >
             <title>{m.label}</title>
           </path>

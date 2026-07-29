@@ -3,6 +3,12 @@
 import { useLang } from '@/components/providers/LangProvider'
 import type { Lang } from '@/lib/i18n'
 
+/**
+ * EN|ES capsule (Fable utility-chip language), sharing the ThemeToggle's
+ * segmented-pill geometry. Behavior unchanged: same `setLang` persistence via
+ * LangProvider. Body font, never monospace — EN/ES are UI labels, and the
+ * monospace face is reserved for identifiers (§18).
+ */
 export function LangToggle() {
   const { lang, setLang, t } = useLang()
 
@@ -12,23 +18,31 @@ export function LangToggle() {
 
   return (
     <div
-      className="flex items-center gap-0.5 text-xs font-mono border border-border rounded overflow-hidden"
+      role="group"
+      aria-label={t.topbar.language}
       title={t.topbar.language}
+      className="inline-flex items-center h-7 p-0.5 rounded-full border gap-px"
+      style={{ backgroundColor: 'var(--nv-chip)', borderColor: 'var(--nv-chipbd)' }}
     >
-      {(['en', 'es'] as Lang[]).map((code) => (
-        <button
-          key={code}
-          onClick={() => switchTo(code)}
-          className={[
-            'px-2 py-1 uppercase transition-colors',
-            lang === code
-              ? 'bg-surface-2 text-foreground font-medium'
-              : 'bg-surface text-muted-fg hover:text-muted',
-          ].join(' ')}
-        >
-          {code}
-        </button>
-      ))}
+      {(['en', 'es'] as Lang[]).map((code) => {
+        const active = lang === code
+        return (
+          <button
+            key={code}
+            type="button"
+            onClick={() => switchTo(code)}
+            aria-pressed={active}
+            className="inline-flex items-center h-full px-2.5 rounded-full text-xs uppercase nv-transition"
+            style={
+              active
+                ? { backgroundColor: 'var(--surface)', color: 'var(--foreground)', fontWeight: 600 }
+                : { color: 'var(--muted-fg)' }
+            }
+          >
+            {code}
+          </button>
+        )
+      })}
     </div>
   )
 }

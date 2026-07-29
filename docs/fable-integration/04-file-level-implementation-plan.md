@@ -1043,6 +1043,57 @@ stylesheet contains every utility the page uses plus a `prefers-reduced-motion` 
 `.nv-reveal` at its final state.
 ---
 
+## Phase R0 — Shared composition primitives (normalized Stage 5R program) ✓ IMPLEMENTED (2026-07-29, pending manual browser acceptance)
+
+First phase of the accepted Stage 5R normalized repair program (R0–R12). Foundation only — **no
+route was migrated**; later route phases (R1–R11) adopt these primitives deliberately.
+
+**New components** (`src/components/fable/`):
+- `PageHeader.tsx` — the Fable baseline page header (eyebrow · `ui-page-title` · dot-separated
+  baseline metadata · trailing action cluster reserved for route-wide actions per decision D-1).
+  Presentational only; replaces `SectionHeader` route-by-route in later phases.
+- `Chip.tsx` — the shared pill recipe as `ChipButton` / `ChipLabel` / `ChipSelect` (native select
+  in pill clothing — the Stocks sector-filter pattern). Later phases replace the ~18 hand-rolled
+  inline chip recipes with these.
+- `ModalShell.tsx` — the one shared dialog shell (scrim → labelled `role="dialog"`, focus trap,
+  initial focus, Escape/scrim/✕ dismissal, body-scroll lock, focus restore, pinned header/footer
+  slots, scrollable body, `dense` near-opaque body option per §8) plus `DestructiveConfirm`
+  (alertdialog mode for the approved Portfolio delete confirmation: pending lock,
+  duplicate-submit guard, critical-fill action, never `window.confirm`). Existing route modals
+  are NOT migrated in R0.
+
+**Extended:** `TableCard.tsx` gains an optional `maxHeight` vertical-scroll mode — both scroll
+axes on one container so `sticky top-0` table headers genuinely stick (they were inert on every
+current consumer; behavior unchanged when the prop is omitted).
+
+**Normalized (styling only — behavior byte-preserved):** `UpdateDataButton` (999px pill,
+`nv-transition`/`nv-spin`; state machine, labels, h-9 prominence, and **API unchanged** —
+`onRefresh` stays required and the component takes on no provider dependency, so the
+platform-wide contract (decision D-1) continues to be supplied by each page's own
+`useGlobalRefresh()` call), `LangToggle` (chip-token capsule
+matching ThemeToggle geometry, `aria-pressed` added, `font-mono` dropped per §18), `ThemeToggle`
+(chip-token track, tokenized motion; persisted-choice behavior untouched).
+
+**Shell width alignment:** `TopBar` and `SecondaryNav` content now sits in an inner
+`max-w-(--content-max-w) mx-auto` rail, sharing `<main>`'s cap — header and page content keep one
+gutter line above the cap (Stage 5R shared defect #1). No nav behavior, route, or item changed.
+
+**Chart token repairs:** `LineChart` event markers `var(--primary)` → `var(--chart-primary)`;
+`FundamentalsChart` hover column `var(--hover)` → new alias `--chart-hover-column: var(--hover)`
+declared in the chart token block. No chart logic, data, scale, or dimension changed.
+
+**Tests:** `tests/fableR0Primitives.test.ts` (61 tests — primitive anatomy/order/containment,
+ModalShell dialog contract, TableCard scroll-container binding, the UpdateDataButton D-1
+contract guard, shell width sharing, chart token leak closure, token/data hygiene).
+
+**Not done in R0 (by design):** no route adoption, no route modal migration, no i18n additions
+(ModalShell reuses `t.fable.panel.close`), no API/provider/persistence change. **Manual browser
+checks pending** (gutter alignment ≥1728px, modal keyboard walk, chip focus, TableCard scroll,
+toggles in both themes, reduced motion) — R0 is implemented but not manually accepted until they
+run.
+
+---
+
 ## Phase 6 — Auth pages + login shell (highest-visibility, distinct layout)
 
 Do together, after shared components exist. The login is the marquee Fable moment and needs a

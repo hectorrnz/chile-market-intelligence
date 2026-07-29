@@ -168,7 +168,7 @@ export function FundamentalsChart({
 
           <line x1={ML} y1={baseY} x2={ML + chartW} y2={baseY} stroke="var(--chart-reference-line)" strokeWidth="1" strokeDasharray={indexed ? '4 3' : undefined} />
 
-          {hover != null && <rect x={ML + hover * slotW} y={MT} width={slotW} height={chartH} fill="var(--hover)" />}
+          {hover != null && <rect x={ML + hover * slotW} y={MT} width={slotW} height={chartH} fill="var(--chart-hover-column)" />}
 
           {barSeries.map((s, bi) => (
             <g key={s.key} clipPath={`url(#clip-${uid})`}>

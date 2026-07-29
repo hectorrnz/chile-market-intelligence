@@ -4,14 +4,27 @@ import { useState, useCallback } from 'react'
 import { useLang } from '@/components/providers/LangProvider'
 
 interface Props {
+  /**
+   * The refresh action. **Required, and it must be the authoritative
+   * platform-wide callback** — every caller passes `useGlobalRefresh()` (or
+   * its own thin wrapper around it), obtained in the page. A route-local
+   * refresh handler must never be passed here: this control always means
+   * "update the whole platform", not "update this page's data".
+   */
   onRefresh: () => Promise<void>
   className?: string
 }
 
 /**
  * Single, prominent "Update Data" button — replaces the small per-panel
- * refresh icons. One of these per page, placed at the top, refreshes every
- * live data section on that page via the page's own combined onRefresh.
+ * refresh icons. One per page, placed in the page-header action cluster.
+ *
+ * It **represents** the platform-wide update action but deliberately does not
+ * own it: the button holds no provider dependency and performs no fetching or
+ * orchestration of its own. It renders three states around whatever promise
+ * the caller supplies, and the caller is responsible for supplying the
+ * authoritative `useGlobalRefresh` callback (MarketDataProvider +
+ * MacroDataProvider fan-out).
  */
 export function UpdateDataButton({ onRefresh, className = '' }: Props) {
   const { t } = useLang()
@@ -42,7 +55,7 @@ export function UpdateDataButton({ onRefresh, className = '' }: Props) {
       title={label}
       aria-label={label}
       className={[
-        'inline-flex items-center gap-2 h-9 px-4 rounded border text-sm font-medium transition-colors duration-150 shrink-0',
+        'inline-flex items-center gap-2 h-9 px-4 rounded-full border text-sm font-medium nv-transition shrink-0',
         state === 'idle'    && 'border-accent text-accent bg-surface hover:bg-accent hover:text-accent-fg',
         state === 'loading' && 'border-accent text-accent bg-surface cursor-default',
         state === 'done'    && 'border-positive text-positive bg-surface',
@@ -52,7 +65,7 @@ export function UpdateDataButton({ onRefresh, className = '' }: Props) {
       <svg
         viewBox="0 0 16 16"
         fill="none"
-        className={`w-4 h-4 shrink-0${state === 'loading' ? ' animate-spin' : ''}`}
+        className={`w-4 h-4 shrink-0${state === 'loading' ? ' nv-spin' : ''}`}
         aria-hidden
       >
         {state === 'done' ? (

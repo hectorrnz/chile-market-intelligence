@@ -751,10 +751,10 @@ no shared Fable component modified; no CSS added (the meter fill reuses the exis
 | **NotificationBell** dropdown | TopBar | Fable **notification drawer** (right slide-in, severity dots, mark-all-read) | Restyle |
 | **ThemeToggle** (segmented pill) | TopBar | Fable theme glyph / contrast toggle — keep NMI's persisted `theme` mechanism | Restyle |
 | **LangToggle** (EN/ES) | TopBar | Fable **EN|ES capsule** — keep `LangProvider` | Restyle |
-| **SectionHeader** | most pages | Fable page title (19px/650) + actions row | Restyle |
+| **SectionHeader** | most pages | Fable page title (19px/650) + actions row — **R0 (2026-07-29) shipped the `PageHeader` primitive** (`src/components/fable/PageHeader.tsx`); route adoption happens per-route in the Stage 5R program (R1–R11), not in R0 | Restyle |
 | **DataSourceBadge / MarketDataSourceBadge / SourceStateBadge** | tables | Fable status chip (dot + word) — **semantics preserved** (merge point 10) | Restyle |
 | **TableSourceFooter** | every table | Fable meta line — **one per table preserved** (merge point 10) | Restyle |
-| **UpdateDataButton** | 7 pages | Fable primary/outline pill button w/ spinner→✓ | Restyle |
+| **UpdateDataButton** | 7 pages | Fable primary/outline pill button w/ spinner→✓ — **R0 (2026-07-29): visual normalization only** (999px pill, tokenized motion/spin). Its API and behavior are unchanged: `onRefresh` stays **required**, the component holds no provider dependency, and each page keeps supplying the authoritative `useGlobalRefresh` callback (decision D-1) | Restyle |
 | **EmptyState / StatusPill** | various | Fable muted glass empty state / status pill | Restyle |
 | **Charts** (LineChart, CompareChart, FundamentalsChart, YieldCurveChart) | analysis pages | Fable SVG chart language (gridlines, dashed zero, chart palette, crosshair) | Restyle |
 | **Pre-paint theme script** | layout head | Preserve verbatim (extend to also set `body.nv-light` if light chosen as non-default) | Preserve |

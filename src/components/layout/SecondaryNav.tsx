@@ -34,10 +34,15 @@ export function SecondaryNav() {
 
   return (
     <div
-      className="no-print hidden lg:flex items-center gap-4 px-3 sm:px-6 py-2 nv-glass-nav"
+      className="no-print hidden lg:flex px-3 sm:px-6 py-2 nv-glass-nav"
       style={{ borderBottom: '1px solid var(--nv-line)' }}
     >
-      <nav aria-label={group.label(t)} ref={railRef as React.RefObject<HTMLElement>} className="relative flex items-center gap-0.5">
+      {/* Same --content-max-w cap as TopBar and <main> — one gutter line. */}
+      <div className="flex items-center gap-4 w-full max-w-(--content-max-w) mx-auto min-w-0">
+      {/* Same containment rule as the primary rail: the child pills scroll
+          inside their own region rather than pushing the region control off
+          the row or widening the page. */}
+      <nav aria-label={group.label(t)} ref={railRef as React.RefObject<HTMLElement>} className="relative flex items-center gap-0.5 min-w-0 overflow-x-auto nv-scrollbar-hidden">
         {rect && (
           <span
             aria-hidden
@@ -53,7 +58,7 @@ export function SecondaryNav() {
               href={child.href}
               ref={setItemRef(child.key) as React.Ref<HTMLAnchorElement>}
               aria-current={active ? 'page' : undefined}
-              className="relative z-10 whitespace-nowrap px-3 py-1 rounded-full text-xs nv-transition"
+              className="relative z-10 shrink-0 whitespace-nowrap px-3 py-1 rounded-full text-xs nv-transition"
               style={{ color: active ? 'var(--foreground)' : 'var(--muted-fg)', fontWeight: active ? 600 : 500 }}
             >
               {child.label(t)}
@@ -66,7 +71,7 @@ export function SecondaryNav() {
         <div
           role="group"
           aria-label={t.common.macroRegion}
-          className="flex items-center gap-0.5 ml-auto rounded-full p-0.5"
+          className="flex items-center gap-0.5 ml-auto shrink-0 rounded-full p-0.5"
           style={{ backgroundColor: 'var(--surface-2)' }}
         >
           {MACRO_REGIONS.map(({ rg, label }) => (
@@ -87,6 +92,7 @@ export function SecondaryNav() {
           ))}
         </div>
       )}
+      </div>
     </div>
   )
 }

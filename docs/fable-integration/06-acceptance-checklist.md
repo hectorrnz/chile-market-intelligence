@@ -24,6 +24,13 @@ COMPLETE 2026-07-22** · **Phase 2 (app shell: top pill navigation) ✓ COMPLETE
 "Phase 5D — `/compare` — as built" / "Phase 5E — `/chart-builder` — as built" /
 "Phase 5F — `/macro` + `/macro/calendar` — as built" / "Phase 5G — `/earnings` — as built" /
 "Phase 5H — `/portfolio` — as built".
+**Phase R0 (shared composition primitives — first phase of the accepted Stage 5R normalized
+repair program) ✓ IMPLEMENTED 2026-07-29, pending manual browser acceptance** — PageHeader /
+Chip / ModalShell (+ destructive-confirmation mode) / TableCard vertical-scroll option /
+UpdateDataButton–LangToggle–ThemeToggle normalization / shell width alignment / two chart token
+repairs; no route migrated; see `04-file-level-implementation-plan.md` § "Phase R0". R0 is not
+manually accepted until its browser checks (gutter alignment, modal keyboard walk, both themes,
+reduced motion) run.
 Phase 5's remaining 3 pages and Phases 6–8 not started. Items below are ticked only where
 Phases 1–5H genuinely satisfy them; everything that still depends on the remaining page work
 stays `[ ]` or `[~]`.

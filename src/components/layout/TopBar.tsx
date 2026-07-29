@@ -28,13 +28,23 @@ export function TopBar() {
 
   return (
     <header
-      className="no-print h-14 shrink-0 flex items-center gap-1.5 sm:gap-3 px-3 sm:px-6 nv-glass-nav"
+      className="no-print min-h-14 shrink-0 flex px-3 sm:px-6 nv-glass-nav"
       style={{ borderBottom: '1px solid var(--nv-line)', color: 'var(--topbar-fg)' }}
     >
-      {/* Left: mobile-nav trigger + brand + contextual title. min-w-0 +
-          truncate so a long page title compresses instead of pushing the bar
-          past the viewport. */}
-      <div className="flex items-center gap-2.5 shrink min-w-0">
+      {/* The same --content-max-w cap that governs <main> (AppShell) — header
+          content and page content must share one gutter line above the cap.
+          `flex-wrap` is what keeps the three regions from competing: the pill
+          rail carries `basis-full`, so wherever it is visible it occupies its
+          own line at full content width (Fable's two-row header) instead of
+          being squeezed to a few pixels between the brand and the utilities.
+          The header height follows intrinsically — `min-h-14` when the rail is
+          hidden (below `lg`), taller once it wraps onto its own line. */}
+      <div className="flex flex-wrap items-center gap-1.5 sm:gap-3 py-2 w-full max-w-(--content-max-w) mx-auto min-w-0">
+      {/* Left: mobile-nav trigger + brand + contextual title. `basis-0 grow`
+          keeps its hypothetical size at zero so it can never force the utility
+          cluster onto a second line; it grows into whatever the utilities
+          leave and the page title truncates inside it. */}
+      <div className="flex items-center gap-2.5 shrink min-w-0 grow basis-0">
         <button
           type="button"
           onClick={toggleNav}
@@ -56,10 +66,6 @@ export function TopBar() {
         <span className="text-muted-fg text-sm hidden md:inline">/</span>
         <span className="text-sm text-foreground font-medium truncate">{title}</span>
       </div>
-
-      {/* Center: the desktop pill rail. Hidden below lg — the mobile drawer
-          is the equivalent navigation surface there. */}
-      <PrimaryNav />
 
       {/* Right: search + icon controls + date + auth. The date and full
           brand text are the first to go on narrow viewports. */}
@@ -101,6 +107,13 @@ export function TopBar() {
               {t.auth.signIn}
             </Link>
           ))}
+      </div>
+
+      {/* The desktop pill rail, last in DOM order because it renders on its
+          own line beneath the brand/utility row — visual order and tab order
+          therefore agree. Hidden below `lg`, where the mobile drawer is the
+          equivalent navigation surface. */}
+      <PrimaryNav />
       </div>
     </header>
   )
