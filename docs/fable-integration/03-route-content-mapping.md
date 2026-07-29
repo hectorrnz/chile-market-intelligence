@@ -23,8 +23,8 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
 | 2 | `/stocks` | Stocks | public | 2 Portfolio (DataTable) | No (reused Phase 3 `TableCard`) | **✓ Phase 5A (2026-07-28)** | **✓ Source + rendered-markup verified** |
 | 3 | `/compare` | Compare | public | 3 Performance (chart+table) | No (reused Phase 3 `TableCard`/`GlassSurface`/`SegmentedControl`) | **✓ Phase 5D (2026-07-28)** | **✓ Source + rendered-markup verified** |
 | 4 | `/chart-builder` | Charting | public | 3 Performance (chart) | No (reused Phase 3 `TableCard`/`GlassSurface`/`SegmentedControl`) | **✓ Phase 5E (2026-07-28)** | **✓ Source-scan verified** |
-| 5 | `/macro` | Macroeconomic Indicators | public | 7 Macro | Yes — banded indicators table, yield curve, FX depth, chart popup | Not started | Not verified |
-| 6 | `/macro/calendar` | Economic Calendar | public | 7 Macro / 9 Documents table | Yes — release calendar table, FOMC outlook card | Not started | Not verified |
+| 5 | `/macro` | Macroeconomic Indicators | public | 7 Macro | No (reused Phase 3 `TableCard`/`GlassSurface`/`SegmentedControl`) | **✓ Phase 5F (2026-07-28)** | **✓ Source-scan verified** |
+| 6 | `/macro/calendar` | Economic Calendar | public | 7 Macro / 9 Documents table | No (reused Phase 3 `TableCard`) | **✓ Phase 5F (2026-07-28)** | **✓ Source-scan verified** |
 | 7 | `/earnings` | Earnings | public | 8 Research (upcoming earnings) / DataTable | Yes — upcoming + results tables | Not started | Not verified |
 | 8 | `/companies/[ticker]` | Stocks · TICKER | public | 2 Portfolio detail panel + 3 Performance | Yes — company detail (KPI capsules, chart, valuation grid, results, news) | Done | Verified |
 | 9 | `/watchlist` 🔒 | Watchlist | protected | 2 Portfolio (DataTable) | No (reused Phase 3 `TableCard` + `AsyncState`) | **✓ Phase 5B (2026-07-28)** | **✓ Source + protected-route verified** |
@@ -266,9 +266,46 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
   upcoming-releases card (HIGH/MEDIUM chips); yield curve → chart SVG; FX depth → glass
   DataTable; chart popup → glass overlay + Fable line chart. Preserve `DataSourceBadge`/
   `SourceStateBadge`/`TableSourceFooter`.
-- **New component required:** **Yes** — banded indicators table, yield-curve restyle, FX depth
-  table, chart popup modal (Fable overlay). Sparkline component is a Fable addition.
-- **Impl. status:** Not started · **Verif. status:** Not verified.
+- **New component required:** **No** — every primitive already existed from Phase 3/4;
+  `DataSourceBadge`/`SourceStateBadge`/`TableSourceFooter` preserved exactly (3 badges, 1 status
+  badge, 4 footers).
+- **Impl. status:** ✓ Phase 5F (2026-07-28) · **Verif. status:** ✓ Source-level (95 new tests in
+  `tests/fableMacroPage.test.ts`; build 0 errors, `/macro` still static/`○`).
+
+**Phase 5F — `/macro` as built.** Presentation only; every hook, computed value (`groups`,
+`curveTenors`/`curveToday`/`curveWeekAgo`/`curveYearEnd`, `curveYearEndYear`, `chartProvider`,
+`latestAsOf`) and fetch effect is byte-for-byte unchanged.
+- **Container:** the calendar embed / indicators table / FX depth table all moved from hand-rolled
+  `bg-surface border border-border rounded` divs to `TableCard` (`minWidth={720}` / `{660}` /
+  `{420}`) — the calendar and FOMC tables previously had **no `min-w` at all**, a genuine
+  pre-existing responsive gap now closed. The yield-curve chart card moved to `GlassSurface
+  variant="card"` (chart panels use plain glass, not the dense table wrapper, matching Compare/
+  Chart Builder precedent).
+- **Toggles:** the chart popup's 1Y/3Y/5Y/10Y timeframe row → `SegmentedControl` (5th adopter),
+  mapped to/from the existing numeric `Timeframe` type at the presentation boundary only — the
+  underlying `timeframe` state and every fetch call keeps its exact type and value.
+- **Chart popup modal:** restyled onto the established `nv-scrim` + `nv-glass-overlay nv-pop`
+  recipe (same as Compare/Chart Builder's settings modals); gained a data-driven `aria-label`
+  (the indicator's own name).
+- **Real accessibility addition:** chartable indicator rows (`onClick={() => openRow(r)}`) were
+  previously mouse-only. They are now also keyboard-operable (`role="button"`, `tabIndex`,
+  Enter/Space via `onKeyDown`) with a distinct per-row accessible name — the interaction itself
+  (`openRow`) is unchanged, only its reachability improved.
+- **Three genuine pre-existing i18n gaps fixed in passing** (found while already on these exact
+  lines, same precedent as Compare's `clearRange` and Chart Builder's `vs`/`removeMetric` fixes):
+  the region chip literally rendered `'Chile'`/`'US'` in English regardless of language (now
+  `t.macro.regionCL`/`regionUS`); the "Chartable" dot's `title` was hardcoded English (now
+  `t.macro.chartable`); the popup close button's `aria-label="Close chart"` was hardcoded English
+  (now reuses the shared `t.fable.panel.close`, the same key Compare/Chart Builder's modals use).
+- **Deliberately NOT changed:** the Change-column ternaries (indicators table, FX table, popup
+  badge) keep their exact original `changeColor()`-based text — `ChangeIndicator` (the newer
+  glyph+color Fable component) was considered and rejected here because the FX table's exact
+  ternary text is asserted verbatim by a pre-existing business-logic test
+  (`tests/frankfurterFx.test.ts`); rather than touch that unrelated test, the ternaries stayed
+  byte-for-byte identical. No date-range or category-filter control was invented (neither existed).
+  `MacroSeriesDef`/category-list logic in the page (`catLabel`, `indByCat`, `groups`) is completely
+  untouched — it was already hardcoded pre-phase (not derived from `MacroSeriesDef` at runtime), so
+  the "don't hardcode categories" instruction didn't apply here.
 
 ## 6. `/macro/calendar` — Economic Calendar
 
@@ -287,10 +324,28 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
 - **Fable component mapping:** calendar → glass DataTable + HIGH/MEDIUM chips + "Dates only"
   version-chip; FOMC → glass capsule card; deferred block → muted glass empty state. Preserve
   `TableSourceFooter`.
-- **New component required:** **Yes** — release-calendar table, FOMC outlook card.
-- **Impl. status:** Not started · **Verif. status:** Not verified.
+- **New component required:** **No** — every primitive already existed from Phase 3.
+- **Impl. status:** ✓ Phase 5F (2026-07-28) · **Verif. status:** ✓ Source-level (56 new tests in
+  `tests/fableMacroCalendarPage.test.ts`; build 0 errors, `/macro/calendar` still static/`○`).
 
-## 7. `/earnings` — Earnings
+**Phase 5F — `/macro/calendar` as built.** Presentation only; every fetch call and computed value
+(`events`, `latestAsOf`, `pct`) is byte-for-byte unchanged.
+- **Container:** all 3 cards (FRED release calendar, FOMC outlook, Chile deferred) moved to
+  `TableCard`. The FRED calendar and FOMC tables previously had **no `min-w`** — closed via
+  `minWidth={720}`/`{480}`, the same pre-existing-gap fix applied to the Macro page's calendar
+  embed (same shared `EconomicCalendarTable` component). The Chile-deferred card uses `TableCard`'s
+  own `state="unavailable"` slot directly (no table body — there is genuinely no data or source
+  here), rather than a bespoke muted `<div>`.
+- **`EconomicCalendarTable.tsx` restyled** (shared by both this page and the Macro-page embed —
+  exclusively consumed by these two in-scope routes, so restyling it is restyling this phase's own
+  content, not a cross-page shared-component change): near-opaque `var(--surface-table)` header,
+  `scope="col"` + `sr-only` caption, its own outer `overflow-x-auto` wrapper removed (now supplied
+  by the caller's `TableCard`), and its internal "no releases" empty state now routes through the
+  shared `AsyncState kind="empty"` component instead of a bare `<div>` — same exact message.
+- **Deliberately NOT changed:** no forecast/consensus field was invented (none exists — the
+  dates-only vs. enriched-actual/previous distinction is preserved exactly); the Chile deferred
+  card's honest unavailable copy is untouched; the FOMC "NOT CME FedWatch / NOT a per-meeting
+  forecast" disclaimer is untouched; no filtering/sorting/search UI was invented (none existed).
 
 - **Page title:** `SectionHeader` `t.earnings.tag`/`title`/`subtitle`.
 - **Content sections:** (1) Upcoming table (CMF EEFF next 45d: Ticker·Period·Expected); (2)

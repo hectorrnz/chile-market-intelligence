@@ -6,6 +6,8 @@ import { useLang } from '@/components/providers/LangProvider'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { EconomicCalendarTable } from '@/components/macro/EconomicCalendarTable'
+import { TableCard } from '@/components/fable/TableCard'
+import { Reveal } from '@/components/fable/motion'
 import { fetchFredReleaseCalendar, type FredCalendarFetchResult } from '@/lib/data/fredCalendar'
 import { fetchFomcExpectations, type FomcExpectationsResult } from '@/lib/data/fomcExpectations'
 
@@ -36,86 +38,105 @@ export default function CalendarPage() {
   const latestAsOf = events.reduce((max, e) => (e.date > max ? e.date : max), '')
   const pct = (v: number | null) => (v == null ? '—' : `${v.toFixed(1)}%`)
 
+  const pill = (label: string) => (
+    <span
+      className="text-xs px-2 py-0.5 rounded-full nv-transition text-muted-fg"
+      style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' }}
+    >
+      {label}
+    </span>
+  )
+
   return (
     <div className="w-full space-y-4">
-      <Link href="/macro" className="text-xs text-muted-fg hover:text-foreground inline-flex items-center gap-1">{t.cal.back}</Link>
-      <SectionHeader tag={t.macro.tag} title={t.cal.title} subtitle={t.cal.subtitle} />
+      <Reveal>
+        <div className="space-y-4">
+          <Link href="/macro" className="text-xs text-muted-fg hover:text-foreground inline-flex items-center gap-1">{t.cal.back}</Link>
+          <SectionHeader tag={t.macro.tag} title={t.cal.title} subtitle={t.cal.subtitle} />
+        </div>
+      </Reveal>
 
       {/* FRED release calendar, enriched with actual/previous from FRED time-series */}
-      <div className="bg-surface border border-border rounded overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
-          <span className="ui-label text-muted-fg">{t.cal.fredTitle}</span>
-          <span className="text-xs px-1.5 py-0.5 rounded bg-surface-2 border border-border text-muted-fg">{t.cal.noConsensus}</span>
-        </div>
-        {fred && !fred.configured ? (
-          <div className="px-4 py-6 text-center text-xs text-muted-fg">{t.cal.fredUnavailable}</div>
-        ) : (
+      <Reveal delayMs={70}>
+        <TableCard
+          title={t.cal.fredTitle}
+          controls={pill(t.cal.noConsensus)}
+          minWidth={720}
+          state={fred && !fred.configured ? 'unavailable' : undefined}
+          stateMessage={t.cal.fredUnavailable}
+          footer={
+            <>
+              <p className="text-xs text-muted-fg">{t.cal.enrichedNote}</p>
+              <TableSourceFooter source="FRED (Federal Reserve Bank of St. Louis)" asOf={latestAsOf || null} className="mt-0.5" />
+            </>
+          }
+        >
           <EconomicCalendarTable events={events} emptyMessage={t.cal.fredEmpty} />
-        )}
-        <div className="px-4 py-2 border-t border-border space-y-0.5">
-          <p className="text-xs text-muted-fg">{t.cal.enrichedNote}</p>
-          <TableSourceFooter source="FRED (Federal Reserve Bank of St. Louis)" asOf={latestAsOf || null} />
-        </div>
-      </div>
+        </TableCard>
+      </Reveal>
 
       {/* FOMC market-implied rate outlook — Atlanta Fed MPT (SOFR-based, per
           reference quarter, NOT per-meeting and NOT CME FedWatch), with the
           current target range as the reliable "previous/current" policy band. */}
       {fomc && fomc.status !== 'unavailable' && (
-        <div className="bg-surface border border-border rounded overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-3 flex-wrap">
-            <span className="ui-label text-muted-fg">{t.cal.fomcTitle}</span>
-            {fomc.currentTargetRange && (
+        <Reveal delayMs={130}>
+          <TableCard
+            title={t.cal.fomcTitle}
+            controls={fomc.currentTargetRange ? (
               <span className="text-xs text-muted-fg">
                 {t.cal.fomcCurrentTarget}: <span className="ui-number text-foreground">{fomc.currentTargetRange}</span>
               </span>
-            )}
-          </div>
-          {fomc.quarters.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-border bg-surface-2">
-                    <th className="text-left py-2 px-3 pl-4 ui-table-header text-muted-fg">{t.cal.fomcWindow}</th>
-                    <th className="text-right py-2 px-3 ui-table-header text-muted-fg">{t.cal.fomcExpected}</th>
-                    <th className="text-right py-2 px-3 ui-table-header text-muted-fg">{t.cal.fomcBelow}</th>
-                    <th className="text-right py-2 px-3 ui-table-header text-muted-fg">{t.cal.fomcInRange}</th>
-                    <th className="text-right py-2 px-3 pr-4 ui-table-header text-muted-fg">{t.cal.fomcAbove}</th>
+            ) : undefined}
+            minWidth={480}
+            state={fomc.quarters.length === 0 ? 'unavailable' : undefined}
+            stateMessage={t.cal.fomcOutlookUnavailable}
+            footer={
+              <>
+                <p className="text-xs text-muted-fg">{t.cal.fomcNote}</p>
+                <TableSourceFooter source={fomc.source} asOf={fomc.observationDate || null} className="mt-0.5" />
+              </>
+            }
+          >
+            <table className="w-full" style={{ fontSize: 'var(--fs-table-cell)' }}>
+              <caption className="sr-only">{t.cal.fomcTitle}</caption>
+              <thead>
+                <tr>
+                  <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-left py-2 px-3 pl-4 border-b border-border ui-table-header text-muted-fg">{t.cal.fomcWindow}</th>
+                  <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-right py-2 px-3 border-b border-border ui-table-header text-muted-fg">{t.cal.fomcExpected}</th>
+                  <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-right py-2 px-3 border-b border-border ui-table-header text-muted-fg">{t.cal.fomcBelow}</th>
+                  <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-right py-2 px-3 border-b border-border ui-table-header text-muted-fg">{t.cal.fomcInRange}</th>
+                  <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-right py-2 px-3 pr-4 border-b border-border ui-table-header text-muted-fg">{t.cal.fomcAbove}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {fomc.quarters.map(q => (
+                  <tr key={q.referenceStart} className="border-b border-border last:border-0 nv-row-hover nv-transition">
+                    <td className="py-1.5 px-3 pl-4 text-muted whitespace-nowrap">{q.windowLabel}</td>
+                    <td className="py-1.5 px-3 text-right ui-number text-foreground">{q.expectedRatePct != null ? `${q.expectedRatePct.toFixed(2)}%` : '—'}</td>
+                    <td className="py-1.5 px-3 text-right ui-number text-muted-fg">{pct(q.probBelowPct)}</td>
+                    <td className="py-1.5 px-3 text-right ui-number text-muted-fg">{pct(q.probInRangePct)}</td>
+                    <td className="py-1.5 px-3 pr-4 text-right ui-number text-muted-fg">{pct(q.probAbovePct)}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {fomc.quarters.map(q => (
-                    <tr key={q.referenceStart} className="border-b border-border last:border-0">
-                      <td className="py-1.5 px-3 pl-4 text-muted whitespace-nowrap">{q.windowLabel}</td>
-                      <td className="py-1.5 px-3 text-right ui-number text-foreground">{q.expectedRatePct != null ? `${q.expectedRatePct.toFixed(2)}%` : '—'}</td>
-                      <td className="py-1.5 px-3 text-right ui-number text-muted-fg">{pct(q.probBelowPct)}</td>
-                      <td className="py-1.5 px-3 text-right ui-number text-muted-fg">{pct(q.probInRangePct)}</td>
-                      <td className="py-1.5 px-3 pr-4 text-right ui-number text-muted-fg">{pct(q.probAbovePct)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="px-4 py-4 text-center text-xs text-muted-fg">{t.cal.fomcOutlookUnavailable}</div>
-          )}
-          <div className="px-4 py-2 border-t border-border space-y-0.5">
-            <p className="text-xs text-muted-fg">{t.cal.fomcNote}</p>
-            <TableSourceFooter source={fomc.source} asOf={fomc.observationDate || null} />
-          </div>
-        </div>
+                ))}
+              </tbody>
+            </table>
+          </TableCard>
+        </Reveal>
       )}
 
       {/* Chile release-date calendar — deferred. No free, stable, structured official
           release-date source (BCCh/INE publish rendered HTML only) has been verified —
           see docs/macro_market_source_coverage.md §5. Never fabricate Chile rows here. */}
-      <div className="bg-surface border border-border rounded overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
-          <span className="ui-label text-muted-fg">{t.cal.chileTitle}</span>
-          <span className="text-xs px-1.5 py-0.5 rounded bg-surface-2 border border-border text-muted-fg">{t.cal.chileDeferred}</span>
-        </div>
-        <div className="px-4 py-6 text-center text-xs text-muted-fg">{t.cal.chileUnavailable}</div>
-      </div>
+      <Reveal delayMs={190}>
+        <TableCard
+          title={t.cal.chileTitle}
+          controls={pill(t.cal.chileDeferred)}
+          state="unavailable"
+          stateMessage={t.cal.chileUnavailable}
+        >
+          <></>
+        </TableCard>
+      </Reveal>
     </div>
   )
 }

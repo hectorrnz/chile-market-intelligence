@@ -641,8 +641,12 @@ describe('Phase 5E — scope held', () => {
   })
 
   it('redesigns no page outside its own phase', () => {
+    // `/macro` was removed from this list in Phase 5F, which migrated it
+    // under its own brief (SegmentedControl included) — a real phase
+    // boundary moving, not a relaxed assertion. It is guarded by
+    // `tests/fableMacroPage.test.ts`.
     for (const other of [
-      'src/app/page.tsx', 'src/app/earnings/page.tsx', 'src/app/macro/page.tsx',
+      'src/app/page.tsx', 'src/app/earnings/page.tsx',
       'src/app/portfolio/page.tsx', 'src/app/structured-notes/page.tsx',
     ]) {
       assert.ok(existsSync(join(ROOT, other)), `${other} must still exist`)

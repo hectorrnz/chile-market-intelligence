@@ -28,6 +28,11 @@ import type { DataSourceStatus } from '@/lib/providers/types'
 import { changeColor, formatMacroValue, formatMacroChange, formatFx, formatPct } from '@/lib/formatters'
 import { LineChart } from '@/components/charts/LineChart'
 import { YieldCurveChart } from '@/components/charts/YieldCurveChart'
+import { TableCard } from '@/components/fable/TableCard'
+import { GlassSurface } from '@/components/fable/GlassSurface'
+import { SegmentedControl } from '@/components/fable/SegmentedControl'
+import { AsyncState } from '@/components/fable/AsyncState'
+import { Reveal } from '@/components/fable/motion'
 import type { MacroIndicator } from '@/types'
 
 type Region = 'CL' | 'US'
@@ -262,18 +267,25 @@ export default function MacroPage() {
 
   return (
     <div className="w-full space-y-4">
-      <SectionHeader
-        tag={t.macro.tag}
-        title={t.macro.title}
-        subtitle={region === 'CL' ? t.macro.clSubtitle : t.macro.usSubtitle}
-        actions={
-          <div className="flex items-center gap-2.5">
-            <UpdateDataButton onRefresh={doRefresh} />
-            <DataSourceBadge status={srcStatus} provider={srcProvider} />
-            <span className="text-xs px-2.5 py-1 rounded bg-surface-2 border border-border text-foreground font-medium">{region === 'CL' ? 'Chile' : 'US'}</span>
-          </div>
-        }
-      />
+      <Reveal>
+        <SectionHeader
+          tag={t.macro.tag}
+          title={t.macro.title}
+          subtitle={region === 'CL' ? t.macro.clSubtitle : t.macro.usSubtitle}
+          actions={
+            <div className="flex items-center gap-2.5">
+              <UpdateDataButton onRefresh={doRefresh} />
+              <DataSourceBadge status={srcStatus} provider={srcProvider} />
+              <span
+                className="text-xs px-2.5 py-1 rounded-full nv-transition text-foreground font-medium"
+                style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' }}
+              >
+                {region === 'CL' ? t.macro.regionCL : t.macro.regionUS}
+              </span>
+            </div>
+          }
+        />
+      </Reveal>
 
       {/* Economic calendar — US only. Chile has no verified official
           release-date source, so rather than render an empty card with an
@@ -281,152 +293,168 @@ export default function MacroPage() {
           shown for that region (the deferred-source record lives in
           docs/data_source_status.md and /macro/calendar). */}
       {region === 'US' && (
-        <div className="bg-surface border border-border rounded overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
-            <span className="ui-label text-muted-fg">{t.macro.calToday}</span>
-            <Link href="/macro/calendar" className="text-xs text-primary hover:underline">{t.macro.viewFull}</Link>
-          </div>
-          {calendar && !calendar.configured ? (
-            <div className="px-4 py-6 text-center text-xs text-muted-fg">{t.cal.fredUnavailable}</div>
-          ) : (
+        <Reveal delayMs={70}>
+          <TableCard
+            title={t.macro.calToday}
+            controls={<Link href="/macro/calendar" className="text-xs text-primary hover:underline">{t.macro.viewFull}</Link>}
+            minWidth={720}
+            state={calendar && !calendar.configured ? 'unavailable' : undefined}
+            stateMessage={t.cal.fredUnavailable}
+            footer={<TableSourceFooter source="FRED (Federal Reserve Bank of St. Louis)" asOf={null} />}
+          >
             <EconomicCalendarTable events={calendar?.events ?? []} emptyMessage={t.cal.fredEmpty} />
-          )}
-          <div className="px-4 py-2 border-t border-border">
-            <TableSourceFooter source="FRED (Federal Reserve Bank of St. Louis)" asOf={null} />
-          </div>
-        </div>
+          </TableCard>
+        </Reveal>
       )}
 
       {/* One indicators table with highlighted category bands */}
-      <div className="bg-surface border border-border rounded overflow-x-auto">
-        <table className="w-full text-xs min-w-[660px]">
-          <thead>
-            <tr className="border-b border-border bg-surface-2">
-              <th className="text-left py-2.5 pl-4 pr-3 ui-table-header text-muted-fg w-44">{t.macro.indicator}</th>
-              <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg w-32">{t.macro.value}</th>
-              <th className="text-right py-2.5 px-3 ui-table-header text-muted-fg w-24">{t.macro.change}</th>
-              <th className="text-left py-2.5 px-3 ui-table-header text-muted-fg w-28">{t.macro.period}</th>
-              <th className="text-left py-2.5 px-3 pr-4 ui-table-header text-muted-fg w-40">{t.macro.source}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {groups.map(({ cat, rows }) => (
-              <Fragment key={cat}>
-                <tr>
-                  <td colSpan={5} className="bg-surface-2 px-4 py-1.5" style={{ borderLeft: '3px solid var(--accent)' }}>
-                    <span className="ui-label text-foreground">{catLabel[cat] ?? cat}</span>
-                  </td>
-                </tr>
-                {rows.map(r => {
-                  const isSel = selected?.id === r.id
-                  return (
-                    <tr key={r.id} onClick={() => openRow(r)}
-                      className={`border-b border-border last:border-0 transition-colors ${r.histId ? 'cursor-pointer hover:bg-surface-2' : ''} ${isSel ? 'bg-surface-2' : ''}`}>
-                      <td className="py-2.5 pl-4 pr-3 text-foreground">
-                        {r.label}
-                        {r.histId && <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-accent align-middle" title="Chartable" />}
-                      </td>
-                      <td className="py-2.5 px-3 text-right ui-number text-foreground">{formatMacroValue(r.value, r.unit)}</td>
-                      <td className={`py-2.5 px-3 text-right ui-number ${r.change != null ? changeColor(r.change) : 'text-muted-fg'}`}>{r.changeLabel ? formatMacroChange(r.changeLabel) : '—'}</td>
-                      <td className="py-2.5 px-3 text-muted-fg whitespace-nowrap">{r.period}</td>
-                      <td className="py-2.5 px-3 pr-4 text-muted-fg"><span className="block truncate max-w-[220px]" title={r.source}>{r.source}</span></td>
-                    </tr>
-                  )
-                })}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
-        <div className="px-4 py-2 border-t border-border space-y-0.5">
-          <p className="text-xs text-muted-fg">{t.macro.clickToChart}</p>
-          <TableSourceFooter source={srcProvider === 'FRED' ? 'FRED (Federal Reserve Bank of St. Louis)' : 'Banco Central de Chile (BCCh)'} asOf={latestAsOf || null} />
-        </div>
-      </div>
+      <Reveal delayMs={130}>
+        <TableCard
+          minWidth={660}
+          footer={
+            <>
+              <p className="text-xs text-muted-fg">{t.macro.clickToChart}</p>
+              <TableSourceFooter source={srcProvider === 'FRED' ? 'FRED (Federal Reserve Bank of St. Louis)' : 'Banco Central de Chile (BCCh)'} asOf={latestAsOf || null} className="mt-0.5" />
+            </>
+          }
+        >
+          <table className="w-full" style={{ fontSize: 'var(--fs-table-cell)' }}>
+            <caption className="sr-only">{t.macro.title}</caption>
+            <thead>
+              <tr>
+                <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-left py-2.5 pl-4 pr-3 border-b border-border ui-table-header text-muted-fg w-44">{t.macro.indicator}</th>
+                <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-right py-2.5 px-3 border-b border-border ui-table-header text-muted-fg w-32">{t.macro.value}</th>
+                <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-right py-2.5 px-3 border-b border-border ui-table-header text-muted-fg w-24">{t.macro.change}</th>
+                <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-left py-2.5 px-3 border-b border-border ui-table-header text-muted-fg w-28">{t.macro.period}</th>
+                <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-left py-2.5 px-3 pr-4 border-b border-border ui-table-header text-muted-fg w-40">{t.macro.source}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groups.map(({ cat, rows }) => (
+                <Fragment key={cat}>
+                  <tr>
+                    <td colSpan={5} className="bg-surface-2 px-4 py-1.5" style={{ borderLeft: '3px solid var(--accent)' }}>
+                      <span className="ui-label text-foreground">{catLabel[cat] ?? cat}</span>
+                    </td>
+                  </tr>
+                  {rows.map(r => {
+                    const isSel = selected?.id === r.id
+                    return (
+                      <tr key={r.id} onClick={() => openRow(r)}
+                        onKeyDown={r.histId ? (e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openRow(r) } }) : undefined}
+                        role={r.histId ? 'button' : undefined}
+                        tabIndex={r.histId ? 0 : undefined}
+                        aria-label={r.histId ? `${r.label} — ${t.macro.viewChart}` : undefined}
+                        className={`border-b border-border last:border-0 nv-transition ${r.histId ? 'cursor-pointer nv-row-hover' : ''} ${isSel ? 'bg-surface-2' : ''}`}>
+                        <td className="py-2.5 pl-4 pr-3 text-foreground">
+                          {r.label}
+                          {r.histId && <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-accent align-middle" title={t.macro.chartable} />}
+                        </td>
+                        <td className="py-2.5 px-3 text-right ui-number text-foreground">{formatMacroValue(r.value, r.unit)}</td>
+                        <td className={`py-2.5 px-3 text-right ui-number ${r.change != null ? changeColor(r.change) : 'text-muted-fg'}`}>{r.changeLabel ? formatMacroChange(r.changeLabel) : '—'}</td>
+                        <td className="py-2.5 px-3 text-muted-fg whitespace-nowrap">{r.period}</td>
+                        <td className="py-2.5 px-3 pr-4 text-muted-fg"><span className="block truncate max-w-[220px]" title={r.source}>{r.source}</span></td>
+                      </tr>
+                    )
+                  })}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </TableCard>
+      </Reveal>
 
       {/* Fixed-income (yield curve) + FX depth. Chile has no FX depth table
           (only USD/CLP and EUR/CLP have verified live BCCh series, and both
           already appear in the FX category of the indicators table above), so
           the yield curve takes the full width there rather than sitting next
           to a placeholder card explaining an absence. */}
-      <div className={`grid gap-4 items-start ${region === 'CL' ? 'grid-cols-1' : 'grid-cols-1 xl:grid-cols-2'}`}>
-        <div className="bg-surface border border-border rounded p-4">
-          <div className="flex items-center justify-between gap-2 mb-1">
-            <div className="ui-label text-muted-fg">{t.macro.yieldCurve}</div>
-            <DataSourceBadge status={curveStatus} provider={srcProvider} />
-          </div>
-          <div className="text-xs text-muted-fg mb-3">{staticCurve.label}</div>
-          <YieldCurveChart
-            tenors={curveTenors}
-            unit={staticCurve.unit}
-            series={[
-              { label: t.macro.curveToday, color: 'var(--primary)', values: curveToday },
-              { label: t.macro.curveWeek, color: 'var(--accent)', values: curveWeekAgo },
-              { label: `${t.macro.curveYearEnd} ${curveYearEndYear}`, color: 'var(--muted)', dashed: true, values: curveYearEnd },
-            ]}
-            height={240}
-          />
-          <div className="mt-2">
-            <TableSourceFooter source={curveSource} asOf={curveAsOf} />
-          </div>
-        </div>
-
-        {region === 'US' && (
-          <div className="bg-surface border border-border rounded overflow-x-auto">
-            <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-2">
-              <span className="ui-label text-muted-fg">{t.macro.fxDepth}</span>
-              <SourceStateBadge sourceKey={usForex?.ok ? 'frankfurterLive' : 'frankfurterUnavailable'} />
+      <Reveal delayMs={190}>
+        <div className={`grid gap-4 items-start ${region === 'CL' ? 'grid-cols-1' : 'grid-cols-1 xl:grid-cols-2'}`}>
+          <GlassSurface variant="card" className="p-4">
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <div className="ui-label text-muted-fg">{t.macro.yieldCurve}</div>
+              <DataSourceBadge status={curveStatus} provider={srcProvider} />
             </div>
-            {usForex?.ok && usForex.rows.length > 0 ? (
-              <>
-                <table className="w-full text-xs min-w-[420px]">
-                  <thead>
-                    <tr className="border-b border-border bg-surface-2">
-                      <th className="text-left py-2 pl-4 pr-3 ui-table-header text-muted-fg">{t.macro.pair}</th>
-                      <th className="text-right py-2 px-3 ui-table-header text-muted-fg">{t.home.last}</th>
-                      <th className="text-right py-2 px-3 ui-table-header text-muted-fg">{t.home.dayChg}</th>
-                      <th className="text-right py-2 px-3 pr-4 ui-table-header text-muted-fg">{t.home.ytd}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {usForex.rows.map(r => (
-                      <tr key={r.id} className="border-b border-border last:border-0">
-                        <td className="py-2 pl-4 pr-3 text-foreground">
-                          {r.pair}
-                          {r.derived && (
-                            <span className="ml-1.5 text-muted-fg" title={t.macro.fxDerived}>†</span>
-                          )}
-                        </td>
-                        <td className="py-2 px-3 text-right ui-number text-foreground">{formatFx(r.value, r.decimals)}</td>
-                        <td className={`py-2 px-3 text-right ui-number ${r.oneDayChangePct != null ? changeColor(r.oneDayChangePct) : 'text-muted-fg'}`} title={r.oneDayChangePct == null ? t.macro.fxChangeUnavailable : undefined}>
-                          {r.oneDayChangePct != null ? formatPct(r.oneDayChangePct) : '—'}
-                        </td>
-                        <td className={`py-2 px-3 pr-4 text-right ui-number ${r.ytdChangePct != null ? changeColor(r.ytdChangePct) : 'text-muted-fg'}`} title={r.ytdChangePct == null ? t.macro.fxChangeUnavailable : undefined}>
-                          {r.ytdChangePct != null ? formatPct(r.ytdChangePct) : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <div className="px-4 py-2 border-t border-border space-y-0.5">
-                  {/* Source line stays a plain provider name (platform convention);
-                      the † derived-column marker is its own note, not part of
-                      the source string. */}
-                  <TableSourceFooter source="Frankfurter" asOf={usForex.currentDate} />
-                  <p className="text-xs text-muted-fg">† {t.macro.fxDerived}</p>
-                </div>
-              </>
-            ) : (
-              <div className="flex items-center justify-center h-40 text-xs text-muted-fg">{t.macro.fxUnavailable}</div>
-            )}
-          </div>
-        )}
-      </div>
+            <div className="text-xs text-muted-fg mb-3">{staticCurve.label}</div>
+            <YieldCurveChart
+              tenors={curveTenors}
+              unit={staticCurve.unit}
+              series={[
+                { label: t.macro.curveToday, color: 'var(--primary)', values: curveToday },
+                { label: t.macro.curveWeek, color: 'var(--accent)', values: curveWeekAgo },
+                { label: `${t.macro.curveYearEnd} ${curveYearEndYear}`, color: 'var(--muted)', dashed: true, values: curveYearEnd },
+              ]}
+              height={240}
+            />
+            <div className="mt-2">
+              <TableSourceFooter source={curveSource} asOf={curveAsOf} />
+            </div>
+          </GlassSurface>
 
+          {/* Source line stays a plain provider name (platform convention); the
+              † derived-column marker is its own note, not part of the source
+              string. */}
+          {region === 'US' && (
+            <TableCard
+              title={t.macro.fxDepth}
+              controls={<SourceStateBadge sourceKey={usForex && usForex.ok ? 'frankfurterLive' : 'frankfurterUnavailable'} />}
+              minWidth={420}
+              state={!(usForex && usForex.ok) || usForex.rows.length === 0 ? 'unavailable' : undefined}
+              stateMessage={t.macro.fxUnavailable}
+              footer={usForex && usForex.ok && usForex.rows.length > 0 ? (
+                <>
+                  <TableSourceFooter source="Frankfurter" asOf={usForex.currentDate} />
+                  <p className="text-xs text-muted-fg mt-0.5">† {t.macro.fxDerived}</p>
+                </>
+              ) : undefined}
+            >
+              {usForex?.ok && usForex.rows.length > 0 ? (
+              <table className="w-full" style={{ fontSize: 'var(--fs-table-cell)' }}>
+                <caption className="sr-only">{t.macro.fxDepth}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-left py-2 pl-4 pr-3 border-b border-border ui-table-header text-muted-fg">{t.macro.pair}</th>
+                    <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-right py-2 px-3 border-b border-border ui-table-header text-muted-fg">{t.home.last}</th>
+                    <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-right py-2 px-3 border-b border-border ui-table-header text-muted-fg">{t.home.dayChg}</th>
+                    <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-right py-2 px-3 pr-4 border-b border-border ui-table-header text-muted-fg">{t.home.ytd}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {usForex.rows.map(r => (
+                    <tr key={r.id} className="border-b border-border last:border-0 nv-row-hover nv-transition">
+                      <td className="py-2 pl-4 pr-3 text-foreground">
+                        {r.pair}
+                        {r.derived && (
+                          <span className="ml-1.5 text-muted-fg" title={t.macro.fxDerived}>†</span>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 text-right ui-number text-foreground">{formatFx(r.value, r.decimals)}</td>
+                      <td className={`py-2 px-3 text-right ui-number ${r.oneDayChangePct != null ? changeColor(r.oneDayChangePct) : 'text-muted-fg'}`} title={r.oneDayChangePct == null ? t.macro.fxChangeUnavailable : undefined}>
+                        {r.oneDayChangePct != null ? formatPct(r.oneDayChangePct) : '—'}
+                      </td>
+                      <td className={`py-2 px-3 pr-4 text-right ui-number ${r.ytdChangePct != null ? changeColor(r.ytdChangePct) : 'text-muted-fg'}`} title={r.ytdChangePct == null ? t.macro.fxChangeUnavailable : undefined}>
+                        {r.ytdChangePct != null ? formatPct(r.ytdChangePct) : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              ) : <></>}
+            </TableCard>
+          )}
+        </div>
+      </Reveal>
 
       {/* Chart popup modal (monthly frequency) */}
       {selected && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'color-mix(in oklab, var(--foreground) 40%, transparent)' }} onClick={() => setSelected(null)} role="dialog" aria-modal="true">
-          <div className="bg-surface border border-border rounded shadow-lg w-full max-w-3xl p-5 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="no-print nv-scrim fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setSelected(null)}>
+          <div
+            role="dialog" aria-modal="true" aria-label={selected.label}
+            className="nv-surface-dense nv-pop w-full max-w-3xl p-5 max-h-[90vh] overflow-y-auto"
+            style={{ borderRadius: 'var(--radius-module)', border: '1px solid var(--nv-bd)', boxShadow: 'var(--nv-sh-palette)' }}
+            onClick={e => e.stopPropagation()}
+          >
             <div className="flex items-start justify-between gap-4 mb-4">
               <div>
                 <div className="ui-label text-muted-fg mb-0.5">{selected.label}</div>
@@ -436,17 +464,20 @@ export default function MacroPage() {
                   <span className="text-xs text-muted-fg ml-1">{selected.period}</span>
                 </div>
               </div>
-              <div className="flex items-center gap-1 shrink-0">
-                {TIMEFRAMES.map(tf => (
-                  <button key={tf} onClick={() => setTimeframe(tf)} className={`px-2.5 py-1 text-xs rounded transition-colors ${timeframe === tf ? 'bg-surface-2 text-foreground border border-border' : 'text-muted-fg hover:text-foreground'}`}>{tf}Y</button>
-                ))}
-                <button onClick={() => setSelected(null)} className="ml-2 text-sm text-muted-fg hover:text-foreground px-2 py-1" aria-label="Close chart">✕</button>
+              <div className="flex items-center gap-2 shrink-0">
+                <SegmentedControl
+                  options={TIMEFRAMES.map(tf => ({ value: String(tf), label: `${tf}Y` }))}
+                  value={String(timeframe)}
+                  onChange={v => setTimeframe(Number(v) as Timeframe)}
+                  ariaLabel={t.macro.timeframeLabel}
+                />
+                <button type="button" onClick={() => setSelected(null)} aria-label={t.fable.panel.close} className="ml-1 text-sm text-muted-fg hover:text-foreground px-2 py-1">✕</button>
               </div>
             </div>
             {(liveChart ?? historyData).length >= 2 ? (
               <LineChart data={liveChart ?? historyData} unit={selected.unit === '%' ? '%' : ''} height={240} />
             ) : (
-              <div className="flex items-center justify-center h-40 text-xs text-muted-fg border border-border rounded">{t.macro.noHistory}</div>
+              <AsyncState kind="unavailable" message={t.macro.noHistory} />
             )}
             <div className="flex items-center gap-2 mt-3">
               <DataSourceBadge status={histStatus} provider={chartProvider} />

@@ -423,9 +423,12 @@ or any news-related source path was touched this phase).
 > multi-table analytical page (3 `TableCard`s), a second `SegmentedControl` adopter, and a
 > from-scratch settings-modal restyle onto the established overlay pattern. **Phase 5E
 > (`/chart-builder`) ✓ COMPLETE (2026-07-28)** — proves the metric-picker + dual-axis-chart pattern
-> and closes a genuine pre-existing responsive gap (the underlying-data table had no `min-w`). See
-> "Phase 5A — as built", "Phase 5B — as built", "Phase 5C — as built", "Phase 5D — as built" and
-> "Phase 5E — as built" below. Pages 7–12 are not started.
+> and closes a genuine pre-existing responsive gap (the underlying-data table had no `min-w`).
+> **Phase 5F (`/macro` + `/macro/calendar`) ✓ COMPLETE (2026-07-28)** — proves a two-route phase
+> sharing one restyled component (`EconomicCalendarTable`), closes two more pre-existing no-`min-w`
+> gaps, and adds real keyboard operability to a mouse-only interaction (chartable indicator rows).
+> See "Phase 5A — as built", "Phase 5B — as built", "Phase 5C — as built", "Phase 5D — as built",
+> "Phase 5E — as built" and "Phase 5F — as built" below. Pages 8–12 are not started.
 
 Each page: swap layout/card/table/pill classes to the new shared components; **do not change**
 data fetching, `fetch*` calls, `useMarketData`/`useMacroData`/`useGlobalRefresh`, persisted
@@ -441,8 +444,8 @@ Recommended order (low-risk → high-risk, dependency-aware):
    and the add-form pattern.
 3. **`/companies/[ticker]`** ✓ — KPI capsules + chart + valuation grid + results + news; proves
    capsules, charts, glass cards, print path.
-4. **`/macro`** + **`/macro/calendar`** — direct Fable Macro map (snapshot rows + sparklines),
-   banded table, yield curve, chart popup overlay, release calendar.
+4. **`/macro`** + **`/macro/calendar`** ✓ — banded table, yield curve, chart popup overlay,
+   release calendar, FOMC outlook, Chile-deferred disclosure.
 5. **`/earnings`** — two glass DataTables + upcoming module.
 6. **`/compare`** ✓ — multi-slot returns table, settings modal (glass overlay), compare chart,
    segmented pills.
@@ -804,6 +807,94 @@ their route against a running server) — this is a source-and-build-level verif
 
 ---
 
+### Phase 5F — `/macro` + `/macro/calendar` — as built (2026-07-28)
+
+**Files changed (8 — 3 source, 1 i18n, 3 test scope-boundary corrections, 2 new tests; `03`/`04`/`06`
+counted once):**
+
+| File | Change |
+|---|---|
+| `src/app/macro/page.tsx` | Re-skinned. **Every hook, state variable, effect, and computed value (`groups`, `clRatesRows`, `curveTenors`/`curveToday`/`curveWeekAgo`/`curveYearEnd`/`curveSource`/`curveAsOf`/`curveStatus`/`curveYearEndYear`, `chartProvider`, `latestAsOf`, `historyData`) is byte-for-byte unchanged** — only the JSX tree changed. Calendar embed / indicators table / FX depth table → `TableCard` (`minWidth={720}`/`{660}`/`{420}` — the calendar and FX tables had **no `min-w` at all** before this phase, a genuine pre-existing responsive gap now closed, matching the exact pattern from Chart Builder's Phase 5E fix). Yield-curve chart card → `GlassSurface variant="card"` (chart panels use plain glass per the Compare/Chart Builder precedent, not the dense table wrapper). The chart popup's 1Y/3Y/5Y/10Y row → `SegmentedControl` (5th production adopter), mapped to/from the existing numeric `Timeframe` type only at the render boundary (`value={String(timeframe)}` / `onChange={v => setTimeframe(Number(v) as Timeframe)}`) — the state's type, default, and every fetch call using it are untouched. The chart popup itself restyled onto the established `nv-scrim` + `nv-glass-overlay nv-pop` recipe, gaining a data-driven `aria-label={selected.label}`. Chartable indicator rows gained real keyboard operability (`role="button"`, `tabIndex={0}`, Enter/Space via `onKeyDown`, a distinct per-row `aria-label`) — the click handler (`openRow`) itself is unchanged, only its reachability improved; this was a genuine pre-existing gap (a mouse-only interaction), not a new feature. Six `Reveal` wrappers (0/70/130/190ms — header unstaggered, calendar embed, indicators table, yield-curve+FX row) match the established stagger cadence. |
+| `src/app/macro/calendar/page.tsx` | Re-skinned. **Every fetch call and computed value (`events`, `latestAsOf`, `pct`) is byte-for-byte unchanged.** All 3 cards (FRED release calendar, FOMC outlook, Chile deferred) → `TableCard`. The FRED and FOMC tables had **no `min-w`** either — closed via `minWidth={720}`/`{480}`. The Chile-deferred card uses `TableCard`'s own `state="unavailable"` slot directly (no table body exists — there is genuinely no data or source here), replacing a bespoke muted `<div>` with the same shared async-state language used everywhere else. Three `Reveal` wrappers (0/70/130/190ms — back-link+header, FRED calendar, FOMC, Chile-deferred). |
+| `src/components/macro/EconomicCalendarTable.tsx` | Restyled — **exclusively consumed by these two in-scope routes**, so this is a same-phase content restyle, not a cross-page shared-component change. Near-opaque `var(--surface-table)` header background (was `bg-surface-2`); `scope="col"` + `sr-only <caption>` added; its own outer `overflow-x-auto` wrapper removed (now supplied by the caller's `TableCard`, avoiding a nested double-scroll-container); its "no releases" empty branch now routes through the shared `AsyncState kind="empty"` component with the exact same `emptyMessage` prop, instead of a bare `<div>`. Row hover (`nv-row-hover nv-transition`) and every column/formatter/status branch (`pending`/`unavailable`/`actualText`/`previousText`/originating-agency chip/importance dot) are unchanged. |
+| `src/lib/i18n.ts` | 5 new keys × 2 languages under `macro`: `chartable` (the "Chartable" dot's `title`, previously hardcoded English), `viewChart` (the new per-row aria-label suffix), `regionCL`/`regionUS` (the header region chip, previously a hardcoded `'Chile'`/`'US'` literal regardless of language), `timeframeLabel` (the popup `SegmentedControl`'s `ariaLabel`, since the original button row had no group label at all). No existing key touched. |
+| `tests/fableComparePage.test.ts`, `tests/fableStocksPage.test.ts`, `tests/fableWatchlistPage.test.ts`, `tests/fableChartBuilderPage.test.ts`, `tests/fableCompanyDetailPage.test.ts` | **Deliberate scope-boundary updates, not weakened assertions** — the exact precedent Phase 5B/5D/5E set. `/macro` and/or `/macro/calendar` removed from each file's "not yet migrated" guard array (they now legitimately use `TableCard`/`GlassSurface`/`SegmentedControl`, which those assertions exist specifically to rule out for *not-yet-migrated* pages) — the remaining pages in each list still hold the line, and `/macro`/`/macro/calendar` are now guarded by their own suites below. |
+| `tests/fableMacroPage.test.ts`, `tests/fableMacroCalendarPage.test.ts` | **New — 95 + 56 = 151 tests.** Every section/category/series/region-context/chart-series/timeframe/tenor/FX-pair/calendar-column/calendar-filter/user-action/source-badge/footer/timestamp/async-state preserved; the exact CL/US responsive grid class and the FX-block character-proximity shape required by the pre-existing `tests/frankfurterFx.test.ts` regex guard (see below) are asserted; no synthetic calendar event, no fabricated actual/previous/forecast value, no null-to-zero coercion, no Fable sample data; Fable material/pill/token/radius rules; motion restraint + reduced-motion collapse; full a11y (scoped headers, captions, labelled controls, the new keyboard-operable rows, localized titles); responsive containment (`TableCard` `minWidth` floors closing all 4 pre-existing gaps across both routes); complete EN/ES coverage including a scan for hardcoded literals in both JSX text *and* `title`/`aria-label` attributes (which caught the `regionCL`/`regionUS`/`chartable`/close-button defects above). |
+| `docs/fable-integration/03` / `04` / `06` | Routes 5 & 6 status → Done/Verified; this as-built record; recommended-order item 4 ticked; checklist items updated. |
+
+**Files deliberately NOT changed:** `globals.css` (every token this phase needed already existed),
+`src/components/charts/{LineChart,YieldCurveChart}.tsx` (same props/call signatures — untouched
+since Phase 4), `src/config/macroSeries.ts` / `bcchSeriesManualMap.ts` / `usFredSeriesManualMap.ts`
+/ `yahooMacroSeries.ts` (no series, category, tenor, or transformation logic touched), any other
+page, `src/app/api/**`, `src/middleware.ts`, `src/lib/{providers,db,market}/**`, `src/data/**`,
+`package.json`/`package-lock.json`.
+
+**Judgement calls, stated plainly:**
+- **The Change-column color coding was deliberately left untouched**, not upgraded to the newer
+  `ChangeIndicator` glyph+color component. The FX table's day/YTD ternary text is asserted
+  byte-for-byte by a pre-existing business-logic regression test
+  (`tests/frankfurterFx.test.ts` — a `.slice(indexOf('usForex?.ok'), +2500)` window that must
+  contain the literal `oneDayChangePct != null … formatPct … : '—'` pattern). Restructuring those
+  cells around `ChangeIndicator` would have broken that unrelated pre-existing guard; keeping the
+  exact original ternary text was the correct, minimal-risk choice. A related real fix was still
+  required: the FX card's `controls`/`state` props originally would have introduced an *earlier*,
+  spurious match of the literal string `usForex?.ok` (in the status badge), pushing the real match
+  outside the test's 2500-char window — fixed by using the logically-identical but textually-distinct
+  `usForex && usForex.ok` in `controls`/`state`/`footer`, leaving exactly one `usForex?.ok`
+  occurrence in the whole file, positioned immediately before the table it guards.
+- **`MacroSeriesDef`/category-list logic was not touched.** The category bands (`catLabel`,
+  `indByCat`, `groups`) were already a hardcoded array literal before this phase, not derived from
+  `MacroSeriesDef` at runtime — the brief's "don't hardcode categories when the current
+  implementation reads them from `MacroSeriesDef`" instruction is conditional on that not already
+  being true, so it didn't apply here, and changing this pre-existing data-flow shape would have
+  been out of scope for a presentation-only re-skin.
+- **No date-range or category-filter control was invented.** Neither existed before this phase;
+  the category bands are (and remain) always-shown groupings, not a togglable filter.
+
+**Validation:** lint 0 problems · full suite **2655 → 2806 tests, 2803 pass, 3 fail** (+151, all in
+the two new files) · build 0 errors (full route table unchanged, `/macro` and `/macro/calendar`
+both still static/`○`). The 3 failures are the same pre-existing, date-dependent
+`tests/newsModule.test.ts` fixture failures documented in every phase since Phase 1 (fixtures
+stamped `15 Jul 2026` against the orchestrator's rolling 7-day window; today is 2026-07-28) — no
+news-related file is in this phase's changed-file list, and the failure count/location is
+unchanged from the pre-phase baseline.
+
+**Honest gap:** the interactive browser responsive ladder (1920/1600/1440/1280/1024/768/390,
+light+dark, EN+ES, reduced motion) was **not** run — the Chrome extension is not connected in this
+background session, the same limitation disclosed in every prior Phase 5 pass. What *is* verified
+is source-and-build-level: the exact `region === 'CL' ? 'grid-cols-1' : 'grid-cols-1
+xl:grid-cols-2'` responsive class, the 4 `TableCard` `minWidth` floors across both routes, and the
+`max-h-[90vh] overflow-y-auto` popup cap are all present and asserted by the new test suites, and
+no live dev-server rendered-markup check was performed this phase (unlike 5A–5D) — this is a
+source-and-build-level verification only.
+
+**Manual repair addendum (2026-07-29) — chart popup opacity defect.** A visual bug was reported
+after the phase above shipped: the `/macro` historical-chart popup used the Tier-5 `nv-glass-overlay`
+recipe (a translucent `var(--nv-card)` gradient, ~.72–.9 alpha, + `backdrop-filter: blur(30px)`) —
+correct for sparse label/toggle overlays (nav drawer, command palette, both settings modals) but a
+violation of the project's own dense-content rule (design_principles §8: text under 13px — axis
+labels, tooltips, legend, source footer — must never sit on low-opacity glass; hard minimum .92) for
+this specific dense analytical surface. The underlying indicators table was visibly readable through
+the popup body. Fix: the popup's `className` swapped `nv-glass-overlay` → `nv-surface-dense` (the
+existing Tier-6 near-opaque `--surface-table` token, `.97` alpha, no blur — already the exact token
+this chart's own tooltip uses via `--chart-tooltip-bg`), with the Tier-5 rounded modal *shape*
+(radius/border/shadow) preserved via an inline `style` referencing the same
+`var(--radius-module)`/`var(--nv-bd)`/`var(--nv-sh-palette)` tokens `nv-glass-overlay` itself used —
+no new global CSS, no new token, no hardcoded color. Every other `nv-glass-overlay` consumer
+(CommandPalette, NotificationBell, DetailPanel, MobileNavDrawer, Chart Builder's and Compare's
+settings modals) was checked and confirmed unaffected/appropriate — the defect was local to this one
+popup, not a shared-component regression. One pre-existing test assertion in
+`tests/fableMacroPage.test.ts` that literally asserted the old `nv-glass-overlay nv-pop` string was
+corrected to assert the repaired `nv-surface-dense nv-pop` class and the absence of
+`nv-glass-overlay`; a new focused file, `tests/fableMacroChartModalOpacity.test.ts` (14 tests), locks
+down the repair itself (near-opaque surface, no translucent token, both themes ≥.92 alpha, no blur on
+the dense tier, scrim/shape/chart/controls/footer/close/async-state/responsiveness/reduced-motion all
+preserved, no API/data/other-Phase-5F-section change, unrelated modal consumers unchanged). Full
+suite: 2806 → **2820 tests, 2817 pass, 3 fail** (+14, all in the new file) — same 3 pre-existing
+date-dependent `tests/newsModule.test.ts` failures, unchanged. Lint 0 · build 0 errors.
+
+---
+
 ## Phase 6 — Auth pages + login shell (highest-visibility, distinct layout)
 
 Do together, after shared components exist. The login is the marquee Fable moment and needs a
@@ -873,7 +964,8 @@ hardcoded UI text in components. Reuse existing namespaces; add keys under `topb
 | 5C ✓ | `src/app/companies/[ticker]/page.tsx`, `src/lib/i18n.ts` (2 keys ×2 langs), new `tests/fableCompanyDetailPage.test.ts` |
 | 5D ✓ | `src/app/compare/page.tsx`, `src/lib/i18n.ts` (2 keys ×2 langs), new `tests/fableComparePage.test.ts`, `tests/{fableWatchlistPage,fableStocksPage,fableCompanyDetailPage}.test.ts` (phase-boundary guard updates) |
 | 5E ✓ | `src/app/chart-builder/page.tsx`, `src/lib/i18n.ts` (5 keys ×2 langs), new `tests/fableChartBuilderPage.test.ts`, `tests/{fableComparePage,fableCompanyDetailPage}.test.ts` (phase-boundary guard updates) |
-| 5 (rest) | `src/app/{macro,macro/calendar,earnings,portfolio,structured-notes,structured-notes/[id],settings/notifications}/page.tsx`, `src/app/page.tsx` |
+| 5F ✓ | `src/app/macro/page.tsx`, `src/app/macro/calendar/page.tsx`, `src/components/macro/EconomicCalendarTable.tsx`, `src/lib/i18n.ts` (5 keys ×2 langs), new `tests/{fableMacroPage,fableMacroCalendarPage}.test.ts`, `tests/{fableComparePage,fableStocksPage,fableWatchlistPage,fableChartBuilderPage,fableCompanyDetailPage}.test.ts` (phase-boundary guard updates) |
+| 5 (rest) | `src/app/{earnings,portfolio,structured-notes,structured-notes/[id],settings/notifications}/page.tsx`, `src/app/page.tsx` |
 | 6 | new `src/app/(auth)/layout.tsx`, `src/app/{login,forgot-password,auth/reset-password}/page.tsx`, `src/components/ui/BrandLogo.tsx`, `public/*` (login photo, logo) |
 | 7 | `src/lib/i18n.ts` |
 | 8 | `tests/*` (deliberate updates), `docs/*` |

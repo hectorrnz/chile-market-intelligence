@@ -438,6 +438,11 @@ export const dict = {
       fxDerived:    'Derived (1 / USD-base rate)',
       fxUnavailable: 'Frankfurter unavailable',
       fxChangeUnavailable: 'Change unavailable for this date',
+      chartable:    'Chartable',
+      viewChart:    'View chart',
+      regionCL:     'Chile',
+      regionUS:     'US',
+      timeframeLabel: 'Timeframe',
     },
     cal: {
       title:     'Economic Calendar',
@@ -1212,6 +1217,11 @@ export const dict = {
       fxDerived:    'Derivado (1 / tasa base USD)',
       fxUnavailable: 'Frankfurter no disponible',
       fxChangeUnavailable: 'Variación no disponible para esta fecha',
+      chartable:    'Graficable',
+      viewChart:    'Ver gráfico',
+      regionCL:     'Chile',
+      regionUS:     'EE.UU.',
+      timeframeLabel: 'Periodo',
     },
     cal: {
       title:     'Calendario Económico',

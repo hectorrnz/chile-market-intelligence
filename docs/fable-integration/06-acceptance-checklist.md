@@ -14,14 +14,15 @@ COMPLETE 2026-07-22** · **Phase 2 (app shell: top pill navigation) ✓ COMPLETE
 **Phase 5B (`/watchlist` page re-skin) ✓ COMPLETE 2026-07-28** ·
 **Phase 5C (`/companies/[ticker]` page re-skin) ✓ COMPLETE 2026-07-28** ·
 **Phase 5D (`/compare` page re-skin) ✓ COMPLETE 2026-07-28** ·
-**Phase 5E (`/chart-builder` page re-skin) ✓ COMPLETE 2026-07-28** — see
+**Phase 5E (`/chart-builder` page re-skin) ✓ COMPLETE 2026-07-28** ·
+**Phase 5F (`/macro` + `/macro/calendar` page re-skin) ✓ COMPLETE 2026-07-28** — see
 `04-file-level-implementation-plan.md` § "Phase 1 — as built" / "Phase 2 — as built" /
 "Phase 3 — as built" / "Phase 4 — as built" / "Phase 5A — `/stocks` — as built" /
 "Phase 5B — `/watchlist` — as built" / "Phase 5C — `/companies/[ticker]` — as built" /
-"Phase 5D — `/compare` — as built" / "Phase 5E — `/chart-builder` — as built". Phase 5's
-remaining 7 pages and Phases 6–8 not started. Items below are ticked only where Phases 1–5E
-genuinely satisfy them; everything that still depends on the remaining page work stays `[ ]` or
-`[~]`.
+"Phase 5D — `/compare` — as built" / "Phase 5E — `/chart-builder` — as built" /
+"Phase 5F — `/macro` + `/macro/calendar` — as built". Phase 5's remaining 5 pages and Phases 6–8
+not started. Items below are ticked only where Phases 1–5F genuinely satisfy them; everything
+that still depends on the remaining page work stays `[ ]` or `[~]`.
 
 ---
 
@@ -119,9 +120,33 @@ loading state · empty state · error state · auth status — verified identica
   hardcoded-English defects fixed in passing (the `vs` ticker separator; the metric-chip remove
   button's `aria-label="Remove"`). No reset/save/print action was invented (none existed); no
   `asOf` timestamp was invented (this route never had one).*
-- [ ] `/macro` — calendar embed (US) + banded indicators + yield curve + FX depth (US) + chart
+- [x] `/macro` — calendar embed (US) + banded indicators + yield curve + FX depth (US) + chart
   popup; region via sidebar `macro:region`; Update; public.
-- [ ] `/macro/calendar` — FRED calendar + FOMC outlook + Chile deferred; back link; public.
+  *Phase 5F (2026-07-28). All 5 content sections, all 6 CL / 6 US category bands in their original
+  order, all 26 indicators + 7 Chile-rate rows, the live/static yield-curve tenor precedence
+  (5 live / 7–11 static, unchanged), the 12-pair Frankfurter FX universe with quote direction, the
+  1/3/5/10Y popup timeframe set, the exact `region === 'CL' ? 'grid-cols-1' : 'grid-cols-1
+  xl:grid-cols-2'` responsive class, all 3 `DataSourceBadge` + 1 `SourceStateBadge` + 4
+  `TableSourceFooter` instances, and every async/data-quality state are preserved — locked by 95
+  tests in `tests/fableMacroPage.test.ts`. Restyled onto `TableCard`(×3, closing 2 pre-existing
+  no-`min-w` gaps) + `GlassSurface` (yield-curve card) + `SegmentedControl` (5th adopter, popup
+  timeframe) + the established Settings-modal overlay recipe (popup chart). Chartable indicator
+  rows gained real keyboard operability (were mouse-only). Three pre-existing hardcoded-English
+  defects fixed in passing (`regionCL`/`regionUS` region chip, `chartable` dot title, popup close
+  button now reuses `t.fable.panel.close`). No `ChangeIndicator` upgrade on the Change columns —
+  deliberately left as the original `changeColor()` text to avoid touching an unrelated
+  pre-existing business-logic test (`tests/frankfurterFx.test.ts`) that asserts the FX ternary
+  verbatim within a fixed character window.*
+- [x] `/macro/calendar` — FRED calendar + FOMC outlook + Chile deferred; back link; public.
+  *Phase 5F (2026-07-28). All 3 cards, all 7 FRED-calendar columns + all 5 FOMC columns in their
+  original order, the dates-only-vs-enriched distinction, the honest Chile-deferred disclosure, and
+  both `TableSourceFooter` instances are preserved — locked by 56 tests in
+  `tests/fableMacroCalendarPage.test.ts`. Restyled onto `TableCard`(×3, closing 2 more pre-existing
+  no-`min-w` gaps — the FRED and FOMC tables had none before). The shared
+  `EconomicCalendarTable.tsx` (consumed only by this page and the Macro-page embed) was restyled in
+  the same pass: near-opaque header, `scope="col"`/`sr-only` caption, its own empty state now routed
+  through the shared `AsyncState` component. No forecast/consensus/synthetic-event was invented;
+  no Chile row fabricated.*
 - [ ] `/earnings` — upcoming + recent results tables; Update/CSV; loading/empty; public.
 - [x] `/companies/[ticker]` — KPI strip + business cards + price chart (8 TF + markers) + results +
   valuation grid + news; Print/Watchlist/Graph-fundamentals; `cmi.chartTimeframe`; public.
@@ -188,8 +213,9 @@ loading state · empty state · error state · auth status — verified identica
   8-timeframe chart selector — proving the component end to end on a real page. **Phase 5D adopted
   it twice more** — `/compare`'s TF (1M/YTD/1Y/3Y/5Y) and Period (D/W/M) toggles. **Phase 5E adopted
   it twice more again** — `/chart-builder`'s Absolute/Indexed and TTM/Annual toggles (5th/6th
-  adopter overall). Macro's own timeframe/period/frequency toggles still use their original plain
-  segmented buttons; migrating them to `SegmentedControl` remains its own Phase 5 page work.)*
+  adopter overall). **Phase 5F adopted it once more** — `/macro`'s chart-popup 1Y/3Y/5Y/10Y
+  timeframe row (7th adopter), mapped to/from the page's existing numeric `Timeframe` type only at
+  the render boundary.)*
 - [~] Motion (reveal, count-up, nav slide, drawer/pop) present and **`prefers-reduced-motion`-gated**.
   *(Phase 1: all 6 Fable keyframes, the duration/easing token set, the foundational utilities, and
   the reduced-motion block — which disables reveal / Ken-Burns / pulse / spin outright and collapses
@@ -293,7 +319,12 @@ loading state · empty state · error state · auth status — verified identica
   guards updated deliberately to remove `/compare`. **Phase 5E boundary: 2543 → 2655 tests, 2652
   pass** — 1 new test file (`tests/fableChartBuilderPage.test.ts`, 112 tests);
   `fableComparePage`/`fableCompanyDetailPage`'s phase-boundary guards updated deliberately to remove
-  `/chart-builder`, the same precedent Phase 5B/5D set. The same 3 pre-existing, date-dependent
+  `/chart-builder`, the same precedent Phase 5B/5D set. **Phase 5F boundary: 2655 → 2806 tests,
+  2803 pass** — 2 new test files (`tests/fableMacroPage.test.ts` 95 tests,
+  `tests/fableMacroCalendarPage.test.ts` 56 tests);
+  `fableComparePage`/`fableStocksPage`/`fableWatchlistPage`/`fableChartBuilderPage`/
+  `fableCompanyDetailPage`'s phase-boundary guards updated deliberately to remove `/macro` and/or
+  `/macro/calendar`, the same precedent Phase 5B/5D/5E set. The same 3 pre-existing, date-dependent
   `tests/newsModule.test.ts` failures persist unchanged across every one of these boundaries
   (fixtures stamped `15 Jul 2026` vs a rolling 7-day window; today is 2026-07-28). No news-related
   file is in any Phase 5 sub-phase's changed-file list.)*
@@ -334,8 +365,9 @@ loading state · empty state · error state · auth status — verified identica
 - [ ] `docs/data_source_status.md` current (no module static as terminal state).
 - [~] `docs/fable-integration/03` implementation/verification columns updated per route.
   *(Phase 5A: `/stocks`. Phase 5B: `/watchlist`. Phase 5C: `/companies/[ticker]`. Phase 5D:
-  `/compare`. Phase 5E: `/chart-builder` — each marked ✓ Complete / ✓ Verified with a full
-  "as built" record in its section. The other 11 routes remain Not started / Not verified.)*
+  `/compare`. Phase 5E: `/chart-builder`. Phase 5F: `/macro` + `/macro/calendar` — each marked
+  ✓ Complete / ✓ Verified with a full "as built" record in its section. The other 9 routes remain
+  Not started / Not verified.)*
 - [x] No new runtime dependency added without an explicit, documented decision (D6).
   *(Phases 1, 3, 4, and 5A all added none; `package.json`/`package-lock.json` unchanged every
   time — no chart library was added, per the brief's explicit instruction to keep the existing

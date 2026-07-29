@@ -86,15 +86,16 @@ describe('Phase 5C — route and scope', () => {
   })
 
   it('redesigns no other page — Phase 5C is /companies/[ticker] only', () => {
-    // `/compare` was removed from this list in Phase 5D and `/chart-builder`
-    // in Phase 5E, each migrated under its own brief (SegmentedControl
-    // included) — real phase boundaries moving, not relaxed assertions. They
-    // are guarded by `tests/fableComparePage.test.ts` and
-    // `tests/fableChartBuilderPage.test.ts` respectively.
+    // `/compare` was removed from this list in Phase 5D, `/chart-builder` in
+    // Phase 5E, and `/macro` + `/macro/calendar` in Phase 5F, each migrated
+    // under its own brief (SegmentedControl included) — real phase boundaries
+    // moving, not relaxed assertions. They are guarded by
+    // `tests/fableComparePage.test.ts`, `tests/fableChartBuilderPage.test.ts`,
+    // `tests/fableMacroPage.test.ts` and `tests/fableMacroCalendarPage.test.ts`
+    // respectively.
     for (const other of [
       'src/app/page.tsx', 'src/app/earnings/page.tsx',
-      'src/app/macro/page.tsx', 'src/app/portfolio/page.tsx', 'src/app/structured-notes/page.tsx',
-      'src/app/macro/calendar/page.tsx',
+      'src/app/portfolio/page.tsx', 'src/app/structured-notes/page.tsx',
     ]) {
       const otherSrc = read(other)
       assert.ok(!otherSrc.includes('KpiCapsule'), `${other} is not part of Phase 5C`)
@@ -930,9 +931,10 @@ describe('Phase 5C — integrity boundaries', () => {
   })
 
   it('no unrelated page migration occurred alongside this phase', () => {
-    // `/compare` was removed from this list in Phase 5D (its own, later
-    // brief) — see the scope-held guard above for the same boundary note.
-    for (const other of ['src/app/earnings/page.tsx', 'src/app/macro/page.tsx']) {
+    // `/compare` was removed from this list in Phase 5D and `/macro` in
+    // Phase 5F (each its own, later brief) — see the scope-held guard above
+    // for the same boundary note.
+    for (const other of ['src/app/earnings/page.tsx']) {
       assert.ok(!read(other).includes("from '@/components/fable/GlassSurface'"), `${other} is out of scope for Phase 5C`)
     }
   })
