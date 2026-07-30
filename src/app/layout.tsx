@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next'
-import { AppShell } from '@/components/layout/AppShell'
+import { ShellGate } from '@/components/layout/ShellGate'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -61,7 +61,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="h-full bg-background text-foreground">
-        <AppShell>{children}</AppShell>
+        {/* R1: ShellGate mounts the unchanged <AppShell> for every app route
+            and steps aside for the (auth) group's full-bleed shell. */}
+        <ShellGate>{children}</ShellGate>
       </body>
     </html>
   )

@@ -128,7 +128,8 @@ describe('Phase 6A middleware', () => {
 
 describe('Phase 6A auth pages', () => {
   it('login page exists', () => {
-    assert.ok(existsSync(join(ROOT, 'src/app/login/page.tsx')), 'login page not found')
+    // R1: /login moved into the (auth) route group (same URL, full-bleed shell).
+    assert.ok(existsSync(join(ROOT, 'src/app/(auth)/login/page.tsx')), 'login page not found')
   })
 
   it('auth callback route exists', () => {
@@ -142,7 +143,7 @@ describe('Phase 6A auth pages', () => {
   it('login page posts to server auth routes (no service role in client)', () => {
     // Phase 6B: login moved to username+password. The page POSTs to server
     // routes and must never reference the service-role key.
-    const src = readFileSync(join(ROOT, 'src/app/login/page.tsx'), 'utf8')
+    const src = readFileSync(join(ROOT, 'src/app/(auth)/login/page.tsx'), 'utf8')
     assert.ok(src.includes('/api/auth/login'), 'login must POST to /api/auth/login')
     assert.ok(src.includes('/api/auth/register'), 'login must POST to /api/auth/register')
     assert.ok(!src.includes('service_role'), 'login must never use service_role key')

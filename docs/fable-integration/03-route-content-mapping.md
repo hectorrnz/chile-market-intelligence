@@ -32,7 +32,7 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
 | 11 | `/structured-notes` 🔒 | Structured Notes | protected | 6 Structured Notes | Yes — barrier gauge, upload/extract panel, dashboard KPIs, bar/donut | Not started | Not verified |
 | 12 | `/structured-notes/[id]` 🔒 | note ISIN/name | protected | 6 SN detail panel | Yes — terms grid, current-levels table, schedule, allocation grid | Not started | Not verified |
 | 13 | `/settings/notifications` 🔒 | Notification Settings | protected | 10 Administration | Yes — recipients table, add form | Not started | Not verified |
-| 14 | `/login` | Sign in / Create account | public (auth) | 0 Login | Yes — cinematic login shell, glass auth panel | Not started | Not verified |
+| 14 | `/login` | Sign in / Create account | public (auth) | 0 Login | Yes — cinematic login shell, glass auth panel | **R1 implemented (2026-07-29)** | Automated complete; manual pending |
 | 15 | `/forgot-password` | Reset your password | public (auth) | 0 Login (variant) | Yes — auth-panel variant | Not started | Not verified |
 | 16 | `/auth/reset-password` | Set a new password | public (auth) | 0 Login (variant) | Yes — auth-panel variant | Not started | Not verified |
 
@@ -700,7 +700,24 @@ no shared Fable component modified; no CSS added (the meter fill reuses the exis
   **new nested layout / route group** so `/login` renders full-bleed WITHOUT the app shell
   (doc 04). EN|ES chip must use existing `LangProvider`; contrast/theme via existing
   `ThemeToggle` mechanism.
-- **Impl. status:** Not started · **Verif. status:** Not verified.
+- **Impl. status:** **R1 implemented (2026-07-29)** — page moved to
+  `src/app/(auth)/login/page.tsx` (same URL); `ShellGate` in the root layout suppresses AppShell
+  for `/login`; `(auth)/layout.tsx` supplies `LangProvider` + `AuthShell` (photo/veils/Ken-Burns/
+  lockup/utility chips/notice); `AuthPanel` is the Tier-1 glass panel. The full Phase-6B contract
+  is preserved verbatim (endpoints, payloads, error mapping, `next` guard, loading/disabled,
+  field attributes, mode toggle, links); loading now shows a tokenized spinner beside the label;
+  the error banner gained `role="alert"`; the username field gained `autoFocus`. **No Show/Hide
+  password** (not currently supported; no Class C approval), no remember/passkey/demo/clock-mock
+  auth. Utility chips re-skin the EXISTING LangToggle/ThemeToggle via token rescoping only.
+  **Performance repair after the first manual pass (2026-07-29):** Ken-Burns drift, the
+  pointer-tracked specular, and the secure-dot pulse are removed — the gateway is visually still
+  once entered, and `AuthPanel` is stateless so pointer movement can no longer re-render the form.
+  The entrance (`.nv-auth-reveal` / `.nv-auth-fade`) animates opacity and transform only, at
+  **exactly the app pages' `--dur-reveal` (640ms) / `--ease-primary` / 22px-rise timing** with
+  `--stagger-reveal` tiers, so the login settles at the same pace as Markets and Macro. Documented
+  deviation from Fable §0; rationale in doc 04 § "R1 performance repair". No auth behavior changed.
+  · **Verif. status:** automated validation complete (`tests/fableAuthShell.test.ts`, 56);
+  manual browser validation pending.
 
 ## 15. `/forgot-password` — Reset your password
 

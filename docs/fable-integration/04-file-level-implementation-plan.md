@@ -1094,6 +1094,123 @@ run.
 
 ---
 
+## Phase R1 — Auth shell and login (normalized Stage 5R program) ✓ IMPLEMENTED (2026-07-29, automated validation complete, manual browser validation pending)
+
+`/login` now renders the full-bleed Fable "Private Access" gateway (spec §0) with the complete
+Phase-6B functional contract preserved verbatim. `/forgot-password` and `/auth/reset-password`
+are **untouched** (R2).
+
+**Shell architecture** (the doc's own Phase-6 "route group *or* shell-suppression" choice —
+implemented as BOTH, minimally): the root layout cannot conditionally skip `AppShell` server-side,
+so it now mounts **`ShellGate`** (`src/components/layout/ShellGate.tsx`, client), which renders the
+byte-unchanged `<AppShell>` for every app route and steps aside for `BARE_ROUTES = {'/login'}`.
+The **`(auth)` route group** (`src/app/(auth)/layout.tsx`) supplies what those routes still need:
+`LangProvider` + `AuthShell`. No market/macro providers, no TopBar/CommandPalette on the gateway.
+R2 adds the other two auth routes to both the group and `BARE_ROUTES` in one change.
+
+**New components** (`src/components/fable/`):
+- `AuthShell.tsx` — layer stack photo → light-wash veil → navy-vignette veil → content column
+  (top row: full `NevadaMark` lockup at `clamp(98px,9vw,132px)` + white-glass utility chips —
+  secure-connection `ChipLabel` with pulsing dot, the EXISTING `LangToggle`, a Santiago clock
+  chip (`America/Santiago`, minute resolution, hydration-safe), the EXISTING `ThemeToggle`;
+  middle: wrapping Fable row for `{children}`; bottom: confidentiality notice). The toggles are
+  re-skinned via **CSS custom-property rescoping only** (`CHIP_REMAP` maps `--nv-chip`/`--surface`/
+  `--foreground`/`--muted-fg`/`--hover` to fixed `--nv-auth-*` values) — zero edits to the
+  originals, no duplicate toggle components.
+- `AuthPanel.tsx` — the Tier-1 `nv-glass-auth` panel: cursor specular (`--glx`/`--gly` →
+  `--nv-auth-specular`), top hairline, `ui-label` eyebrow, 23px `<h2>` title, children slot.
+  Reused as-is by the R2 variants.
+
+**Login page** (`src/app/(auth)/login/page.tsx`, old `src/app/login/page.tsx` deleted — same URL):
+headline block (`--fs-login-headline` clamp, `--brand-navy`, Fable copy via new `t.auth.*` keys)
+beside the panel at Fable's `flex: 1.1 1 340px` / `flex: 0 1 402px` + `min-width: min(100%, 330px)`
+grammar. Preserved verbatim: `POST /api/auth/login|register` + exact payloads, all six error-code
+mappings + generic fallback, `?error` callback banner, same-origin `next` guard +
+`window.location.assign`, `disabled={loading || !username.trim() || !password}`, both
+`setLoading(false)` failure paths, field ids/types/`autoComplete`/`autoCapitalize`/`spellCheck`,
+create-mode email + hints, forgot-password link (sign-in only), mode toggle, back link, Suspense
+boundary. Improvements within scope: `role="alert"` on the error banner, `autoFocus` on username,
+spinner (`nv-spin`) beside the unchanged label while loading. **Excluded** (locked register):
+passkey, demo credentials, remember-device, Show/Hide password (Class C, unapproved), simulated
+auth, signed-in auto-redirect.
+
+**Theme-independence** (spec §Theming): all gateway colors are `--nv-auth-*` tokens declared once
+in `:root` and never overridden under `.dark` — the login reads identically in both themes while
+ThemeToggle still switches the app behind it. `globals.css` additions: the §0 veils/inks/input/
+error/on-photo/chip-remap/specular tokens, `.nv-auth-input` (13px-radius field with the Fable
+border+halo **replacement** focus treatment — same replace-not-remove precedent as the pre-Fable
+login), `.nv-auth-chip-glass` (chip-tier blur inside the `@supports` guard). Motion is
+tokenized (`nv-ken`/`nv-reveal` staggers/`nv-pulse`/`nv-pop`) and fully covered by the existing
+reduced-motion block.
+
+**Asset:** `public/login-santiago.webp` — copied byte-identical from the approved Fable export
+(`brand-assets/sky-costanera.webp`, 1400×800, same image as the export's referenced login bg);
+`object-position: 58% 30%` per doc 02.
+
+**Tests:** new `tests/fableAuthShell.test.ts` (47) — gate/group architecture, layer-stack and
+panel anatomy order, the full preserved login contract, locked-exclusion negatives, token/i18n/
+motion hygiene, R2 non-regression. Deliberate guard updates: `authWatchlist` +
+`passwordResetAndUpdateButton` login paths → `(auth)/login`; `fableFoundation` root-layout
+assertion → ShellGate (chrome contract asserted on ShellGate itself) and the global focus-ring
+guard anchored to column 0 with the narrow, visibility-asserted `.nv-auth-input` exception.
+
+**Manual browser checks pending** (1728/1024/390, both themes, both languages): sign-in/out,
+create-account, `next` round-trip, ES swap, reduced-motion, focus lands on the username field,
+headline/panel stacking, chip legibility over the sky, no page-level horizontal overflow.
+
+### R1 performance repair (2026-07-29, after the first manual pass)
+
+Manual validation reported the composition as correct but the entrance as visibly laggy. Three
+compounding causes were found and removed; the gateway is now **visually still once it has
+entered**, and the entrance animates only compositor-friendly properties.
+
+1. **Ken-Burns on the full-screen photograph (dominant cost, removed).** `.nv-ken` continuously
+   transformed a 105%-sized 1400×800 image beneath **five backdrop-filter surfaces** (the
+   `AuthPanel` + four utility chips). A blurred surface can only reuse its cached result while its
+   backdrop holds still, so every frame of the 60s loop invalidated and recomputed five 24px
+   blur + 150% saturate passes — forever. The photograph now ships static, sized to the viewport
+   (the 105% oversize existed only to hide the drift edges), with `decoding="async"` +
+   `fetchPriority="high"` so the 1.3MB decode cannot stall first paint. `.nv-ken`, `nvKen` and
+   `--dur-ken` remain declared as foundation utilities (documented as no longer applied here).
+   This is a **documented deviation from Fable §0**, which specifies a 60s Ken-Burns.
+2. **`.nv-reveal` animated `filter: blur(8px)` (replaced).** `nvIn` blur-animated five auth
+   elements — including the headline block and the entire panel, which already carries a
+   backdrop-filter — for `--dur-reveal` (640ms) plus delays up to 300ms, i.e. a ~940ms
+   blur-animating cascade running while the browser decoded the photograph and hydrated. Replaced
+   with two auth-scoped utilities: **`.nv-auth-reveal`** (opacity + `translate3d(0, 22px, 0)`) and
+   **`.nv-auth-fade`** (opacity only, used for the surfaces that carry a backdrop-filter, because
+   translating one re-samples its backdrop every frame). `.nv-reveal`/`nvIn` are untouched for
+   every other route.
+
+   **Timing correction (second manual pass).** The first repair also shortened the entrance to
+   `--dur-pop` (220ms), which made the gateway snap in visibly ahead of every app page — Markets,
+   Macro and the rest reveal over `--dur-reveal` (640ms). The auth utilities now use **exactly
+   `.nv-reveal`'s timing**: the same `--dur-reveal` duration token, the same `--ease-primary`
+   easing, the same 22px rise, staggered in whole `--stagger-reveal` (70ms) tiers — headline and
+   top row at 0, panel at 70ms, notice at 140ms, mirroring the 0/70/130/190 cadence app pages use
+   between their sections. Only `nvIn`'s blur is omitted. A test asserts the duration/easing
+   parity by reading both rules, so the gateway cannot drift from the app pages again.
+3. **Cursor specular set React state per `mousemove` (removed).** `AuthPanel`'s `onMouseMove`
+   called `setSpec()`, re-rendering the whole panel subtree — the entire form — on every pointer
+   event, and repainting a 520×260 radial gradient over a backdrop-filtered surface. The panel is
+   now **stateless and pointer-free** (no `'use client'` needed) and the sheen is a fixed
+   highlight at its former resting position, so the glass still reads as glass at zero runtime
+   cost.
+
+Also removed: the infinite `nv-pulse` on the secure-connection dot (the last permanently-running
+animation; the dot stays, and meaning never rested on the motion since the chip is labelled).
+Both new utilities are added to the reduced-motion final-state rule, so reduced motion renders the
+gateway immediately with no entrance, drift, pulse, or pointer effect.
+
+Nothing else changed: no field, mode, endpoint, payload, redirect, callback, loading semantic,
+error mapping, i18n string, route-group/ShellGate architecture, or protected path. `AuthPanel`
+losing `'use client'` is a consequence of it becoming stateless, not an architectural change.
+Tests: `tests/fableAuthShell.test.ts` 47 → **56** (entrance-property, no-Ken-Burns, no-pointer-
+state, app-page timing parity, tokenized stagger tiers, glass-fade-vs-translate, reduced-motion
+and loading-legibility guards).
+
+---
+
 ## Phase 6 — Auth pages + login shell (highest-visibility, distinct layout)
 
 Do together, after shared components exist. The login is the marquee Fable moment and needs a

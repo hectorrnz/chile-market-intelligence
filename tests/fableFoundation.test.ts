@@ -437,11 +437,22 @@ describe('reduced motion (hard rule)', () => {
 
 describe('accessibility foundation', () => {
   test('the focus ring is 2px solid var(--focus), offset 2px, and never removed', () => {
-    const rule = CSS.match(/:focus-visible \{[^}]*\}/)
+    // Anchored to column 0 — the GLOBAL ring rule, not the auth input's own
+    // `.nv-auth-input:focus-visible` selector introduced in R1.
+    const rule = CSS.match(/^:focus-visible \{[^}]*\}/m)
     assert.ok(rule)
     assert.match(rule![0], /outline: 2px solid var\(--focus\)/)
     assert.match(rule![0], /outline-offset: 2px/)
-    assert.doesNotMatch(CSS, /outline:\s*(none|0)\s*;/)
+    // R1 (deliberate, narrow exception): the auth-glass input REPLACES the
+    // global ring with the Fable border + halo focus treatment — the same
+    // replace-not-remove precedent the pre-Fable login already set with its
+    // focus:outline-none/focus:border-accent Tailwind pair. The replacement
+    // must itself be visible; nothing else may remove an outline.
+    const authFocus = CSS.match(/\.nv-auth-input:focus,[\s\S]*?\}/)
+    assert.ok(authFocus, 'the auth-input focus rule must exist to justify its outline reset')
+    assert.match(authFocus![0], /border-color: var\(--nv-auth-link\)/)
+    assert.match(authFocus![0], /box-shadow: 0 0 0 3px var\(--nv-auth-focus-ring\)/)
+    assert.doesNotMatch(CSS.replace(authFocus![0], ''), /outline:\s*(none|0)\s*;/)
   })
 
   test('--focus resolves to the Fable focus colour in both themes', () => {
@@ -540,6 +551,12 @@ describe('source-disclosure components remain intact and token-compatible', () =
     assert.match(LAYOUT, /robots: \{ index: false, follow: false \}/)
     assert.match(LAYOUT, /template: '%s · NMI'/)
     assert.match(LAYOUT, /icon: '\/favicon\.svg\?v=2'/)
-    assert.match(LAYOUT, /<AppShell>\{children\}<\/AppShell>/)
+    // R1 (deliberate guard update): the root layout now mounts ShellGate,
+    // which renders the SAME unchanged <AppShell> for every app route and
+    // steps aside only for the (auth) group's full-bleed shell. The chrome
+    // contract for app routes is asserted on ShellGate itself.
+    assert.match(LAYOUT, /<ShellGate>\{children\}<\/ShellGate>/)
+    const shellGate = read('src/components/layout/ShellGate.tsx')
+    assert.match(shellGate, /<AppShell>\{children\}<\/AppShell>/)
   })
 })

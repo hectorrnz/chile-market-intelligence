@@ -380,13 +380,59 @@
   --stagger-reveal: 70ms;
 
   /* ── Login glass (theme-independent by design — the login renders its own
-     light-glass palette over the Santiago photograph, in both themes). ──── */
+     light-glass palette over the Santiago photograph, in both themes; none of
+     these tokens is redefined under `.dark`). ─────────────────────────────── */
   --nv-auth-fill:  linear-gradient(163deg, rgba(255, 255, 255, .6), rgba(228, 240, 250, .42) 55%, rgba(212, 231, 246, .52));
   --nv-auth-solid: #EDF3F9;
   --nv-auth-bd:    rgba(255, 255, 255, .62);
   --nv-auth-spec:  inset 0 1px 0 rgba(255, 255, 255, .8), inset 0 -14px 30px -22px rgba(0, 53, 95, .25);
   --nv-chip-fill:  rgba(255, 255, 255, .44);
   --nv-chip-bd:    rgba(255, 255, 255, .55);
+
+  /* R1 — the rest of the §0 gateway palette. Base behind the photograph while
+     it loads; two veils (diagonal light wash for headline legibility, bottom
+     navy vignette for notice legibility); ink levels on the glass; input and
+     error-banner surfaces; on-photo text; the cursor specular. */
+  --nv-auth-bg:            #0B1622;
+  --nv-auth-veil-wash:     linear-gradient(97deg, rgba(240, 247, 252, .92) 0%, rgba(238, 246, 252, .6) 26%, rgba(230, 242, 250, .16) 48%, rgba(222, 238, 248, .04) 66%, rgba(10, 32, 52, .12) 100%);
+  --nv-auth-veil-vignette: linear-gradient(180deg, rgba(246, 251, 255, .32) 0%, rgba(246, 251, 255, 0) 26%, rgba(8, 24, 40, 0) 58%, rgba(6, 20, 34, .6) 100%);
+
+  --nv-auth-ink:      #0E2A42;                 /* panel title — strongest glass ink */
+  --nv-auth-ink-2:    #28455E;                 /* field labels, supporting copy    */
+  --nv-auth-ink-3:    rgba(20, 50, 78, .66);   /* tertiary copy, hints, session    */
+  --nv-auth-eyebrow:  rgba(0, 53, 95, .7);     /* uppercase eyebrows on glass/wash */
+  --nv-auth-link:     #2F6EB6;                 /* links + focused-input border     */
+  --nv-auth-secure:   #007161;                 /* pulsing secure/session dot       */
+
+  --nv-auth-input-bg:       rgba(255, 255, 255, .6);
+  --nv-auth-input-bg-focus: rgba(255, 255, 255, .8);
+  --nv-auth-input-bd:       rgba(0, 53, 95, .2);
+  --nv-auth-input-fg:       #12293E;
+  --nv-auth-focus-ring:     rgba(47, 110, 182, .16);
+
+  --nv-auth-err-bg: rgba(139, 14, 4, .09);
+  --nv-auth-err-bd: rgba(139, 14, 4, .3);
+  --nv-auth-err-fg: #8B0E04;
+
+  --nv-auth-onphoto:        rgba(255, 255, 255, .85);
+  --nv-auth-onphoto-shadow: 0 1px 14px rgba(0, 10, 20, .45);
+
+  /* Utility-chip remap targets — AuthShell rescopes the theme-varying chip
+     tokens (--nv-chip, --surface, --foreground, --muted-fg, --hover) to these
+     on its utility cluster, so LangToggle/ThemeToggle/ChipLabel render the
+     white-glass, navy-ink login chips in BOTH themes without being edited. */
+  --nv-auth-chip-active: #FFFFFF;
+  --nv-auth-chip-ink:    var(--brand-navy);
+  --nv-auth-chip-muted:  rgba(0, 53, 95, .74);
+  --nv-auth-chip-hover:  rgba(255, 255, 255, .6);
+
+  --nv-auth-hairline: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, .95), rgba(255, 255, 255, 0));
+  /* Specular sheen on the auth glass. STATIC (R1 performance repair): this was
+     originally driven from pointer position, which repainted a 520×260 radial
+     gradient over a backdrop-filtered surface on every pointer event. The
+     resting highlight is kept — the glass still reads as glass — at zero
+     runtime cost. Do not reattach a pointer handler to this. */
+  --nv-auth-specular: radial-gradient(520px 260px at 50% 0%, rgba(255, 255, 255, .3), rgba(255, 255, 255, 0) 62%);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -578,6 +624,31 @@
     box-shadow: var(--nv-sh-auth), var(--nv-auth-spec);
   }
 
+  /* Tier-1 companion — form fields on the auth glass (R1). The focused state
+     swaps the global outline ring for the Fable border + soft halo, which is
+     the visible focus indicator on this surface (same replace-not-remove
+     precedent as the pre-Fable login's focus:border-accent treatment). */
+  .nv-auth-input {
+    width: 100%;
+    padding: 11px 14px;
+    border-radius: var(--radius-input);
+    border: 1px solid var(--nv-auth-input-bd);
+    background: var(--nv-auth-input-bg);
+    color: var(--nv-auth-input-fg);
+    font-size: 14px;
+    transition-property: border-color, box-shadow, background;
+    transition-duration: var(--dur-hover);
+    transition-timing-function: var(--ease-primary);
+  }
+  .nv-auth-input:focus,
+  .nv-auth-input:focus-visible {
+    outline: none;
+    border-color: var(--nv-auth-link);
+    box-shadow: 0 0 0 3px var(--nv-auth-focus-ring);
+    background: var(--nv-auth-input-bg-focus);
+  }
+  .nv-auth-input::placeholder { color: var(--nv-auth-ink-3); }
+
   /* Tier 2 — navigation / header glass */
   .nv-glass-nav {
     background: var(--nv-hdrbg-solid);
@@ -670,6 +741,31 @@
     animation: nvIn var(--dur-reveal) var(--ease-primary) both;
     animation-delay: var(--nv-reveal-delay, 0ms);
   }
+
+  /* Auth-gateway entrance. Deliberately NOT `.nv-reveal` — that utility's
+     `nvIn` keyframe animates `filter: blur(8px)`, which on the login means a
+     per-frame filter pass over the headline block and over a panel that
+     already carries a backdrop-filter. These two animate ONLY
+     compositor-friendly properties.
+       .nv-auth-reveal — opacity + translate3d; for ordinary content.
+       .nv-auth-fade   — opacity only; for surfaces carrying a backdrop-filter,
+                         because translating one forces its backdrop to be
+                         re-sampled and re-blurred every frame.
+     TIMING IS DELIBERATELY IDENTICAL TO `.nv-reveal`: same `--dur-reveal`
+     (640ms), same `--ease-primary`, same 22px rise, staggered in
+     `--stagger-reveal` steps — so the gateway settles at exactly the pace of
+     every app page (Markets, Macro, …) rather than snapping in ahead of them.
+     Only the expensive blur is dropped. If `.nv-reveal`'s duration or easing
+     ever changes, change these together (a test asserts the parity).
+     Stagger via `style={{ '--nv-auth-delay': 'var(--stagger-reveal)' }}`. */
+  .nv-auth-reveal {
+    animation: nvAuthIn var(--dur-reveal) var(--ease-primary) both;
+    animation-delay: var(--nv-auth-delay, 0ms);
+  }
+  .nv-auth-fade {
+    animation: nvAuthFade var(--dur-reveal) var(--ease-primary) both;
+    animation-delay: var(--nv-auth-delay, 0ms);
+  }
   .nv-pulse {
     animation: nvPulse 2.6s ease-in-out infinite;
   }
@@ -683,6 +779,13 @@
   .nv-spin {
     animation: nvSpin .7s linear infinite;
   }
+  /* Ken-Burns drift. RETAINED as a foundation utility but NO LONGER APPLIED to
+     the login photograph (R1 performance repair): continuously transforming a
+     full-screen image underneath five backdrop-filter surfaces invalidates
+     every one of their cached blurs on every frame, forever — the dominant
+     cost behind the reported frame drops. The gateway ships with a static
+     background by design. Do not reapply this to a full-screen element sitting
+     beneath glass. */
   .nv-ken {
     animation: nvKen var(--dur-ken) ease-in-out infinite alternate;
   }
@@ -721,6 +824,12 @@
     backdrop-filter: blur(var(--nv-blur-scrim));
     -webkit-backdrop-filter: blur(var(--nv-blur-scrim));
   }
+  /* Login utility chips over the photograph (R1) — chip-tier blur, applied to
+     the chip elements/wrappers on the auth shell's utility cluster only. */
+  .nv-auth-chip-glass {
+    backdrop-filter: blur(var(--nv-blur-chip)) saturate(var(--nv-sat-chip));
+    -webkit-backdrop-filter: blur(var(--nv-blur-chip)) saturate(var(--nv-sat-chip));
+  }
 }
 
 /* NO STACKED BLUR (§7.2 rule 3) — a glass surface nested inside another glass
@@ -750,6 +859,12 @@ table :is(.nv-glass-auth, .nv-glass-nav, .nv-glass-kpi, .nv-glass-card, .nv-glas
 @keyframes nvPop   { from { opacity: 0; transform: translateY(-6px) scale(.985) } to { opacity: 1; transform: none } }
 @keyframes nvSlide { from { opacity: 0; transform: translateX(26px) } to { opacity: 1; transform: none } }
 @keyframes nvIn    { from { opacity: 0; transform: translateY(22px); filter: blur(8px) } to { opacity: 1; transform: none; filter: blur(0) } }
+/* Auth-gateway entrance — opacity and transform ONLY (no filter, no blur, no
+   shadow, no layout property), so the whole reveal stays on the compositor.
+   The 22px rise matches `nvIn` above, so the gateway and every app page share
+   one motion signature; only nvIn's expensive blur is omitted. */
+@keyframes nvAuthIn   { from { opacity: 0; transform: translate3d(0, 22px, 0) } to { opacity: 1; transform: none } }
+@keyframes nvAuthFade { from { opacity: 0 } to { opacity: 1 } }
 
 /* ─────────────────────────────────────────────────────────────────────────────
    6 · BASE STYLES
@@ -843,7 +958,7 @@ body {
   }
 
   /* Render in the final state rather than the animation's starting frame. */
-  .nv-reveal, .nv-pop, .nv-slide-in {
+  .nv-reveal, .nv-pop, .nv-slide-in, .nv-auth-reveal, .nv-auth-fade {
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;

@@ -31,8 +31,16 @@ UpdateDataButton–LangToggle–ThemeToggle normalization / shell width alignmen
 repairs; no route migrated; see `04-file-level-implementation-plan.md` § "Phase R0". R0 is not
 manually accepted until its browser checks (gutter alignment, modal keyboard walk, both themes,
 reduced motion) run.
-Phase 5's remaining 3 pages and Phases 6–8 not started. Items below are ticked only where
-Phases 1–5H genuinely satisfy them; everything that still depends on the remaining page work
+**Phase R1 (auth shell + `/login`) ✓ IMPLEMENTED 2026-07-29, automated validation complete,
+manual browser validation pending** — ShellGate + `(auth)` route group; AuthShell (photo, veils,
+Ken-Burns, lockup, white-glass utility chips, notice) + Tier-1 AuthPanel; `/login` migrated with
+the complete Phase-6B contract preserved (endpoints, payloads, error mapping, `next` guard,
+loading/disabled, field semantics); passkey/demo/remember/Show-Hide/simulated-auth/auto-redirect
+all excluded per the locked register; `/forgot-password` + `/auth/reset-password` untouched (R2);
+see `04-file-level-implementation-plan.md` § "Phase R1". Not manually accepted until the browser
+checks (sign-in/out, create, `next` round-trip, ES, reduced motion, 1728/1024/390) run.
+Phase 5's remaining 3 pages and later R-phases not started. Items below are ticked only where
+completed phases genuinely satisfy them; everything that still depends on the remaining page work
 stays `[ ]` or `[~]`.
 
 ---
@@ -227,8 +235,10 @@ loading state · empty state · error state · auth status — verified identica
   + allocation grid + provenance/delete; protected.
 - [ ] `/settings/notifications` 🔒 — add-recipient form + recipients table + active toggle; back
   link; protected.
-- [ ] `/login` — cinematic shell + glass auth panel; username/password + create toggle + forgot
+- [~] `/login` — cinematic shell + glass auth panel; username/password + create toggle + forgot
   link; real `/api/auth/login|register`; error mapping; `next` redirect; public (full-bleed).
+  *(R1 2026-07-29: implemented + automated validation complete (`tests/fableAuthShell.test.ts`);
+  ticks to `[x]` after the manual browser pass at 1728/1024/390 in both themes and languages.)*
 - [ ] `/forgot-password` — request form + sent confirmation (no enumeration); public (full-bleed).
 - [ ] `/auth/reset-password` — new+confirm password + done; recovery-session; validation; public.
 
@@ -266,8 +276,17 @@ loading state · empty state · error state · auth status — verified identica
   slide (`.nv-indicator`, real usage) and the mobile drawer slide-in (`.nv-slide-in`) are now live and
   reduced-motion-gated (asserted by `tests/topNavigation.test.ts`). Page-specific choreography and
   JS-driven count-up land with their pages, each of which must read the preference before animating.)*
-- [ ] Login: Ken-Burns Santiago bg, cursor specular, utility chips (secure dot, EN|ES, clock,
+- [~] Login: **static** Santiago bg, **static** specular, utility chips (secure dot, EN|ES, clock,
   contrast), glass auth panel.
+  *(R1 2026-07-29: implemented — contrast chip realized as the existing `ThemeToggle` per doc 04
+  Phase 6; theme-independent `--nv-auth-*` tokens. **Documented deviation from Fable §0 after the
+  first manual pass:** Ken-Burns drift, the pointer-tracked specular, and the secure-dot pulse are
+  all removed for performance — continuously moving the backdrop invalidated the cached blur of
+  five backdrop-filter surfaces every frame, and the specular re-rendered the form on every
+  pointer event. The gateway is visually still once entered; the entrance itself animates opacity
+  and transform only, at the same `--dur-reveal` (640ms) / `--ease-primary` / 22px-rise timing as
+  every app page. Full rationale in doc 04 § "R1 performance repair". `[x]` after manual browser
+  acceptance.)*
 
 ### C2 · Shared components restyled (semantics unchanged)
 - [~] `ThemeToggle`, `LangToggle`, `SectionHeader`, `EmptyState`, `StatusPill`, `UpdateDataButton`.
