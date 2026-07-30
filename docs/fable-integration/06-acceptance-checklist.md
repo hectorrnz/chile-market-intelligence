@@ -85,6 +85,20 @@ stays `[ ]` or `[~]`.
   individual pages is untouched (no page content changed). Full browser-ladder verification
   (1728→390, light+dark, EN+ES) remains open until pages are restyled in Phase 5 — this phase's
   checks were HTTP/source-level only (no interactive browser session was available).*
+  *Post-R1 shell repair (mobile brand wordmark clipping): manual validation at ~390px found a stray
+  partial glyph beside the Nevada symbol. Two compounding causes — (a) the symbol's
+  `hidden sm:inline-block` was **inert** (NevadaMark's root span already sets `inline-block`, and
+  Tailwind emits `.inline-block` after `.hidden` at equal specificity, so the mark rendered at every
+  width regardless); (b) the page-title span had no responsive gate, and since the utility cluster
+  opposite is `shrink-0` the title was the only flexible child on the line and collapsed toward zero
+  width instead of disappearing — on routes with no active nav group that string is literally
+  `'Nevada Market Intelligence'`, which is why it read as a broken wordmark. Repaired in
+  `TopBar.tsx` only: the symbol is now unconditional + `shrink-0` with no display class, and the
+  breadcrumb title is `hidden sm:block` so it is **absent** below `sm` rather than truncated. The
+  wordmark's `md:inline` reveal and all behavior at 768/1024/1728 are unchanged. Guarded by 9 new
+  tests in `tests/topNavigation.test.ts` (55 in that suite). Manual re-check at 390px still pending —
+  note the EN|ES and Light|Dark capsules together consume ~234px of the 366px content line at that
+  width, so Spanish is the tightest case.*
 - [ ] **10 · Source labels, data-quality disclosures, and timestamps preserved.** Every table
   ends in one `TableSourceFooter` (plain source name); badges show correct state word + tooltip;
   monitoring-estimate/derived/unofficial disclaimers intact; as-of timestamps correct.

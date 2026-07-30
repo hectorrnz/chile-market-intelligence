@@ -59,12 +59,33 @@ export function TopBar() {
           </svg>
         </button>
 
+        {/* Brand — two DISTINCT nodes, never one combined asset:
+              · the square symbol crop, present at every width, `shrink-0` so it
+                can never be compressed out of its aspect ratio;
+              · the textual wordmark, a separate text node revealed only at `md`.
+            The mobile header therefore shows the symbol ALONE — the wordmark is
+            absent from layout, not clipped or squeezed to zero width.
+
+            Do NOT pass a display utility (`hidden`, `inline`, `inline-block`,
+            `block`, `flex`) to NevadaMark: its own root span already sets
+            `inline-block`, and Tailwind emits `.inline-block` after `.hidden` at
+            equal specificity, so such a class silently loses and the intended
+            visibility never takes effect. Responsive brand visibility belongs on
+            sibling nodes here, as below. */}
         <Link href="/" className="flex items-center gap-2 shrink-0" aria-label="Inversiones Nevada">
-          <NevadaMark variant="symbol" size={28} alt="" className="hidden sm:inline-block" />
+          <NevadaMark variant="symbol" size={28} alt="" className="shrink-0" />
           <span className="text-sm font-medium text-foreground whitespace-nowrap hidden md:inline">Inversiones Nevada</span>
         </Link>
+        {/* Breadcrumb — separator with the wordmark at `md`, page title from `sm`.
+            Below `sm` the title is absent rather than merely truncated: the
+            utility cluster opposite is `shrink-0`, so the only flexible child on
+            the line is this span, and leaving it in the DOM at 390px drives it to
+            ~0 width where it renders a clipped partial glyph beside the symbol
+            (on routes with no active nav group `getPageTitle` returns the literal
+            'Nevada Market Intelligence', which is what read as a broken
+            wordmark). The drawer is the navigation surface at that width. */}
         <span className="text-muted-fg text-sm hidden md:inline">/</span>
-        <span className="text-sm text-foreground font-medium truncate">{title}</span>
+        <span className="text-sm text-foreground font-medium truncate hidden sm:block">{title}</span>
       </div>
 
       {/* Right: search + icon controls + date + auth. The date and full
