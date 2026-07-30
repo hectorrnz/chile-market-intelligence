@@ -414,6 +414,15 @@
   --nv-auth-err-bd: rgba(139, 14, 4, .3);
   --nv-auth-err-fg: #8B0E04;
 
+  /* R2 — the confirmation counterpart of the error banner, used by the
+     recovery panels ("reset link sent", "password updated"). Same geometry and
+     opacities as the error trio so the two states are visually siblings; the
+     hue is the gateway's own secure green (--nv-auth-secure, #007161), not the
+     app's --positive, because these tokens must stay theme-independent. */
+  --nv-auth-ok-bg: rgba(0, 113, 97, .1);
+  --nv-auth-ok-bd: rgba(0, 113, 97, .3);
+  --nv-auth-ok-fg: #005B4E;
+
   --nv-auth-onphoto:        rgba(255, 255, 255, .85);
   --nv-auth-onphoto-shadow: 0 1px 14px rgba(0, 10, 20, .45);
 

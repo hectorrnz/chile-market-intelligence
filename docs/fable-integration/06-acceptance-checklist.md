@@ -36,7 +36,7 @@ manual browser validation pending** — ShellGate + `(auth)` route group; AuthSh
 Ken-Burns, lockup, white-glass utility chips, notice) + Tier-1 AuthPanel; `/login` migrated with
 the complete Phase-6B contract preserved (endpoints, payloads, error mapping, `next` guard,
 loading/disabled, field semantics); passkey/demo/remember/Show-Hide/simulated-auth/auto-redirect
-all excluded per the locked register; `/forgot-password` + `/auth/reset-password` untouched (R2);
+all excluded per the locked register; `/forgot-password` + `/auth/reset-password` deferred to R2;
 see `04-file-level-implementation-plan.md` § "Phase R1". Not manually accepted until the browser
 checks (sign-in/out, create, `next` round-trip, ES, reduced motion, 1728/1024/390) run.
 **Phase R1.5 (private-access enforcement + admin-controlled provisioning) ✓ IMPLEMENTED,
@@ -62,6 +62,28 @@ repair is written as `supabase/migrations/20260730000000_user_profiles_admin_con
 but is **NOT YET APPLIED** — until it is, the database still lets any session-holder grant itself
 approval. Not manually accepted until that migration is applied and the browser/API checks in the
 security document run.
+
+**Phase R2 (Fable password-recovery variants) ✓ IMPLEMENTED 2026-07-30, automated validation
+complete, manual browser validation pending** — `/forgot-password` and `/auth/reset-password`
+migrated into the `(auth)` route group (public URLs unchanged) and joined `ShellGate`'s bare-route
+set, so all three public authentication routes now render the same AuthShell gateway instead of the
+application shell. Both recovery pages were rebuilt on the Tier-1 AuthPanel with a new shared
+primitive module, `src/components/fable/AuthForm.tsx` (field · notice · primary action · secondary
+link · headline slot · panel column), which `/login` also adopts — so each auth concern has exactly
+one implementation rather than three copies. Every recovery behaviour is carried over verbatim
+(endpoints, payloads, generic non-enumerating sent state, mismatch guard, invalid-recovery-session
+message, success redirect, loading/disabled semantics); the legacy `BrandLogo` card and plain
+background are gone. **R2 repair (desktop review):** the "← Back to dashboard" link below the panel
+is removed from all three routes — `/` is a private route, so from a signed-out gateway it only
+bounced the visitor back to `/login`. The `AuthBackLink` primitive and the orphaned
+`auth.backToHome` key are deleted; each auth route now emits exactly one anchor, its own in-panel
+navigation. One new token trio
+(`--nv-auth-ok-*`) gives the confirmation banner a sibling of the existing error banner, declared in
+`:root` only, like every other `--nv-auth-*` token. **No security behaviour changed** — R1.5's
+allowlist already classified all three routes public, and `/auth/callback` remains a route handler
+at its own URL. Guarded by `tests/fableAuthRecovery.test.ts` (47) plus the updated
+`tests/fableAuthShell.test.ts`. Not manually accepted until the side-by-side viewport checks
+(1728/1024/390, reduced motion, EN+ES) and the end-to-end recovery round-trip run.
 
 Phase 5's remaining 3 pages and later R-phases not started. Items below are ticked only where
 completed phases genuinely satisfy them; everything that still depends on the remaining page work
@@ -277,8 +299,14 @@ loading state · empty state · error state · auth status — verified identica
   link; real `/api/auth/login|register`; error mapping; `next` redirect; public (full-bleed).
   *(R1 2026-07-29: implemented + automated validation complete (`tests/fableAuthShell.test.ts`);
   ticks to `[x]` after the manual browser pass at 1728/1024/390 in both themes and languages.)*
-- [ ] `/forgot-password` — request form + sent confirmation (no enumeration); public (full-bleed).
-- [ ] `/auth/reset-password` — new+confirm password + done; recovery-session; validation; public.
+- [~] `/forgot-password` — request form + sent confirmation (no enumeration); public (full-bleed).
+  *(R2 2026-07-30: migrated to the `(auth)` group and rebuilt on AuthPanel + the shared AuthForm
+  primitives; endpoint, payload and the unconditional generic sent state unchanged; automated
+  validation complete (`tests/fableAuthRecovery.test.ts`); ticks to `[x]` after the manual pass.)*
+- [~] `/auth/reset-password` — new+confirm password + done; recovery-session; validation; public.
+  *(R2 2026-07-30: same migration; mismatch guard, `no_session` invalid-link message, success
+  state and the 1.5s return to `/login` all preserved; the page still never redirects before the
+  user can set a password. Ticks to `[x]` after the end-to-end recovery round-trip.)*
 
 ---
 

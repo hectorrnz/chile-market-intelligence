@@ -563,7 +563,9 @@ describe('C · public self-registration is removed at both layers', () => {
   test('the login page keeps exactly the required controls', () => {
     assert.match(LOGIN, /id="username"/)
     assert.match(LOGIN, /id="password"/)
-    assert.match(LOGIN, /type="submit"/)
+    // R2: the submit control is the shared primary action.
+    assert.match(LOGIN, /<AuthSubmitButton/)
+    assert.match(readCode('src/components/fable/AuthForm.tsx'), /type="submit"/)
     assert.match(LOGIN, /href="\/forgot-password"/)
     assert.match(LOGIN, /t\.auth\.adminProvisioned/, 'administrator-provisioned wording')
   })
@@ -1081,15 +1083,23 @@ describe('G · regression — authenticated behaviour and business logic untouch
     const page = read('src/app/(auth)/login/page.tsx')
     assert.match(page, /window\.location\.assign\(safeNext\)/, 'full navigation so cookies are picked up')
     assert.match(page, /disabled=\{loading \|\| !username\.trim\(\) \|\| !password\}/)
-    assert.match(page, /role="alert"/)
+    // R2: the assertive banner is the shared error notice.
+    assert.match(page, /<AuthNotice variant="error"/)
+    assert.match(read('src/components/fable/AuthForm.tsx'), /role=\{error \? 'alert' : 'status'\}/)
   })
 
   test('the Fable auth shell and R1 composition are untouched', () => {
     const page = read('src/app/(auth)/login/page.tsx')
-    assert.match(page, /nv-auth-reveal/)
-    assert.match(page, /nv-auth-fade/)
-    assert.match(page, /flex: '1\.1 1 340px'/)
-    assert.match(page, /flex: '0 1 402px', minWidth: 'min\(100%, 330px\)'/)
+    // R2 moved the two column wrappers into the shared slot primitives, which
+    // all three auth routes compose; the values and entrance utilities are the
+    // same ones R1 established.
+    const form = read('src/components/fable/AuthForm.tsx')
+    assert.match(page, /<AuthHeadline/)
+    assert.match(page, /<AuthPanelColumn>/)
+    assert.match(form, /nv-auth-reveal/)
+    assert.match(form, /nv-auth-fade/)
+    assert.match(form, /flex: '1\.1 1 340px'/)
+    assert.match(form, /flex: '0 1 402px', minWidth: 'min\(100%, 330px\)'/)
     assert.match(page, /<AuthPanel/)
     assert.match(read('src/components/fable/AuthShell.tsx'), /<NevadaMark variant="lockup"/)
   })

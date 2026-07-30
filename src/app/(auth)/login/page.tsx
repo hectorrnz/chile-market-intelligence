@@ -16,6 +16,12 @@
 // up. `next` is now validated by the shared safe-redirect helper rather than a
 // bare `startsWith('/')`.
 //
+// R2 — the field / notice / button / link markup this page introduced now lives
+// in components/fable/AuthForm.tsx, so the two recovery routes render from the
+// same implementation instead of copying it. Purely a composition change: every
+// endpoint, payload, guard, error mapping and disabled expression below is
+// unchanged, and the rendered markup is equivalent.
+//
 // Fable's simulated auth, passkey, demo-credentials chip, remember-device switch
 // and show/hide-password control are deliberately NOT carried over.
 
@@ -24,6 +30,14 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useLang } from '@/components/providers/LangProvider'
 import { AuthPanel } from '@/components/fable/AuthPanel'
+import {
+  AuthField,
+  AuthHeadline,
+  AuthHint,
+  AuthNotice,
+  AuthPanelColumn,
+  AuthSubmitButton,
+} from '@/components/fable/AuthForm'
 import { toSafeInternalPath } from '@/lib/auth/safeRedirect'
 
 function errorKeyToMessage(t: ReturnType<typeof useLang>['t'], code: string): string {
@@ -44,9 +58,11 @@ function callbackErrorToMessage(t: ReturnType<typeof useLang>['t'], code: string
   return code === 'not_authorized' ? t.auth.errNotAuthorized : t.auth.errorCallback
 }
 
-const LABEL_STYLE: CSSProperties = { fontSize: 12, fontWeight: 650, color: 'var(--nv-auth-ink-2)' }
 const HINT_STYLE: CSSProperties = { color: 'var(--nv-auth-ink-3)' }
 const LINK_STYLE: CSSProperties = { color: 'var(--nv-auth-link)' }
+
+/** id of the error banner, referenced by the fields' aria-describedby. */
+const ERROR_ID = 'login-error'
 
 function LoginForm() {
   const { t } = useLang()
@@ -92,149 +108,69 @@ function LoginForm() {
     }
   }
 
+  const describedBy = error ? ERROR_ID : undefined
+
   return (
     <>
-      {/* Headline block — the gateway's largest element (spec §0 hierarchy),
-          so it leads the reveal with no delay. Timing matches every app page
-          (640ms, 22px rise); see the motion note in AuthShell. */}
-      <div
-        className="nv-auth-reveal"
-        style={{ flex: '1.1 1 340px', maxWidth: 640 } as CSSProperties}
-      >
-        <div className="ui-label mb-4" style={{ color: 'var(--nv-auth-eyebrow)' }}>
-          {t.auth.brandEyebrow}
-        </div>
-        <h1
-          className="m-0"
-          style={{
-            fontSize: 'var(--fs-login-headline)',
-            lineHeight: 1.06,
-            letterSpacing: 'var(--tracking-hero)',
-            fontWeight: 650,
-            color: 'var(--brand-navy)',
-            textWrap: 'balance',
-          }}
-        >
-          {t.auth.headline1}
-          <br />
-          {t.auth.headline2}
-        </h1>
-        <p
-          style={{
-            margin: '20px 0 0',
-            fontSize: 'clamp(14.5px, 1.25vw, 16.5px)',
-            lineHeight: 1.5,
-            color: 'var(--nv-auth-ink-2)',
-            maxWidth: '46ch',
-            fontWeight: 550,
-          }}
-        >
-          {t.auth.headlineSub}
-        </p>
-        <p style={{ margin: '10px 0 0', fontSize: 13, lineHeight: 1.55, color: 'var(--nv-auth-ink-3)', maxWidth: '54ch' }}>
-          {t.auth.headlineNote}
-        </p>
-      </div>
+      {/* Identity column — shared with both recovery routes, so all three read
+          as one gateway. Timing matches every app page (640ms, 22px rise); see
+          the motion note in AuthShell. */}
+      <AuthHeadline
+        eyebrow={t.auth.brandEyebrow}
+        line1={t.auth.headline1}
+        line2={t.auth.headline2}
+        lede={t.auth.headlineSub}
+        note={t.auth.headlineNote}
+      />
 
-      {/* Panel column — Fable's 402px collapse basis, never narrower than
-          min(100%, 330px), so it stacks under the headline on narrow widths.
-          Fades rather than translates — it wraps the backdrop-filtered glass
-          panel, and moving a blurred surface re-samples its backdrop on every
-          frame — and trails the headline by one stagger step, the same cadence
-          app pages use between their sections. */}
-      <div
-        className="nv-auth-fade"
-        style={{ flex: '0 1 402px', minWidth: 'min(100%, 330px)', '--nv-auth-delay': 'var(--stagger-reveal)' } as CSSProperties}
-      >
+      <AuthPanelColumn>
         <AuthPanel eyebrow={t.auth.privateAccess} title={t.auth.signInTitle}>
-          <p className="mt-1 text-xs" style={HINT_STYLE}>
-            {t.auth.signInSubtitle}
-          </p>
+          <AuthHint className="mt-1">{t.auth.signInSubtitle}</AuthHint>
 
-          {error && (
-            <div
-              role="alert"
-              className="nv-pop mt-3.5 px-3 py-2.5 text-xs font-medium"
-              style={{
-                background: 'var(--nv-auth-err-bg)',
-                border: '1px solid var(--nv-auth-err-bd)',
-                color: 'var(--nv-auth-err-fg)',
-                borderRadius: 'var(--radius-menu)',
-              }}
-            >
-              {error}
-            </div>
-          )}
+          {error && <AuthNotice variant="error" id={ERROR_ID}>{error}</AuthNotice>}
 
           <form onSubmit={handleSubmit} className="mt-4 space-y-3.5">
-            {/* Username */}
-            <div className="space-y-1.5">
-              <label htmlFor="username" className="block" style={LABEL_STYLE}>{t.auth.usernameLabel}</label>
-              <input
-                id="username"
-                type="text"
-                required
-                autoFocus
-                autoComplete="username"
-                autoCapitalize="none"
-                spellCheck={false}
-                value={username}
-                onChange={e => setUsername(e.target.value)}
-                placeholder={t.auth.usernamePlaceholder}
-                className="nv-auth-input"
-              />
-            </div>
+            <AuthField
+              id="username"
+              label={t.auth.usernameLabel}
+              type="text"
+              required
+              autoFocus
+              autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
+              value={username}
+              onChange={setUsername}
+              placeholder={t.auth.usernamePlaceholder}
+              describedBy={describedBy}
+            />
 
-            {/* Password */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between gap-2.5">
-                <label htmlFor="password" className="block" style={LABEL_STYLE}>{t.auth.passwordLabel}</label>
+            <AuthField
+              id="password"
+              label={t.auth.passwordLabel}
+              type="password"
+              required
+              autoComplete="current-password"
+              value={password}
+              onChange={setPassword}
+              placeholder={t.auth.passwordPlaceholder}
+              describedBy={describedBy}
+              action={
                 <Link href="/forgot-password" className="text-xs hover:underline" style={LINK_STYLE}>
                   {t.auth.forgotPassword}
                 </Link>
-              </div>
-              <input
-                id="password"
-                type="password"
-                required
-                autoComplete="current-password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder={t.auth.passwordPlaceholder}
-                className="nv-auth-input"
-              />
-            </div>
+              }
+            />
 
-            {/* Primary action — navy capsule with spinner state */}
-            <button
-              type="submit"
+            <AuthSubmitButton
+              label={t.auth.submitSignIn}
+              loading={loading}
               disabled={loading || !username.trim() || !password}
-              className="w-full rounded-full flex items-center justify-center gap-2 nv-transition disabled:opacity-50"
-              style={{
-                padding: '12px 18px',
-                background: 'var(--brand-navy)',
-                color: 'var(--primary-fg)',
-                fontSize: 14.5,
-                fontWeight: 650,
-                letterSpacing: '.01em',
-                boxShadow: 'var(--nv-sh-button)',
-              }}
-            >
-              {loading && (
-                <span
-                  aria-hidden="true"
-                  className="inline-block w-[15px] h-[15px] rounded-full border-2 nv-spin"
-                  style={{ borderColor: 'var(--nv-chip-bd)', borderTopColor: 'var(--primary-fg)' }}
-                />
-              )}
-              {t.auth.submitSignIn}
-            </button>
+            />
 
             {/* R1.5 — replaces the create-account toggle. States plainly that
                 access is administrator-provisioned; no self-service path. */}
-            <p className="text-center text-xs" style={HINT_STYLE}>
-              {t.auth.adminProvisioned}
-            </p>
+            <AuthHint className="text-center">{t.auth.adminProvisioned}</AuthHint>
 
             {/* Protected-session line */}
             <div className="flex items-center justify-center gap-2 text-[11px]" style={HINT_STYLE}>
@@ -243,17 +179,7 @@ function LoginForm() {
             </div>
           </form>
         </AuthPanel>
-
-        <div className="text-center mt-4">
-          <Link
-            href="/"
-            className="text-xs nv-transition hover:underline"
-            style={{ color: 'var(--nv-auth-onphoto)', textShadow: 'var(--nv-auth-onphoto-shadow)' }}
-          >
-            ← {t.auth.backToHome}
-          </Link>
-        </div>
-      </div>
+      </AuthPanelColumn>
     </>
   )
 }

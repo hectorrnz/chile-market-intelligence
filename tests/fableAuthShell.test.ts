@@ -32,8 +32,10 @@ const AUTH_SHELL = read('src/components/fable/AuthShell.tsx')
 const AUTH_PANEL = read('src/components/fable/AuthPanel.tsx')
 const CSS = read('src/app/globals.css')
 const I18N = read('src/lib/i18n.ts')
-const FORGOT = read('src/app/forgot-password/page.tsx')
-const RESET = read('src/app/auth/reset-password/page.tsx')
+// R2 — both recovery routes now live in the (auth) group (public URLs unchanged).
+const FORGOT = read('src/app/(auth)/forgot-password/page.tsx')
+const RESET = read('src/app/(auth)/auth/reset-password/page.tsx')
+const AUTH_FORM = read('src/components/fable/AuthForm.tsx')
 
 const LOGIN_CODE = strip(LOGIN)
 const SHELL_CODE = strip(AUTH_SHELL)
@@ -50,11 +52,11 @@ describe('R1 shell architecture', () => {
     assert.match(LAYOUT, /template: '%s · NMI'/)
   })
 
-  test('ShellGate suppresses chrome for exactly /login in R1 — forgot/reset stay in the app shell until R2', () => {
+  test('ShellGate suppresses chrome for exactly the three public auth routes (R2 complete)', () => {
     const m = SHELL_GATE.match(/new Set\(\[([^\]]*)\]\)/)
     assert.ok(m, 'ShellGate must declare its bare-route set')
     const routes = m![1].split(',').map((s) => s.trim().replace(/['"]/g, '')).filter(Boolean)
-    assert.deepEqual(routes, ['/login'])
+    assert.deepEqual(routes, ['/login', '/forgot-password', '/auth/reset-password'])
   })
 
   test('ShellGate renders the unchanged AppShell for every other route', () => {
@@ -73,17 +75,26 @@ describe('R1 shell architecture', () => {
     assert.ok(!existsSync(join(ROOT, 'src/app/login/page.tsx')), 'old login page must be removed (same URL now served by the group)')
   })
 
-  test('R2 non-regression: /forgot-password and /auth/reset-password are untouched in R1', () => {
-    // Still at their original locations, still wired to their real endpoints,
-    // still on the pre-Fable presentation (BrandLogo card), not the auth shell.
-    assert.ok(existsSync(join(ROOT, 'src/app/forgot-password/page.tsx')))
-    assert.ok(existsSync(join(ROOT, 'src/app/auth/reset-password/page.tsx')))
+  test('R2: both recovery routes joined the (auth) group; the old locations are gone', () => {
+    // Same public URLs (/forgot-password, /auth/reset-password) — only the file
+    // location and therefore the enclosing shell changed. Detailed R2 coverage
+    // lives in tests/fableAuthRecovery.test.ts.
+    assert.ok(existsSync(join(ROOT, 'src/app/(auth)/forgot-password/page.tsx')))
+    assert.ok(existsSync(join(ROOT, 'src/app/(auth)/auth/reset-password/page.tsx')))
+    assert.ok(!existsSync(join(ROOT, 'src/app/forgot-password/page.tsx')))
+    assert.ok(!existsSync(join(ROOT, 'src/app/auth/reset-password/page.tsx')))
+    // Endpoints unchanged; the pre-Fable BrandLogo card presentation is gone.
     assert.match(FORGOT, /\/api\/auth\/forgot-password/)
     assert.match(RESET, /\/api\/auth\/reset-password/)
-    assert.match(FORGOT, /BrandLogo/)
-    assert.match(RESET, /BrandLogo/)
-    assert.doesNotMatch(FORGOT, /AuthShell|AuthPanel/)
-    assert.doesNotMatch(RESET, /AuthShell|AuthPanel/)
+    assert.doesNotMatch(FORGOT, /BrandLogo/)
+    assert.doesNotMatch(RESET, /BrandLogo/)
+    assert.match(FORGOT, /AuthPanel/)
+    assert.match(RESET, /AuthPanel/)
+  })
+
+  test('/auth/callback stays a route handler at its own URL — no page, no layout', () => {
+    assert.ok(existsSync(join(ROOT, 'src/app/auth/callback/route.ts')))
+    assert.ok(!existsSync(join(ROOT, 'src/app/(auth)/auth/callback')))
   })
 })
 
@@ -179,7 +190,7 @@ describe('R1 AuthShell layer stack and anatomy', () => {
   })
 
   test('shell and panel are token-only (no hex colors, no raw Tailwind color scales)', () => {
-    for (const [name, src] of [['AuthShell', SHELL_CODE], ['AuthPanel', PANEL_CODE]] as const) {
+    for (const [name, src] of [['AuthShell', SHELL_CODE], ['AuthPanel', PANEL_CODE], ['AuthForm', strip(AUTH_FORM)]] as const) {
       assert.doesNotMatch(src, /#[0-9a-fA-F]{3,8}\b/, `${name} must not hardcode a hex color`)
       assert.doesNotMatch(
         src,
@@ -251,19 +262,23 @@ describe('R1 AuthPanel', () => {
 describe('R1 login functional contract (Phase 6B preserved verbatim)', () => {
   test('page composes the shell slots: headline block + AuthPanel with Fable flex grammar', () => {
     assert.match(LOGIN, /from '@\/components\/fable\/AuthPanel'/)
-    assert.match(LOGIN, /flex: '1\.1 1 340px', maxWidth: 640/)
-    assert.match(LOGIN, /flex: '0 1 402px', minWidth: 'min\(100%, 330px\)'/)
-    const headline = LOGIN.indexOf('t.auth.headline1')
+    // R2 — the flex grammar moved into the shared slot primitives so all three
+    // auth routes place their columns identically. Same values, one owner.
+    assert.match(AUTH_FORM, /flex: '1\.1 1 340px', maxWidth: 640/)
+    assert.match(AUTH_FORM, /flex: '0 1 402px', minWidth: 'min\(100%, 330px\)'/)
+    const headline = LOGIN.indexOf('<AuthHeadline')
     const panel = LOGIN.indexOf('<AuthPanel')
     assert.ok(headline > -1 && panel > -1 && headline < panel, 'headline block precedes the panel')
   })
 
   test('headline is the h1; panel title is the existing NMI sign-in title', () => {
-    assert.match(LOGIN, /<h1[\s\S]*?\{t\.auth\.headline1\}[\s\S]*?\{t\.auth\.headline2\}[\s\S]*?<\/h1>/)
+    // The h1 lives in the shared AuthHeadline; the login supplies its lines.
+    assert.match(AUTH_FORM, /<h1[\s\S]*?\{line1\}[\s\S]*?\{line2\}[\s\S]*?<\/h1>/)
+    assert.match(LOGIN, /line1=\{t\.auth\.headline1\}\s*\n\s*line2=\{t\.auth\.headline2\}/)
     // R1.5 removed public self-registration, so there is no mode to switch on.
     assert.match(LOGIN, /title=\{t\.auth\.signInTitle\}/)
     assert.doesNotMatch(LOGIN, /createAccountTitle/)
-    assert.match(LOGIN, /var\(--fs-login-headline\)/)
+    assert.match(AUTH_FORM, /var\(--fs-login-headline\)/)
   })
 
   test('submission handler is connected and posts to the sign-in endpoint with the exact payload', () => {
@@ -293,8 +308,10 @@ describe('R1 login functional contract (Phase 6B preserved verbatim)', () => {
     assert.match(LOGIN, /disabled=\{loading \|\| !username\.trim\(\) \|\| !password\}/)
     assert.match(LOGIN, /setLoading\(true\)/)
     assert.equal((LOGIN.match(/setLoading\(false\)/g) ?? []).length, 2, 'both failure paths clear loading; success navigates away')
-    assert.match(LOGIN, /\{loading && \(/)
-    assert.match(LOGIN, /nv-spin/)
+    // The spinner is the shared primary action's, driven by the page's `loading`.
+    assert.match(LOGIN, /loading=\{loading\}/)
+    assert.match(AUTH_FORM, /\{loading && \(/)
+    assert.match(AUTH_FORM, /nv-spin/)
   })
 
   test('error mapping covers every code /api/auth/login can return, plus the generic fallback', () => {
@@ -304,19 +321,26 @@ describe('R1 login functional contract (Phase 6B preserved verbatim)', () => {
     // only invalid_credentials; everything else falls to the generic message.
     assert.ok(LOGIN.includes("case 'invalid_credentials'"), 'missing invalid_credentials mapping')
     assert.match(LOGIN, /default:\s+return t\.auth\.errorGeneric/)
-    assert.match(LOGIN, /role="alert"/)
+    // The banner is the shared error notice — assertive, so a failed submission
+    // interrupts rather than waiting for the user to reach it.
+    assert.match(LOGIN, /<AuthNotice variant="error"/)
+    assert.match(AUTH_FORM, /role=\{error \? 'alert' : 'status'\}/)
     assert.match(LOGIN, /json\.error \?\? ''/)
     // The server-set ?error=not_authorized banner (unapproved identity).
     assert.match(LOGIN, /'not_authorized' \? t\.auth\.errNotAuthorized : t\.auth\.errorCallback/)
   })
 
   test('username field keeps its exact semantic attributes and receives initial focus', () => {
-    const field = LOGIN.match(/<input\s+id="username"[\s\S]*?\/>/)
+    const field = LOGIN.match(/<AuthField\s+id="username"[\s\S]*?\/>/)
     assert.ok(field)
     for (const attr of ['type="text"', 'required', 'autoFocus', 'autoComplete="username"', 'autoCapitalize="none"', 'spellCheck={false}']) {
-      assert.ok(field![0].includes(attr), `username input missing ${attr}`)
+      assert.ok(field![0].includes(attr), `username field missing ${attr}`)
     }
-    assert.match(LOGIN, /htmlFor="username"/)
+    // The primitive forwards each one to a real input bound by an explicit label.
+    for (const attr of ['id={id}', 'type={type}', 'required={required}', 'autoFocus={autoFocus}', 'autoComplete={autoComplete}', 'autoCapitalize={autoCapitalize}', 'spellCheck={spellCheck}']) {
+      assert.ok(AUTH_FORM.includes(attr), `AuthField must forward ${attr}`)
+    }
+    assert.match(AUTH_FORM, /htmlFor=\{id\}/)
   })
 
   test('the recovery-email registration field is GONE — the form collects no email', () => {
@@ -325,15 +349,14 @@ describe('R1 login functional contract (Phase 6B preserved verbatim)', () => {
     assert.doesNotMatch(LOGIN, /id="email"/)
     assert.doesNotMatch(LOGIN, /t\.auth\.email(Label|Placeholder|Hint)/)
     // The two username/password fields are the entire form.
-    assert.deepEqual([...LOGIN.matchAll(/<input\s+id="([a-z]+)"/g)].map((m) => m[1]), ['username', 'password'])
+    assert.deepEqual([...LOGIN.matchAll(/<AuthField\s+id="([a-zA-Z]+)"/g)].map((m) => m[1]), ['username', 'password'])
   })
 
   test('password field is a plain current-password input with no create-mode hint', () => {
-    const field = LOGIN.match(/<input\s+id="password"[\s\S]*?\/>/)
+    const field = LOGIN.match(/<AuthField\s+id="password"[\s\S]*?\/>/)
     assert.ok(field)
-    assert.ok(field![0].includes('type="password"'), 'password input must keep a literal type')
+    assert.ok(field![0].includes('type="password"'), 'password field must keep a literal type')
     assert.ok(field![0].includes(`autoComplete="current-password"`), 'sign-in only, so no new-password branch')
-    assert.match(LOGIN, /htmlFor="password"/)
     assert.doesNotMatch(LOGIN, /t\.auth\.passwordHint/)
   })
 
@@ -342,11 +365,15 @@ describe('R1 login functional contract (Phase 6B preserved verbatim)', () => {
     assert.doesNotMatch(LOGIN, /!isCreate/)
   })
 
-  test('the mode toggle is replaced by administrator-provisioned wording; back link preserved', () => {
+  test('the mode toggle is replaced by administrator-provisioned wording', () => {
     assert.doesNotMatch(LOGIN, /setMode|\bisCreate\b/)
     assert.doesNotMatch(LOGIN, /t\.auth\.(needAccount|submitCreate|createAccountSubtitle)/)
     assert.match(LOGIN, /t\.auth\.adminProvisioned/)
-    assert.match(LOGIN, /href="\/"[\s\S]*?t\.auth\.backToHome/)
+    // R2 repair: the "← Back to dashboard" link below the panel is GONE. It
+    // pointed at `/`, a private route, from a signed-out gateway — following it
+    // only bounced the visitor back to /login. Asserted for all three auth
+    // routes in tests/fableAuthRecovery.test.ts.
+    assert.doesNotMatch(LOGIN_CODE, /backToHome|AuthBackLink/)
   })
 
   test('useSearchParams stays inside a Suspense boundary', () => {
@@ -355,14 +382,16 @@ describe('R1 login functional contract (Phase 6B preserved verbatim)', () => {
 
   test('keyboard submission preserved: a real <form> with a type="submit" button', () => {
     assert.match(LOGIN, /<form onSubmit/)
-    assert.match(LOGIN, /type="submit"/)
+    assert.match(LOGIN, /<AuthSubmitButton/)
+    assert.match(AUTH_FORM, /type="submit"/)
   })
 })
 
 // ─── 5 · Locked exclusions — nothing from Fable's mock auth enters ───────────
 
 describe('R1 locked exclusions (normalized decision register)', () => {
-  const ALL_NEW = LOGIN_CODE + SHELL_CODE + PANEL_CODE + strip(AUTH_LAYOUT) + GATE_CODE
+  // R2 adds the shared form primitives to the same locked surface.
+  const ALL_NEW = LOGIN_CODE + SHELL_CODE + PANEL_CODE + strip(AUTH_LAYOUT) + GATE_CODE + strip(AUTH_FORM)
 
   test('no passkey, no demo credentials, no remember-device, no sample identity, no simulated auth', () => {
     assert.doesNotMatch(ALL_NEW, /passkey|fillDemo|demo|remember|role="switch"|aria-checked|startSignedIn|María Undurraga|name@inversionesnevada/i)
@@ -446,15 +475,18 @@ describe('R1 tokens, i18n, and motion', () => {
   })
 
   test('the gateway entrance uses the auth-scoped utilities, never the blur-animating .nv-reveal', () => {
-    for (const [name, src] of [['AuthShell', SHELL_CODE], ['login', LOGIN_CODE]] as const) {
+    // R2 — the entrance wrappers moved into the shared slot primitives, which
+    // every auth route composes, so the check follows them there.
+    for (const [name, src] of [['AuthShell', SHELL_CODE], ['AuthForm', strip(AUTH_FORM)]] as const) {
       assert.match(src, /nv-auth-(reveal|fade)/, `${name} must use the auth entrance utilities`)
       // `.nv-reveal`'s nvIn keyframe animates filter: blur(8px) — forbidden here.
       assert.doesNotMatch(src, /\bnv-reveal\b(?!-)/, `${name} must not use the blur-animating section reveal`)
     }
-    assert.match(LOGIN, /nv-pop/) // error banner: opacity + transform only
+    assert.doesNotMatch(LOGIN_CODE, /\bnv-reveal\b(?!-)/)
+    assert.match(AUTH_FORM, /nv-pop/) // notice banner: opacity + transform only
     // Stagger via the custom property, never a literal animation-delay style.
     assert.match(AUTH_SHELL, /'--nv-auth-delay'/)
-    assert.doesNotMatch(SHELL_CODE + LOGIN_CODE, /animationDelay|animation-delay/)
+    assert.doesNotMatch(SHELL_CODE + LOGIN_CODE + strip(AUTH_FORM), /animationDelay|animation-delay/)
   })
 
   test('entrance keyframes animate ONLY opacity and transform — no filter, blur, shadow, or layout property', () => {
@@ -496,7 +528,7 @@ describe('R1 tokens, i18n, and motion', () => {
   })
 
   test('stagger tiers are whole --stagger-reveal steps, and the headline leads with no delay', () => {
-    const delays = [...(AUTH_SHELL + LOGIN).matchAll(/'--nv-auth-delay': '([^']+)'/g)].map((m) => m[1])
+    const delays = [...(AUTH_SHELL + AUTH_FORM).matchAll(/'--nv-auth-delay': '([^']+)'/g)].map((m) => m[1])
     assert.ok(delays.length > 0)
     for (const d of delays) {
       assert.match(
@@ -507,7 +539,7 @@ describe('R1 tokens, i18n, and motion', () => {
     }
     assert.match(CSS, /--stagger-reveal:\s*70ms/)
     // The headline block carries NO delay — it leads the cascade.
-    assert.match(LOGIN, /className="nv-auth-reveal"\s*\n\s*style=\{\{ flex: '1\.1 1 340px', maxWidth: 640 \}/)
+    assert.match(AUTH_FORM, /className="nv-auth-reveal" style=\{\{ flex: '1\.1 1 340px', maxWidth: 640 \}/)
   })
 
   test('.nv-auth-fade is used for the backdrop-filtered surfaces, .nv-auth-reveal for the rest', () => {
@@ -515,7 +547,7 @@ describe('R1 tokens, i18n, and motion', () => {
     const chipCluster = AUTH_SHELL.match(/className="flex items-center gap-2 flex-wrap ([^"]+)"/)
     assert.ok(chipCluster)
     assert.equal(chipCluster![1], 'nv-auth-fade', 'the glass utility-chip cluster must fade, not translate')
-    const panelCol = LOGIN.match(/className="(nv-auth-[a-z]+)"\s*\n\s*style=\{\{ flex: '0 1 402px'/)
+    const panelCol = AUTH_FORM.match(/className="(nv-auth-[a-z]+)"\s*\n\s*style=\{\{ flex: '0 1 402px'/)
     assert.ok(panelCol)
     assert.equal(panelCol![1], 'nv-auth-fade', 'the glass panel column must fade, not translate')
   })
@@ -538,7 +570,8 @@ describe('R1 tokens, i18n, and motion', () => {
   test('loading remains understandable without spinner rotation — the label is never replaced by the spinner', () => {
     // Under reduced motion `.nv-spin` stops; the button must still say what it
     // is doing and stay disabled, so the label renders unconditionally.
-    assert.match(LOGIN, /\{loading && \([\s\S]*?nv-spin[\s\S]*?\)\}\s*\n\s*\{t\.auth\.submitSignIn\}/)
+    assert.match(AUTH_FORM, /\{loading && \([\s\S]*?nv-spin[\s\S]*?\)\}\s*\n\s*\{label\}/)
+    assert.match(LOGIN, /label=\{t\.auth\.submitSignIn\}/)
     assert.match(LOGIN, /disabled=\{loading \|\| !username\.trim\(\) \|\| !password\}/)
   })
 

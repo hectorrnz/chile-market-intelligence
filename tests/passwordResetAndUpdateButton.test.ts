@@ -15,8 +15,9 @@ const PORTFOLIO_PAGE  = join(ROOT, 'src/app/portfolio/page.tsx')
 const COMPANY_PAGE    = join(ROOT, 'src/app/companies/[ticker]/page.tsx')
 // R1: /login lives in the (auth) route group (same URL, full-bleed auth shell).
 const LOGIN_PAGE      = join(ROOT, 'src/app/(auth)/login/page.tsx')
-const FORGOT_PAGE     = join(ROOT, 'src/app/forgot-password/page.tsx')
-const RESET_PAGE      = join(ROOT, 'src/app/auth/reset-password/page.tsx')
+// R2: both recovery pages live in the (auth) route group (same public URLs).
+const FORGOT_PAGE     = join(ROOT, 'src/app/(auth)/forgot-password/page.tsx')
+const RESET_PAGE      = join(ROOT, 'src/app/(auth)/auth/reset-password/page.tsx')
 const FORGOT_ROUTE    = join(ROOT, 'src/app/api/auth/forgot-password/route.ts')
 const RESET_ROUTE     = join(ROOT, 'src/app/api/auth/reset-password/route.ts')
 const UPDATE_BUTTON   = join(ROOT, 'src/components/ui/UpdateDataButton.tsx')

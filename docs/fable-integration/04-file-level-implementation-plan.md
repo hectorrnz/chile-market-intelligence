@@ -1278,7 +1278,81 @@ New: `tests/userProfilesRls.test.ts` (37). Suite 3141 → **3391**, lint 0, buil
 
 ---
 
+## Phase R2 — Fable password-recovery variants ✓ IMPLEMENTED (2026-07-30, automated validation complete, manual browser validation pending)
+
+R1 gave `/login` the full-bleed gateway; `/forgot-password` and `/auth/reset-password` were left on
+the legacy presentation and rendered through `AppShell` on a plain background with a `BrandLogo`
+mini-card — they read as a different platform. R2 makes all three public authentication routes
+variants of one gateway while each keeps its own form content and behaviour.
+
+**Routing.** Both recovery pages moved into the existing `(auth)` route group:
+`src/app/(auth)/forgot-password/page.tsx` and `src/app/(auth)/auth/reset-password/page.tsx`. A route
+group contributes no URL segment, so the public URLs are byte-identical (`/forgot-password`,
+`/auth/reset-password`) — only the enclosing layout changed. `(auth)/auth/reset-password` and
+`app/auth/callback/route.ts` resolve to different URLs, so they coexist with no route conflict
+(verified by a clean `next build`: 19 routes, `/auth/callback` still ƒ, both pages still ○).
+`ShellGate.BARE_ROUTES` gained the two paths in the same change; a test now asserts that set and the
+`(auth)` group's page set are **equal**, because drift either way is a real defect — a bare route
+outside the group renders with no shell at all, and a group route missing from the gate renders the
+gateway nested inside the app chrome.
+
+**Shared primitives.** Rebuilding two panels from the login's JSX would have meant three copies of
+every field, notice, button and link. New `src/components/fable/AuthForm.tsx` owns those concerns
+once — `AuthField`, `AuthNotice`, `AuthSubmitButton`, `AuthSecondaryLink`, `AuthBackLink`,
+`AuthHint`, plus the two shell slots `AuthHeadline` and `AuthPanelColumn`. `/login` was recomposed
+onto them too, so there is no privileged copy. The module is presentational only: no fetch, no
+Supabase, no URL, no state — each route still shows its complete contract in its own file. The R1
+assertions that pointed at login markup now point at the primitive that renders it, so the same
+guarantees hold at the level where the behaviour actually lives.
+
+**Preserved verbatim.** `/forgot-password`: same endpoint, same `{ email: email.trim() }` payload,
+same empty catch and `finally`-set sent state, so the response never gates the UI and a real address
+stays indistinguishable from an unknown one. `/auth/reset-password`: same endpoint and payload, the
+client-side mismatch guard still precedes the request, `no_session` still maps to the explicit
+"request a new link" message, and the only navigation is the existing 1.5s `router.push('/login')`
+after success — the page still never redirects before the user can set a password.
+
+**Visual/a11y.** Both panels use the Tier-1 `nv-glass-auth` surface, the `privateAccess` eyebrow and
+the same identity column as `/login` (asserted byte-identical across the three routes). Panel height
+follows content — no route pins a height. Each panel's eyebrow, title and explanation render in both
+states, so submitting changes only the region below them rather than jolting the head. New token
+trio `--nv-auth-ok-bg/-bd/-fg` gives the confirmation banner a sibling of the error banner, declared
+in `:root` only like every other `--nv-auth-*` token. The error notice is `role="alert"`, the
+success notice `role="status"`, and both stateful forms wire `aria-describedby` from their fields to
+the visible error — an improvement on R1, where the banner was an unassociated sibling. The legacy
+`BrandLogo` card and the plain background are gone.
+
+**R2 repair (2026-07-30, from the desktop review).** The "← Back to dashboard" link below the panel
+still rendered on `/login` — R1 inherited it, and the first R2 pass removed it only from the two
+recovery pages. It is now gone from the whole gateway: the `AuthBackLink` primitive is deleted, the
+usage removed from `/login`, and the orphaned `auth.backToHome` key dropped from both dictionaries.
+The rationale is that `/` is a PRIVATE route, so on a signed-out gateway the link only bounced the
+visitor through middleware back to `/login?next=/`. Route-specific navigation stays inside the panel
+("Forgot password?" on `/login`, "Back to sign in" on both recovery routes). Verified in rendered
+HTML: each auth route now emits exactly ONE anchor — its own in-panel link — and zero links to `/`.
+The app's own navigation is untouched (`TopBar` keeps its brand link; `AppShell` unchanged).
+
+**Security: nothing changed.** R1.5's allowlist already classified all three paths `public_page`, so
+no policy edit was needed; `/auth/callback` stays a route handler enforcing the approval boundary.
+Re-verified at runtime against the dev server: the three auth pages 200, private pages 307 to
+`/login?next=…`, private APIs 401 JSON, `/api/auth/register` still absent.
+
+New: `tests/fableAuthRecovery.test.ts` (53, including 6 for the back-link repair), plus one added
+case in `tests/fableAuthShell.test.ts` (`/auth/callback` stays a route handler). Measured after this
+phase: **3471 tests, 3468 pass, 3 fail**, the three failures being the pre-existing date-dependent
+`tests/newsModule.test.ts` cases (confirmed by running that file alone: 53 tests, 50 pass, 3 fail).
+Lint 0, build 0 errors, `git diff --check` clean.
+
+---
+
 ## Phase 6 — Auth pages + login shell (highest-visibility, distinct layout)
+
+**Superseded by phases R1 and R2**, which delivered this scope under the normalized Stage 5R
+program: the `(auth)` route group + `ShellGate` (R1), `/login` on the gateway (R1), and both
+recovery pages as panel variants (R2). The original plan is kept below as the historical record.
+Two items were deliberately resolved differently: public self-registration was **removed** in R1.5
+rather than restyled, and `BrandLogo` was superseded by `NevadaMark` on the auth surface rather than
+re-pointed (the component itself remains for any non-auth caller).
 
 Do together, after shared components exist. The login is the marquee Fable moment and needs a
 **new full-bleed shell** (no sidebar/topbar).
@@ -1297,6 +1371,8 @@ Do together, after shared components exist. The login is the marquee Fable momen
   **Exclude** Fable's simulated auth, demo-credentials chip, passkey (merge points 5, 6).
 - `src/app/forgot-password/page.tsx`, `src/app/auth/reset-password/page.tsx` — glass auth-panel
   variants on the same shell; preserve no-enumeration + recovery-session behavior.
+  *(Delivered in R2 from `src/app/(auth)/forgot-password/` and `src/app/(auth)/auth/reset-password/`
+  — same public URLs.)*
 - **New assets:** add the Santiago login photo to `public/` (from Fable
   `uploads/pasted-…png` / `sky-costanera.webp`).
 - `src/components/ui/BrandLogo.tsx` + `public/` — **asset reconciliation**: Fable's logo is a

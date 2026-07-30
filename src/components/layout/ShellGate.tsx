@@ -13,11 +13,16 @@ import { AppShell } from './AppShell'
  * gate steps aside and the group's own layout supplies the full-bleed auth
  * shell; every other route keeps the exact same AppShell chrome as before.
  *
- * R1 scope: `/login` only. `/forgot-password` and `/auth/reset-password`
- * join this set in R2, when they migrate into the `(auth)` group — do not
- * add them earlier, or they would render bare with neither chrome.
+ * R2 completed the set: all three public authentication routes now live in the
+ * `(auth)` group and render the gateway instead of the app chrome. Membership
+ * here and membership of the group must always match — a path listed here but
+ * outside the group would render bare with neither shell, and a path in the
+ * group but missing here would render the gateway inside the app chrome.
+ *
+ * `/auth/callback` is absent on purpose: it is a route handler, not a page, so
+ * no layout or shell applies to it.
  */
-const BARE_ROUTES = new Set(['/login'])
+const BARE_ROUTES = new Set(['/login', '/forgot-password', '/auth/reset-password'])
 
 export function ShellGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()

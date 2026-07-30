@@ -8,8 +8,13 @@ import { AuthShell } from '@/components/fable/AuthShell'
  * No market/macro providers, no TopBar, no CommandPalette — an auth gateway
  * fetches nothing.
  *
- * R1 members: /login. R2 adds /forgot-password and /auth/reset-password
- * (each must be added to ShellGate's BARE_ROUTES in the same change).
+ * Members (R2 complete): /login, /forgot-password, /auth/reset-password. Each
+ * is also listed in ShellGate's BARE_ROUTES — the two sets must stay identical.
+ *
+ * /auth/reset-password sits at `(auth)/auth/reset-password` so its public URL
+ * is unchanged while it gains this layout. That is a different URL from
+ * `/auth/callback` (a route handler under `app/auth/`, unaffected by layouts),
+ * so the two coexist without a route conflict.
  */
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
