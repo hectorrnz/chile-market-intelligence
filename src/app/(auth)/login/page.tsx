@@ -1,37 +1,47 @@
 'use client'
 
-// R1 (Stage 5R) — Fable login. The full-bleed gateway (photo, veils,
-// Ken-Burns, utility chips, notice) is supplied by src/app/(auth)/layout.tsx
-// via AuthShell; this page composes the deep-navy headline block and the
-// Tier-1 glass AuthPanel into the shell's middle row.
+// R1 (Stage 5R) — Fable login. The full-bleed gateway (photo, veils, utility
+// chips, notice) is supplied by src/app/(auth)/layout.tsx via AuthShell; this
+// page composes the deep-navy headline block and the Tier-1 glass AuthPanel
+// into the shell's middle row.
 //
-// EVERY Phase-6B behavior is preserved verbatim: two modes ("sign in" and
-// "create account"), POST /api/auth/login | /api/auth/register with the same
-// payloads, the same error-code mapping, the ?error callback banner, the
-// same-origin `next` guard, the same disabled/loading semantics, and the
-// full-navigation redirect so the server-set session cookies are picked up.
-// Fable's simulated auth, passkey, demo-credentials chip, remember-device
-// switch, and show/hide-password control are deliberately NOT carried over
-// (normalized decision register: no approved Class C work on this route).
+// R1.5 — PUBLIC SELF-REGISTRATION REMOVED. This is a private family-office
+// platform: accounts are provisioned by the administrator only (see
+// docs/security_access_control.md). The create-account mode, the recovery-email
+// registration field, the mode toggle and the POST to /api/auth/register are all
+// gone, and that endpoint no longer exists. Sign-in behaviour is otherwise
+// unchanged from Phase 6B: POST /api/auth/login with the same payload, the same
+// generic error mapping, the ?error callback banner, the same disabled/loading
+// semantics, and a full navigation so the server-set session cookies are picked
+// up. `next` is now validated by the shared safe-redirect helper rather than a
+// bare `startsWith('/')`.
+//
+// Fable's simulated auth, passkey, demo-credentials chip, remember-device switch
+// and show/hide-password control are deliberately NOT carried over.
 
 import { useState, Suspense, type CSSProperties } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useLang } from '@/components/providers/LangProvider'
 import { AuthPanel } from '@/components/fable/AuthPanel'
-
-type Mode = 'signin' | 'create'
+import { toSafeInternalPath } from '@/lib/auth/safeRedirect'
 
 function errorKeyToMessage(t: ReturnType<typeof useLang>['t'], code: string): string {
+  // /api/auth/login answers only `invalid_credentials`, `invalid_json` or
+  // `not_configured`; everything else falls through to the generic message.
+  // The former create-account codes are gone with the endpoint.
   switch (code) {
-    case 'invalid_credentials':  return t.auth.errInvalidCredentials
-    case 'username_taken':       return t.auth.errUsernameTaken
-    case 'invalid_password':     return t.auth.errWeakPassword
-    case 'invalid_username':     return t.auth.errInvalidUsername
-    case 'invalid_email':        return t.auth.errInvalidEmail
-    case 'invalid_display_name': return t.auth.errInvalidDisplayName
-    default:                     return t.auth.errorGeneric
+    case 'invalid_credentials': return t.auth.errInvalidCredentials
+    default:                    return t.auth.errorGeneric
   }
+}
+
+/** Maps a ?error= value set by a server redirect onto a user-facing message. */
+function callbackErrorToMessage(t: ReturnType<typeof useLang>['t'], code: string): string {
+  // `not_authorized` is set by /auth/callback when a verified Auth identity has
+  // no approved application profile — an account that exists in Supabase but was
+  // never provisioned for this platform.
+  return code === 'not_authorized' ? t.auth.errNotAuthorized : t.auth.errorCallback
 }
 
 const LABEL_STYLE: CSSProperties = { fontSize: 12, fontWeight: 650, color: 'var(--nv-auth-ink-2)' }
@@ -44,13 +54,11 @@ function LoginForm() {
   const callbackError = searchParams.get('error')
   const next = searchParams.get('next') ?? '/'
 
-  const [mode, setMode] = useState<Mode>('signin')
-  const [username, setUsername]       = useState('')
-  const [password, setPassword]       = useState('')
-  const [email, setEmail]             = useState('')
-  const [loading, setLoading]         = useState(false)
-  const [error, setError]             = useState<string | null>(
-    callbackError ? t.auth.errorCallback : null,
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading]   = useState(false)
+  const [error, setError]       = useState<string | null>(
+    callbackError ? callbackErrorToMessage(t, callbackError) : null,
   )
 
   async function handleSubmit(e: React.FormEvent) {
@@ -59,17 +67,10 @@ function LoginForm() {
     setLoading(true)
 
     try {
-      const endpoint = mode === 'signin' ? '/api/auth/login' : '/api/auth/register'
-      // Username doubles as the display name — no separate field.
-      const payload =
-        mode === 'signin'
-          ? { username: username.trim(), password }
-          : { username: username.trim(), password, email: email.trim(), displayName: username.trim() }
-
-      const res = await fetch(endpoint, {
+      const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ username: username.trim(), password }),
       })
       const json = await res.json().catch(() => ({}))
 
@@ -79,8 +80,10 @@ function LoginForm() {
         return
       }
 
-      // Session cookies are set by the server. Navigate to the target.
-      const safeNext = next.startsWith('/') ? next : '/'
+      // Session cookies are set by the server. Navigate to the target, via the
+      // one authoritative validator (middleware and /auth/callback share it) so
+      // a hostile ?next can never send an authenticated user off-site.
+      const safeNext = toSafeInternalPath(next)
       // Full navigation so the new session cookies are picked up server-side.
       window.location.assign(safeNext)
     } catch {
@@ -88,8 +91,6 @@ function LoginForm() {
       setLoading(false)
     }
   }
-
-  const isCreate = mode === 'create'
 
   return (
     <>
@@ -145,12 +146,9 @@ function LoginForm() {
         className="nv-auth-fade"
         style={{ flex: '0 1 402px', minWidth: 'min(100%, 330px)', '--nv-auth-delay': 'var(--stagger-reveal)' } as CSSProperties}
       >
-        <AuthPanel
-          eyebrow={t.auth.privateAccess}
-          title={isCreate ? t.auth.createAccountTitle : t.auth.signInTitle}
-        >
+        <AuthPanel eyebrow={t.auth.privateAccess} title={t.auth.signInTitle}>
           <p className="mt-1 text-xs" style={HINT_STYLE}>
-            {isCreate ? t.auth.createAccountSubtitle : t.auth.signInSubtitle}
+            {t.auth.signInSubtitle}
           </p>
 
           {error && (
@@ -187,45 +185,24 @@ function LoginForm() {
               />
             </div>
 
-            {/* Create-only: recovery email */}
-            {isCreate && (
-              <div className="space-y-1.5">
-                <label htmlFor="email" className="block" style={LABEL_STYLE}>{t.auth.emailLabel}</label>
-                <input
-                  id="email"
-                  type="email"
-                  required
-                  autoComplete="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  placeholder={t.auth.emailPlaceholder}
-                  className="nv-auth-input"
-                />
-                <p className="text-xs" style={HINT_STYLE}>{t.auth.emailHint}</p>
-              </div>
-            )}
-
             {/* Password */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between gap-2.5">
                 <label htmlFor="password" className="block" style={LABEL_STYLE}>{t.auth.passwordLabel}</label>
-                {!isCreate && (
-                  <Link href="/forgot-password" className="text-xs hover:underline" style={LINK_STYLE}>
-                    {t.auth.forgotPassword}
-                  </Link>
-                )}
+                <Link href="/forgot-password" className="text-xs hover:underline" style={LINK_STYLE}>
+                  {t.auth.forgotPassword}
+                </Link>
               </div>
               <input
                 id="password"
                 type="password"
                 required
-                autoComplete={isCreate ? 'new-password' : 'current-password'}
+                autoComplete="current-password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 placeholder={t.auth.passwordPlaceholder}
                 className="nv-auth-input"
               />
-              {isCreate && <p className="text-xs" style={HINT_STYLE}>{t.auth.passwordHint}</p>}
             </div>
 
             {/* Primary action — navy capsule with spinner state */}
@@ -250,18 +227,14 @@ function LoginForm() {
                   style={{ borderColor: 'var(--nv-chip-bd)', borderTopColor: 'var(--primary-fg)' }}
                 />
               )}
-              {isCreate ? t.auth.submitCreate : t.auth.submitSignIn}
+              {t.auth.submitSignIn}
             </button>
 
-            {/* Mode toggle */}
-            <button
-              type="button"
-              onClick={() => { setError(null); setMode(isCreate ? 'signin' : 'create') }}
-              className="w-full text-xs hover:underline"
-              style={LINK_STYLE}
-            >
-              {isCreate ? t.auth.haveAccount : t.auth.needAccount}
-            </button>
+            {/* R1.5 — replaces the create-account toggle. States plainly that
+                access is administrator-provisioned; no self-service path. */}
+            <p className="text-center text-xs" style={HINT_STYLE}>
+              {t.auth.adminProvisioned}
+            </p>
 
             {/* Protected-session line */}
             <div className="flex items-center justify-center gap-2 text-[11px]" style={HINT_STYLE}>

@@ -372,15 +372,21 @@ Import from here for tests; do not import from the Next.js route directly.
 No additional Vercel configuration beyond the existing Supabase env vars
 (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`,
 `SUPABASE_SERVICE_ROLE_KEY`) — auth uses the same Supabase project as the rest
-of the app. Sign-in is username + password (`/api/auth/login`); account
-creation (`/api/auth/register`) resolves a chosen username to a Supabase Auth
-user via the service-role admin client and sets the session with cookies
-written directly on the response (required — cookies set via `next/headers`
-inside a route handler are not guaranteed to reach the browser on a redirect
-response in Next.js 16; see `src/lib/auth/sessionCookies.ts`).
+of the app. Sign-in is username + password (`/api/auth/login`), which resolves
+the username to a Supabase Auth user via the service-role admin client and sets
+the session with cookies written directly on the response (required — cookies
+set via `next/headers` inside a route handler are not guaranteed to reach the
+browser on a redirect response in Next.js 16; see
+`src/lib/auth/sessionCookies.ts`).
 
-Optional: `AUTH_REGISTRATION_CODE` — when set, `/api/auth/register` requires a
-matching `code` field to close open signup. Unset by default.
+**Phase R1.5 removed public self-registration.** `/api/auth/register` no longer
+exists, and the `AUTH_REGISTRATION_CODE` env var it read is now unused (the
+commented entry in `.env.example` is stale — it can be dropped at the next
+env-file edit). Accounts are created by the administrator with
+`node scripts/admin/provisionUser.ts` and revoked with its `--revoke` flag;
+the platform is default-deny, so only `/login`, `/forgot-password` and
+`/auth/reset-password` are reachable without a session. Full procedure and the
+complete public allowlist: `docs/security_access_control.md`.
 
 ## Phase 6C — Portfolio Foundation
 

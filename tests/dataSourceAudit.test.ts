@@ -200,22 +200,23 @@ describe('Phase 8A regression — no changes to auth, portfolio math, or ingesti
     assert.ok(src.includes('calculateUnrealizedPnL'))
   })
 
-  it('middleware still protects watchlist + portfolio (structured-notes added in Phase 9A)', () => {
-    const src = readFileSync(join(ROOT, 'src/middleware.ts'), 'utf8')
-    const pagesMatch = src.match(/const PROTECTED_PAGES\s*=\s*(\[[^\]]*\])/)
-    const apiMatch = src.match(/const PROTECTED_API\s*=\s*(\[[^\]]*\])/)
-    assert.ok(pagesMatch && apiMatch)
-    const pages = JSON.parse(pagesMatch![1].replace(/'/g, '"'))
-    const apis = JSON.parse(apiMatch![1].replace(/'/g, '"'))
-    // The pre-9A routes must still be protected (no removal / no regression).
-    assert.ok(pages.includes('/portfolio') && pages.includes('/watchlist'))
-    assert.ok(apis.includes('/api/portfolios') && apis.includes('/api/watchlists'))
-    // Phase 9A adds structured-notes; notifications adds /settings; assert nothing else crept in.
-    assert.deepEqual(pages.sort(), ['/portfolio', '/settings', '/structured-notes', '/watchlist'])
-    assert.deepEqual(
-      apis.sort(),
-      ['/api/notification-recipients', '/api/notifications', '/api/portfolios', '/api/structured-notes', '/api/watchlists'],
-    )
+  it('middleware still protects watchlist + portfolio (structured-notes added in Phase 9A)', async () => {
+    // R1.5 inverted the model: the PROTECTED_PAGES/PROTECTED_API denylist is
+    // gone and everything is private unless explicitly allowlisted. The original
+    // intent — these routes stay protected, nothing regressed — is asserted
+    // against the real policy; the "nothing else crept in" half is now covered
+    // by the allowlist equality tests in tests/accessControl.test.ts, since
+    // protection is no longer an enumerable list.
+    const { requiresApprovedSession } = await import('../src/lib/auth/accessPolicy.ts')
+    for (const page of ['/portfolio', '/watchlist', '/structured-notes', '/settings']) {
+      assert.ok(requiresApprovedSession(page), `${page} must stay protected`)
+    }
+    for (const api of [
+      '/api/portfolios', '/api/watchlists', '/api/structured-notes',
+      '/api/notifications', '/api/notification-recipients',
+    ]) {
+      assert.ok(requiresApprovedSession(api), `${api} must stay protected`)
+    }
   })
 
   it('macro/market provider orchestrators are untouched by this phase', () => {

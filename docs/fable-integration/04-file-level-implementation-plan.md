@@ -1211,6 +1211,73 @@ and loading-legibility guards).
 
 ---
 
+## Phase R1.5 — Private-access enforcement and admin-controlled provisioning
+
+A security phase inserted between R1 and R2. Canonical reference:
+**`docs/security_access_control.md`** — read that first; this section records only what changed and
+why, for continuity with the R-phase plan.
+
+**Vulnerabilities closed.** (1) Middleware protected only four page prefixes and five API prefixes
+by *denylist*, so every other route was world-readable — `/`, `/stocks`, `/macro`, `/compare`,
+`/chart-builder`, `/earnings`, `/companies/[ticker]` and the entire `/api/market`, `/api/macro`,
+`/api/earnings`, `/api/financials`, `/api/valuation`, `/api/compare`, `/api/news`,
+`/api/health` surface. (2) `/api/auth/register` was publicly callable and created a real account
+plus a session whenever `AUTH_REGISTRATION_CODE` was unset. (3) `next.startsWith('/')` accepted
+`//evil.example`, an open redirect on both `/login` and `/auth/callback`. (4) A Supabase Auth
+identity with no application profile could obtain a session through the recovery-link path and,
+under (1), read everything.
+
+**Architecture.** Four new pure/server modules under `src/lib/auth/`: `accessPolicy.ts`
+(default-deny classification — THE allowlist), `safeRedirect.ts` (THE redirect validator),
+`approval.ts` (THE approval predicate), `apiGuard.ts` (reusable JSON 401/403 guard).
+`middleware.ts` rewritten as a thin adapter over the policy; the approval boundary is enforced at
+both session-minting routes. No new schema, no migration, no new dependency, no new env var — the
+approval marker is `user_profiles.username`, the record username login already required.
+
+**Deliberate deviation from the "runs with zero env vars" convenience.** With Supabase
+unconfigured there is no authentication mechanism, so middleware now fails **closed** for private
+paths rather than serving private data anonymously. `/login`, the auth endpoints and all assets
+still respond; `npm run build` and the full suite are unaffected.
+
+**Registration removal.** `/login` lost its create-account mode, recovery-email field, mode toggle
+and register POST; `/api/auth/register/route.ts` was deleted. Accounts come from
+`scripts/admin/provisionUser.ts` (outside the router, dry-run by default, `--revoke` supported).
+Two i18n keys added in both dictionaries: `auth.adminProvisioned`, `auth.errNotAuthorized`.
+
+Tests: new `tests/accessControl.test.ts`, route matrices built by walking `src/app` so future
+routes are covered automatically. Nineteen pre-existing tests across sixteen suites asserted
+protection via the removed `PROTECTED_PAGES`/`PROTECTED_API` literals or claimed a page was
+"public"; each was re-pointed at the real policy function (same property, stronger assertion).
+`fableCompanyDetailPage`'s "the company route stays public" was **deliberately inverted**, since
+making it private is the point.
+
+**Correction pass (verified session, immediate revocation, DB integrity).** Three follow-ups the
+first pass left open:
+
+1. **Verified identity.** The gate authorised from `getSession()` — a cookie read. It now runs
+   `decideRequestAccess` (`src/lib/auth/requestAccess.ts`, pure + dependency-injected) over
+   `auth.getUser()`, which validates the token with the Auth server and so rejects forged, expired,
+   revoked, **banned and deleted** identities. Costs two sequential Supabase round-trips per private
+   request; documented and accepted.
+2. **Per-request approval.** The approval record is re-read on every private request, not only when
+   a session is minted, so `--revoke` denies the very next request with no access-token-expiry wait.
+   Browser denials for an unapproved identity redirect with `?error=not_authorized` and drop the
+   `sb-*` cookies; API denials are **403** (401 stays for an invalid session).
+3. **Database integrity.** Migration `20260730000000_user_profiles_admin_controlled_approval.sql`
+   removes the Phase-6A self-approval policies and every authenticated write privilege, leaving one
+   own-row `SELECT`. **Authored, not applied.** Also found and fixed: the provisioning command
+   documented `npx tsx`, but `tsx` is not a dependency — it would have fetched an unpinned package
+   before a command holding the service-role key. Now plain `node`, matching every other script.
+
+Live read-only checks against the connected project (2026-07-30): public signup was enabled
+(`disable_signup: false`), the administrator disabled it, re-verified `true`; anonymous
+`GET /rest/v1/user_profiles` returned `200 []`, confirming the table privilege existed and only RLS
+filtered the rows.
+
+New: `tests/userProfilesRls.test.ts` (37). Suite 3141 → **3391**, lint 0, build 0 errors.
+
+---
+
 ## Phase 6 — Auth pages + login shell (highest-visibility, distinct layout)
 
 Do together, after shared components exist. The login is the marquee Fable moment and needs a

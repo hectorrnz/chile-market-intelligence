@@ -564,6 +564,9 @@ export const dict = {
       santiago:              'Santiago',
       sessionProtected:      'Protected session · access is logged',
       confidentialityNotice: 'Authorized users only. Access is monitored and protected.',
+      // R1.5 — public self-registration removed; accounts are administrator-provisioned.
+      adminProvisioned:      'Access is provisioned by the administrator. Contact them to request an account.',
+      errNotAuthorized:      'This account is not authorized for Nevada Market Intelligence.',
     },
     watchlist: {
       tag:          'Watchlist',
@@ -1360,6 +1363,9 @@ export const dict = {
       santiago:              'Santiago',
       sessionProtected:      'Sesión protegida · el acceso queda registrado',
       confidentialityNotice: 'Solo usuarios autorizados. El acceso es monitoreado y protegido.',
+      // R1.5 — registro público eliminado; las cuentas las habilita el administrador.
+      adminProvisioned:      'El acceso lo habilita el administrador. Contáctalo para solicitar una cuenta.',
+      errNotAuthorized:      'Esta cuenta no está autorizada para Nevada Market Intelligence.',
     },
     watchlist: {
       tag:          'Watchlist',

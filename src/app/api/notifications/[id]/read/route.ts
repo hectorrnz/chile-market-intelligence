@@ -3,7 +3,8 @@
 
 import { NextResponse } from 'next/server'
 import { getSupabaseUserClient } from '@/lib/supabase/server'
-import { requireCurrentUser } from '@/lib/auth/getUser'
+import { getApprovedUser } from '@/lib/auth/getUser'
+import { unauthenticatedJson, notAuthorizedJson } from '@/lib/auth/apiGuard'
 import { markNotificationRead } from '@/lib/db/repositories/notificationsRepository'
 
 export const dynamic = 'force-dynamic'
@@ -12,8 +13,13 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const client = await getSupabaseUserClient()
   if (!client) return NextResponse.json({ error: 'Not configured' }, { status: 503 })
 
-  const user = await requireCurrentUser().catch(() => null)
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // R1.5 — defence in depth behind the middleware gate: verified identity plus
+  // a CURRENT approval record, so a revoked user is refused here too.
+  const access = await getApprovedUser()
+  if (!access.ok) {
+    return access.reason === 'unauthenticated' ? unauthenticatedJson() : notAuthorizedJson()
+  }
+  const user = access.user
 
   const { id } = await params
   const ok = await markNotificationRead(client, id, user.id)

@@ -413,10 +413,15 @@ describe('Phase 5G — scope held', () => {
     assert.match(company, /message=\{earningsResults === null \? t\.common\.loading : t\.company\.noData\}/)
   })
 
-  it('leaves the middleware protection lists untouched (Earnings is public)', () => {
-    const mw = read('src/middleware.ts')
-    const protectedBlock = mw.slice(mw.indexOf('PROTECTED_PAGES'), mw.indexOf('PROTECTED_API') + 500)
-    assert.ok(!protectedBlock.includes("'/earnings'"), '/earnings must not be added to a protected-route list')
+  it('leaves access control to the shared policy (Earnings is now private)', async () => {
+    // R1.5 made Nevada Market Intelligence default-deny: middleware no longer
+    // carries PROTECTED_PAGES/PROTECTED_API, and this route is now PRIVATE like
+    // every other application page. The original intent of this test — that the
+    // page phase itself changed no access rule — is preserved by asserting the
+    // route's classification comes from the shared policy.
+    const { classifyPath } = await import('../src/lib/auth/accessPolicy.ts')
+    assert.equal(classifyPath('/earnings'), 'private_page')
+    assert.ok(!read('src/middleware.ts').includes("'/earnings'"), 'never named in middleware')
   })
 
   it('changes no API contract from the page — same two endpoints, same helper signatures', () => {

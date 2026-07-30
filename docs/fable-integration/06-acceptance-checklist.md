@@ -39,6 +39,30 @@ loading/disabled, field semantics); passkey/demo/remember/Show-Hide/simulated-au
 all excluded per the locked register; `/forgot-password` + `/auth/reset-password` untouched (R2);
 see `04-file-level-implementation-plan.md` § "Phase R1". Not manually accepted until the browser
 checks (sign-in/out, create, `next` round-trip, ES, reduced motion, 1728/1024/390) run.
+**Phase R1.5 (private-access enforcement + admin-controlled provisioning) ✓ IMPLEMENTED,
+automated validation complete, manual browser/API validation pending** — a security phase, not a
+visual one. Middleware became DEFAULT-DENY over one authoritative allowlist
+(`src/lib/auth/accessPolicy.ts`): before this, every route absent from a two-array denylist was
+world-readable, including the whole `/api/market`, `/api/macro`, `/api/earnings`, `/api/financials`,
+`/api/valuation`, `/api/compare` and `/api/news` surface. Public self-registration removed at both
+layers (create-account mode gone from `/login`; `/api/auth/register` deleted). The approval boundary
+(`user_profiles.username`, the record username login already required — no migration) is now
+enforced at BOTH session-minting routes. One authoritative safe-redirect validator replaces the
+`startsWith('/')` open redirect. Accounts are provisioned by `scripts/admin/provisionUser.ts`
+(outside the router, dry-run by default, invoked with plain `node`). The gate verifies identity with
+`auth.getUser()` — not a cookie read — and re-reads the approval record on **every** private
+request, so revocation denies the next request with no token-expiry wait (403 for a verified but
+unapproved identity, 401 for an invalid session). Canonical reference:
+`docs/security_access_control.md`. Guarded by `tests/accessControl.test.ts` +
+`tests/userProfilesRls.test.ts`.
+
+**Two controls sit outside the application code.** Public Supabase signup was enabled and has been
+**disabled by the administrator (verified 2026-07-30)**. The `user_profiles` self-approval RLS
+repair is written as `supabase/migrations/20260730000000_user_profiles_admin_controlled_approval.sql`
+but is **NOT YET APPLIED** — until it is, the database still lets any session-holder grant itself
+approval. Not manually accepted until that migration is applied and the browser/API checks in the
+security document run.
+
 Phase 5's remaining 3 pages and later R-phases not started. Items below are ticked only where
 completed phases genuinely satisfy them; everything that still depends on the remaining page work
 stays `[ ]` or `[~]`.

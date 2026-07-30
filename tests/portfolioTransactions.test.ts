@@ -591,20 +591,22 @@ describe('Phase 6D API routes', () => {
 })
 
 describe('Phase 6D middleware — no scope expansion beyond existing protected routes', () => {
-  it('still protects /watchlist, /portfolio and their APIs only', () => {
-    const src = readFileSync(MIDDLEWARE, 'utf8')
-    const pagesMatch = src.match(/const PROTECTED_PAGES\s*=\s*(\[[^\]]*\])/)
-    const apiMatch = src.match(/const PROTECTED_API\s*=\s*(\[[^\]]*\])/)
-    assert.ok(pagesMatch && apiMatch)
-    const pages = JSON.parse(pagesMatch![1].replace(/'/g, '"'))
-    const apis = JSON.parse(apiMatch![1].replace(/'/g, '"'))
-    // Pre-9A routes still protected; Phase 9A adds structured-notes, notifications adds /settings (no other creep).
-    assert.ok(pages.includes('/portfolio') && pages.includes('/watchlist'))
-    assert.deepEqual(pages.sort(), ['/portfolio', '/settings', '/structured-notes', '/watchlist'])
-    assert.deepEqual(
-      apis.sort(),
-      ['/api/notification-recipients', '/api/notifications', '/api/portfolios', '/api/structured-notes', '/api/watchlists'],
-    )
+  it('still protects /watchlist, /portfolio and their APIs', async () => {
+    // R1.5: "and their APIs ONLY" no longer holds by design — the platform is
+    // now default-deny, so every route is private unless allowlisted. Phase 6D's
+    // real intent was that IT expanded nothing; that is asserted here (these
+    // routes stay protected) and the allowlist is pinned in
+    // tests/accessControl.test.ts.
+    const { classifyPath } = await import('../src/lib/auth/accessPolicy.ts')
+    for (const page of ['/portfolio', '/watchlist', '/structured-notes', '/settings/notifications']) {
+      assert.equal(classifyPath(page), 'private_page', `${page} must stay protected`)
+    }
+    for (const api of [
+      '/api/portfolios', '/api/watchlists', '/api/structured-notes',
+      '/api/notifications', '/api/notification-recipients',
+    ]) {
+      assert.equal(classifyPath(api), 'private_api', `${api} must stay protected`)
+    }
   })
 
   it('cron routes remain unblocked', () => {

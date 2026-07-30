@@ -387,10 +387,15 @@ describe('Phase 5F — scope held', () => {
     }
   })
 
-  it('leaves the middleware protection lists untouched (Calendar is public)', () => {
-    const mw = read('src/middleware.ts')
-    assert.ok(mw.includes('PROTECTED_PAGES'))
-    assert.ok(!mw.includes("'/macro/calendar'"))
+  it('leaves access control to the shared policy (Calendar is now private)', async () => {
+    // R1.5 made Nevada Market Intelligence default-deny: middleware no longer
+    // carries PROTECTED_PAGES/PROTECTED_API, and this route is now PRIVATE like
+    // every other application page. The original intent of this test — that the
+    // page phase itself changed no access rule — is preserved by asserting the
+    // route's classification comes from the shared policy.
+    const { classifyPath } = await import('../src/lib/auth/accessPolicy.ts')
+    assert.equal(classifyPath('/macro/calendar'), 'private_page')
+    assert.ok(!read('src/middleware.ts').includes("'/macro/calendar'"), 'never named in middleware')
   })
 
   it('changes no API contract from the page', () => {

@@ -258,26 +258,34 @@ describe('R1 login functional contract (Phase 6B preserved verbatim)', () => {
     assert.ok(headline > -1 && panel > -1 && headline < panel, 'headline block precedes the panel')
   })
 
-  test('headline is the h1; panel title is the existing NMI mode title', () => {
+  test('headline is the h1; panel title is the existing NMI sign-in title', () => {
     assert.match(LOGIN, /<h1[\s\S]*?\{t\.auth\.headline1\}[\s\S]*?\{t\.auth\.headline2\}[\s\S]*?<\/h1>/)
-    assert.match(LOGIN, /title=\{isCreate \? t\.auth\.createAccountTitle : t\.auth\.signInTitle\}/)
+    // R1.5 removed public self-registration, so there is no mode to switch on.
+    assert.match(LOGIN, /title=\{t\.auth\.signInTitle\}/)
+    assert.doesNotMatch(LOGIN, /createAccountTitle/)
     assert.match(LOGIN, /var\(--fs-login-headline\)/)
   })
 
-  test('submission handler is connected and posts to the two real endpoints with the exact payloads', () => {
+  test('submission handler is connected and posts to the sign-in endpoint with the exact payload', () => {
     assert.match(LOGIN, /<form onSubmit=\{handleSubmit\}/)
-    assert.match(LOGIN, /mode === 'signin' \? '\/api\/auth\/login' : '\/api\/auth\/register'/)
+    // R1.5: one endpoint, one payload — the registration branch is gone with
+    // the endpoint. See docs/security_access_control.md.
+    assert.match(LOGIN, /fetch\('\/api\/auth\/login', \{/)
     assert.match(LOGIN, /\{ username: username\.trim\(\), password \}/)
-    assert.match(LOGIN, /\{ username: username\.trim\(\), password, email: email\.trim\(\), displayName: username\.trim\(\) \}/)
+    assert.doesNotMatch(LOGIN, /displayName: username\.trim\(\)/)
     assert.match(LOGIN, /method: 'POST'/)
     assert.match(LOGIN, /'Content-Type': 'application\/json'/)
   })
 
-  test('callback/redirect behavior unchanged: ?error banner, same-origin next guard, full navigation', () => {
+  test('callback/redirect behavior: ?error banner, shared safe-redirect guard, full navigation', () => {
     assert.match(LOGIN, /searchParams\.get\('error'\)/)
     assert.match(LOGIN, /searchParams\.get\('next'\) \?\? '\/'/)
-    assert.match(LOGIN, /callbackError \? t\.auth\.errorCallback : null/)
-    assert.match(LOGIN, /const safeNext = next\.startsWith\('\/'\) \? next : '\/'/)
+    assert.match(LOGIN, /callbackError \? callbackErrorToMessage\(t, callbackError\) : null/)
+    // R1.5 replaced the `startsWith('/')` guard, which accepted `//evil.example`,
+    // with the one authoritative validator shared with middleware and the
+    // callback route. Redirect-safety coverage lives in accessControl.test.ts.
+    assert.match(LOGIN, /const safeNext = toSafeInternalPath\(next\)/)
+    assert.doesNotMatch(LOGIN, /next\.startsWith\('\/'\)/)
     assert.match(LOGIN, /window\.location\.assign\(safeNext\)/)
   })
 
@@ -289,13 +297,17 @@ describe('R1 login functional contract (Phase 6B preserved verbatim)', () => {
     assert.match(LOGIN, /nv-spin/)
   })
 
-  test('error mapping covers all six server codes plus the generic fallback, and renders as role="alert"', () => {
-    for (const code of ['invalid_credentials', 'username_taken', 'invalid_password', 'invalid_username', 'invalid_email', 'invalid_display_name']) {
-      assert.ok(LOGIN.includes(`case '${code}'`), `missing error code mapping: ${code}`)
-    }
+  test('error mapping covers every code /api/auth/login can return, plus the generic fallback', () => {
+    // R1.5: the five create-account codes (username_taken, invalid_password,
+    // invalid_username, invalid_email, invalid_display_name) are unreachable —
+    // the endpoint that produced them no longer exists. /api/auth/login answers
+    // only invalid_credentials; everything else falls to the generic message.
+    assert.ok(LOGIN.includes("case 'invalid_credentials'"), 'missing invalid_credentials mapping')
     assert.match(LOGIN, /default:\s+return t\.auth\.errorGeneric/)
     assert.match(LOGIN, /role="alert"/)
     assert.match(LOGIN, /json\.error \?\? ''/)
+    // The server-set ?error=not_authorized banner (unapproved identity).
+    assert.match(LOGIN, /'not_authorized' \? t\.auth\.errNotAuthorized : t\.auth\.errorCallback/)
   })
 
   test('username field keeps its exact semantic attributes and receives initial focus', () => {
@@ -307,32 +319,33 @@ describe('R1 login functional contract (Phase 6B preserved verbatim)', () => {
     assert.match(LOGIN, /htmlFor="username"/)
   })
 
-  test('create-only recovery email field keeps its attributes and hint', () => {
-    const field = LOGIN.match(/<input\s+id="email"[\s\S]*?\/>/)
-    assert.ok(field)
-    for (const attr of ['type="email"', 'required', 'autoComplete="email"']) {
-      assert.ok(field![0].includes(attr), `email input missing ${attr}`)
-    }
-    assert.match(LOGIN, /\{isCreate && \([\s\S]*?htmlFor="email"/)
-    assert.match(LOGIN, /t\.auth\.emailHint/)
+  test('the recovery-email registration field is GONE — the form collects no email', () => {
+    // R1.5: this field only ever existed to self-register. Its removal is the
+    // point, so the R1 assertion is inverted rather than deleted.
+    assert.doesNotMatch(LOGIN, /id="email"/)
+    assert.doesNotMatch(LOGIN, /t\.auth\.email(Label|Placeholder|Hint)/)
+    // The two username/password fields are the entire form.
+    assert.deepEqual([...LOGIN.matchAll(/<input\s+id="([a-z]+)"/g)].map((m) => m[1]), ['username', 'password'])
   })
 
-  test('password field keeps the mode-dependent autocomplete and stays a plain password input', () => {
+  test('password field is a plain current-password input with no create-mode hint', () => {
     const field = LOGIN.match(/<input\s+id="password"[\s\S]*?\/>/)
     assert.ok(field)
     assert.ok(field![0].includes('type="password"'), 'password input must keep a literal type')
-    assert.ok(field![0].includes(`autoComplete={isCreate ? 'new-password' : 'current-password'}`))
+    assert.ok(field![0].includes(`autoComplete="current-password"`), 'sign-in only, so no new-password branch')
     assert.match(LOGIN, /htmlFor="password"/)
-    assert.match(LOGIN, /\{isCreate && <p[\s\S]*?t\.auth\.passwordHint/)
+    assert.doesNotMatch(LOGIN, /t\.auth\.passwordHint/)
   })
 
-  test('forgot-password link keeps its destination, sign-in mode only', () => {
-    assert.match(LOGIN, /\{!isCreate && \([\s\S]*?href="\/forgot-password"[\s\S]*?t\.auth\.forgotPassword/)
+  test('forgot-password link keeps its destination, now unconditionally', () => {
+    assert.match(LOGIN, /href="\/forgot-password"[\s\S]*?t\.auth\.forgotPassword/)
+    assert.doesNotMatch(LOGIN, /!isCreate/)
   })
 
-  test('mode toggle and back-to-dashboard link are preserved', () => {
-    assert.match(LOGIN, /setMode\(isCreate \? 'signin' : 'create'\)/)
-    assert.match(LOGIN, /\{isCreate \? t\.auth\.haveAccount : t\.auth\.needAccount\}/)
+  test('the mode toggle is replaced by administrator-provisioned wording; back link preserved', () => {
+    assert.doesNotMatch(LOGIN, /setMode|\bisCreate\b/)
+    assert.doesNotMatch(LOGIN, /t\.auth\.(needAccount|submitCreate|createAccountSubtitle)/)
+    assert.match(LOGIN, /t\.auth\.adminProvisioned/)
     assert.match(LOGIN, /href="\/"[\s\S]*?t\.auth\.backToHome/)
   })
 
@@ -368,9 +381,12 @@ describe('R1 locked exclusions (normalized decision register)', () => {
     assert.doesNotMatch(ALL_NEW, /localStorage\.(get|set)Item\(['"](?!lang|theme)/)
   })
 
-  test('the only network calls on the page are the two existing auth endpoints', () => {
+  test('the only network call on the page is the sign-in endpoint', () => {
+    // R1.5 removed public self-registration, so /api/auth/register is no longer
+    // reachable from here (the endpoint no longer exists at all). Deliberate
+    // narrowing of the R1 assertion — see docs/security_access_control.md.
     const calls = [...LOGIN_CODE.matchAll(/\/api\/[a-z/-]*/g)].map((m) => m[0])
-    assert.deepEqual([...new Set(calls)].sort(), ['/api/auth/login', '/api/auth/register'])
+    assert.deepEqual([...new Set(calls)].sort(), ['/api/auth/login'])
     assert.doesNotMatch(SHELL_CODE + PANEL_CODE, /\/api\//)
   })
 
@@ -522,7 +538,7 @@ describe('R1 tokens, i18n, and motion', () => {
   test('loading remains understandable without spinner rotation — the label is never replaced by the spinner', () => {
     // Under reduced motion `.nv-spin` stops; the button must still say what it
     // is doing and stay disabled, so the label renders unconditionally.
-    assert.match(LOGIN, /\{loading && \([\s\S]*?nv-spin[\s\S]*?\)\}\s*\n\s*\{isCreate \? t\.auth\.submitCreate : t\.auth\.submitSignIn\}/)
+    assert.match(LOGIN, /\{loading && \([\s\S]*?nv-spin[\s\S]*?\)\}\s*\n\s*\{t\.auth\.submitSignIn\}/)
     assert.match(LOGIN, /disabled=\{loading \|\| !username\.trim\(\) \|\| !password\}/)
   })
 

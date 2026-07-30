@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createSessionWriterClient } from '@/lib/auth/sessionCookies'
 import { normalizeUsername } from '@/lib/auth/credentials'
+import { isApprovedProfile } from '@/lib/auth/approval'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,18 +37,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     from: (t: string) => {
       select: (c: string) => {
         eq: (col: string, val: string) => {
-          maybeSingle: () => Promise<{ data: { email: string | null; display_name: string | null } | null }>
+          maybeSingle: () => Promise<{
+            data: { username: string | null; email: string | null; display_name: string | null } | null
+          }>
         }
       }
     }
   })
     .from('user_profiles')
-    .select('email, display_name')
+    .select('username, email, display_name')
     .eq('username', username)
     .maybeSingle()
 
+  // R1.5 — the approval boundary, applied at the session-minting point. A
+  // Supabase Auth identity with no approved `user_profiles` row can never
+  // obtain a session here (see src/lib/auth/approval.ts). Same generic error as
+  // a wrong password, so an unapproved account is indistinguishable from a
+  // non-existent one.
   const email = profile?.email
-  if (!email) {
+  if (!isApprovedProfile(profile) || !email) {
     return NextResponse.json({ error: 'invalid_credentials' }, { status: 401 })
   }
 

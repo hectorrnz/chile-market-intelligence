@@ -105,9 +105,12 @@ describe('regression — existing macro/market cron routes unaffected', () => {
 })
 
 describe('middleware — structured-notes routes still auth-gated (regression)', () => {
-  it('protects /structured-notes and /api/structured-notes (unchanged from Phase 9A/9B)', () => {
-    assert.ok(MIDDLEWARE.includes("'/structured-notes'"))
-    assert.ok(MIDDLEWARE.includes("'/api/structured-notes'"))
+  it('protects /structured-notes and /api/structured-notes (unchanged from Phase 9A/9B)', async () => {
+    // R1.5: middleware no longer names routes; the default-deny access policy
+    // decides. Same property, asserted against the real decision function.
+    const { requiresApprovedSession } = await import('../src/lib/auth/accessPolicy.ts')
+    assert.ok(requiresApprovedSession('/structured-notes'))
+    assert.ok(requiresApprovedSession('/api/structured-notes'))
   })
   it('does not add the cron route to the authenticated-page middleware (cron uses its own Bearer auth, not session auth)', () => {
     assert.ok(!MIDDLEWARE.includes('/api/cron/structured-notes'))

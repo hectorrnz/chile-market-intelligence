@@ -131,13 +131,17 @@ describe('Phase 5C — route and scope', () => {
     ])
   })
 
-  it('leaves middleware protection lists untouched — the company route stays public', () => {
-    const mw = read('src/middleware.ts')
-    const pages = mw.match(/const PROTECTED_PAGES\s*=\s*(\[[^\]]*\])/)
-    const apis = mw.match(/const PROTECTED_API\s*=\s*(\[[^\]]*\])/)
-    assert.ok(pages && apis)
-    assert.ok(!pages![1].includes('/companies'), 'the company route must never become protected')
-    assert.ok(!apis![1].includes('/api/valuation'), 'the valuation API must stay public')
+  it('the company route and valuation API are now private (R1.5)', async () => {
+    // DELIBERATE REVERSAL. This test previously asserted the company route and
+    // /api/valuation stayed PUBLIC. R1.5 made Nevada Market Intelligence a
+    // private platform: company detail and its valuation data are family-office
+    // information and are gated like everything else. The original intent — this
+    // page's own auth posture is unchanged, it never authenticates itself — is
+    // preserved below. See docs/security_access_control.md.
+    const { classifyPath } = await import('../src/lib/auth/accessPolicy.ts')
+    assert.equal(classifyPath('/companies/SQM-B'), 'private_page')
+    assert.equal(classifyPath('/api/valuation/SQM-B'), 'private_api')
+    assert.ok(!/getCurrentUser|requireCurrentUser|supabase/.test(src), 'the page still relies on the shell gate')
   })
 
   it('reads no environment variable directly — a client page never touches process.env', () => {

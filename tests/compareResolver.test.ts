@@ -315,9 +315,12 @@ describe('Phase 8B regression checks', () => {
     assert.ok(marketProvider.includes('resolveStockHistory'))
   })
 
-  it('middleware protected routes are unchanged (portfolio/watchlist still protected)', () => {
-    const mw = readFileSync(join(ROOT, 'src/middleware.ts'), 'utf8')
-    assert.ok(mw.includes('/portfolio'))
-    assert.ok(mw.includes('/watchlist'))
+  it('middleware protected routes are unchanged (portfolio/watchlist still protected)', async () => {
+    // R1.5 replaced the PROTECTED_PAGES/PROTECTED_API denylist with the
+    // default-deny policy in src/lib/auth/accessPolicy.ts, so these paths are no
+    // longer named in middleware.ts. Assert the property, not the old mechanism.
+    const { requiresApprovedSession } = await import('../src/lib/auth/accessPolicy.ts')
+    assert.ok(requiresApprovedSession('/portfolio'))
+    assert.ok(requiresApprovedSession('/watchlist'))
   })
 })

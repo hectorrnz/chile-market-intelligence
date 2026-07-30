@@ -570,9 +570,11 @@ describe('component architecture', () => {
     // guards against an accidental structural change slipping in silently.
     assert.ok(existsSync(join(ROOT, 'src/middleware.ts')))
     assert.ok(existsSync(join(ROOT, 'src/app/api/auth/login/route.ts')))
+    // R1.5: middleware delegates to the shared default-deny policy instead of
+    // carrying its own PROTECTED_PAGES/PROTECTED_API arrays.
     const mw = read('src/middleware.ts')
-    assert.match(mw, /PROTECTED_PAGES/)
-    assert.match(mw, /PROTECTED_API/)
+    assert.match(mw, /requiresApprovedSession/)
+    assert.match(mw, /decideRequestAccess/)
   })
 
   test('package.json has no new runtime dependency', () => {

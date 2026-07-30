@@ -577,11 +577,13 @@ describe('Phase 5H — API dependencies, persistence, and auth are unchanged', (
     assert.ok(!src.includes('window.confirm'))
   })
 
-  it('relies on middleware for auth, and the protected-route lists are unchanged', () => {
+  it('relies on middleware for auth, and the route stays protected', async () => {
     assert.ok(!/getCurrentUser|requireCurrentUser|supabase\.auth/.test(src))
-    const mw = read('src/middleware.ts')
-    assert.match(mw, /PROTECTED_PAGES\s*=\s*\['\/watchlist', '\/portfolio', '\/structured-notes', '\/settings'\]/)
-    assert.match(mw, /PROTECTED_API\s*=\s*\['\/api\/watchlists', '\/api\/portfolios', '\/api\/structured-notes', '\/api\/notifications', '\/api\/notification-recipients'\]/)
+    // R1.5: the literal PROTECTED_PAGES/PROTECTED_API arrays are gone, replaced
+    // by the default-deny policy. The property they encoded is asserted here.
+    const { requiresApprovedSession } = await import('../src/lib/auth/accessPolicy.ts')
+    assert.ok(requiresApprovedSession('/portfolio'))
+    assert.ok(requiresApprovedSession('/api/portfolios'))
   })
 
   it('changes no API route file — all 7 portfolio route files still exist', () => {

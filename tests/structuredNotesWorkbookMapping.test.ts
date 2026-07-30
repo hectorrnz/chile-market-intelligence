@@ -19,7 +19,8 @@ const MAPPING_DOC = read('../docs/structured_notes_workbook_mapping.md')
 const MARKET_PROVIDER = read('../src/lib/structuredNotes/structuredNoteMarketProvider.ts')
 const SYMBOL_MAP = read('../src/lib/structuredNotes/underlyingSymbolMap.ts')
 const EXTRACT_ROUTE = read('../src/app/api/structured-notes/extract/route.ts')
-const MIDDLEWARE = read('../src/middleware.ts')
+// R1.5: middleware source is no longer read here — route protection is asserted
+// against src/lib/auth/accessPolicy.ts, imported where it is used.
 
 describe('migration — 7 tables, user-scoped, RLS', () => {
   const tables = [
@@ -127,9 +128,12 @@ describe('security / provenance', () => {
     // The response returns the structured note + fields, never the raw page text.
     assert.ok(!/pages\s*[},]/.test(EXTRACT_ROUTE.split('return NextResponse.json')[1] ?? ''))
   })
-  it('middleware protects /structured-notes and /api/structured-notes', () => {
-    assert.ok(MIDDLEWARE.includes("'/structured-notes'"))
-    assert.ok(MIDDLEWARE.includes("'/api/structured-notes'"))
+  it('middleware protects /structured-notes and /api/structured-notes', async () => {
+    // R1.5: protection moved to the default-deny access policy; middleware no
+    // longer enumerates routes.
+    const { requiresApprovedSession } = await import('../src/lib/auth/accessPolicy.ts')
+    assert.ok(requiresApprovedSession('/structured-notes'))
+    assert.ok(requiresApprovedSession('/api/structured-notes'))
   })
 })
 

@@ -297,13 +297,12 @@ describe('Phase 5B — links, source disclosure and route protection', () => {
     assert.ok(!src.includes('DataSourceBadge'))
   })
 
-  it('leaves the route protected and the API lists untouched', () => {
-    const mw = read('src/middleware.ts')
-    const pages = mw.match(/const PROTECTED_PAGES\s*=\s*(\[[^\]]*\])/)
-    const apis = mw.match(/const PROTECTED_API\s*=\s*(\[[^\]]*\])/)
-    assert.ok(pages && apis)
-    assert.ok(JSON.parse(pages![1].replace(/'/g, '"')).includes('/watchlist'))
-    assert.ok(JSON.parse(apis![1].replace(/'/g, '"')).includes('/api/watchlists'))
+  it('leaves the route protected', async () => {
+    // R1.5: protection moved from middleware's literal lists to the default-deny
+    // access policy. Same property, asserted against the real decision function.
+    const { requiresApprovedSession } = await import('../src/lib/auth/accessPolicy.ts')
+    assert.ok(requiresApprovedSession('/watchlist'))
+    assert.ok(requiresApprovedSession('/api/watchlists'))
   })
 
   it('creates no second authentication path and no sample fallback', () => {

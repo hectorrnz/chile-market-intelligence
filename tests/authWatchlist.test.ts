@@ -5,6 +5,8 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+// R1.5 — route protection is now expressed by the shared access policy.
+import { requiresApprovedSession, classifyPath } from '../src/lib/auth/accessPolicy.ts'
 
 const ROOT = join(import.meta.dirname, '..')
 const MIGRATION_CORE = join(ROOT, 'supabase/migrations/20260625000000_create_market_intelligence_core.sql')
@@ -88,14 +90,20 @@ describe('Phase 6A middleware', () => {
     assert.ok(existsSync(MIDDLEWARE), 'src/middleware.ts not found')
   })
 
+  // R1.5 replaced the Phase-6A PROTECTED_PAGES/PROTECTED_API denylist with a
+  // DEFAULT-DENY allowlist in src/lib/auth/accessPolicy.ts, so these paths are
+  // no longer named in middleware.ts — they are protected because they are not
+  // public. Assert the property (protection) rather than the old mechanism, and
+  // assert it through the policy itself. Full behavioural coverage of every
+  // route lives in tests/accessControl.test.ts.
   it('protects /watchlist page route', () => {
-    const src = readFileSync(MIDDLEWARE, 'utf8')
-    assert.ok(src.includes('/watchlist'), 'middleware must protect /watchlist')
+    assert.ok(requiresApprovedSession('/watchlist'), 'middleware must protect /watchlist')
+    assert.equal(classifyPath('/watchlist'), 'private_page')
   })
 
   it('protects /api/watchlists API route', () => {
-    const src = readFileSync(MIDDLEWARE, 'utf8')
-    assert.ok(src.includes('/api/watchlists'), 'middleware must protect /api/watchlists')
+    assert.ok(requiresApprovedSession('/api/watchlists'), 'middleware must protect /api/watchlists')
+    assert.equal(classifyPath('/api/watchlists'), 'private_api')
   })
 
   it('redirects unauthenticated pages to /login', () => {
@@ -143,21 +151,28 @@ describe('Phase 6A auth pages', () => {
   it('login page posts to server auth routes (no service role in client)', () => {
     // Phase 6B: login moved to username+password. The page POSTs to server
     // routes and must never reference the service-role key.
+    // R1.5: public self-registration was REMOVED — the page must no longer be
+    // able to reach a registration endpoint. This assertion is deliberately
+    // inverted from its Phase-6B form; see docs/security_access_control.md.
     const src = readFileSync(join(ROOT, 'src/app/(auth)/login/page.tsx'), 'utf8')
     assert.ok(src.includes('/api/auth/login'), 'login must POST to /api/auth/login')
-    assert.ok(src.includes('/api/auth/register'), 'login must POST to /api/auth/register')
+    assert.ok(!/fetch\((\s*)'\/api\/auth\/register'/.test(src), 'login must not POST to a registration endpoint')
     assert.ok(!src.includes('service_role'), 'login must never use service_role key')
     assert.ok(!src.includes('SUPABASE_SERVICE_ROLE'), 'login must never reference service role')
   })
 
   it('auth routes exist and keep the service role server-side only', () => {
     const login = readFileSync(join(ROOT, 'src/app/api/auth/login/route.ts'), 'utf8')
-    const register = readFileSync(join(ROOT, 'src/app/api/auth/register/route.ts'), 'utf8')
-    // Admin (service-role) client is used, but only from these server routes.
+    // Admin (service-role) client is used, but only from this server route.
     assert.ok(login.includes('getSupabaseAdminClient'), 'login route resolves username via admin')
-    assert.ok(register.includes('getSupabaseAdminClient'), 'register route uses admin client')
     // Generic credential error — never leak which field was wrong.
     assert.ok(login.includes('invalid_credentials'), 'login must return a generic error')
+    // R1.5: the registration route is gone, so no public caller can create an
+    // account. Provisioning is scripts/admin/provisionUser.ts (not routable).
+    assert.ok(
+      !existsSync(join(ROOT, 'src/app/api/auth/register/route.ts')),
+      'public registration endpoint must not exist',
+    )
   })
 
   it('auth callback exchanges code for session', () => {

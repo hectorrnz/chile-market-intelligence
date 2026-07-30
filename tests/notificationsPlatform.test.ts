@@ -126,10 +126,14 @@ describe('cron route — notifies + emails on autocall (structured_note_called)'
 })
 
 describe('API routes — auth-scoped, no admin client leakage', () => {
-  it('GET /api/notifications uses the user-session client and requires a signed-in user', () => {
+  it('GET /api/notifications uses the user-session client and requires an APPROVED user', () => {
     assert.ok(NOTIF_ROUTE.includes('getSupabaseUserClient'))
     assert.ok(!NOTIF_ROUTE.includes('getSupabaseAdminClient'))
-    assert.ok(NOTIF_ROUTE.includes('requireCurrentUser'))
+    // R1.5 correction: `requireCurrentUser` only proved authentication. The
+    // handler now uses `getApprovedUser`, which additionally re-reads the
+    // approval record, so a revoked user is refused here as well as at the gate.
+    assert.ok(NOTIF_ROUTE.includes('getApprovedUser'))
+    assert.ok(NOTIF_ROUTE.includes('notAuthorizedJson'), 'and answers 403, not 401, when unapproved')
   })
   it('mark-as-read routes scope the update to the current user id, not an arbitrary body field', () => {
     assert.ok(READ_ROUTE.includes('markNotificationRead(client, id, user.id)'))
@@ -142,10 +146,13 @@ describe('API routes — auth-scoped, no admin client leakage', () => {
 })
 
 describe('middleware — new routes are auth-gated', () => {
-  it('protects /settings pages and /api/notifications, /api/notification-recipients', () => {
-    assert.ok(MIDDLEWARE.includes("'/settings'"))
-    assert.ok(MIDDLEWARE.includes("'/api/notifications'"))
-    assert.ok(MIDDLEWARE.includes("'/api/notification-recipients'"))
+  it('protects /settings pages and /api/notifications, /api/notification-recipients', async () => {
+    // R1.5: middleware no longer names individual routes — the default-deny
+    // access policy decides. Assert the property against the real function.
+    const { requiresApprovedSession } = await import('../src/lib/auth/accessPolicy.ts')
+    assert.ok(requiresApprovedSession('/settings/notifications'))
+    assert.ok(requiresApprovedSession('/api/notifications'))
+    assert.ok(requiresApprovedSession('/api/notification-recipients'))
   })
   it('does not touch the cron route auth (its own Bearer CRON_SECRET, unaffected)', () => {
     assert.ok(!MIDDLEWARE.includes('/api/cron/structured-notes'))

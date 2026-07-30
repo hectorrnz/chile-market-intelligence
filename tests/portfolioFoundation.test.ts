@@ -346,35 +346,37 @@ describe('Phase 6C valuation math', () => {
 // ─── Middleware: protects /portfolio without expanding scope ─────────────────
 
 describe('Phase 6C middleware protection', () => {
-  it('protects /portfolio page route', () => {
-    const src = readFileSync(MIDDLEWARE, 'utf8')
-    assert.ok(src.includes("'/portfolio'"), 'middleware must protect /portfolio')
+  // R1.5 removed the PROTECTED_PAGES/PROTECTED_API denylist in favour of the
+  // default-deny policy in src/lib/auth/accessPolicy.ts. Protection is no longer
+  // an enumerable list, so the four tests below assert the property against the
+  // real decision function instead of parsing a literal array. The "nothing else
+  // crept in" guarantee is now the allowlist-equality test in
+  // tests/accessControl.test.ts.
+  it('protects /portfolio page route', async () => {
+    const { requiresApprovedSession } = await import('../src/lib/auth/accessPolicy.ts')
+    assert.ok(requiresApprovedSession('/portfolio'), 'middleware must protect /portfolio')
   })
 
-  it('protects /api/portfolios API route', () => {
-    const src = readFileSync(MIDDLEWARE, 'utf8')
-    assert.ok(src.includes("'/api/portfolios'"), 'middleware must protect /api/portfolios')
+  it('protects /api/portfolios API route', async () => {
+    const { requiresApprovedSession } = await import('../src/lib/auth/accessPolicy.ts')
+    assert.ok(requiresApprovedSession('/api/portfolios'), 'middleware must protect /api/portfolios')
   })
 
-  it('PROTECTED_PAGES contains watchlist + portfolio (structured-notes added in Phase 9A)', () => {
-    const src = readFileSync(MIDDLEWARE, 'utf8')
-    const match = src.match(/const PROTECTED_PAGES\s*=\s*(\[[^\]]*\])/)
-    assert.ok(match, 'PROTECTED_PAGES declaration not found')
-    const arr = JSON.parse(match![1].replace(/'/g, '"'))
-    assert.ok(arr.includes('/portfolio') && arr.includes('/watchlist'))
-    assert.deepEqual(arr.sort(), ['/portfolio', '/settings', '/structured-notes', '/watchlist'])
+  it('the Phase 6C/9A private pages are all still protected', async () => {
+    const { classifyPath } = await import('../src/lib/auth/accessPolicy.ts')
+    for (const page of ['/portfolio', '/watchlist', '/structured-notes', '/settings/notifications']) {
+      assert.equal(classifyPath(page), 'private_page', `${page} must stay protected`)
+    }
   })
 
-  it('PROTECTED_API contains watchlists + portfolios (structured-notes added in Phase 9A)', () => {
-    const src = readFileSync(MIDDLEWARE, 'utf8')
-    const match = src.match(/const PROTECTED_API\s*=\s*(\[[^\]]*\])/)
-    assert.ok(match, 'PROTECTED_API declaration not found')
-    const arr = JSON.parse(match![1].replace(/'/g, '"'))
-    assert.ok(arr.includes('/api/portfolios') && arr.includes('/api/watchlists'))
-    assert.deepEqual(
-      arr.sort(),
-      ['/api/notification-recipients', '/api/notifications', '/api/portfolios', '/api/structured-notes', '/api/watchlists'],
-    )
+  it('the Phase 6C/9A private APIs are all still protected', async () => {
+    const { classifyPath } = await import('../src/lib/auth/accessPolicy.ts')
+    for (const api of [
+      '/api/portfolios', '/api/watchlists', '/api/structured-notes',
+      '/api/notifications', '/api/notification-recipients',
+    ]) {
+      assert.equal(classifyPath(api), 'private_api', `${api} must stay protected`)
+    }
   })
 
   it('cron routes remain unblocked', () => {

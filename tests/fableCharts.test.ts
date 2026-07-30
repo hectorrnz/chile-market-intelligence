@@ -312,9 +312,11 @@ describe('scope stays within the chart/token layer', () => {
   })
 
   test('middleware and auth routes untouched (existence + shape check)', () => {
+    // R1.5 replaced the PROTECTED_PAGES/PROTECTED_API denylist with the
+    // default-deny policy module; middleware now delegates the decision.
     assert.ok(existsSync(join(ROOT, 'src/middleware.ts')))
     const mw = read('src/middleware.ts')
-    assert.match(mw, /PROTECTED_PAGES/)
-    assert.match(mw, /PROTECTED_API/)
+    assert.match(mw, /requiresApprovedSession/)
+    assert.match(mw, /decideRequestAccess/)
   })
 })
