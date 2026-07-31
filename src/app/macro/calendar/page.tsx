@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useLang } from '@/components/providers/LangProvider'
-import { SectionHeader } from '@/components/ui/SectionHeader'
+import { PageHeader } from '@/components/fable/PageHeader'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { EconomicCalendarTable } from '@/components/macro/EconomicCalendarTable'
 import { TableCard } from '@/components/fable/TableCard'
+import { ChipLabel } from '@/components/fable/Chip'
 import { Reveal } from '@/components/fable/motion'
 import { fetchFredReleaseCalendar, type FredCalendarFetchResult } from '@/lib/data/fredCalendar'
 import { fetchFomcExpectations, type FomcExpectationsResult } from '@/lib/data/fomcExpectations'
@@ -38,29 +39,30 @@ export default function CalendarPage() {
   const latestAsOf = events.reduce((max, e) => (e.date > max ? e.date : max), '')
   const pct = (v: number | null) => (v == null ? '—' : `${v.toFixed(1)}%`)
 
-  const pill = (label: string) => (
-    <span
-      className="text-xs px-2 py-0.5 rounded-full nv-transition text-muted-fg"
-      style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' }}
-    >
-      {label}
-    </span>
-  )
-
   return (
     <div className="w-full space-y-4">
       <Reveal>
-        <div className="space-y-4">
-          <Link href="/macro" className="text-xs text-muted-fg hover:text-foreground inline-flex items-center gap-1">{t.cal.back}</Link>
-          <SectionHeader tag={t.macro.tag} title={t.cal.title} subtitle={t.cal.subtitle} />
-        </div>
+        {/* R5 — the shared Fable PageHeader (same baseline row as /macro and the
+            R3/R4 routes). The back link joins the header metadata beside the
+            honest scope sentence; the shell's SecondaryNav pill rail
+            (Indicators | Calendar) remains the primary route navigation. */}
+        <PageHeader
+          eyebrow={t.macro.tag}
+          title={t.cal.title}
+          metadata={
+            <>
+              <Link href="/macro" className="text-primary hover:underline whitespace-nowrap">{t.cal.back}</Link>
+              <span>{t.cal.subtitle}</span>
+            </>
+          }
+        />
       </Reveal>
 
       {/* FRED release calendar, enriched with actual/previous from FRED time-series */}
       <Reveal delayMs={70}>
         <TableCard
           title={t.cal.fredTitle}
-          controls={pill(t.cal.noConsensus)}
+          controls={<ChipLabel>{t.cal.noConsensus}</ChipLabel>}
           minWidth={720}
           state={fred && !fred.configured ? 'unavailable' : undefined}
           stateMessage={t.cal.fredUnavailable}
@@ -130,7 +132,7 @@ export default function CalendarPage() {
       <Reveal delayMs={190}>
         <TableCard
           title={t.cal.chileTitle}
-          controls={pill(t.cal.chileDeferred)}
+          controls={<ChipLabel>{t.cal.chileDeferred}</ChipLabel>}
           state="unavailable"
           stateMessage={t.cal.chileUnavailable}
         >

@@ -887,7 +887,10 @@ describe('Phase 5H — scope held', () => {
     assert.match(read('src/app/earnings/page.tsx'), /<TableCard/)
     assert.match(read('src/app/chart-builder/page.tsx'), /<SegmentedControl/)
     assert.match(read('src/app/compare/page.tsx'), /<TableCard/)
-    assert.match(read('src/app/macro/page.tsx'), /nv-surface-dense nv-pop/)
+    // R5 moved the macro chart popup onto the shared ModalShell (dense mode) —
+    // a real phase boundary moving, guarded by tests/fableMacroPage.test.ts
+    // and tests/fableMacroChartModalOpacity.test.ts, not a relaxed assertion.
+    assert.match(read('src/app/macro/page.tsx'), /<ModalShell/)
     assert.match(read('src/app/companies/[ticker]/page.tsx'), /KpiCapsule/)
   })
 })

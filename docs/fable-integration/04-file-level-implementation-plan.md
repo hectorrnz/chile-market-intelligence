@@ -1643,6 +1643,183 @@ verification.
 
 ---
 
+## Phase R5 — Fable Macro + Economic Calendar ✓ IMPLEMENTED (2026-07-31, automated validation complete, manual browser validation pending)
+
+Baseline `b8272bd` (clean R4/R4.1 HEAD). `/macro` and `/macro/calendar` were already re-skinned in
+Phase 5F; R5 is the fidelity-deepening pass that brings both routes into the R3/R4 family without
+touching a single data semantic. **Fable references used:** `zip-export/SPECS.md` §7 Macro (Chile /
+Global metric-row cards + "Upcoming releases" card + Santiago-times footer) and the standalone
+export's Macro renderer (extracted at offsets ~2850700–2857600: 12.6px/600 metric name over a
+10px source·timestamp·prev meta line, 54×20 accent-2 sparkline, 13.5px/650 latest, signed delta;
+releases rows = 11px/700 accent-2 date · 12.3px title · 8.5px importance chip, HIGH=amber,
+else neutral). Fable has **no dedicated calendar page** — `/macro/calendar` is composed from the
+Fable system (releases-card anatomy + shared primitives), a documented adaptation, not an invention.
+
+**What changed (4 files + i18n + tests):**
+- `src/app/macro/page.tsx` — (1) `SectionHeader` → shared **`PageHeader`** (the 19px/650 baseline
+  row every R-phase route opens with); the region-aware source subtitle moved into its metadata
+  beside a **new always-visible `/macro/calendar` link** — before R5 the only in-page path to the
+  calendar sat inside the US-only embed, so the Chile region had no link at all. (2) The
+  hand-rolled chart-popup dialog → shared **`ModalShell`** (`dense`, `size="lg"`) per the R4.1
+  shared-dialog rule — the page-local scrim/role/aria/Escape plumbing (and its `useEscape` import)
+  deleted; the shell adds a real focus trap, initial focus, focus-restore-to-row and body-scroll
+  lock the old markup never had. Title/description = the same series label + value/(change)/period;
+  body = the same 1/3/5/10Y `SegmentedControl` + `LineChart`/`AsyncState` + per-series
+  `DataSourceBadge` line. (3) The region chip → shared `ChipLabel`. Everything else — banded
+  indicators table, category derivation from fetched `i.category`, Chile-rates overlay, yield
+  curve precedence, Frankfurter FX table, US calendar embed, `macro:region`/`cmi.macroRegion`
+  wiring, `useGlobalRefresh`, every badge/footer/async state — byte-identical.
+- `src/app/macro/calendar/page.tsx` — `SectionHeader` → `PageHeader` (back link + honest scope
+  sentence in the metadata row); the local `pill()` helper → `ChipLabel` (no-consensus, Chile
+  deferred). FRED calendar card, FOMC outlook, Chile-deferred disclosure, both footers unchanged.
+- `src/components/macro/EconomicCalendarTable.tsx` (shared by both routes) — the Fable
+  releases-card anatomy: date cells now `text-accent-2` at weight 650 (the chronological anchor);
+  the **color-only importance dot became a visible localized chip** (`impHigh/impMedium/impLow`,
+  platform pill recipe `color-mix(in oklab, tone 12%, var(--surface))`, `title=t.cal.impTitle`
+  noting the classification is app-assigned, not FRED-sourced) — an a11y fix (status no longer
+  color-alone/hover-only). **Color mapping unchanged**: High keeps `--negative` (platform-wide
+  High-impact signal, News-module consistency) — a documented departure from Fable's amber HIGH.
+- `src/lib/i18n.ts` — 4 new `cal.*` keys ×2 dictionaries (`impHigh`, `impMedium`, `impLow`,
+  `impTitle`).
+
+**Departures from Fable (all documented):** (1) §7 per-row sparklines omitted — the only
+synchronously-available per-row history is the static bundled series, which would silently pair a
+static shape with a live latest value in one unlabeled glyph; history stays one click away in the
+popup chart with a real per-source badge. (2) §7 "prev X" per-row previous value omitted —
+`MacroIndicator` carries no previous field and deriving one from the change label is economically
+unsafe; the signed-delta element is the existing Change column. (3) The Chile+Global simultaneous
+two-card layout not adopted — NMI's region model (persisted `cmi.macroRegion` filter driven from
+the shell's SecondaryNav, a standing CLAUDE.md rule) is functional authority; the banded dense
+table remains the correct surface for 26 indicators under the governed density rule. (4) HIGH
+importance stays `--negative`, not Fable amber (above). (5) "Times in America/Santiago" footer not
+applicable — FRED release dates are date-only; no release times are fabricated. (6) The Macro ↔
+Calendar route navigation is the shell's `SecondaryNav` pill rail (Indicators | Calendar, sliding
+indicator, real links) — already the approved Fable tab anatomy — plus the new header-metadata
+links; no duplicate in-page tab rail was added.
+
+**Tests:** `tests/fableMacroPage.test.ts` (+5 R5 cases; 6 Phase 5F cases updated in place with R5
+comments — header→PageHeader, popup→ModalShell, chip→ChipLabel, nv-pop/aria moved to the shell),
+`tests/fableMacroCalendarPage.test.ts` (+5 R5 cases; 3 updated — header, importance chip, ChipLabel;
+column-order probe disambiguated `t.cal.imp}` vs the new `impHigh` prefix),
+`tests/fableMacroChartModalOpacity.test.ts` rewritten to target the shared shell (same 14-point
+repair contract — dense ≥.92 alpha both themes, no backdrop-filter, scrim, token shape, Tier-5
+consumers unchanged), `tests/fablePortfolioPage.test.ts` cross-check updated (`nv-surface-dense
+nv-pop` → `<ModalShell`, a real phase boundary moving). Focused: 634/634. Full suite:
+**3589 tests, 3586 pass, 3 fail** — only the three permitted date-dependent
+`tests/newsModule.test.ts` cases. Lint 0, build 0 errors, `git diff --check` clean.
+
+**Not changed:** every API route/payload, `MacroSeriesDef`/category registry, BCCh/FRED/Frankfurter/
+Yahoo providers, yield-curve + FX + enrichment logic, FOMC outlook, Chile-deferred integrity rules,
+R1.5 access control (`/macro` + `/macro/calendar` stay `private_page`), navigation model, and every
+route outside R5 scope. Manual browser validation (1728/1024/390, EN/ES, light/dark,
+reduced-motion) remains **pending** — no browser connected this session.
+
+### R5.1 (2026-07-31) — relevance bar meter replaces the importance word chip
+
+Controlled repair inside R5, applied to the relevance/importance display only. The R5 word chip
+(`Alta`/`High` on the pill recipe) read as another text column in a table already dense with
+words; relevance is an ordinal magnitude, so it now renders as a compact ascending **bar meter** —
+the Bloomberg *idea* (bar count = relevance) expressed entirely in the Fable material system, with
+none of Bloomberg's styling.
+
+**Mapping (real levels only, no invented fourth):** the data model defines exactly three
+(`fredReleaseAllowlist.ts`: `'High' | 'Medium' | 'Low'`) → **High 3 / Medium 2 / Low 1** filled of
+3. Bars are 3px wide at 5/8/11px ascending heights, `gap-[2px]`, `rounded-xs` (the dense-radius
+end of the scale, never a pill), inside a fixed `h-3` inline-flex box so row heights cannot shift.
+Filled bars take the unchanged tone mapping (High `--negative`, Medium `--warning`, Low
+`--muted-fg`); the unfilled track is `color-mix(in oklab, var(--muted-fg) 24%, transparent)` — one
+token-derived recipe, both themes, no hex, no raw Tailwind scale, no motion. The Imp. column
+narrowed `w-20` → `w-16`.
+
+**Accessibility — count is the signal, colour is reinforcement.** The meter is a single
+`role="img"` with a localized `aria-label` (`"Relevance: High"` / `"Relevancia: Alta"`), a `title`
+appending the existing honesty note (classification assigned by this app, not sourced from FRED),
+and `sr-only` localized text; the bars themselves are `aria-hidden`. One new key pair,
+`cal.relevanceLabel` (EN `Relevance` / ES `Relevancia`); `impHigh`/`impMedium`/`impLow`/`impTitle`
+are reused unchanged. Nothing else moved: chronological sort, Actual/Previous semantics, source
+chips, footers, FOMC card, Chile-deferred disclosure, both routes' composition.
+
+Files: `src/components/macro/EconomicCalendarTable.tsx` (shared by `/macro/calendar` and the Macro
+embed), `src/lib/i18n.ts`, `tests/fableMacroCalendarPage.test.ts` (new R5.1 describe, 6 cases; 2 R5
+cases updated). Focused calendar suites 320/320. Full suite **3595 · 3592 pass · 3 fail** (the three
+permitted `newsModule` cases). Lint 0, build 0 errors, `git diff --check` clean. Manual browser
+validation still **pending** — no browser connected.
+
+### R5.2 (2026-07-31) — actual/previous enrichment repair: FRED's keyless CSV transport died
+
+**Symptom.** `/api/macro/fred-release-calendar` returned `ok: true, configured: true,
+enriched: true` with the full event schedule, but EVERY metric — CPI, PPI, PCE, Employment
+Situation, Retail Sales, Industrial Production, Housing Starts, GDP, FOMC — reported
+`actual: null, previous: null, status: "unavailable"`. Schedule layer healthy, value layer dead.
+
+**Root cause (diagnosed, not guessed).** The two layers use DIFFERENT FRED hosts. Release dates
+come from the keyed `api.stlouisfed.org` (`fredReleaseCalendarClient.ts`); values come from the
+keyless CSV graph endpoint `fred.stlouisfed.org/graph/fredgraph.csv` (`fredClient.ts`). That CSV
+endpoint has **stopped serving programmatic requests**: every request stalls until the caller's
+timeout. Verified live, series by series — all 13 enrichment series plus both FOMC target-range
+series failed identically (15s timeout / one HTTP 504), and reproduced outside the app from two
+independent clients (curl and Node `fetch`) under three User-Agents including a full browser one:
+**HTTP status 000, 0 bytes, 40s**. Not a local network fault: the same machine reached Frankfurter,
+Yahoo Finance and example.com with HTTP 200, DNS resolved FRED normally, and TCP:443 to FRED's own
+edge connected. This is the Phase 8D failure mode ("FRED's edge appears to silently stall such
+requests", then Vercel-only) now applying everywhere. Because `fetchFredSeries` was the single
+transport behind every metric, one dead endpoint blanked the whole value layer — nothing was wrong
+with the mappings, period matching, transforms, or the enrichment logic.
+
+**Repair — same source, working transport.** `fetchFredSeries` now prefers FRED's official **keyed
+JSON observations API** (`api.stlouisfed.org/fred/series/observations`) when the server-only
+`FRED_API_KEY` is set — the same host and key the release calendar already uses, verified live
+returning real current data for all 15 series in ~300ms each. The keyless CSV endpoint is retained
+as (a) the zero-env-var path, so the standing "must build and run with no env vars" rule is intact,
+and (b) the fallback if a keyed request fails, so a key problem degrades to the old behaviour
+rather than removing a source. New `parseFredObservations` normalizes the JSON payload to the exact
+`FredSeriesPoint[]` the CSV parser produces (`"."` → null, genuine 0 stays 0), and both transports
+share one `toSeriesResult` builder so they can never disagree on what counts as a usable series.
+The key is sent as a query parameter (FRED accepts no other form) but never logged and never placed
+in a failure `reason` — reasons carry only the HTTP status. No new vendor, no scraping, no
+consensus, no synthetic values. This also restores US macro indicators/history and the yield curve,
+which share the same client.
+
+**Status semantics.** `EnrichedMetric` gained an optional `unavailableReason`
+(`source-unavailable` | `source-error` | `period-not-found`) so an outage is no longer
+indistinguishable from a genuinely unmapped release. Additive and diagnostic-only — the three
+public statuses, the API contract, and the UI are unchanged.
+
+**Verified end to end against real FRED data** (`resolveFredReleaseCalendarRange('2026-07-01',
+'2026-07-31')` → `resolveCalendarEnrichment`): 13 events, **16/16 metrics published, 0 unavailable**,
+across all four agencies (BLS 6 · BEA 4 · Census 4 · Federal Reserve 2) and both frequencies —
+NFP +57K (level-diff, never the ~159,000 raw level) with previous +129K; Unemployment 4.2% (prev
+4.3%); CPI y/y 3.46% and m/m −0.42%; PPI y/y 5.51%; Retail Sales m/m 0.22%; Industrial Production
+m/m 0.08%; Housing Starts 1,427K; Trade Balance −77,585 (a real negative, not a zero); GDP q/q SAAR
+1.5% on **quarterly** periods (2026-04-01 vs 2026-01-01); PCE y/y 3.67% and Core PCE 3.29%; and the
+FOMC band as a RANGE, `3.50%–3.75%`, never a fabricated midpoint. Forward window (60 days): 31
+events, 31 pending with real previous values, `actual` null, chronology intact, 0 unavailable.
+Consensus null everywhere.
+
+**Cache.** No stale-unavailable retention is possible: the route is `force-dynamic`, both transports
+send `cache: 'no-store'`, and the series map is built per call with no module-scope cache — all three
+now locked by tests.
+
+**Still unavailable, by design:** ADP (its FRED series `NPPTTL` is stale since 2022) and Existing
+Home Sales (NAR, not a government agency) remain deliberately unmapped and render dates-only rather
+than a stale or fabricated number.
+
+Files: `src/lib/providers/fredClient.ts`, `src/lib/providers/calendarEnrichment.ts`,
+`tests/calendarEnrichmentRepair.test.ts` (new, 42 cases, fully mocked — no live network in
+automated tests). Focused suites 672/672. Full suite **3637 · 3634 pass · 3 fail** (the three
+permitted `newsModule` cases). Lint 0, build 0 errors, `git diff --check` clean.
+
+**Limitations.** Values are current-vintage prints, not original release vintages — unchanged,
+pre-existing methodology (FRED's `realtime_*` vintage parameters are not used). The shared `yearAgo`
+helper picks the nearest available base, which equals the true same-month-a-year-earlier base only
+because the enrichment window requests ~3 years; noted rather than changed, since `transforms.ts` is
+shared with every macro indicator and altering it is outside this repair. Manual browser validation
+of `/macro/calendar` remains **pending** — no browser connected; the authenticated API walk could
+not be performed (no session credentials available to this session), so the identical server-side
+resolver + enrichment path was exercised directly instead, against live FRED.
+
+---
+
 ## Phase 7 — i18n additions & cleanup (`src/lib/i18n.ts`)
 
 Any new visible string (login utility chips "Secure connection", contrast label, privacy-mask

@@ -20,6 +20,21 @@ import type { FredCalendarEvent } from './fredReleaseCalendar.ts'
 
 export type EnrichedMetricStatus = 'published' | 'pending' | 'unavailable'
 
+/**
+ * R5.2 — why a metric is `unavailable`. Diagnostic only: the three public
+ * statuses above are unchanged (the UI reads those), but collapsing every
+ * failure into a bare "unavailable" made the R5.2 outage indistinguishable
+ * from a genuinely unmapped release. Additive and optional, so every existing
+ * consumer and the API contract are unaffected.
+ *
+ *  • `source-unavailable` — the series was never fetched (not in the cache).
+ *  • `source-error`       — the fetch ran and failed (network/HTTP/timeout).
+ *  • `period-not-found`   — the fetch succeeded but yielded no usable point
+ *                           after transformation (e.g. too little history for
+ *                           a y/y base).
+ */
+export type MetricUnavailableReason = 'source-unavailable' | 'source-error' | 'period-not-found'
+
 export interface EnrichedMetric {
   key: string
   label: string
@@ -41,6 +56,8 @@ export interface EnrichedMetric {
   /** Observation period of the previous value. */
   previousPeriod: string | null
   status: EnrichedMetricStatus
+  /** Set only when `status === 'unavailable'` — diagnostics, never rendered. */
+  unavailableReason?: MetricUnavailableReason
   /** Consensus is never available (no free official source) — always null. */
   consensus: null
   /** The source actually fetched — always FRED. */
@@ -107,11 +124,15 @@ export function buildEnrichedMetric(
     source: FETCH_SOURCE,
     originatingAgency: metric.originatingAgency,
   }
-  const unavailable: EnrichedMetric = { ...base, actual: null, previous: null, actualPeriod: null, previousPeriod: null, status: 'unavailable' }
+  const unavailable = (reason: MetricUnavailableReason): EnrichedMetric => ({
+    ...base, actual: null, previous: null, actualPeriod: null, previousPeriod: null,
+    status: 'unavailable', unavailableReason: reason,
+  })
 
-  if (!series || !series.ok) return unavailable
+  if (!series) return unavailable('source-unavailable')
+  if (!series.ok) return unavailable('source-error')
   const pts = transformSeries(series.data, metric.transform)
-  if (pts.length === 0) return unavailable
+  if (pts.length === 0) return unavailable('period-not-found')
 
   const latest = pts[pts.length - 1]
   const prior = pts.length >= 2 ? pts[pts.length - 2] : null
@@ -186,11 +207,12 @@ export function buildFomcMetric(
     source: FETCH_SOURCE,
     originatingAgency: 'Federal Reserve' as EnrichmentMetric['originatingAgency'],
   }
-  const unavailable: EnrichedMetric = {
+  const unavailable = (reason: MetricUnavailableReason): EnrichedMetric => ({
     ...base, actual: null, previous: null, actualText: null, previousText: null,
-    actualPeriod: null, previousPeriod: null, status: 'unavailable',
-  }
-  if (!lower?.ok || !upper?.ok) return unavailable
+    actualPeriod: null, previousPeriod: null, status: 'unavailable', unavailableReason: reason,
+  })
+  if (!lower || !upper) return unavailable('source-unavailable')
+  if (!lower.ok || !upper.ok) return unavailable('source-error')
 
   if (event.status === 'past') {
     const after = shiftIso(event.date, 2)
@@ -199,7 +221,7 @@ export function buildFomcMetric(
     const hiNew = valueAsOf(upper.data, after)
     const loOld = valueAsOf(lower.data, before)
     const hiOld = valueAsOf(upper.data, before)
-    if (loNew == null || hiNew == null) return unavailable
+    if (loNew == null || hiNew == null) return unavailable('period-not-found')
     return {
       ...base,
       actual: hiNew,
@@ -215,7 +237,7 @@ export function buildFomcMetric(
   // Scheduled/future: the new band isn't set yet; "previous" is the current band.
   const loNow = latestValue(lower.data)
   const hiNow = latestValue(upper.data)
-  if (loNow == null || hiNow == null) return unavailable
+  if (loNow == null || hiNow == null) return unavailable('period-not-found')
   return {
     ...base,
     actual: null,

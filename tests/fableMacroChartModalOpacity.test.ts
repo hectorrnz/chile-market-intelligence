@@ -8,18 +8,17 @@
 // on low-opacity glass; hard minimum .92 alpha). The underlying macro table
 // was visibly readable through the popup body.
 //
-// The fix swaps the popup's fill to the existing Tier-6 near-opaque
-// `nv-surface-dense` (`--surface-table`, .97 alpha, no blur — already the
-// exact token this chart's own tooltip uses via `--chart-tooltip-bg`), while
-// keeping the Tier-5 rounded modal *shape* (radius/border/shadow) via an
-// inline style referencing the same tokens `nv-glass-overlay` used. No new
-// global CSS class, no new token, no hardcoded color, no shared-component
-// change — the defect was proven local to this one popup (every other
-// `nv-glass-overlay` consumer is a sparse overlay, unaffected).
+// Phase R5 — the popup moved onto the shared ModalShell (the R4.1 dialog
+// system), whose `dense` prop IS the repair, now enforced structurally: dense
+// mode renders `nv-surface-dense` (near-opaque, no blur) with the Tier-5
+// rounded modal shape from the same tokens, and can never silently fall back
+// to the translucent overlay glass for this popup. This file keeps locking
+// the repair — the assertions target the shared shell plus the page's use of
+// its dense mode instead of the old hand-rolled markup.
 //
-// This file locks down the repair itself; tests/fableMacroPage.test.ts and
-// tests/fableMacroCalendarPage.test.ts continue to lock down that every
-// other Phase 5F section, control, and data path is unchanged.
+// tests/fableMacroPage.test.ts and tests/fableMacroCalendarPage.test.ts
+// continue to lock down that every other Phase 5F section, control, and data
+// path is unchanged.
 
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
@@ -30,20 +29,24 @@ const ROOT = join(import.meta.dirname, '..')
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
 
 const MACRO = 'src/app/macro/page.tsx'
+const SHELL = 'src/components/fable/ModalShell.tsx'
 const CSS = 'src/app/globals.css'
 
 const src = read(MACRO)
+const shell = read(SHELL)
 const css = read(CSS)
 
-const popupBlock = src.slice(src.indexOf('Chart popup modal'), src.indexOf('Chart popup modal') + 3000)
+const popupBlock = src.slice(src.indexOf('Chart popup'), src.indexOf('Chart popup') + 3000)
 
 describe('Manual repair — macro chart popup uses a near-opaque analytical surface', () => {
-  it('1. the popup body uses the near-opaque dense surface class', () => {
-    assert.match(popupBlock, /className="nv-surface-dense nv-pop /)
+  it('1. the popup renders through the shared ModalShell in dense mode (R5)', () => {
+    assert.match(popupBlock, /<ModalShell/)
+    assert.match(popupBlock, /dense/)
+    assert.match(shell, /dense \? 'nv-surface-dense' : 'nv-glass-overlay'/)
   })
 
-  it('2. the popup no longer uses the overly transparent Tier-5 overlay glass', () => {
-    assert.ok(!popupBlock.includes('nv-glass-overlay'), 'nv-glass-overlay (translucent gradient + blur) must be gone from the popup')
+  it('2. the popup does not opt into the overly transparent Tier-5 overlay glass', () => {
+    assert.ok(!popupBlock.includes('nv-glass-overlay'), 'the popup must stay on the dense analytical surface')
     assert.ok(!/var\(--nv-card\)/.test(popupBlock), 'must not reference the translucent --nv-card token')
   })
 
@@ -69,44 +72,48 @@ describe('Manual repair — macro chart popup uses a near-opaque analytical surf
     assert.ok(!rule![0].includes('backdrop-filter'))
   })
 
-  it('5. the dimmed page scrim is preserved, unchanged', () => {
-    assert.match(src, /nv-scrim fixed inset-0 z-50 flex items-center justify-center p-4/)
+  it('5. the dimmed page scrim is preserved (rendered by ModalShell)', () => {
+    assert.match(shell, /nv-scrim absolute inset-0/)
   })
 
-  it('6. the rounded Fable modal shape is preserved via existing radius/border/shadow tokens, not hardcoded', () => {
-    assert.match(popupBlock, /borderRadius:\s*'var\(--radius-module\)'/)
-    assert.match(popupBlock, /border:\s*'1px solid var\(--nv-bd\)'/)
-    assert.match(popupBlock, /boxShadow:\s*'var\(--nv-sh-palette\)'/)
+  it('6. the rounded Fable modal shape comes from existing radius/border/shadow tokens, not hardcoded values', () => {
+    const denseStyle = shell.slice(shell.indexOf('dense'))
+    assert.match(denseStyle, /borderRadius: 'var\(--radius-module\)'/)
+    assert.match(denseStyle, /border: '1px solid var\(--nv-bd\)'/)
+    assert.match(denseStyle, /boxShadow: 'var\(--shadow-palette\)'/)
   })
 
-  it('7. no hardcoded hex color was introduced by the repair', () => {
+  it('7. no hardcoded hex color in the popup block', () => {
     assert.ok(!/#[0-9a-fA-F]{3,8}\b/.test(popupBlock), 'popup block contains a hardcoded hex colour')
   })
 
-  it('8. the chart, timeframe control, source badge/footer, and close action all remain inside the popup', () => {
+  it('8. the chart, timeframe control, source badge, and localized close action all remain inside the popup', () => {
     assert.match(popupBlock, /<LineChart data=\{liveChart \?\? historyData\}/)
     assert.match(popupBlock, /<SegmentedControl/)
     assert.match(popupBlock, /<DataSourceBadge status=\{histStatus\} provider=\{chartProvider\}/)
-    assert.match(popupBlock, /aria-label=\{t\.fable\.panel\.close\}/)
+    assert.match(shell, /aria-label=\{t\.fable\.panel\.close\}/)
   })
 
   it('9. the unavailable/no-history state still routes through the shared AsyncState component', () => {
     assert.match(popupBlock, /<AsyncState kind="unavailable" message=\{t\.macro\.noHistory\}\s*\/>/)
   })
 
-  it('10. responsive containment classes (size, max-height, scroll) are unchanged', () => {
-    assert.match(popupBlock, /w-full max-w-3xl p-5 max-h-\[90vh\] overflow-y-auto/)
+  it('10. responsive containment (size cap, max-height, internal scroll) comes from the shared shell', () => {
+    assert.match(popupBlock, /size="lg"/)
+    assert.match(shell, /lg: 'max-w-3xl'/)
+    assert.match(shell, /max-h-\[85vh\]/)
+    assert.match(shell, /overflow-y-auto/)
   })
 
-  it('11. the popup entrance animation is unchanged and stays subject to the shared reduced-motion rule', () => {
-    assert.match(popupBlock, /nv-surface-dense nv-pop/)
+  it('11. the popup entrance animation stays subject to the shared reduced-motion rule', () => {
+    assert.match(shell, /nv-pop/)
     const reduced = css.slice(css.indexOf('prefers-reduced-motion'))
     assert.match(reduced, /\.nv-reveal[^}]*\n?[^}]*opacity:\s*1\s*!important/s)
   })
 
   it('12. no API route, provider, series-registry, or calculation file is referenced by this change', () => {
-    // The popup edit touches only className/style on an existing element —
-    // confirm the surrounding data-fetch/state wiring markers are untouched.
+    // The popup edit touches only presentation — confirm the surrounding
+    // data-fetch/state wiring markers are untouched.
     assert.match(src, /const \[selected, setSelected\]/)
     assert.match(src, /const openRow = \(r: Row\)/)
     assert.match(src, /chartProvider/)

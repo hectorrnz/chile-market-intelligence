@@ -1,4 +1,12 @@
 // Phase 5F — /macro/calendar re-skinned into the Fable institutional language.
+// Phase R5 — deepened to full approved-Fable fidelity: the shared PageHeader
+// (same baseline row as /macro and the R3/R4 routes) with the back link and
+// scope sentence in its metadata, the no-consensus/deferred pills on the
+// shared ChipLabel primitive, and — in the shared EconomicCalendarTable —
+// the Fable releases-card anatomy: accent-2 date treatment and a visible
+// localized importance chip replacing the color-only dot (the color mapping
+// itself is unchanged; High keeps the platform-wide --negative signal, a
+// documented departure from Fable's amber HIGH chip).
 //
 // The contract this file locks down: the page LOOKS different and NOTHING
 // about what it shows or does changed. Every section, calendar column, FOMC
@@ -26,10 +34,15 @@ const count = (haystack: string, needle: string) => haystack.split(needle).lengt
 // ─── 1. Every section survives ────────────────────────────────────────────────
 
 describe('Phase 5F — every Calendar section survives the re-skin', () => {
-  it('keeps the "← Back to Macro" link and the page header', () => {
+  it('keeps the "← Back to Macro" link and the page header (R5: shared Fable PageHeader, back link in the metadata row)', () => {
     assert.match(src, /href="\/macro"/)
     assert.match(src, /\{t\.cal\.back\}/)
-    assert.match(src, /<SectionHeader tag=\{t\.macro\.tag\} title=\{t\.cal\.title\} subtitle=\{t\.cal\.subtitle\}\s*\/>/)
+    assert.match(src, /<PageHeader/)
+    assert.match(src, /from '@\/components\/fable\/PageHeader'/)
+    assert.match(src, /eyebrow=\{t\.macro\.tag\}/)
+    assert.match(src, /title=\{t\.cal\.title\}/)
+    assert.match(src, /\{t\.cal\.subtitle\}/)
+    assert.ok(!src.includes('SectionHeader'), 'the pre-Fable SectionHeader is superseded by the shared PageHeader (R5)')
   })
 
   it('keeps the FRED release calendar card with its "no consensus" indicator', () => {
@@ -59,7 +72,9 @@ describe('Phase 5F — every calendar column and its data honesty preserved', ()
   const table = read(CALENDAR_TABLE)
 
   it('keeps all 7 columns in order (Date, Release, Metric, Actual, Previous, Source, Imp.)', () => {
-    const order = ['t.cal.fredDate', 't.cal.fredRelease', 't.cal.metricCol', 't.cal.actualCol', 't.cal.previousCol', 't.cal.srcCol', 't.cal.imp']
+    // `t.cal.imp}` (the header cell) — a bare `t.cal.imp` would first match the
+    // R5 impLabel helper's `t.cal.impHigh` above the table markup.
+    const order = ['t.cal.fredDate', 't.cal.fredRelease', 't.cal.metricCol', 't.cal.actualCol', 't.cal.previousCol', 't.cal.srcCol', 't.cal.imp}']
     const positions = order.map(k => table.indexOf(k))
     assert.ok(positions.every(p => p >= 0), 'a calendar column header is missing')
     for (let i = 1; i < positions.length; i++) {
@@ -93,9 +108,15 @@ describe('Phase 5F — every calendar column and its data honesty preserved', ()
     assert.match(table, /title=\{t\.cal\.srcTitle\}/)
   })
 
-  it('the importance dot is preserved with its color mapping and title', () => {
+  it('the importance classification is preserved with its color mapping — R5.1 encodes it as a relevance bar meter', () => {
     assert.match(table, /const impColor = \(imp: EnrichedFredCalendarEvent\['importance'\]\) =>/)
-    assert.match(table, /title=\{r\.event\.importance\}/)
+    // The color mapping itself is unchanged — High keeps --negative.
+    assert.match(table, /imp === 'High' \? 'var\(--negative\)' : imp === 'Medium' \? 'var\(--warning\)' : 'var\(--muted-fg\)'/)
+    // Not color-only: bar COUNT is the primary signal, plus a localized
+    // accessible name, a title, and sr-only text.
+    assert.match(table, /const impLabel = \(imp: EnrichedFredCalendarEvent\['importance'\]\) =>/)
+    assert.match(table, /<RelevanceBars importance=\{r\.event\.importance\}\s*\/>/)
+    assert.ok(!table.includes('w-2 h-2 rounded-full'), 'the color-only dot is gone')
   })
 })
 
@@ -240,9 +261,10 @@ describe('Phase 5F — Fable visual language applied via shared primitives', () 
     assert.match(table, /<AsyncState kind="empty" message=\{emptyMessage\}\s*\/>/)
   })
 
-  it('restyles the pills (no-consensus, deferred) to the Fable chip language', () => {
-    assert.ok(count(src, "backgroundColor: 'var(--nv-chip)'") >= 1)
-    assert.ok(count(src, "border: '1px solid var(--nv-chipbd)'") >= 1)
+  it('restyles the pills (no-consensus, deferred) to the shared Fable ChipLabel primitive (R5 — no hand-rolled chip recipe left)', () => {
+    assert.match(src, /from '@\/components\/fable\/Chip'/)
+    assert.equal(count(src, '<ChipLabel>'), 2)
+    assert.ok(!src.includes("backgroundColor: 'var(--nv-chip)'"), 'the inline chip recipe is superseded by ChipLabel')
   })
 
   it('uses the tokenised table-cell type scale on the FOMC table', () => {
@@ -402,5 +424,94 @@ describe('Phase 5F — scope held', () => {
 
   it('changes no API contract from the page', () => {
     assert.ok(!src.includes("fetch('/api"))
+  })
+})
+
+// ─── Phase R5 — approved-Fable deepening ──────────────────────────────────────
+
+describe('Phase R5 — /macro/calendar joins the shared Fable header family', () => {
+  const table = read(CALENDAR_TABLE)
+
+  it('the header family matches /macro and R3/R4 (PageHeader eyebrow/title/metadata anatomy)', () => {
+    assert.match(src, /metadata=\{/)
+    assert.match(read('src/components/fable/PageHeader.tsx'), /ui-page-title/)
+  })
+
+  it('route navigation stays real links — the back link in the metadata plus the shell pill rail', () => {
+    assert.match(src, /metadata=\{[\s\S]{0,300}?href="\/macro"/, 'the header metadata carries the back link')
+    const nav = read('src/lib/navigation.ts')
+    assert.match(nav, /href: '\/macro\/calendar'/)
+  })
+
+  it('the date column carries the Fable releases-card treatment (accent-2, 650) — chronology anchored, chronological sort untouched', () => {
+    assert.match(table, /text-accent-2/)
+    assert.match(table, /fontWeight: 650/)
+    assert.match(table, /events\.slice\(\)\.sort\(\(a, b\) => a\.date\.localeCompare\(b\.date\)\)/)
+  })
+
+  it('the relevance labels are localized in both dictionaries and never fabricated beyond the existing High/Medium/Low model', () => {
+    for (const key of ['impHigh:', 'impMedium:', 'impLow:', 'impTitle:', 'relevanceLabel:']) {
+      assert.ok(count(i18n, key) >= 2, `${key} must be present in dict.en and dict.es`)
+    }
+    // The meter renders only the three classifications the allowlist model
+    // defines — no importance filter and no new importance values.
+    const allowlist = read('src/config/fredReleaseAllowlist.ts')
+    assert.match(allowlist, /importance: 'High' \| 'Medium' \| 'Low'/)
+  })
+
+  it('no browser-native dialog is introduced on this route', () => {
+    assert.ok(!/window\.(confirm|alert|prompt)\(/.test(src))
+    assert.ok(!/window\.(confirm|alert|prompt)\(/.test(table))
+  })
+})
+
+// ─── Phase R5.1 — relevance bar meter ─────────────────────────────────────────
+
+describe('Phase R5.1 — relevance is encoded as a compact Fable bar meter', () => {
+  const table = read(CALENDAR_TABLE)
+
+  it('maps exactly the three real levels to 1/2/3 filled bars — no invented fourth level', () => {
+    assert.match(table, /const FILLED: Record<EnrichedFredCalendarEvent\['importance'\], number> = \{ Low: 1, Medium: 2, High: 3 \}/)
+    assert.match(table, /const BAR_HEIGHT = \[5, 8, 11\]/)
+    assert.match(table, /i < filled/)
+    const allowlist = read('src/config/fredReleaseAllowlist.ts')
+    assert.match(allowlist, /importance: 'High' \| 'Medium' \| 'Low'/)
+    assert.ok(!/Critical|Severe|VeryHigh/.test(table), 'no fabricated importance level')
+  })
+
+  it('is never color-only: bar count is the signal, plus aria-label, title and sr-only text', () => {
+    assert.match(table, /role="img"/)
+    assert.match(table, /aria-label=\{name\}/)
+    assert.match(table, /const name = `\$\{t\.cal\.relevanceLabel\}: \$\{impLabel\(importance\)\}`/)
+    assert.match(table, /title=\{`\$\{name\} · \$\{t\.cal\.impTitle\}`\}/)
+    assert.match(table, /<span className="sr-only">\{impLabel\(importance\)\}<\/span>/)
+    assert.match(table, /aria-hidden="true"/)
+  })
+
+  it('uses Fable tokens only — no hardcoded hex, no raw Tailwind colour scale, unfilled track via color-mix', () => {
+    assert.ok(!/#[0-9a-fA-F]{3,8}\b/.test(table), 'contains a hardcoded hex colour')
+    assert.ok(
+      !/\b(bg|text|border)-(gray|slate|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}\b/.test(table),
+      'uses a raw Tailwind colour scale',
+    )
+    assert.match(table, /color-mix\(in oklab, var\(--muted-fg\) 24%, transparent\)/)
+  })
+
+  it('keeps rows calm and stable — fixed meter height, compact bar width, dense radius, no motion', () => {
+    assert.match(table, /className="inline-flex items-end gap-\[2px\] h-3 align-middle"/)
+    assert.match(table, /className="block w-\[3px\] rounded-xs"/)
+    assert.ok(!/animate-|transition-|@keyframes/.test(table), 'the meter introduces no motion')
+  })
+
+  it('the word chip it replaces is gone, and the column narrowed to fit the meter', () => {
+    assert.ok(!table.includes('h-6 px-2.5 rounded-full text-xs font-medium whitespace-nowrap'), 'the importance word chip is gone')
+    assert.match(table, /ui-table-header text-muted-fg w-16">\{t\.cal\.imp\}/)
+  })
+
+  it('chronology, ordering and every other column are untouched by the repair', () => {
+    assert.match(table, /events\.slice\(\)\.sort\(\(a, b\) => a\.date\.localeCompare\(b\.date\)\)/)
+    assert.match(table, /\{r\.firstOfEvent \? <RelevanceBars/)
+    assert.match(table, /m\.actualText \?\? fmtValue\(m\.actual, m\.unit, m\.decimals\)/)
+    assert.match(table, /\{m\.originatingAgency\}/)
   })
 })

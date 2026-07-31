@@ -46,6 +46,49 @@ export function EconomicCalendarTable({ events, emptyMessage }: { events: Enrich
   const impColor = (imp: EnrichedFredCalendarEvent['importance']) =>
     imp === 'High' ? 'var(--negative)' : imp === 'Medium' ? 'var(--warning)' : 'var(--muted-fg)'
 
+  // R5 — the color-only importance dot became a visible, localized signal so
+  // the classification never depends on color (or a hover title) alone. The
+  // color mapping itself is unchanged — High keeps the platform-wide
+  // --negative signal.
+  const impLabel = (imp: EnrichedFredCalendarEvent['importance']) =>
+    imp === 'High' ? t.cal.impHigh : imp === 'Medium' ? t.cal.impMedium : t.cal.impLow
+
+  // R5.1 — relevance is encoded as a compact ascending bar meter (High 3 /
+  // Medium 2 / Low 1 filled of 3) rather than a word chip: bar COUNT is the
+  // primary signal, scannable down the column at a glance, with the tone
+  // carried as reinforcement only. The data model defines exactly three
+  // levels (fredReleaseAllowlist.ts) — no fourth level is invented.
+  const FILLED: Record<EnrichedFredCalendarEvent['importance'], number> = { Low: 1, Medium: 2, High: 3 }
+  const BAR_HEIGHT = [5, 8, 11]
+
+  const RelevanceBars = ({ importance }: { importance: EnrichedFredCalendarEvent['importance'] }) => {
+    const filled = FILLED[importance]
+    const name = `${t.cal.relevanceLabel}: ${impLabel(importance)}`
+    return (
+      <span
+        role="img"
+        aria-label={name}
+        title={`${name} · ${t.cal.impTitle}`}
+        className="inline-flex items-end gap-[2px] h-3 align-middle"
+      >
+        {BAR_HEIGHT.map((h, i) => (
+          <span
+            key={i}
+            aria-hidden="true"
+            className="block w-[3px] rounded-xs"
+            style={{
+              height: h,
+              backgroundColor: i < filled
+                ? impColor(importance)
+                : 'color-mix(in oklab, var(--muted-fg) 24%, transparent)',
+            }}
+          />
+        ))}
+        <span className="sr-only">{impLabel(importance)}</span>
+      </span>
+    )
+  }
+
   if (rows.length === 0) {
     return <AsyncState kind="empty" message={emptyMessage} />
   }
@@ -61,7 +104,7 @@ export function EconomicCalendarTable({ events, emptyMessage }: { events: Enrich
           <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-right py-2.5 px-3 sticky top-0 z-10 border-b border-border ui-table-header text-muted-fg w-24">{t.cal.actualCol}</th>
           <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-right py-2.5 px-3 sticky top-0 z-10 border-b border-border ui-table-header text-muted-fg w-24">{t.cal.previousCol}</th>
           <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-center py-2.5 px-3 sticky top-0 z-10 border-b border-border ui-table-header text-muted-fg w-20">{t.cal.srcCol}</th>
-          <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-center py-2.5 px-3 pr-4 sticky top-0 z-10 border-b border-border ui-table-header text-muted-fg w-12">{t.cal.imp}</th>
+          <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-center py-2.5 px-3 pr-4 sticky top-0 z-10 border-b border-border ui-table-header text-muted-fg w-16">{t.cal.imp}</th>
         </tr>
       </thead>
       <tbody>
@@ -70,7 +113,9 @@ export function EconomicCalendarTable({ events, emptyMessage }: { events: Enrich
           const pending = m?.status === 'pending'
           return (
             <tr key={`${r.event.id}-${m?.key ?? 'na'}-${i}`} className="border-b border-border last:border-0 nv-row-hover nv-transition">
-              <td className="py-2 pl-4 pr-3 ui-number text-muted-fg whitespace-nowrap">{r.firstOfEvent ? r.event.date : ''}</td>
+              {/* R5 — the Fable releases-card date treatment (accent-2, 650) so
+                  the chronological anchor of each event group reads at a glance. */}
+              <td className="py-2 pl-4 pr-3 ui-number whitespace-nowrap text-accent-2" style={{ fontWeight: 650 }}>{r.firstOfEvent ? r.event.date : ''}</td>
               <td className="py-2 px-3 text-foreground">
                 {r.firstOfEvent ? (
                   <a href={r.event.sourceUrl} target="_blank" rel="noopener noreferrer" className="hover:underline">{r.event.name}</a>
@@ -92,7 +137,7 @@ export function EconomicCalendarTable({ events, emptyMessage }: { events: Enrich
                 {m ? <span className="text-[10px] px-1 py-0.5 rounded-full nv-transition" style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)', color: 'var(--muted-fg)' }} title={t.cal.srcTitle}>{m.originatingAgency}</span> : ''}
               </td>
               <td className="py-2 px-3 pr-4 text-center">
-                {r.firstOfEvent ? <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: impColor(r.event.importance) }} title={r.event.importance} /> : ''}
+                {r.firstOfEvent ? <RelevanceBars importance={r.event.importance} /> : ''}
               </td>
             </tr>
           )

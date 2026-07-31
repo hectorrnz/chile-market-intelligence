@@ -199,7 +199,7 @@ loading state · empty state · error state · auth status — verified identica
   hardcoded-English defects fixed in passing (the `vs` ticker separator; the metric-chip remove
   button's `aria-label="Remove"`). No reset/save/print action was invented (none existed); no
   `asOf` timestamp was invented (this route never had one).*
-- [x] `/macro` — calendar embed (US) + banded indicators + yield curve + FX depth (US) + chart
+- [~] `/macro` — calendar embed (US) + banded indicators + yield curve + FX depth (US) + chart
   popup; region via sidebar `macro:region`; Update; public.
   *Phase 5F (2026-07-28). All 5 content sections, all 6 CL / 6 US category bands in their original
   order, all 26 indicators + 7 Chile-rate rows, the live/static yield-curve tenor precedence
@@ -216,7 +216,15 @@ loading state · empty state · error state · auth status — verified identica
   deliberately left as the original `changeColor()` text to avoid touching an unrelated
   pre-existing business-logic test (`tests/frankfurterFx.test.ts`) that asserts the FX ternary
   verbatim within a fixed character window.*
-- [x] `/macro/calendar` — FRED calendar + FOMC outlook + Chile deferred; back link; public.
+  *(R5 2026-07-31: deepened to the R3/R4 family — `SectionHeader` → shared `PageHeader` (region
+  source subtitle + a new ALWAYS-visible `/macro/calendar` link in the metadata; before R5 the
+  Chile region had no in-page path to the calendar), the hand-rolled chart-popup dialog → shared
+  `ModalShell` (`dense`/`size="lg"`, R4.1 dialog system — gains focus trap/restore + body-scroll
+  lock; page-local `useEscape`/scrim/aria plumbing deleted), region chip → `ChipLabel`. Zero data/
+  API/state changes — guarded by the updated `fableMacroPage` suite (+5 R5 cases) and the rewritten
+  `fableMacroChartModalOpacity` shell-level contract. Checkbox reverted to `[~]`: the R5 visuals
+  await a manual browser pass at 1728/1024/390, EN/ES, light/dark, reduced-motion.)*
+- [~] `/macro/calendar` — FRED calendar + FOMC outlook + Chile deferred; back link; public.
   *Phase 5F (2026-07-28). All 3 cards, all 7 FRED-calendar columns + all 5 FOMC columns in their
   original order, the dates-only-vs-enriched distinction, the honest Chile-deferred disclosure, and
   both `TableSourceFooter` instances are preserved — locked by 56 tests in
@@ -226,6 +234,37 @@ loading state · empty state · error state · auth status — verified identica
   the same pass: near-opaque header, `scope="col"`/`sr-only` caption, its own empty state now routed
   through the shared `AsyncState` component. No forecast/consensus/synthetic-event was invented;
   no Chile row fabricated.*
+  *(R5 2026-07-31: deepened to the R3/R4 family — `SectionHeader` → shared `PageHeader` (back link
+  + honest scope sentence in the metadata row), local `pill()` → shared `ChipLabel`, and in the
+  shared `EconomicCalendarTable` the Fable releases-card anatomy: `text-accent-2`/650 date anchors
+  and the color-only importance dot upgraded to a visible localized chip (`impHigh/impMedium/
+  impLow` ×EN/ES, `color-mix` pill, app-assigned-heuristic tooltip) — an a11y fix; the color
+  mapping itself is unchanged (High keeps `--negative`, a documented departure from Fable's amber
+  HIGH). Chronological sort, Actual/Previous honesty, Chile-deferred disclosure and both footers
+  untouched — guarded by the updated `fableMacroCalendarPage` suite (+5 R5 cases). Checkbox
+  reverted to `[~]` pending the R5 manual browser pass.)*
+  *(R5.1 2026-07-31: the importance word chip became a compact **relevance bar meter** — the
+  Bloomberg idea (bar count = relevance) rendered entirely in Fable material: High 3 / Medium 2 /
+  Low 1 filled of 3, 3px bars at 5/8/11px, `rounded-xs`, fixed `h-3` box (row heights stable),
+  filled bars on the unchanged tone mapping and an unfilled `color-mix` track; Imp. column `w-20`
+  → `w-16`. Count is the signal, colour only reinforces — `role="img"` + localized `aria-label`
+  ("Relevance: High" / "Relevancia: Alta") + `title` carrying the app-assigned-heuristic note +
+  `sr-only` text, bars `aria-hidden`. One new key pair `cal.relevanceLabel`. No data, ordering,
+  or column change — guarded by the new R5.1 describe (6 cases). Manual pass still pending.)*
+  *(R5.2 2026-07-31 — data-integrity repair: every Actual/Previous read `unavailable` because
+  FRED's **keyless CSV graph endpoint stopped serving programmatic requests** (verified live:
+  status 000 / 0 bytes / 40s from curl AND Node under three User-Agents, while Frankfurter, Yahoo
+  and example.com returned 200 from the same machine). Release DATES kept working because they use
+  a different host (keyed `api.stlouisfed.org`). `fetchFredSeries` now prefers FRED's official
+  keyed JSON observations API on that same working host when `FRED_API_KEY` is set, keeping the CSV
+  endpoint as the zero-env-var path and the fallback — same official source, no new vendor, no
+  scraping, no consensus. Verified end-to-end on real data: **16/16 metrics published, 0
+  unavailable** across BLS/BEA/Census/Fed, monthly + quarterly, with the FOMC band preserved as a
+  RANGE (`3.50%–3.75%`, no invented midpoint) and forward releases correctly `pending`. Added an
+  optional diagnostic `unavailableReason` so an outage is distinguishable from an unmapped release.
+  ADP and Existing Home Sales stay honestly dates-only. Guarded by
+  `tests/calendarEnrichmentRepair.test.ts` (42 cases, fully mocked). Manual browser pass still
+  pending.)*
 - [x] `/earnings` — upcoming + recent results tables; Update/CSV; loading/empty; public.
   *Phase 5G (2026-07-29). Both tables, all 3 Upcoming columns and all 11 Recent Results columns in
   their original order, every ticker link, per-row currency, YoY field, the bank-no-EBITDA tooltip,

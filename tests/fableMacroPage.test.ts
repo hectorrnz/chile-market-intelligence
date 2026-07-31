@@ -1,4 +1,11 @@
 // Phase 5F — /macro re-skinned into the Fable institutional language.
+// Phase R5 — deepened to full approved-Fable fidelity: the shared PageHeader
+// (the same 19px/650 baseline row as the R3/R4 routes), an always-visible
+// calendar link in the header metadata (previously the Chile region had no
+// in-page path to /macro/calendar at all), the region chip on the shared
+// ChipLabel primitive, and the hand-rolled chart popup replaced by the shared
+// ModalShell (R4.1 dialog system: focus trap + restore, Escape, scrim,
+// body-scroll lock — dense analytical surface preserved).
 //
 // The contract this file locks down: the page LOOKS different and NOTHING
 // about what it shows or does changed. Every section, category band, series,
@@ -32,13 +39,15 @@ const count = (haystack: string, needle: string) => haystack.split(needle).lengt
 // ─── 1. Every section survives ────────────────────────────────────────────────
 
 describe('Phase 5F — every Macro section survives the re-skin', () => {
-  it('keeps the page header with tag, title, region-aware subtitle and actions', () => {
-    assert.match(src, /<SectionHeader/)
-    assert.match(src, /tag=\{t\.macro\.tag\}/)
+  it('keeps the page header with tag, title, region-aware subtitle and actions (R5: shared Fable PageHeader)', () => {
+    assert.match(src, /<PageHeader/)
+    assert.match(src, /from '@\/components\/fable\/PageHeader'/)
+    assert.match(src, /eyebrow=\{t\.macro\.tag\}/)
     assert.match(src, /title=\{t\.macro\.title\}/)
-    assert.match(src, /subtitle=\{region === 'CL' \? t\.macro\.clSubtitle : t\.macro\.usSubtitle\}/)
+    assert.match(src, /\{region === 'CL' \? t\.macro\.clSubtitle : t\.macro\.usSubtitle\}/)
     assert.match(src, /<UpdateDataButton onRefresh=\{doRefresh\}\s*\/>/)
     assert.match(src, /<DataSourceBadge status=\{srcStatus\} provider=\{srcProvider\}\s*\/>/)
+    assert.ok(!src.includes('SectionHeader'), 'the pre-Fable SectionHeader is superseded by the shared PageHeader (R5)')
   })
 
   it('keeps the US-only economic calendar embed with its link to the full calendar', () => {
@@ -61,9 +70,14 @@ describe('Phase 5F — every Macro section survives the re-skin', () => {
     assert.match(src, /title=\{t\.macro\.fxDepth\}/)
   })
 
-  it('keeps the chart popup modal, Esc-closable', () => {
-    assert.match(src, /useEscape\(!!selected, \(\) => setSelected\(null\)\)/)
-    assert.match(src, /role="dialog" aria-modal="true" aria-label=\{selected\.label\}/)
+  it('keeps the chart popup modal, Esc-closable (R5: via the shared ModalShell, which owns Escape/focus/scrim)', () => {
+    assert.match(src, /from '@\/components\/fable\/ModalShell'/)
+    assert.match(src, /\{selected && \(\s*\n\s*<ModalShell/)
+    assert.match(src, /onClose=\{\(\) => setSelected\(null\)\}/)
+    assert.ok(!src.includes('useEscape'), 'Escape handling moved into the shared ModalShell — no page-local copy')
+    const shell = read('src/components/fable/ModalShell.tsx')
+    assert.match(shell, /useEscape\(open && canDismiss, onClose\)/)
+    assert.match(shell, /aria-modal="true"/)
   })
 
   it('adds no invented KPI, hero, or summary metric to this route', () => {
@@ -388,15 +402,19 @@ describe('Phase 5F — Fable visual language applied via shared primitives', () 
     assert.equal(count(src, '<SegmentedControl'), 1)
   })
 
-  it('restyles the chart popup modal onto the scrim + near-opaque dense analytical surface, never low-opacity glass', () => {
-    assert.match(src, /nv-scrim fixed inset-0/)
-    assert.match(src, /nv-surface-dense nv-pop/)
+  it('renders the chart popup on the scrim + near-opaque dense analytical surface, never low-opacity glass (R5: ModalShell dense mode)', () => {
+    // The dense-surface guarantee moved into the shared ModalShell (`dense`
+    // prop) — tests/fableMacroChartModalOpacity.test.ts locks the tier itself.
+    assert.match(src, /size="lg"\s*\n\s*dense/)
     assert.ok(!src.includes('nv-glass-overlay'), 'the popup must not use the translucent Tier-5 overlay glass (opacity/readability defect)')
+    const shell = read('src/components/fable/ModalShell.tsx')
+    assert.match(shell, /dense \? 'nv-surface-dense' : 'nv-glass-overlay'/)
   })
 
-  it('restyles the region chip and calendar/deferred pills to the Fable chip language', () => {
-    assert.ok(count(src, "backgroundColor: 'var(--nv-chip)'") >= 1)
-    assert.ok(count(src, "border: '1px solid var(--nv-chipbd)'") >= 1)
+  it('restyles the region chip to the shared Fable ChipLabel primitive (R5 — no hand-rolled chip recipe left on the page)', () => {
+    assert.match(src, /from '@\/components\/fable\/Chip'/)
+    assert.match(src, /<ChipLabel/)
+    assert.ok(!src.includes("backgroundColor: 'var(--nv-chip)'"), 'the inline chip recipe is superseded by ChipLabel')
   })
 
   it('uses the tokenised table-cell type scale on every table', () => {
@@ -438,8 +456,9 @@ describe('Phase 5F — motion is restrained and reduced-motion safe', () => {
     assert.ok(!/animation:/.test(src))
   })
 
-  it('the chart popup uses the established nv-pop overlay entrance, not a bespoke transition', () => {
-    assert.match(src, /nv-pop/)
+  it('the chart popup uses the established nv-pop overlay entrance, not a bespoke transition (R5: carried by ModalShell)', () => {
+    assert.match(read('src/components/fable/ModalShell.tsx'), /nv-pop/)
+    assert.ok(!src.includes('@keyframes'), 'no page-local entrance animation')
   })
 
   it('the reveal primitive collapses to its final state under reduced motion (shared global rule, unchanged)', () => {
@@ -461,9 +480,13 @@ describe('Phase 5F — accessibility', () => {
     assert.match(src, /ariaLabel=\{t\.macro\.timeframeLabel\}/)
   })
 
-  it('the popup dialog has a data-driven accessible name and a labelled close control', () => {
-    assert.match(src, /role="dialog" aria-modal="true" aria-label=\{selected\.label\}/)
-    assert.match(src, /aria-label=\{t\.fable\.panel\.close\}/)
+  it('the popup dialog has a data-driven accessible name and a labelled close control (R5: via ModalShell)', () => {
+    // ModalShell labels the dialog from its `title` prop via aria-labelledby
+    // and renders the localized close control itself.
+    assert.match(src, /title=\{selected\.label\}/)
+    const shell = read('src/components/fable/ModalShell.tsx')
+    assert.match(shell, /aria-labelledby=\{titleId\}/)
+    assert.match(shell, /aria-label=\{t\.fable\.panel\.close\}/)
   })
 
   it('a chartable row exposes a distinct, localized accessible name', () => {
@@ -610,5 +633,43 @@ describe('Phase 5F — scope held', () => {
 
   it('changes no API contract from the page', () => {
     assert.ok(!src.includes("fetch('/api"))
+  })
+})
+
+// ─── Phase R5 — approved-Fable deepening ──────────────────────────────────────
+
+describe('Phase R5 — /macro joins the shared Fable header/dialog family', () => {
+  it('the calendar link is always visible in the header metadata — both regions, not only inside the US embed', () => {
+    // Before R5 the only in-page path to /macro/calendar sat inside the
+    // US-only calendar embed, so the Chile region had no link at all.
+    assert.equal(count(src, 'href="/macro/calendar"'), 2, 'header metadata link + US embed link')
+    assert.equal(count(src, 't.macro.viewFull'), 2)
+    assert.match(src, /metadata=\{[\s\S]{0,400}?href="\/macro\/calendar"/, 'the header metadata carries the calendar link')
+  })
+
+  it('route navigation between Macro and Calendar stays real links — shell pill rail + header metadata, no client-only fake navigation', () => {
+    const nav = read('src/lib/navigation.ts')
+    assert.match(nav, /\{ key: 'macroIndicators', href: '\/macro', label: \(t\) => t\.nav\.macroIndicators \}/)
+    assert.match(nav, /\{ key: 'macroCalendar', href: '\/macro\/calendar', label: \(t\) => t\.nav\.macroCalendar \}/)
+    const secondary = read('src/components/layout/SecondaryNav.tsx')
+    assert.match(secondary, /aria-current=\{active \? 'page' : undefined\}/)
+  })
+
+  it('the chart popup is the shared ModalShell — no page-local dialog markup remains', () => {
+    assert.ok(!src.includes('role="dialog"'), 'no hand-rolled dialog role on the page')
+    assert.ok(!src.includes('aria-modal'), 'aria-modal is ModalShell responsibility')
+    assert.ok(!src.includes('nv-scrim'), 'the scrim is ModalShell responsibility')
+    assert.ok(!src.includes('stopPropagation'), 'no manual scrim-click plumbing')
+  })
+
+  it('no browser-native dialog is introduced on this route', () => {
+    assert.ok(!/window\.(confirm|alert|prompt)\(/.test(src))
+    assert.ok(!/globalThis\.(confirm|alert|prompt)\(/.test(src))
+  })
+
+  it('the header family matches R3/R4 (PageHeader eyebrow/title/metadata anatomy, ui-page-title scale)', () => {
+    const header = read('src/components/fable/PageHeader.tsx')
+    assert.match(header, /ui-page-title/)
+    assert.match(src, /metadata=\{/)
   })
 })

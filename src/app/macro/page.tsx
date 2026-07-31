@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { SectionHeader } from '@/components/ui/SectionHeader'
+import { PageHeader } from '@/components/fable/PageHeader'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
 import { EconomicCalendarTable } from '@/components/macro/EconomicCalendarTable'
@@ -10,7 +10,6 @@ import { useLang } from '@/components/providers/LangProvider'
 import { useMacroData } from '@/components/providers/MacroDataProvider'
 import { useGlobalRefresh } from '@/components/providers/useGlobalRefresh'
 import { usePersistentState } from '@/lib/usePersistentState'
-import { useEscape } from '@/lib/useEscape'
 import { getAllIndicators, fetchMacroIndicators } from '@/lib/data/macro'
 import { getChileanRates } from '@/lib/data/chileanRates'
 import { getYieldCurve } from '@/lib/data/yieldCurves'
@@ -32,6 +31,8 @@ import { TableCard } from '@/components/fable/TableCard'
 import { GlassSurface } from '@/components/fable/GlassSurface'
 import { SegmentedControl } from '@/components/fable/SegmentedControl'
 import { AsyncState } from '@/components/fable/AsyncState'
+import { ModalShell } from '@/components/fable/ModalShell'
+import { ChipLabel } from '@/components/fable/Chip'
 import { Reveal } from '@/components/fable/motion'
 import type { MacroIndicator } from '@/types'
 
@@ -66,7 +67,6 @@ export default function MacroPage() {
   const [region, setRegion] = usePersistentState<Region>('cmi.macroRegion', 'CL')
   const [selected, setSelected] = useState<Row | null>(null)
   const [timeframe, setTimeframe] = useState<Timeframe>(5)
-  useEscape(!!selected, () => setSelected(null))
 
   // Region is driven by the sidebar Macro dropdown (Chile / US)
   useEffect(() => {
@@ -268,21 +268,30 @@ export default function MacroPage() {
   return (
     <div className="w-full space-y-4">
       <Reveal>
-        <SectionHeader
-          tag={t.macro.tag}
+        {/* R5 — the shared Fable PageHeader (same 19px/650 baseline row as every
+            re-skinned route). The calendar link lives in the header metadata so
+            it is reachable from BOTH regions — previously the only in-page path
+            to /macro/calendar was inside the US-only calendar embed, leaving the
+            Chile region with no link at all. The shell's SecondaryNav pill rail
+            (Indicators | Calendar + the Chile/US region control) remains the
+            primary navigation on desktop; this is the in-content complement. */}
+        <PageHeader
+          eyebrow={t.macro.tag}
           title={t.macro.title}
-          subtitle={region === 'CL' ? t.macro.clSubtitle : t.macro.usSubtitle}
+          metadata={
+            <>
+              <span>{region === 'CL' ? t.macro.clSubtitle : t.macro.usSubtitle}</span>
+              <Link href="/macro/calendar" className="text-primary hover:underline whitespace-nowrap">{t.macro.viewFull}</Link>
+            </>
+          }
           actions={
-            <div className="flex items-center gap-2.5">
+            <>
               <UpdateDataButton onRefresh={doRefresh} />
               <DataSourceBadge status={srcStatus} provider={srcProvider} />
-              <span
-                className="text-xs px-2.5 py-1 rounded-full nv-transition text-foreground font-medium"
-                style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' }}
-              >
+              <ChipLabel className="text-foreground font-medium">
                 {region === 'CL' ? t.macro.regionCL : t.macro.regionUS}
-              </span>
-            </div>
+              </ChipLabel>
+            </>
           }
         />
       </Reveal>
@@ -446,45 +455,43 @@ export default function MacroPage() {
         </div>
       </Reveal>
 
-      {/* Chart popup modal (monthly frequency) */}
+      {/* Chart popup (monthly frequency) — the shared ModalShell (R4.1 dialog
+          system): dense analytical surface, focus trap + restore, Escape,
+          scrim dismissal and body-scroll lock all come from the one shared
+          shell, replacing this page's hand-rolled dialog markup. */}
       {selected && (
-        <div className="no-print nv-scrim fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setSelected(null)}>
-          <div
-            role="dialog" aria-modal="true" aria-label={selected.label}
-            className="nv-surface-dense nv-pop w-full max-w-3xl p-5 max-h-[90vh] overflow-y-auto"
-            style={{ borderRadius: 'var(--radius-module)', border: '1px solid var(--nv-bd)', boxShadow: 'var(--nv-sh-palette)' }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-4 mb-4">
-              <div>
-                <div className="ui-label text-muted-fg mb-0.5">{selected.label}</div>
-                <div className="flex items-baseline gap-1.5 mt-1.5">
-                  <span className="text-sm ui-number text-foreground">{formatMacroValue(selected.value, selected.unit)}</span>
-                  {selected.changeLabel && <span className={`text-xs ui-number ${selected.change != null ? changeColor(selected.change) : 'text-muted-fg'}`}>({formatMacroChange(selected.changeLabel)})</span>}
-                  <span className="text-xs text-muted-fg ml-1">{selected.period}</span>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <SegmentedControl
-                  options={TIMEFRAMES.map(tf => ({ value: String(tf), label: `${tf}Y` }))}
-                  value={String(timeframe)}
-                  onChange={v => setTimeframe(Number(v) as Timeframe)}
-                  ariaLabel={t.macro.timeframeLabel}
-                />
-                <button type="button" onClick={() => setSelected(null)} aria-label={t.fable.panel.close} className="ml-1 text-sm text-muted-fg hover:text-foreground px-2 py-1">✕</button>
-              </div>
-            </div>
-            {(liveChart ?? historyData).length >= 2 ? (
-              <LineChart data={liveChart ?? historyData} unit={selected.unit === '%' ? '%' : ''} height={240} />
-            ) : (
-              <AsyncState kind="unavailable" message={t.macro.noHistory} />
-            )}
-            <div className="flex items-center gap-2 mt-3">
-              <DataSourceBadge status={histStatus} provider={chartProvider} />
-              <span className="text-xs text-muted-fg">· {chartProvider === 'Yahoo Finance' ? 'Yahoo Finance' : chartProvider === 'FRED' ? t.macro.chartSourceFred : t.macro.chartSourceBcch}</span>
-            </div>
+        <ModalShell
+          open
+          onClose={() => setSelected(null)}
+          title={selected.label}
+          description={
+            <>
+              <span className="ui-number text-foreground">{formatMacroValue(selected.value, selected.unit)}</span>
+              {selected.changeLabel && <span className={`ui-number ml-1.5 ${selected.change != null ? changeColor(selected.change) : 'text-muted-fg'}`}>({formatMacroChange(selected.changeLabel)})</span>}
+              <span className="ml-1.5">{selected.period}</span>
+            </>
+          }
+          size="lg"
+          dense
+        >
+          <div className="flex justify-end mb-3">
+            <SegmentedControl
+              options={TIMEFRAMES.map(tf => ({ value: String(tf), label: `${tf}Y` }))}
+              value={String(timeframe)}
+              onChange={v => setTimeframe(Number(v) as Timeframe)}
+              ariaLabel={t.macro.timeframeLabel}
+            />
           </div>
-        </div>
+          {(liveChart ?? historyData).length >= 2 ? (
+            <LineChart data={liveChart ?? historyData} unit={selected.unit === '%' ? '%' : ''} height={240} />
+          ) : (
+            <AsyncState kind="unavailable" message={t.macro.noHistory} />
+          )}
+          <div className="flex items-center gap-2 mt-3">
+            <DataSourceBadge status={histStatus} provider={chartProvider} />
+            <span className="text-xs text-muted-fg">· {chartProvider === 'Yahoo Finance' ? 'Yahoo Finance' : chartProvider === 'FRED' ? t.macro.chartSourceFred : t.macro.chartSourceBcch}</span>
+          </div>
+        </ModalShell>
       )}
     </div>
   )
