@@ -317,8 +317,30 @@ loading state · empty state · error state · auth status — verified identica
   reading, centered dense columns (Status/Note left, gauge centered), truncate+`title` safety
   nets on Issuer/Worst/Notional. Card-contained scrolling below the sum is unchanged. Guarded by
   R3.R3. Manual browser pass still pending.)*
-- [ ] `/structured-notes/[id]` 🔒 — metrics strip + terms + current levels + underlyings + schedule
+- [~] `/structured-notes/[id]` 🔒 — metrics strip + terms + current levels + underlyings + schedule
   + allocation grid + provenance/delete; protected.
+  *(R4 2026-07-31: recomposed to the approved Fable note-detail anatomy (SPECS §6 "Row → panel"
+  12-field terms grid + lifecycle timeline, §Overlays panel header), adapted to the canonical
+  full page in the R3 family — `PageHeader` (mono ISIN eyebrow, wrapping product name,
+  lifecycle pill), the R3 `StatCapsule` strip (risk/worst/distance/next-obs/coupon/notional/
+  maturity), per-underlying `BarrierGauge` monitoring table with proximity-toned distances +
+  visible Worst chip + Yahoo footer + estimate disclaimer, grouped terms grid (Identity ·
+  Coupon & barriers · Key dates, boolean features as true-only chips), full underlyings table,
+  timeline strip (Issued ✓ · Observed n/m · Next ● · Maturity ○) over the COMPLETE observation
+  table (next row highlighted, done rows muted, API-data classification only), allocation grid
+  preserved verbatim in behavior, provenance + labeled destructive delete with honest
+  deleting/failure states. API failure ≠ not-found; missing prices stay "Unavailable"; 26 new
+  i18n keys replace previously hardcoded English labels. R1.5 re-verified live (307 →
+  `/login?next=%2Fstructured-notes%2Fsome-id`, APIs 401, zero pre-auth note content). Guarded
+  by `tests/fableStructuredNoteDetailPage.test.ts` (46 tests). Ticks to `[x]` after the manual
+  browser pass at 1728/1024/390 in both themes and languages + the authenticated functional
+  walk.)*
+  *(R4.1 2026-07-31: the delete confirmation moved from `window.confirm` to the shared Fable
+  `DestructiveConfirm` dialog (ModalShell contract — alertdialog, focus trap/restore, Escape
+  cancels unless pending, scroll lock, at-most-once confirm, safe cancel first, critical-fill
+  destructive action). Same DELETE endpoint and success-only redirect; failure keeps the dialog
+  open with the error inside. That was the ONLY app-controlled native dialog in src — a
+  recursive scan test now bans them repo-wide. Manual dialog pass still pending.)*
 - [ ] `/settings/notifications` 🔒 — add-recipient form + recipients table + active toggle; back
   link; protected.
 - [~] `/login` — cinematic shell + glass auth panel; username/password + create toggle + forgot

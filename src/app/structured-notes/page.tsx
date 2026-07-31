@@ -869,4 +869,7 @@ function Donut({ data, currency, ofTotal, totalLabel }: { data: { label: string;
   )
 }
 
-export { fmtPct, fmtNum }
+// R4 — the detail page reuses these display helpers and the KPI capsule so
+// the two Structured Notes surfaces can never drift apart (same precedent as
+// the pre-R4 fmtPct/fmtNum share). Display-only exports; no logic change.
+export { fmtPct, fmtNum, distanceTone, shortUnderlying, StatCapsule, RISK_TONE }

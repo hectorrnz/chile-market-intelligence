@@ -298,12 +298,15 @@ describe('R3.8 — R1.5 security boundary untouched', () => {
   })
 })
 
-describe('R3.9 — R4 boundary: the detail page is NOT redesigned', () => {
-  it('the detail page still uses the pre-Fable composition (SectionHeader, no fable primitives)', () => {
-    assert.match(DETAIL, /SectionHeader/)
-    for (const fable of ['@/components/fable/TableCard', '@/components/fable/PageHeader', '@/components/fable/GlassSurface', '@/components/fable/BarrierGauge']) {
-      assert.ok(!DETAIL.includes(fable), `detail page must not adopt ${fable} before R4`)
-    }
+describe('R3.9 — phase boundary: the detail page joined the Fable family in R4', () => {
+  // The pre-R4 form of this describe asserted the detail page had NOT been
+  // redesigned. R4 is that page's re-skin phase, so the boundary moves — the
+  // real phase boundary advancing, not a relaxed assertion (same precedent as
+  // the 5F/5H guard-list updates). The full R4 contract lives in
+  // tests/fableStructuredNoteDetailPage.test.ts.
+  it('the detail page now uses the shared Fable composition', () => {
+    assert.match(DETAIL, /@\/components\/fable\/PageHeader/)
+    assert.ok(!DETAIL.includes('SectionHeader'), 'the pre-Fable SectionHeader is superseded on this route')
   })
 
   it('the detail page keeps its monitoring-estimate disclaimer (secondRoundFixes contract)', () => {

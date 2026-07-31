@@ -464,8 +464,8 @@ Recommended order (low-risk → high-risk, dependency-aware):
 8. **`/portfolio`** ✓ — hero/capsule summary, exposure bars, three tabbed tables + forms
    (biggest single page; done after capsules/tables were proven).
 9. **`/structured-notes`** ✓ (Phase R3) — barrier gauge, upload/extract panel, dashboard KPIs, bar/donut.
-10. **`/structured-notes/[id]`** — terms grid, current-levels table, schedule, allocation grid,
-    optional detail-panel language.
+10. **`/structured-notes/[id]`** ✓ (Phase R4) — terms grid, current-levels table + gauge,
+    lifecycle timeline over the schedule, allocation grid, provenance + destructive delete.
 11. **`/settings/notifications`** — recipients table + toggle switch (Admin language).
 12. **Home `/`** — LAST among content pages: it's the densest, most-composed page (7 modules,
     News, heat map, DnD rates) and benefits from every component proven above.
@@ -1489,7 +1489,120 @@ render.
 
 ---
 
-## Phase 6 — Auth pages + login shell (highest-visibility, distinct layout)
+## Phase R4 — Fable Structured Notes DETAIL page ✓ IMPLEMENTED (2026-07-31, automated validation complete, manual browser validation pending)
+
+`/structured-notes/[id]` (the canonical detail route — the last legacy SN surface) re-skinned to
+the approved Fable note-detail anatomy: nmi-fable-v1 SPECS.md §6 "Row → panel: 12-field terms
+grid, lifecycle timeline (issued ✓, coupons ✓, next observation ●, maturity ○)" plus §Overlays'
+detail-panel header (title, status pill, subtitle) and 2-column stats grid — **adapted from the
+export's supplementary 440px side panel to this canonical full page** in the R3 dashboard's
+visual family (design_principles §2: panels never replace a canonical route). Presentation only:
+every endpoint, payload, monitoring value, allocation mutation, and the delete
+confirm/endpoint/redirect are unchanged in substance.
+
+**Files:** `src/app/structured-notes/[id]/page.tsx` (recomposed), `src/lib/i18n.ts` (26 new `sn`
+keys × 2 languages — detail labels that were previously HARDCODED English on the legacy page:
+guarantor/couponBarrier/autocallBarrier/initialValuation/finalValuation/redemption/payoffType/
+couponFrequency/denomination/issuePrice/currencyLabel/memoryCoupon/principalProtection/
+termsIdentity/termsEconomics/termsDates/initialLevel/strikeLevel/symbolLabel/currentLevel/
+valuationDate/paymentDate/notFound/deleting/deleteError/removeEntity), new
+`tests/fableStructuredNoteDetailPage.test.ts` (46 tests), `tests/fableStructuredNotesPage.test.ts`
+(R3.9 phase boundary advanced — same precedent as 5F/5H). **One minimal dashboard compatibility
+change:** `src/app/structured-notes/page.tsx`'s export line grew from `{ fmtPct, fmtNum }` to
+also export `distanceTone`, `shortUnderlying`, `StatCapsule`, `RISK_TONE` — display-only shares
+so the two SN surfaces can never drift (the detail page already imported fmtPct/fmtNum from the
+dashboard pre-R4); no dashboard behavior or markup changed.
+
+**Composition (shared primitives only):** back link → `PageHeader` (mono ISIN eyebrow, product
+name as a WRAPPING title — `break-words`, never truncation/hover-only, so the full name is
+readable on touch; issuer · structure · lifecycle-status pill as metadata) → the R3
+`StatCapsule` strip in decision-first order (risk status w/ legend tooltip, worst performer
+(short ticker + %), worst distance-to-knock-in (proximity-toned), next observation (≤7d
+negative-toned), coupon p.a., current notional, maturity) → **Current levels & barriers**
+`TableCard` (minWidth 680): per-underlying `BarrierGauge` (level indexed to 100 at strike — pure
+display transform; marks = per-underlying knock-in pct → note-level fallback + strike),
+current level, both distances proximity-colored via the shared `distanceTone`, the
+worst-performer designation as a visible text chip, last-monitored + stale flag, Yahoo footer +
+real as-of + estimate disclaimer → **Terms** on card glass, grouped Identity · Coupon & barriers
+· Key dates (Fable grid, micro-label over value; boolean features memory-coupon /
+principal-protection as chips ONLY when true — absence is never a fabricated "No"; now also
+shows payoffType/couponFrequency/denomination/issuePrice/initialValuation/redemption, real
+fields the legacy page omitted) → **Underlyings** `TableCard` (560): order/name/symbol/initial/
+strike/knock-in/coupon/autocall contractual levels → **Observation schedule** `TableCard` (680,
+maxHeight 300): the Fable lifecycle timeline as the card's header strip (Issued ✓ green ·
+Observed n/m · Next ● amber · Maturity ○ neutral — all four anchors from real fields) above the
+COMPLETE deduped observation table; completed rows muted, the next observation row
+warning-tinted with a ● marker + sr-only announcement — classification comes from the API's own
+`status` + `nextObservation`, never client date math → **Allocation** card (EntityAllocationGrid
+preserved verbatim in behavior: upsert endpoint/payload, custom entities, thousands formatting,
+total + issue-size mismatch warning; inputs gain aria-labels) · **Provenance** card (source
+type/file/confidence) with the delete workflow: same confirmation text + `DELETE` + success-only
+redirect, now a labeled destructive pill (negative border/tint) with honest
+`deleting`/`deleteError` states — and, since R4.1 below, gated by the shared Fable
+`DestructiveConfirm` dialog instead of `window.confirm`.
+
+**Real-data state fixes (documented improvements, not contract changes):** (1) API failure now
+renders the `error` AsyncState — the legacy page showed "not found" for a network failure;
+(2) a failed DELETE now surfaces `deleteError` instead of silently redirecting as if it
+succeeded; (3) not-found renders an honest localized empty state (`t.sn.notFound`) instead of
+hardcoded "not found"; (4) loading is the shared spinner AsyncState instead of a bare "…".
+
+**Documented departures from the Fable reference:** (1) the side-panel presentation itself —
+adapted to the canonical full page (canonical routes never become panels); (2) "View termsheet
+in Documents" omitted — no documents module exists; provenance names the real source file
+instead; (3) the panel-header spark omitted — no per-note valuation series exists; (4) LATEST
+VALUATION and SETTLEMENT stats-grid fields omitted — no such fields exist on the payload (the
+book-level prices-as-of lives in the monitoring footer, one as-of per surface); (5) the terms
+grid is grouped into three labeled sections rather than one 12-field block (R4 requirement:
+"logical Fable-native sections"); (6) the timeline's "Q1 2026 · termsheet executed" meta is
+replaced by the real issue date.
+
+**Security: nothing changed.** Verified at runtime against a dev server:
+`/structured-notes/some-id` → 307 `/login?next=%2Fstructured-notes%2Fsome-id` (41-byte body,
+ZERO structured-note content pre-auth); `/api/structured-notes/some-id` and
+`.../allocations` → 401 JSON (27 bytes). `classifyPath` still reports
+`private_page`/`private_api`; middleware, access policy, migrations, and every API route file
+untouched.
+
+Measured after this phase: **3570 tests, 3567 pass, 3 fail** (only the three pre-existing
+date-dependent `tests/newsModule.test.ts` cases). Lint 0, build 0 errors (`○ /structured-notes`,
+`ƒ /structured-notes/[id]` and all 8 SN API routes present), `git diff --check` clean. Manual
+browser validation at 1728/1024/390 (light/dark, EN/ES, reduced motion) and the authenticated
+functional walk (open a real note, verify against the dashboard row, allocation round-trip,
+back navigation) are **pending** — no browser was connected and no session was available in the
+implementing session; delete execution was intentionally not performed (no disposable record —
+the endpoint/payload/confirm/redirect contract is locked by the R4.5 tests instead).
+
+### R4.1 (2026-07-31) — shared Fable dialog replaces the browser-native confirm
+
+**Inventory** (full-repo scan for `window.confirm/alert/prompt` + `globalThis.*`): exactly ONE
+application-controlled native dialog existed in `src/` — the Structured Notes delete
+`window.confirm(t.sn.confirmDelete)` on the detail page. No `window.alert`/`window.prompt`
+anywhere. Browser/OS interfaces deliberately out of scope: the upload flow's native file
+picker and the Company page's `window.print()`.
+
+**Fix — adoption, not invention.** The shared system already existed unused:
+`src/components/fable/ModalShell.tsx` exports `ModalShell` (the one Fable overlay shell —
+labelled `role="dialog"`, `aria-modal`, focus trap + initial focus + restore-to-trigger,
+Escape, scrim, body-scroll lock, pinned footer) and `DestructiveConfirm` (its
+`role="alertdialog"` destructive mode: safe ChipButton cancel, `--critical-fill` confirm with
+`aria-busy`, `dismissDisabled` while pending, and an at-most-once-per-open confirm guard),
+both locked by `tests/fableR0Primitives.test.ts`. R4.1 makes the SN delete flow its first
+consumer: the trigger button now only OPENS the dialog (`confirmingDelete` state); the dialog
+description names the real record (`productName · ISIN`); the body carries the existing
+`t.sn.confirmDelete` sentence, an sr-only `role="status"` deleting announcement, and the
+`deleteError` line INSIDE the dialog (which stays open on failure for retry/cancel — the same
+error also shows adjacent to the trigger once the dialog closes). The mutation is byte-identical:
+same `DELETE /api/structured-notes/{id}`, success-only `router.push('/structured-notes')`.
+Zero new i18n keys (title `sn.delete`, `sn.cancel`, `sn.confirmDelete`, `sn.deleting`,
+`sn.deleteError` all pre-existed in EN + ES). Initial focus lands on the dialog's ✕ dismiss
+control (the first focusable — a cancel-equivalent, so the destructive action is never the
+accidental default). Guarded by the rewritten `R4.5` + new `R4.5b` describes, including a
+recursive src-wide scan asserting no `window.confirm/alert/prompt`/`globalThis.*` call
+survives anywhere. Suite 3570 → **3579** (3576 pass + the 3 permitted `newsModule` cases),
+lint 0, build 0, `git diff --check` clean. Manual dialog validation (open/Escape/cancel/focus,
+1728/1024/390, EN/ES, light/dark) remains **pending** — no browser connected; deletion still
+intentionally not executed on any real note.
 
 **Superseded by phases R1 and R2**, which delivered this scope under the normalized Stage 5R
 program: the `(auth)` route group + `ShellGate` (R1), `/login` on the gateway (R1), and both
