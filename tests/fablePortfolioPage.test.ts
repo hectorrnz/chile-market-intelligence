@@ -870,13 +870,16 @@ describe('Phase 5H — scope held', () => {
   })
 
   it('redesigns no page outside its own phase', () => {
+    // `/structured-notes` was removed from the no-TableCard guard in Phase R3,
+    // migrated under its own brief — a real phase boundary moving, not a
+    // relaxed assertion. It is guarded by
+    // `tests/fableStructuredNotesPage.test.ts`.
     for (const other of [
       'src/app/page.tsx', 'src/app/earnings/page.tsx', 'src/app/macro/page.tsx',
       'src/app/macro/calendar/page.tsx', 'src/app/structured-notes/page.tsx',
     ]) {
       assert.ok(existsSync(join(ROOT, other)), `${other} must still exist`)
     }
-    assert.ok(!read('src/app/structured-notes/page.tsx').includes('@/components/fable/TableCard'), 'Structured Notes has had no re-skin phase yet')
     assert.ok(!read('src/app/page.tsx').includes('@/components/fable/TableCard'), 'Home has had no re-skin phase yet')
   })
 

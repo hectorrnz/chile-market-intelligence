@@ -493,14 +493,16 @@ describe('Phase 5B — English and Spanish complete', () => {
 describe('Phase 5B — scope held', () => {
   it('redesigns no other page', () => {
     // `/compare` was removed from this list in Phase 5D, `/macro` in
-    // Phase 5F, `/earnings` in Phase 5G, and `/portfolio` in Phase 5H, each
-    // migrated to `TableCard` under its own brief — real phase boundaries
-    // moving, not a relaxed assertion. They are guarded by
-    // `tests/fableComparePage.test.ts` / `tests/fableMacroPage.test.ts` /
-    // `tests/fableEarningsPage.test.ts` / `tests/fablePortfolioPage.test.ts`,
-    // and the pages below still hold the line.
+    // Phase 5F, `/earnings` in Phase 5G, `/portfolio` in Phase 5H, and
+    // `/structured-notes` in Phase R3, each migrated to `TableCard` under its
+    // own brief — real phase boundaries moving, not a relaxed assertion. They
+    // are guarded by `tests/fableComparePage.test.ts` /
+    // `tests/fableMacroPage.test.ts` / `tests/fableEarningsPage.test.ts` /
+    // `tests/fablePortfolioPage.test.ts` /
+    // `tests/fableStructuredNotesPage.test.ts`, and the page below still
+    // holds the line.
     for (const other of [
-      'src/app/page.tsx', 'src/app/structured-notes/page.tsx',
+      'src/app/page.tsx',
     ]) {
       assert.ok(!read(other).includes('@/components/fable/TableCard'), `${other} is not part of Phase 5B`)
     }

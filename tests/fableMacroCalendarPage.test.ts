@@ -375,12 +375,14 @@ describe('Phase 5F — scope held', () => {
   })
 
   it('redesigns no page outside its own phase', () => {
-    // `/earnings` was removed from this list in Phase 5G and `/portfolio` in
-    // Phase 5H, each migrated to `TableCard` under its own brief — real phase
-    // boundaries moving, not a relaxed assertion. They are guarded by
-    // `tests/fableEarningsPage.test.ts` / `tests/fablePortfolioPage.test.ts`.
+    // `/earnings` was removed from this list in Phase 5G, `/portfolio` in
+    // Phase 5H, and `/structured-notes` in Phase R3, each migrated to
+    // `TableCard` under its own brief — real phase boundaries moving, not a
+    // relaxed assertion. They are guarded by
+    // `tests/fableEarningsPage.test.ts` / `tests/fablePortfolioPage.test.ts` /
+    // `tests/fableStructuredNotesPage.test.ts`.
     for (const other of [
-      'src/app/page.tsx', 'src/app/structured-notes/page.tsx',
+      'src/app/page.tsx',
     ]) {
       assert.ok(existsSync(join(ROOT, other)), `${other} must still exist`)
       assert.ok(!read(other).includes('@/components/fable/TableCard'), `${other} has had no re-skin phase yet`)

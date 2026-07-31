@@ -124,6 +124,7 @@ export const dict = {
       exposureByEntity: 'Allocation by entity',
       exposureByIssuer: 'Exposure by issuer',
       ofTotal: 'of total',
+      totalLabel: 'Total',
       colArchivedAt: 'Archived as of',
       confirmDelete: 'Are you sure you want to delete this structured note? This cannot be undone.',
       filterStatus: 'Status',
@@ -135,6 +136,13 @@ export const dict = {
       legendBreached: 'At least one underlying is at/below its barrier — coupon may be missed and principal is at risk.',
       legendUnavailable: 'Live market levels are unavailable, so status cannot be computed yet.',
       sortBy: 'Sort by',
+      // R3 — Fable dashboard composition
+      pageMeta: 'Lifecycle, barriers and observations',
+      colNote: 'Note',
+      colLevel: 'Level',
+      dashNextObs: 'Next observation',
+      clickHint: 'Click a note for full terms',
+      viewToggle: 'View',
     },
     notifications: {
       bellLabel: 'Notifications',
@@ -922,6 +930,7 @@ export const dict = {
       exposureByEntity: 'Asignación por sociedad',
       exposureByIssuer: 'Exposición por emisor',
       ofTotal: 'del total',
+      totalLabel: 'Total',
       colArchivedAt: 'Archivada el',
       confirmDelete: '¿Estás seguro de que deseas eliminar esta nota estructurada? Esta acción no se puede deshacer.',
       filterStatus: 'Estado',
@@ -933,6 +942,13 @@ export const dict = {
       legendBreached: 'Al menos un subyacente está en o bajo su barrera — el cupón podría no pagarse y el capital está en riesgo.',
       legendUnavailable: 'Los niveles de mercado en vivo no están disponibles, por lo que el estado no puede calcularse aún.',
       sortBy: 'Ordenar por',
+      // R3 — composición Fable del panel
+      pageMeta: 'Ciclo de vida, barreras y observaciones',
+      colNote: 'Nota',
+      colLevel: 'Nivel',
+      dashNextObs: 'Próxima observación',
+      clickHint: 'Haz clic en una nota para ver todos los términos',
+      viewToggle: 'Vista',
     },
     notifications: {
       bellLabel: 'Notificaciones',

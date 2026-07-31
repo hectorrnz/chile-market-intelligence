@@ -641,14 +641,14 @@ describe('Phase 5E — scope held', () => {
   })
 
   it('redesigns no page outside its own phase', () => {
-    // `/macro` was removed from this list in Phase 5F and `/portfolio` in
-    // Phase 5H, each migrated under its own brief (SegmentedControl included)
-    // — real phase boundaries moving, not a relaxed assertion. They are
-    // guarded by `tests/fableMacroPage.test.ts` /
-    // `tests/fablePortfolioPage.test.ts`.
+    // `/macro` was removed from this list in Phase 5F, `/portfolio` in
+    // Phase 5H, and `/structured-notes` in Phase R3, each migrated under its
+    // own brief (SegmentedControl included) — real phase boundaries moving,
+    // not a relaxed assertion. They are guarded by
+    // `tests/fableMacroPage.test.ts` / `tests/fablePortfolioPage.test.ts` /
+    // `tests/fableStructuredNotesPage.test.ts`.
     for (const other of [
       'src/app/page.tsx', 'src/app/earnings/page.tsx',
-      'src/app/structured-notes/page.tsx',
     ]) {
       assert.ok(existsSync(join(ROOT, other)), `${other} must still exist`)
       assert.ok(!read(other).includes('@/components/fable/SegmentedControl'), `${other} has had no re-skin phase yet`)

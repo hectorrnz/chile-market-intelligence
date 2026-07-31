@@ -289,8 +289,34 @@ loading state · empty state · error state · auth status — verified identica
   buttons. No confirmation dialog, persistence key, new calculation, or fabricated figure was
   invented — locked by 123 tests in `tests/fablePortfolioPage.test.ts`, roughly half of which
   assert real structural containment and ordering rather than component-name presence.*
-- [ ] `/structured-notes` 🔒 — dashboard KPIs + bar/donut + monitoring line + upload/extract/import
+- [~] `/structured-notes` 🔒 — dashboard KPIs + bar/donut + monitoring line + upload/extract/import
   + filters + Live/Archived + sortable table; protected.
+  *(R3 2026-07-30: recomposed to the approved Fable §6 dashboard — `PageHeader`, KPI-glass capsule
+  row (all 7 pre-R3 KPIs, still click-to-filter, plus the Fable NEXT OBSERVATION capsule),
+  exposure bar/donut on card glass, lifecycle-legend chips (full sentences kept via title +
+  sr-only), and a `TableCard` (minWidth 1180) with the shared `BarrierGauge` column on the 0–130
+  scale, ChipSelect filters, Live/Archived `SegmentedControl`, and row → canonical
+  `/structured-notes/[id]` navigation. Every endpoint, filter, sort, mutation, monitoring
+  exception count, and the `TableSourceFooter` + `pricesAsOf` preserved; a failed initial load now
+  renders the honest `error` state instead of the empty-book copy. Departures documented in doc 04
+  (no per-row valuation timestamp, no "% of portfolio" subline — no such data exists). Automated
+  validation complete (`tests/fableStructuredNotesPage.test.ts`); private enforcement re-verified
+  live (307 → `/login?next=%2Fstructured-notes`, APIs 401, no pre-auth content). Ticks to `[x]`
+  after the manual browser pass at 1728/1024/390 in both themes and languages.)*
+  *(R3 repair 2026-07-31, from the manual visual review: the two exposure blocks recomposed
+  Fable-native — shared TOTAL header, ranked uniform-accent bars for issuer exposure, gapped donut
+  with center total + hover-linked legend for entity allocation, exact values/percentages always
+  printed — and the table reordered triage-first (Status · Next obs · Note · Issuer · gauge ·
+  distance · worst · coupon · knock-in · issued · notional · Called last) with the NOTE column
+  width-capped and the full name/identifiers revealed on hover via `title`. Presentation only;
+  guarded by the R3.R1/R3.R2 tests. Manual browser pass still pending.)*
+  *(R3 table-density repair 2026-07-31: `table-layout: fixed` + explicit `COLS` colgroup
+  (lang/view-aware; sums 1253 EN / 1285 ES vs ~1302 available at 1728px) so the full table shows
+  with no internal scrollbar on a maximized desktop; tighter `px-2` cells, two-line
+  Dist./Coupon headers, `colLevel` → 'Level'/'Nivel', gauge 140px with a compact `Current N`
+  reading, centered dense columns (Status/Note left, gauge centered), truncate+`title` safety
+  nets on Issuer/Worst/Notional. Card-contained scrolling below the sum is unchanged. Guarded by
+  R3.R3. Manual browser pass still pending.)*
 - [ ] `/structured-notes/[id]` 🔒 — metrics strip + terms + current levels + underlyings + schedule
   + allocation grid + provenance/delete; protected.
 - [ ] `/settings/notifications` 🔒 — add-recipient form + recipients table + active toggle; back

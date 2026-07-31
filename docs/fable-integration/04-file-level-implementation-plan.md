@@ -463,7 +463,7 @@ Recommended order (low-risk → high-risk, dependency-aware):
 7. **`/chart-builder`** ✓ — metric picker + dual-axis chart + underlying table + settings.
 8. **`/portfolio`** ✓ — hero/capsule summary, exposure bars, three tabbed tables + forms
    (biggest single page; done after capsules/tables were proven).
-9. **`/structured-notes`** — barrier gauge, upload/extract panel, dashboard KPIs, bar/donut.
+9. **`/structured-notes`** ✓ (Phase R3) — barrier gauge, upload/extract panel, dashboard KPIs, bar/donut.
 10. **`/structured-notes/[id]`** — terms grid, current-levels table, schedule, allocation grid,
     optional detail-panel language.
 11. **`/settings/notifications`** — recipients table + toggle switch (Admin language).
@@ -1342,6 +1342,150 @@ case in `tests/fableAuthShell.test.ts` (`/auth/callback` stays a route handler).
 phase: **3471 tests, 3468 pass, 3 fail**, the three failures being the pre-existing date-dependent
 `tests/newsModule.test.ts` cases (confirmed by running that file alone: 53 tests, 50 pass, 3 fail).
 Lint 0, build 0 errors, `git diff --check` clean.
+
+---
+
+## Phase R3 — Fable Structured Notes dashboard ✓ IMPLEMENTED (2026-07-30, automated validation complete, manual browser validation pending)
+
+`/structured-notes` (the dashboard only — the `[id]` detail page is R4) re-skinned to the approved
+Fable §6 composition: capsule row → lifecycle legend chips → wide table with the signature barrier
+gauge. Presentation only: every hook, fetch call, filter, sort comparator, mutation payload,
+monitoring calculation and API contract is unchanged in substance.
+
+**Files:** `src/app/structured-notes/page.tsx` (recomposed), `src/lib/i18n.ts` (6 new `sn` keys × 2
+languages: `pageMeta`, `colNote`, `colLevel`, `dashNextObs`, `clickHint`, `viewToggle`), new
+`tests/fableStructuredNotesPage.test.ts`, phase-boundary guard lists updated in 8 existing
+`fable*Page` suites (the same "real phase boundary moving" precedent as 5F/5H). No shared component
+was modified; no CSS was added; no new dependency.
+
+**Composition (shared primitives only):** `PageHeader` (its first consumer — 19px title + baseline
+metadata + actions), a KPI-glass capsule row carrying ALL SEVEN pre-R3 dashboard KPIs (more than
+Fable's four — NMI substance wins) plus the Fable NEXT OBSERVATION capsule derived from the
+per-note `nextObservationDate` the API already returns; the exposure bar/donut SVGs re-housed on
+`GlassSurface` card glass; the Fable lifecycle-legend chip row (full legend sentences preserved via
+`title` + `sr-only`, replacing the pre-Fable always-visible paragraph); and a `TableCard`
+(minWidth 1180, card-level scroll) whose toolbar holds the upload pill, two `ChipSelect` filters and
+the Live/Archived `SegmentedControl`. Rows navigate to the CANONICAL `/structured-notes/[id]` route
+(row click + a real link on the product name); the extraction preview is a glass card with the
+confidence/review pill. The route-local Update button deliberately does NOT use `UpdateDataButton`
+(that control is reserved for the platform-wide refresh; this one re-pulls the book's prices).
+
+**The barrier gauge** (Fable's signature element) uses the existing shared `BarrierGauge` on its
+0–130 scale: current = worst-of level indexed to 100 at strike (`(1 + worstPerformer.performance) ×
+100`, a pure display transform of the existing metric), knock-in tick at `knockInBarrierPct × 100`,
+strike tick at 100; missing prices render the honest unavailable text. The distance-to-barrier
+column is proximity-colored with the same documented Fable thresholds (display-only —
+`distanceTone` never feeds eligibility logic, which stays in `src/lib/structuredNotes`).
+
+**Preserved verbatim:** endpoints (`GET /api/structured-notes`, `/monitoring-status`; `POST
+/extract`, `/import`; `PATCH /{id}`), upload → extract → review → import, Called checkbox →
+archived, clickable KPI filters (`focusStatus`), status/issuer filters, 4-key sorting, the
+≤7-day next-observation highlight, the archived-view column swap, all four monitoring exception
+counts + provider-quality flags, `TableSourceFooter` with `sourceMarket` + the book-level
+`pricesAsOf`, and every i18n key. States: loading/empty/populated via the shared `AsyncState`
+kinds; NEW: a failed initial load now renders the `error` state instead of masquerading as the
+empty book (the one deliberate state improvement, per the R3 real-data-states requirement).
+
+**Documented departures from the Fable reference:** (1) Fable's per-row VALUATION timestamp column
+is omitted — no per-note valuation timestamp exists on the list payload; the book-level as-of stays
+in the footer. (2) Fable's "% of portfolio" capsule subline is omitted — no portfolio-total linkage
+exists. (3) Fable's narrated coupon cell ("Paid Q2 · 8.20% p.a.") is the plain annualized rate —
+the narration is sample content. (4) The lifecycle legend renders as its own band above the table
+(SPECS §6 sequence) rather than inside the table-card header band (the export's variant) — the
+`TableCard` header row is occupied by the real toolbar NMI needs and Fable's prototype lacks.
+(5) Numerics right-align per the Fable typographic standard, superseding the pre-Fable Phase 9B.2
+center-alignment. (6) The seven NMI KPIs + next-observation capsule exceed Fable's four capsules —
+"Fable's look, NMI's substance."
+
+**Security: nothing changed.** Verified at runtime against the dev server: `/structured-notes` and
+`/structured-notes/{id}` 307 → `/login?next=…` with zero structured-note content in the pre-auth
+response; all five SN APIs 401 JSON; `classifyPath` still reports `private_page`/`private_api`;
+middleware, access policy, and every API route file untouched.
+
+Measured after this phase: **3511 tests, 3508 pass, 3 fail** (only the three pre-existing
+date-dependent `tests/newsModule.test.ts` cases). Lint 0, build 0 errors (`/structured-notes` ○ and
+`/structured-notes/[id]` ƒ both present), `git diff --check` clean. Manual browser validation at
+1728/1024/390 (light/dark, EN/ES, reduced motion) is **pending** — no browser was connected in the
+implementing session.
+
+### R3 manual-validation repair (2026-07-31) — exposure cards + triage-first table
+
+Two findings from the manual visual review, fixed as a presentation-only repair inside R3 (same
+files: `page.tsx`, `i18n.ts` + one key, the R3 test suite; no API/auth/lib change, detail page
+untouched):
+
+1. **Exposure cards recomposed Fable-native.** Both cards gain a shared `ExposureHeader` (ui-label
+   title left, `TOTAL` micro-label + exact figure right — the capsule label/value pattern).
+   *Exposure by issuer* is now a ranked list: name + share (`%` emphasized, exact notional muted)
+   over a thin **uniform accent** fill on the chip track (`--nv-chip`), rows on `nv-row-hover` —
+   the old per-issuer `CHART_PALETTE` colors were dropped because they falsely implied a color link
+   with the entity donut. *Allocation by entity* keeps the palette (segments need identity) and
+   gains descending gapped segments (min-sliver guard so tiny allocations never vanish), a center
+   TOTAL (truncation-safe — the exact figure repeats in the header), and a hover-linked legend
+   (entering a row or segment dims the others; opacity-only via `nv-transition`, reduced-motion
+   safe, `onMouseEnter` not `onMouseMove`). Every exact value and percentage stays printed; hover is
+   optional emphasis, never load-bearing. No chart library.
+2. **Triage-first table order.** New column order: Status · Next obs (Archived as of in the archived
+   view) · Note · Issuer · Level gauge · To barrier · Worst · Coupon · Knock-in · Issued · Notional ·
+   the administrative Called checkbox last — the monitoring-decision fields are now visible before
+   any horizontal scroll. The NOTE column is width-capped (`maxWidth: 230`) with both lines
+   truncating; the full product name and the full `ISIN · underlyings` line are revealed on hover
+   via `title` (native tooltip — no custom system). No column removed; sorting, the ≤7-day
+   highlight, and the archived swap are unchanged. `minWidth` stays 1180 (readability floor).
+
+Guarded by the new `R3.R1`/`R3.R2` describes in `tests/fableStructuredNotesPage.test.ts` (+7
+tests). Measured after the repair: **3518 tests, 3515 pass, 3 fail** (the same three permitted
+`newsModule` cases), lint 0, build 0 errors, `git diff --check` clean. Manual browser validation at
+1728/1024/390 (light/dark, EN/ES, reduced motion) remains **pending** — no browser connected.
+
+### R3 table-density repair (2026-07-31) — full table visible at 1728px, no internal scrollbar
+
+Final desktop review found the table still scrolling horizontally at a maximized 1728px viewport.
+Presentation-only fix (page + `colLevel` label + tests; no data/logic/order change):
+
+- **Deliberate column system**: `table-layout: fixed` + a `COLS` colgroup (no browser
+  auto-sizing). Widths: Status **118** (EN) / **150** (ES — "Cerca de la barrera" is longer) ·
+  Next obs **120** (**130** for the archived view's "Archived as of") · Note **160** · Issuer
+  **80** · Level gauge **170** · Dist. to barrier **85** · Worst **100** · Coupon p.a. **80** ·
+  Knock-in **75** · Issued **85** · Notional **100** · Called **80**. Sums: **1253** EN / **1285**
+  ES vs ~1302 available inside the shell at 1728 (1560 shell − 208 sidebar − 48 padding − borders)
+  → every column visible, slack distributed proportionally by the fixed layout. `TableCard
+  minWidth` is now the system's own sum, so narrower viewports keep the identical card-contained
+  scroll (no page-level overflow; no font-size change).
+- **Width enablers**: cell/header padding `px-3` → `px-2`; the two long headers ("Dist. to
+  barrier"/"Caída a barrera", "Coupon p.a.") wrap to two deliberate lines (`thBaseWrap`,
+  headers `align-bottom` so single-line labels share the baseline); `colLevel` label shortened to
+  'Level'/'Nivel' and the gauge given a compact single-line reading (`Current 87.3` via the
+  existing `t.fable.barrier.current`, passed as `summary` — the old auto-derived sentence was
+  ~40 chars and was the real width driver of that column); gauge track 150 → 140 (fully legible);
+  the near-observation pill's padding trimmed to fit "(NNd)" inside 120.
+- **Alignment (final)**: Status left · Note left (truncated, full text via hover title) · gauge
+  centered · Next obs, Issuer, Dist., Worst, Coupon, Knock-in, Issued, Notional, Called all
+  **center** header + cells (supersedes the interim right-alignment, which had superseded the
+  pre-Fable 9B.2 centering). Sort arrows sit inline with their centered labels; `aria-sort`
+  unchanged.
+- **No silent numeric truncation**: percents/dates are narrower than their columns by
+  construction; Issuer, the worst-performer name, and Notional carry `truncate` + full-value
+  `title` as the safety net (the worst-performer % is `shrink-0` and can never truncate).
+- **Underlying tickers display without the Bloomberg market qualifier** (follow-up, same day):
+  `underlyingName` stores the term-sheet ticker verbatim — "SPX Index", "SPY US Equity" — whose
+  qualifier is redundant in a table where every row is an underlying. A pure display helper
+  (`shortUnderlying`) strips ONLY a recognized trailing qualifier (`Index|Equity|Curncy|Comdty|
+  Govt|Corp`, optional 2-letter exchange code), so "SPX Index" → "SPX", "SPY US Equity" → "SPY",
+  "SQM/B CC Equity" → "SQM/B", while an unrecognized name ("Some Custom Basket") passes through
+  verbatim — never mangled. Applied to the Worst cell and the NOTE underlyings line only; the
+  stored value, the hover `title`s, the extraction-review field (where the reviewer is verifying
+  parse fidelity against the PDF), symbol resolution, and the detail page are all untouched.
+  With the shorter ticker the Worst column now shows in full at its normal content; widths
+  rebalanced Level 170 → **160** (the 140px gauge track + `px-2` needs only 156) and Worst
+  100 → **110**, so the column sums are unchanged (1253 EN / 1285 ES).
+
+Guarded by the new `R3.R3` describe (+7 tests; `R3.R1`'s NOTE-cap and `R3.1`'s
+minWidth/alignment assertions updated). Measured: **3525 tests, 3522 pass, 3 fail** (the same
+three permitted `newsModule` cases), lint 0, build 0 errors, `git diff --check` clean. The
+manual browser pass (1728/1024/390, light/dark, EN/ES) remains **pending** — no browser
+connected; the 1728 fit above is arithmetic from the real token font specs, not an observed
+render.
 
 ---
 
