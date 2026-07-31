@@ -172,8 +172,8 @@ loading state · empty state · error state · auth status — verified identica
   `tests/fableStocksPage.test.ts`. Restyled onto `TableCard` + Fable pill toolbar; empty state now
   runs through `AsyncState` while keeping its own exact `noResults` wording. No KPI, chart, or heat
   map was invented (no data on this route backs one).*
-- [x] `/compare` — market data + returns (6 slots) + fundamentals + control bar + chart + settings
-  modal; all `cmi.compare*` persisted; empty `—`; public.
+- [~] `/compare` — market data + returns (6 slots) + fundamentals + control bar + chart + settings
+  modal; all `cmi.compare*` persisted; empty `—`; private (R1.5).
   *Phase 5D (2026-07-28). All 6 slots + dedup/validation, all 12 fundamentals rows in order + all
   10 derived-field keys, the exact 5-timeframe array, all 11 `cmi.compare*` keys, 2 badges + 4
   footers with unchanged source-precedence, the chart's untouched series/legend/tooltip/axis
@@ -183,6 +183,40 @@ loading state · empty state · error state · auth status — verified identica
   `nv-scrim`/`nv-glass-overlay nv-pop` overlay recipe. Two genuine pre-existing bilingual/hex
   defects fixed in passing (`title="Clear range"` → `t.compare.clearRange`; a redundant hex
   literal → `PRESET[0]`).*
+  *Phase R6 (2026-07-31) — analytical-workspace deepening, `[x]` pending manual browser check:
+  `PageHeader` with live `{n}/6` selection count; Settings → shared `ModalShell` (focus trap +
+  restore the old markup never had); `ChipButton`/`ChipSelect` replace hand-rolled chips;
+  canonical `/companies/[ticker]` links + real company-name identity line (a genuine gap — the
+  route previously linked to no detail page); touch-usable per-slot ✕ over the unchanged
+  `setSlot(i,'')` remove semantics; best/worst emphasis gains `title` + `sr-only` (no longer
+  color-only); Fable Attribution-style signed magnitude bars on Total Return (null → no bar,
+  never zero-coerced); `CompareChart`'s one hardcoded literal localized (`legendHint`). Data,
+  APIs, math, persistence, and every state semantic byte-identical — Phase R6 test block added.
+  Manual 1728/1024/390 EN/ES light/dark reduced-motion validation still pending (no browser
+  connected).*
+  *Phase R6.1 (2026-07-31) — both Compare APIs were returning HTTP 500 at module evaluation:
+  `fileURLToPath(new URL('<literal>', import.meta.url))` in `compareStatic.ts`. Root cause confirmed
+  against webpack's own emitted runtime: it rewrites `new URL(...)` into a shim whose `protocol` is
+  `''` (failing Node's duck-typed brand check while its borrowed `URL.prototype` makes the error
+  name it `URL`), AND rewrites the JSON into an asset module returning `/_next/static/media/…` — so
+  the string (`.href`) form alone is provably insufficient. Repaired by importing the JSON
+  (`with { type: 'json' }`), leaving no path for any bundler to rewrite. Verified by force-evaluating
+  the webpack-compiled module through the real `webpack-runtime.js`: 25 companies / 25 snapshots,
+  BSANTANDER → Santander Chile | Banking, SQM-B price 63851 CLP. Turbopack unaffected (native URL);
+  Turbopack build exit 0; both dev runtimes return JSON 401s and the 307 login redirect, so R1.5 is
+  unchanged. Authenticated API walk and manual UI validation remain **not performed** — no session
+  credentials and no browser connected.*
+  *Phase R6.2 (2026-07-31) — 1D/5D read +0.00% for every security, Market Data ran days stale, and
+  the chart sat below the returns table. Diagnosed live: Yahoo publishes carried-forward filler bars
+  (repeated close, `volume: 0`) for Santiago tickers — 07-20…07-30 on every ticker — so "latest vs
+  previous bar" compared filler to filler; `period2` is exclusive so the current session was never
+  fetched; and 1D never used the quote, whose `previousClose` matched no chart bar. Fixed with a pure
+  `shortTermReturns.ts` (session-counted math, conservative filler removal, quote-first 1D), a
+  `to = today+1` range, per-row quote-derived as-of, and a reordered page (selection rail → controls →
+  chart → returns → fundamentals → market data) with one `tfLabel` shared by the chart heading and the
+  returns-table title. Live: BSANTANDER −0.52%/+1.62%, CHILE −2.18%/+1.92%, FALABELLA −0.33%/+4.99%,
+  CENCOSUD +0.25%/−4.66%, as-of 2026-07-31. Authenticated API walk and manual UI validation still
+  **not performed** (no credentials, no browser).*
 - [x] `/chart-builder` — toolbar + metric picker + dual-axis chart + underlying table + settings;
   `cmi.gf*` persisted; `gf:ticker` deep-link; noData/selectMetric; public.
   *Phase 5E (2026-07-28). All 6 sections, the 2-ticker (primary + optional overlay) configuration,

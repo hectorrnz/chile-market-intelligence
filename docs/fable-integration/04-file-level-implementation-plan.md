@@ -1820,6 +1820,302 @@ resolver + enrichment path was exercised directly instead, against live FRED.
 
 ---
 
+## Phase R6 — Fable Compare analytical workspace ✓ IMPLEMENTED (2026-07-31, automated validation complete, manual browser validation pending)
+
+Baseline `9282c54` (clean, pushed R5 HEAD). `/compare` was already re-skinned onto the Fable
+foundation in Phase 5D (TableCard ×3, GlassSurface, SegmentedControl, Reveal, tokenised hover,
+chip material); R6 is the fidelity-deepening pass that brings the route into the R3/R4/R5 family
+and closes real workflow/a11y gaps — without touching any data, calculation, API, timeframe,
+normalization, or persisted-state semantic.
+
+**Fable references used — and the key finding:** `zip-export/SPECS.md` contains **no Compare
+section** (its 11 sections are Login/Overview/Portfolio/Performance/Risk/Fixed Income/Structured
+Notes/Macro/Research/Documents/Admin), and the standalone export has **no Compare renderer** — the
+only "Compare"/"versus" hits in the 2.95MB HTML are `localeCompare` inside the **§2 Portfolio
+table sorter** (offset ~2932474) and the **§1/§3 Performance chart aria-label** (~2781165). Both
+were extracted and inspected. The binding route-adjacent authorities are therefore §2 Portfolio
+("the table IS the page": dense near-opaque sortable table, filter capsules, name+id identity,
+`N of M holdings` count), §3 Performance (chart card + sign/magnitude-tinted grid + attribution
+bars), §1 Row B (multi-series chart interactions, legend toggles, crosshair tooltip) and the
+Overlays spec — all already encoded in the shared primitives. The composition is documented
+adaptation from those patterns, never invention.
+
+**What changed (2 files + i18n + tests + docs):**
+- `src/app/compare/page.tsx` —
+  (1) `SectionHeader` → shared **`PageHeader`**; metadata = subtitle + a live **selection count**
+  (`{valids.length}/6 selected` — the Fable Portfolio "N of M holdings" pattern); actions =
+  the platform-wide UpdateDataButton, unchanged.
+  (2) The page-local Settings dialog → the one shared **`ModalShell`** (R4.1 dialog rule; R5
+  precedent). The raw `nv-scrim`/`nv-glass-overlay`/`role="dialog"`/`useEscape` plumbing is
+  deleted; the shell adds a real focus trap, initial focus, focus-restore-to-trigger and
+  body-scroll lock the old markup never had. Every control inside (Difference-vs, 6× series
+  colors with 10 swatches + native picker, legend/gridlines/thickness, highlight toggle, Reset,
+  Done) is unchanged; the two selects became shared **`ChipSelect`**, the ⚙/⤓ hand-rolled chip
+  buttons became shared **`ChipButton`**.
+  (3) **Subject identity + canonical routes** (a real gap: the page had *no* link to any company
+  page): the Market Data identity cell now links the ticker to `/companies/[ticker]` with the
+  company's real `shortName` beneath (truncated so long names never distort — Fable Portfolio
+  name+id anatomy), and each Fundamentals subject header links the same canonical route.
+  (4) **Per-slot clear affordance**: each filled slot gains a touch-usable ✕ that rides the exact
+  pre-existing remove pathway (`setSlot(i, '')`), localized aria-label per slot; it can only ever
+  clear its own slot. No parallel remove mechanism was introduced.
+  (5) **Best/worst emphasis is no longer color-only**: the direction-aware ranking (unchanged
+  logic — `dir 0` ambiguous rows never ranked, nulls excluded before min/max, needs ≥2 values)
+  now also emits `title` + `sr-only` text (`bestInGroup`/`worstInGroup`); the raw value stays
+  visible; the toggle still disables it.
+  (6) **Total Return magnitude bars** (Fable §1 Attribution contributor/detractor bars): a 3px
+  track under the printed % — length = |return| scaled to the group max, tone by sign
+  (`--positive`/`--negative`), `aria-hidden` (the signed printed value stays authoritative), and
+  a null return draws no bar (never coerced to zero). Sign-based tone, not winner/loser styling.
+- `src/components/charts/CompareChart.tsx` — the one pre-existing hardcoded English literal
+  (`title="Click to highlight"` on legend items) localized via `t.compare.legendHint`. No other
+  chart change: rebased-to-0% normalization, series building, tooltip, axes, legend isolation,
+  a11y summary all byte-identical.
+- `src/lib/i18n.ts` — 5 new `compare.*` keys ×2 dictionaries: `selectedCount`, `removeSecurity`,
+  `bestInGroup`, `worstInGroup`, `legendHint`.
+
+**Deliberate omissions (all restraint rules from the R6 brief):** (1) No KPI-capsule overview —
+the Market Data table already IS the compact decision-oriented overview (price, 1D/5D/1M/YTD/1Y,
+market cap, sector); capsules would duplicate identical values with no analytical reason. (2) No
+tab/section navigation — the Fable export has no tabbed analytical page; its model is §2's
+single-surface "the table IS the page", and tabs would hide co-visible real data. (3) No per-row
+sparklines in Market Data — they would duplicate the main chart's real history at worse fidelity
+(and R5 already documented the static-shape-next-to-live-value hazard). (4) No sorting added to
+any Compare table — current functionality has none; the brief permits sorting only where it
+exists. (5) No clear-all control — not in current behavior. (6) No scatter/small-multiples/
+distribution charts — the analytical questions this route answers (performance over time,
+cross-sectional fundamentals) are already served by the correct chart types; adding chart types
+merely because Fable contains them is prohibited. (7) Table orientation kept: **metrics as rows ×
+subjects as columns** with sticky metric column + sticky subject headers — already the brief's
+preferred structure; no orientation flip needed. (8) Selection state stays in `localStorage`
+(`cmi.compare*`), not the URL — the existing state semantic (refresh-persistent, not
+URL-encoded); introducing a URL-state system is out of scope and the no-new-query-state guard
+still passes.
+
+**Data integrity:** all 12 fundamentals getters, the perfCell null handling, `fmtX`/`fmtPctCell`
+rounding, derived-field `•` markers, footer source-precedence ternaries, badge logic,
+`historyAccumulating` note, return math (`totalAndAnnual`/`tfStart`), TF/Period/custom-range
+wiring, and the `/api/compare` + `/api/compare/history` fetch effects are byte-identical. Zero
+and negatives stay distinct from unavailable everywhere (guarded); nothing new fetches, sorts,
+smooths, interpolates, or forecasts.
+
+**Tests:** `tests/fableComparePage.test.ts` — 9 Phase 5D cases updated in place with documented
+R6 comments (header→PageHeader, dialog→ModalShell ×4, chip primitives, focus-ring count,
+clear-affordance, i18n keys) + a new **Phase R6** block (12 cases across composition, canonical
+routes/identity, and data-honest enhancement rules: nulls never ranked/drawn, `dir 0` never
+styled, tint never the sole channel, raw value always visible, no native dialogs, no new route,
+no sort introduced). `tests/fableMacroChartModalOpacity.test.ts` item 14 updated — compare left
+the raw-overlay-consumer list for `<ModalShell` (a real phase boundary moving). Focused: 255/255
+(compare suites) + 1147/1147 (cross-check suites). Lint 0, build 0 errors, `git diff --check`
+clean.
+
+**Not changed:** every API route/payload (`/api/compare`, `/api/compare/history`, valuation
+resolvers), `resolveCompareData`/`resolveCompareHistory`/`compareTypes`, return/normalization
+math, all 11 `cmi.compare*` persisted keys, duplicate prevention (Set, first-occurrence wins),
+the 6-slot cap, datalist search, CSV export contents, source badges/footers/as-of derivations,
+R1.5 access control (`/compare` stays `private_page`; unauthenticated page → login redirect, API
+→ 401), and every route outside `/compare`. Manual browser validation (1728/1024/390, EN/ES,
+light/dark, reduced-motion) remains **pending** — no browser connected this session.
+
+### R6.1 (2026-07-31) — Compare static-path and API restoration repair
+
+Both Compare APIs were returning **HTTP 500** with
+`TypeError: The "path" argument must be of type string or an instance of URL. Received an instance of
+URL` thrown from `fileURLToPath` in `src/lib/compare/compareStatic.ts`. The throw happened at MODULE
+EVALUATION — before `resolveCompareData`, `resolveCompareHistory`, Yahoo, persisted fundamentals, or
+history resolution ran — so each route's own `try`/`catch` (which degrades a *resolver* failure to a
+200 envelope) could never catch it. The browser therefore rendered unavailable Market Data and
+Fundamentals and fell back to Static-sample returns.
+
+**Failing expression:** `fileURLToPath(new URL('../../data/companies.json', import.meta.url))`
+(and the `stockPrices.json` twin).
+
+**Root cause — confirmed empirically against webpack's own emitted output, not assumed.** Webpack
+rewrites *both halves* of that expression:
+
+1. `new URL(...)` → `new __webpack_require__.U(...)`. Read verbatim from the emitted
+   `.next/server/webpack-runtime.js`, that helper builds a fake URL and sets
+   `c.origin = c.protocol = ""`, then does `g.U.prototype = URL.prototype`. Node's `fileURLToPath`
+   brand-checks by DUCK TYPING (`href && protocol && auth === undefined && path === undefined`), so
+   the **falsy protocol fails the guard** — while the borrowed prototype makes Node's error formatter
+   print the constructor name `URL`, producing the self-contradictory "must be … an instance of URL.
+   Received an instance of URL". Executing that verbatim helper reproduces the production message
+   byte-for-byte.
+2. The JSON literal → an **asset module**: `module.exports = __webpack_require__.p +
+   "static/media/companies.28369a33.json"` with `p = "/_next/"`. So the value is a public web path,
+   not a filesystem path. Passing the string form (`.href`) therefore only moves the failure to
+   `TypeError: Invalid URL` — verified by execution. **A `.href` tweak alone is not a sufficient
+   repair under webpack.**
+
+The compiled pre-fix expression was captured from a real webpack build as
+`(0,e.fileURLToPath)(new c.U(c(99132)))`. **Turbopack is unaffected**: its build emits a native
+`new URL(e.R(72373)).href` against a real `/server/assets/...` file URL, which is why production and
+`npm run dev` (Turbopack) never showed this — the reported failure can only originate from webpack.
+
+**Repair architecture.** `compareStatic.ts` no longer resolves a path at all:
+
+```ts
+import companiesJson  from '../../data/companies.json'  with { type: 'json' }
+import stockPricesJson from '../../data/stockPrices.json' with { type: 'json' }
+export const STATIC_COMPANIES = companiesJson  as StaticCompany[]
+export const STATIC_SNAPSHOTS = stockPricesJson as StaticStockSnapshot[]
+```
+
+There is nothing left for a bundler to rewrite: webpack and Turbopack both inline the data, Node's
+native test runner reads it directly via the `with { type: 'json' }` attribute (without the attribute
+Node throws `ERR_IMPORT_ATTRIBUTE_MISSING` — the exact reason this file originally used `fs` +
+`import.meta.url`), and Vercel's file tracer has nothing to trace, which also permanently retires the
+ENOENT-on-Vercel hazard the old `new URL('<literal>', …)` comment existed to warn about. No
+`process.cwd()`, no hardcoded path, no `file://` stripping, no drive-letter slicing, no duplicated or
+relocated data file, no swallowed error, no fake-success response.
+
+**Cross-platform behaviour:** module-loader resolution, so no drive letter, separator, or
+percent-decoding semantics remain to diverge between Windows and Linux/Vercel; a guard test asserts the
+file consults no path/platform API at all.
+
+**Sibling helpers.** Four other files carried the identical expression
+(`news/tickerMapping.ts`, `financials/csvFinancials.ts`, `db/repositories/portfolioRepository.ts`,
+`db/repositories/portfolioTransactionRepository.ts`). They back `/api/news` and `/api/portfolios`, are
+outside the reported Compare outage, and work under Turbopack (the production runtime), so they were
+**hardened to the string form (`.href`)** — which fixes the brand-check half of the bug at zero risk —
+rather than restructured. Their webpack asset-path limitation is recorded under Limitations below.
+
+**Evidence.**
+- *Before, webpack build:* compiled to `(0,e.fileURLToPath)(new c.U(c(99132)))`; executing webpack's
+  verbatim `U` helper on its verbatim asset value reproduces the exact production TypeError, and the
+  `.href` variant fails with `Invalid URL`.
+- *After, webpack build:* the Compare route bundles and their chunks contain **no `fileURLToPath` and
+  no `static/media/companies`** reference at all. Force-evaluating the compiled `compareStatic` module
+  (id 59852, chunk 6094) through the real `webpack-runtime.js` returns live objects:
+  `COMPANY_BY_TICKER` 25 entries, `SNAPSHOT_BY_TICKER` 25 entries, `BSANTANDER → Santander Chile |
+  Banking`, `SQM-B → SQM | Mining`, `FALABELLA → Falabella | Retail`, `SQM-B price=63851 CLP`.
+- *Turbopack build:* `✓ Compiled successfully`, exit 0, `/compare`, `/api/compare` and
+  `/api/compare/history` all emitted.
+- *Webpack dev and Turbopack dev:* both boot clean; `/api/compare` and `/api/compare/history` return
+  **JSON** `401 {"error":"unauthenticated"}` (not an HTML Next.js error document) and `/compare`
+  returns `307 → /login?next=%2Fcompare`, so R1.5 is unchanged in both runtimes.
+
+**Tests:** `tests/compareStaticPathResolution.test.ts` (new, 30 cases, fully deterministic — no live
+Supabase/Yahoo/network): webpack's verbatim shim reproduction, proof that the string form alone is
+insufficient, the no-path-resolution invariant, byte-identical imported data, platform independence,
+the required import attribute, no-forbidden-shortcut scans across all five sites, both routes' query
+contracts and auth classification, provider-failure-vs-path-failure separation, Market Data /
+Fundamentals / History population from mocked inputs, zero-vs-null and negative-vs-null distinctions,
+source-label preservation, and scope guards (R6 UI untouched, no route file resolves a path, no native
+dialog).
+
+**Limitations.** (1) The authenticated API walk could not be performed — no session credentials are
+available to this session and creating an account or entering a password is prohibited; middleware
+short-circuits before the route module compiles, so HTTP cannot reach it unauthenticated. The
+force-evaluation of the real webpack-compiled module (above) is the equivalent proof. (2) Manual UI
+validation at 1728/390 was not performed — no browser is connected. (3) `npm run build -- --webpack`
+compiles successfully but then fails type-checking on a **pre-existing, unrelated** constraint: the
+webpack build emits `.next/types/app/**` page-type guards that reject the R3 test-visibility exports
+(`fmtPct`, `fmtNum`, …) from `src/app/structured-notes/page.tsx`. Not conflated with this repair;
+the Turbopack build (the project's actual build and deploy path) is clean. (4) `/api/news` and
+`/api/portfolios` retain the webpack asset-path limitation described above; migrating them to JSON
+imports would also require updating the standing CLAUDE.md rule that mandates `fs.readFileSync` +
+`import.meta.url` for JSON data (written before import attributes were available) and is left as
+documented follow-on work outside this brief's scope.
+
+### R6.2 (2026-07-31) — short-term returns, data freshness, and analytical hierarchy
+
+Three reported defects on `/compare`: every security showed **1D and 5D at exactly +0.00%**, the
+Market Data as-of ran several days stale, and the chart sat *below* the returns table with no
+indication of which window the table's figures used.
+
+**Root cause — the data, not the arithmetic.** Diagnosed against the live provider on 2026-07-31
+(no assumption; the raw responses were inspected):
+
+1. **Carried-forward filler bars.** Yahoo's daily chart for Santiago-listed tickers publishes
+   placeholder sessions that repeat the last real close with `volume: 0`. On 2026-07-31 that was
+   **2026-07-20 … 2026-07-30 on every tracked ticker** (BSANTANDER 77, CHILE 188.5, FALABELLA 5835,
+   CENCOSUD 1995 — the genuine last session was 07-17). Comparing "latest bar vs previous bar"
+   therefore compared a filler against a filler: exactly 0.00%, for every security, in both windows.
+   1M/YTD/1Y were unaffected because their windows reach back past the filler region.
+2. **`period2` is exclusive.** The live chart request ended at `to = today`, and Yahoo treats
+   `period2` as exclusive, so the genuine current session was never fetched — a request ending
+   "today" returned bars only through 07-30 while a real 07-31 bar existed. This is the stale as-of.
+3. **1D never consulted the quote.** The quote endpoint was healthy throughout (`marketState:
+   REGULAR`, real day high/low and volume, CHILE 192.82 against a 196.8 previous close = −2.02%),
+   and its `regularMarketPreviousClose` did not match *any* chart bar — so the chart could not have
+   produced a correct 1D even without the fillers.
+
+**Formulas.** 1D = `latest valid price / previous trading-session close − 1`, taking the quote's own
+`price` / `previousClose` pair when present (same snapshot as the displayed price, so the two can
+never disagree), else the two most recent genuine sessions. 5D = `latest valid price / close five
+TRADING sessions earlier − 1`. Sessions are counted, never calendar days; fewer than two valid
+observations yields a null 1D, fewer than six a null 5D — never a zero.
+
+**Trading-session selection** (`src/lib/market/shortTermReturns.ts`, pure): normalize (drop
+non-finite closes, dedupe by date with the last print winning, sort ascending) → strip fillers →
+merge the quote as the latest session (superseding a same-dated bar, appending when newer). Filler
+removal is deliberately conservative: a bar is dropped only when it BOTH reports `volume === 0` AND
+repeats the previous retained close, so `volume: null` ("not reported") and any zero-volume bar whose
+close moved are always kept.
+
+**Search buffer.** 1D and 5D share ONE `1M` fetch. This is a search buffer, not the measured window
+(the same technique the 1D path already used with a 5D buffer): after filler removal a 5-day request
+yielded *zero* genuine sessions for these tickers, while the 1M request yields ~15. `fiveDayReturn`
+still measures exactly five sessions.
+
+**As-of convention.** Each row's `latestSnapshotDate` is now its own quote observation date
+(`priceAsOf`), falling back to the persisted-snapshot date only when there is no live quote; the
+surface-level as-of is the **newest** row's date. A genuinely stale subject therefore keeps its own
+real date and stays in the comparison rather than being hidden behind one blended figure or dropped.
+Market cap, price and 1D all derive from the same quote snapshot. Fundamentals are untouched and
+keep their real reporting periods — the same-date rule applies to market-price data only.
+
+**Page order** (D): PageHeader → **subject-selection rail** (the six slot inputs moved out of the
+returns table, so selection precedes the window controls) → timeframe/period/range controls →
+**Cumulative Return chart** → Comparative Returns → Fundamentals → Market Data. Documented
+deviation: Market Data sits after the Returns/Fundamentals grid rather than between them, so the two
+matrix tables keep their existing side-by-side `xl` composition; all four mandatory rules hold
+(controls immediately before the chart, chart before the returns table, table states its timeframe,
+chart and table share one window). The controls exist exactly once.
+
+**Timeframe synchronization.** A single `tfLabel` — `usingCustom ? `${cStart} → ${cEnd}` : tf` —
+feeds both the chart heading (`Cumulative Return · Rebased to 0% · 1Y`) and the returns-table title
+(`Comparative Returns · 1Y`). Total Return, Difference and Annualized all come from `rowData`, built
+from the same `start`/`end` the chart series uses, so table and chart cannot describe different
+windows. 1M/YTD/1Y keep their existing `classifyPerformance` definition; normalization, custom-range
+behaviour, annualization and the reference-subject logic are unchanged.
+
+**Live evidence** (2026-07-31, all four requested subjects, real provider): BSANTANDER 1D −0.52% /
+5D +1.62%; CHILE 1D −2.18% / 5D +1.92%; FALABELLA 1D −0.33% / 5D +4.99%; CENCOSUD 1D +0.25% /
+5D −4.66%. Every 1D matches its quote's price-vs-previous-close exactly; 5D bases resolve to
+2026-07-10 (five genuine sessions back, skipping the filler run); 1M/YTD/1Y unchanged and sane
+(e.g. CENCOSUD YTD −33.45%); as-of **2026-07-31** on every row, equal to the current date.
+
+**Files:** `src/lib/market/shortTermReturns.ts` (new, pure), `src/lib/market/marketHistory.ts`
+(exclusive-`period2` compensation), `src/lib/providers/market/yahooHistoryProvider.ts` (filler
+removal), `src/lib/providers/market/yahooRatiosProvider.ts` (additive `previousClose`/`priceAsOf`),
+`src/lib/compare/resolveCompareData.ts` (short-term wiring + row/surface as-of),
+`src/app/compare/page.tsx` (hierarchy + timeframe labelling + selection rail), `src/lib/i18n.ts`
+(3 keys ×2). API response shapes are unchanged — the new diagnostics live in the pure module, not the
+wire types.
+
+**Tests:** `tests/compareShortTermReturns.test.ts` (new, 39 cases, fully deterministic): both
+formulas, weekend/holiday/filler gaps never yielding zero, conservative filler removal, null-vs-zero
+and negative-vs-null semantics, ordering/dedupe/invalid-observation hygiene, quote-merge rules,
+exclusive-`period2` range, as-of and price-basis wiring, 1M/YTD/1Y preservation, the full hierarchy
+contract, and scope/security/i18n/theme guards. Four `fableComparePage` guards and three
+`marketSnapshotHistory` range guards were updated in place with documented reasoning (real behaviour
+moving, not weakened assertions), plus `stockHistoryChartIntegrity` 7c for the new trim expression.
+Focused 758/758. Full suite **3724 · 3721 pass · 3 fail** (the permitted `newsModule` cases).
+Lint 0, build exit 0, `git diff --check` clean.
+
+**Limitations.** (1) The authenticated API walk and manual UI validation were **not performed** — no
+session credentials (creating an account or entering a password is prohibited) and no browser
+connected; the identical server-side provider + return path was exercised directly against live data
+instead, as recorded above. (2) 5D spans more calendar days than five when the provider fills the
+interval with placeholders (07-10 → 07-31 here). That is the brief's definition — five *trading
+sessions* — and both endpoint dates are returned so the window is disclosable, but it is not a
+five-calendar-day figure. (3) Filler detection depends on the provider reporting `volume: 0`; a
+carried-forward bar published with non-zero or absent volume would still be counted as a session.
+
+---
+
 ## Phase 7 — i18n additions & cleanup (`src/lib/i18n.ts`)
 
 Any new visible string (login utility chips "Secure connection", contrast label, privacy-mask

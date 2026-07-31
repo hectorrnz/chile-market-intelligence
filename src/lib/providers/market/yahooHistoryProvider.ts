@@ -14,6 +14,7 @@ import type { ProviderResult } from '../types.ts'
 import type { StockHistoryPoint, StockTimeframe } from './types.ts'
 import { TICKER_YF, INDEX_YF } from '../../market/liveOverlay.ts'
 import { resolveLiveHistoryDateRange, isSufficientMarketHistory } from '../../market/marketHistory.ts'
+import { stripNonTradingFillers } from '../../market/shortTermReturns.ts'
 
 const SOURCE = 'Yahoo Finance'
 const PROVIDER = 'yahoo-finance'
@@ -82,10 +83,24 @@ export async function getYahooStockHistory(
       })
     }
 
+    // R6.2 — drop Yahoo's carried-forward filler bars BEFORE anything else.
+    // For Santiago-listed tickers Yahoo publishes placeholder sessions that
+    // repeat the last real close with `volume: 0` (verified live 2026-07-31:
+    // 07-20…07-30 all repeated the 07-17 close for every tracked ticker).
+    // Left in, they are indistinguishable from flat trading and made "latest
+    // vs previous bar" resolve to exactly 0.00% for every security. The
+    // helper only removes a bar that BOTH reports zero volume AND repeats the
+    // previous close, so no genuine observation is ever discarded.
+    const sessions = stripNonTradingFillers(
+      points.map((p) => ({ date: p.date, close: p.close, volume: p.volume })),
+    )
+    const sessionDates = new Set(sessions.map((s) => s.date))
+    const realPoints = points.filter((p) => sessionDates.has(p.date))
+
     // Trim the wider '1D' search buffer down to exactly the most recent 2
     // trading days — a genuine 1-day change, not "however many days it took
     // the buffer to find 2 points".
-    const trimmed = timeframe === '1D' && points.length > 2 ? points.slice(-2) : points
+    const trimmed = timeframe === '1D' && realPoints.length > 2 ? realPoints.slice(-2) : realPoints
 
     if (!isSufficientMarketHistory(trimmed, timeframe)) {
       return { ok: false, reason: `Yahoo Finance returned insufficient bars for ${timeframe} (${trimmed.length} point(s))` }

@@ -32,11 +32,15 @@ const count = (haystack: string, needle: string) => haystack.split(needle).lengt
 
 describe('Phase 5D — every Compare section survives the re-skin', () => {
   it('keeps the page header with tag, title, subtitle and the Update action', () => {
-    assert.match(src, /<SectionHeader/)
-    assert.match(src, /tag=\{t\.compare\.tag\}/)
+    // R6: SectionHeader → shared Fable PageHeader (the R3/R4/R5 family
+    // convention). Same tag/title/subtitle/Update content — the subtitle now
+    // rides the metadata slot, joined by the live selection count.
+    assert.match(src, /<PageHeader/)
+    assert.match(src, /eyebrow=\{t\.compare\.tag\}/)
     assert.match(src, /title=\{t\.compare\.title\}/)
-    assert.match(src, /subtitle=\{t\.compare\.subtitle\}/)
+    assert.match(src, /\{t\.compare\.subtitle\}/)
     assert.match(src, /actions=\{<UpdateDataButton onRefresh=\{doRefresh\} \/>\}/)
+    assert.ok(!src.includes('<SectionHeader'), 'the pre-Fable SectionHeader is gone from this route')
   })
 
   it('still renders exactly one UpdateDataButton (the platform-wide convention)', () => {
@@ -49,7 +53,9 @@ describe('Phase 5D — every Compare section survives the re-skin', () => {
   })
 
   it('keeps the Comparative Returns table', () => {
-    assert.match(src, /title=\{t\.compare\.returnsTitle\}/)
+    // R6.2: the title now carries the active timeframe (`Comparative Returns ·
+    // 1Y`) so a derived return can never be read without its window.
+    assert.match(src, /title=\{`\$\{t\.compare\.returnsTitle\} · \$\{tfLabel\}`\}/)
   })
 
   it('keeps the Fundamentals table', () => {
@@ -66,9 +72,18 @@ describe('Phase 5D — every Compare section survives the re-skin', () => {
     assert.match(src, /t\.compare\.perfTitle/)
   })
 
-  it('keeps the Settings modal, dialog-rooted and Esc-closable', () => {
-    assert.match(src, /useEscape\(settingsOpen, \(\) => setSettingsOpen\(false\)\)/)
-    assert.match(src, /role="dialog" aria-modal="true" aria-label=\{t\.compare\.settings\}/)
+  it('keeps the Settings modal, dialog-rooted and Esc-closable (via the shared ModalShell)', () => {
+    // R6: the page-local dialog markup is replaced by the one shared
+    // ModalShell (R4.1 dialog system) — which itself provides role="dialog",
+    // aria-modal, labelling, Escape, focus trap, and focus restore. The page
+    // asserts the delegation; the shell's own contract is asserted below and
+    // in tests/fableDialogSystem-era suites.
+    assert.match(src, /<ModalShell\s*\n\s*open=\{settingsOpen\}\s*\n\s*onClose=\{\(\) => setSettingsOpen\(false\)\}\s*\n\s*title=\{t\.compare\.settings\}/)
+    assert.ok(!src.includes('useEscape('), 'Escape handling now lives inside ModalShell, not the page')
+    const shell = read('src/components/fable/ModalShell.tsx')
+    assert.match(shell, /role=\{role\}/)
+    assert.match(shell, /aria-modal="true"/)
+    assert.match(shell, /useEscape\(open && canDismiss, onClose\)/)
   })
 
   it('adds no invented KPI, hero, or summary metric to this route', () => {
@@ -126,8 +141,13 @@ describe('Phase 5D — ticker add/remove behaviour unchanged', () => {
     assert.match(src, /const setSlot = \(i: number, v: string\) => \{ const next = \[\.\.\.s6\]; next\[i\] = v\.toUpperCase\(\)\.slice\(0, 12\); setSlots\(next\) \}/)
   })
 
-  it('a slot is removed by clearing its text — no separate remove control was invented', () => {
+  it('a slot is removed by clearing its text — the R6 clear button rides the same pathway', () => {
+    // R6 added an explicit, touch-usable ✕ per filled slot, but it is only an
+    // affordance over the exact pre-existing remove semantics: clearing the
+    // slot's text via setSlot. No parallel remove pathway exists.
     assert.ok(!/removeSlot|deleteSlot/.test(src))
+    assert.match(src, /onClick=\{\(\) => setSlot\(i, ''\)\}/)
+    assert.match(src, /aria-label=\{`\$\{t\.compare\.removeSecurity\} \$\{i \+ 1\}`\}/)
   })
 
   it('validates every slot against the real company universe', () => {
@@ -470,19 +490,36 @@ describe('Phase 5D — Fable visual language applied via shared primitives', () 
   })
 
   it('uses GlassSurface for the control bar and chart card, never a raw bg-surface div', () => {
+    // R6.2 added a third card surface: the subject-selection rail that the
+    // slot inputs moved into (2 → 3).
     assert.match(src, /from '@\/components\/fable\/GlassSurface'/)
-    assert.equal(count(src, '<GlassSurface variant="card"'), 2)
+    assert.equal(count(src, '<GlassSurface variant="card"'), 3)
     assert.ok(!src.includes('bg-surface border border-border rounded'), 'the pre-Fable card recipe is gone')
   })
 
-  it('restyles the Settings modal to the established glass-overlay + scrim pattern', () => {
-    assert.match(src, /nv-scrim fixed inset-0/)
-    assert.match(src, /nv-glass-overlay nv-pop/)
+  it('the Settings modal delegates the glass-overlay + scrim recipe to the shared ModalShell', () => {
+    // R6: the raw nv-scrim/nv-glass-overlay markup moved off the page and
+    // into the one shared dialog shell — same recipe, one owner.
+    assert.ok(!src.includes('nv-scrim'), 'no page-local scrim markup remains')
+    assert.ok(!src.includes('nv-glass-overlay'), 'no page-local overlay-glass markup remains')
+    const shell = read('src/components/fable/ModalShell.tsx')
+    assert.match(shell, /nv-scrim/)
+    assert.match(shell, /nv-glass-overlay/)
   })
 
-  it('uses Fable chip controls (nv-chip/nv-chipbd) for inputs and pill buttons', () => {
-    assert.ok(count(src, "backgroundColor: 'var(--nv-chip)'") >= 4)
-    assert.ok(count(src, "border: '1px solid var(--nv-chipbd)'") >= 4)
+  it('uses the shared Chip primitives for pill buttons/selects; only the date inputs keep the inline chip recipe', () => {
+    // R6: the hand-rolled ⚙/⤓ chip buttons became ChipButton and the two
+    // dialog selects became ChipSelect. The two native date inputs are the
+    // only remaining inline consumers of the chip material (no shared chip
+    // input primitive exists).
+    assert.match(src, /import \{ ChipButton, ChipSelect \} from '@\/components\/fable\/Chip'/)
+    assert.equal(count(src, '<ChipButton'), 2)
+    assert.equal(count(src, '<ChipSelect'), 2)
+    // R6.2: 3 inline chip surfaces now — the two date inputs plus the
+    // selection-rail slot pills (a chip-shaped container holding an input,
+    // which no shared primitive covers).
+    assert.equal(count(src, "backgroundColor: 'var(--nv-chip)'"), 3)
+    assert.equal(count(src, "border: '1px solid var(--nv-chipbd)'"), 3)
   })
 
   it('keeps dense radii off the tables (no 22px card radius on cells)', () => {
@@ -517,10 +554,14 @@ describe('Phase 5D — Fable visual language applied via shared primitives', () 
 
 describe('Phase 5D — motion is restrained and reduced-motion safe', () => {
   it('uses only the shared CSS reveal primitive, with the Fable stagger cadence', () => {
+    // R6.2 re-ordered the page (selection rail → controls+chart → tables), so
+    // the stagger re-sequenced: 40 (rail), 70 (Market Data), 100 (chart),
+    // 130 (returns/fundamentals grid). Same primitive, same cadence spacing.
     assert.match(src, /<Reveal>/)
+    assert.match(src, /<Reveal delayMs=\{40\}>/)
     assert.match(src, /<Reveal delayMs=\{70\}>/)
+    assert.match(src, /<Reveal delayMs=\{100\}>/)
     assert.match(src, /<Reveal delayMs=\{130\}>/)
-    assert.match(src, /<Reveal delayMs=\{190\}>/)
     assert.match(src, /from '@\/components\/fable\/motion'/)
   })
 
@@ -536,7 +577,9 @@ describe('Phase 5D — motion is restrained and reduced-motion safe', () => {
   })
 
   it('the settings modal uses the established nv-pop overlay entrance, not a bespoke transition', () => {
-    assert.match(src, /nv-pop/)
+    // R6: nv-pop rides the shared ModalShell now, not page markup.
+    assert.match(read('src/components/fable/ModalShell.tsx'), /nv-pop/)
+    assert.ok(!src.includes('nv-pop'), 'no page-local overlay entrance remains')
   })
 
   it('the reveal primitive collapses to its final state under reduced motion', () => {
@@ -571,9 +614,13 @@ describe('Phase 5D — accessibility', () => {
     assert.match(src, /aria-label=\{t\.compare\.diffRef\}/)
   })
 
-  it('the settings dialog has an accessible name and a labelled close control', () => {
-    assert.match(src, /role="dialog" aria-modal="true" aria-label=\{t\.compare\.settings\}/)
-    assert.match(src, /aria-label=\{t\.fable\.panel\.close\}/)
+  it('the settings dialog has an accessible name and a labelled close control (via ModalShell)', () => {
+    // R6: the accessible name (aria-labelledby ← title) and the labelled ✕
+    // are supplied by the shared shell; the page supplies the localized title.
+    assert.match(src, /title=\{t\.compare\.settings\}/)
+    const shell = read('src/components/fable/ModalShell.tsx')
+    assert.match(shell, /aria-labelledby=\{titleId\}/)
+    assert.match(shell, /aria-label=\{t\.fable\.panel\.close\}/)
   })
 
   it('marks decorative glyphs aria-hidden', () => {
@@ -586,7 +633,10 @@ describe('Phase 5D — accessibility', () => {
   })
 
   it('keeps the visible focus ring on every restyled input/select/button', () => {
-    assert.ok(count(src, 'focus:border-accent') >= 5)
+    // R6: the two dialog selects became ChipSelect and the pill buttons
+    // became ChipButton — both rely on the global :focus-visible ring. The
+    // remaining inline focus treatment covers the slot input + 2 date inputs.
+    assert.ok(count(src, 'focus:border-accent') >= 3)
   })
 
   it('SegmentedControl itself is a real keyboard-operable radiogroup (untouched by this phase)', () => {
@@ -623,9 +673,11 @@ describe('Phase 5D — responsive guarantees', () => {
     assert.match(src, /flex items-center gap-1 flex-wrap/)
   })
 
-  it('the settings modal caps to the viewport (max-h-[80vh], px-4 gutter)', () => {
-    assert.match(src, /max-h-\[80vh\]/)
-    assert.match(src, /px-4"/)
+  it('the settings modal caps to the viewport via the shared shell (max-h-[85vh], px-4 gutter)', () => {
+    // R6: viewport containment comes from ModalShell now.
+    const shell = read('src/components/fable/ModalShell.tsx')
+    assert.match(shell, /max-h-\[85vh\]/)
+    assert.match(shell, /px-4/)
   })
 
   it('reintroduces no root min-width', () => {
@@ -637,7 +689,8 @@ describe('Phase 5D — responsive guarantees', () => {
 // ─── Localisation ────────────────────────────────────────────────────────────
 
 describe('Phase 5D — English and Spanish complete', () => {
-  const NEW_KEYS = ['timeframeLabel:', 'clearRange:']
+  // R6 added selectedCount/removeSecurity/bestInGroup/worstInGroup/legendHint.
+  const NEW_KEYS = ['timeframeLabel:', 'clearRange:', 'selectedCount:', 'removeSecurity:', 'bestInGroup:', 'worstInGroup:', 'legendHint:']
 
   for (const key of NEW_KEYS) {
     it(`compare.${key.replace(':', '')} exists in both dictionaries`, () => {
@@ -658,6 +711,11 @@ describe('Phase 5D — English and Spanish complete', () => {
   it('keeps the Spanish translations distinct from English for the new keys', () => {
     assert.match(i18n, /timeframeLabel: 'Periodo'/)
     assert.match(i18n, /clearRange:\s+'Limpiar rango'/)
+    assert.match(i18n, /selectedCount: 'seleccionados'/)
+    assert.match(i18n, /removeSecurity: 'Quitar instrumento'/)
+    assert.match(i18n, /bestInGroup:\s+'Mejor del grupo'/)
+    assert.match(i18n, /worstInGroup:\s+'Peor del grupo'/)
+    assert.match(i18n, /legendHint:\s+'Clic para resaltar'/)
   })
 
   it('every t.compare.* key referenced by the page exists in both dictionaries', () => {
@@ -720,5 +778,95 @@ describe('Phase 5D — scope held', () => {
     assert.match(read('src/app/stocks/page.tsx'), /minWidth=\{760\}/)
     assert.match(read('src/app/watchlist/page.tsx'), /minWidth=\{620\}/)
     assert.match(read('src/app/companies/[ticker]/page.tsx'), /KpiCapsule/)
+  })
+})
+
+// ─── Phase R6 — state-of-the-art Fable Compare integration ────────────────────
+//
+// R6 deepened the Phase 5D re-skin without touching any data, calculation,
+// API, or persisted-state semantics: the shared PageHeader now carries a live
+// selection count (the Fable Portfolio "N of M holdings" metadata pattern),
+// Settings runs through the one shared ModalShell, every compared subject
+// links to its canonical /companies/[ticker] page and shows its real company
+// name, each filled slot gains a touch-usable clear affordance over the
+// unchanged remove semantics, best/worst emphasis gained a non-color signal,
+// and Total Return gained Fable Attribution-style signed magnitude bars.
+// Everything below pins that composition AND its data-integrity rules
+// (nulls never ranked, never drawn, never coerced to zero).
+
+describe('Phase R6 — Fable composition (header, dialog, shared primitives)', () => {
+  it('opens with the shared PageHeader carrying a real selection count in metadata', () => {
+    assert.match(src, /\{valids\.length\}\/6/)
+    assert.match(src, /\{t\.compare\.selectedCount\}/)
+  })
+
+  it('uses no native browser dialog anywhere on the route', () => {
+    assert.ok(!src.includes('window.confirm'))
+    assert.ok(!src.includes('window.alert'))
+    assert.ok(!src.includes('window.prompt'))
+    assert.ok(!/[^.\w](confirm|alert|prompt)\(/.test(src))
+  })
+
+  it('no page-local dialog markup remains — the shared shell is the only dialog owner', () => {
+    assert.ok(!src.includes('role="dialog"'))
+    assert.ok(!src.includes('aria-modal'))
+    assert.match(src, /import \{ ModalShell \} from '@\/components\/fable\/ModalShell'/)
+  })
+})
+
+describe('Phase R6 — subject identity and canonical routes', () => {
+  it('links every Market Data subject to its canonical /companies/[ticker] page', () => {
+    assert.match(src, /<Link href=\{`\/companies\/\$\{ticker\}`\} className="font-mono text-primary hover:underline">\{ticker\}<\/Link>/)
+  })
+
+  it('links the Fundamentals subject headers to the same canonical route (2 link sites total)', () => {
+    assert.equal(count(src, '/companies/${ticker}'), 2)
+  })
+
+  it('shows each subject’s real company name from the validated universe, truncating long names', () => {
+    assert.match(src, /\{compMap\[ticker\]\.shortName\}/)
+    assert.match(src, /truncate max-w-\[180px\]/)
+  })
+
+  it('introduces no replacement route or second Compare page', () => {
+    assert.ok(!existsSync(join(ROOT, 'src/app/comparison')))
+    assert.ok(!existsSync(join(ROOT, 'src/app/compare/[id]')))
+  })
+})
+
+describe('Phase R6 — visual comparison enhancements stay data-honest', () => {
+  it('Total Return bar: length from |value| scaled to the group max, tone by sign, tokens only', () => {
+    assert.match(src, /const trAbsMax = Math\.max\(0, \.\.\.rowData\.filter\(r => r\.tr != null\)\.map\(r => Math\.abs\(r\.tr as number\)\)\)/)
+    assert.match(src, /r\.tr >= 0 \? 'var\(--positive\)' : 'var\(--negative\)'/)
+  })
+
+  it('the bar never renders for an unavailable return, is decorative (aria-hidden), and the signed printed value remains', () => {
+    assert.match(src, /r && r\.tr != null && trAbsMax > 0 && \(/)
+    assert.match(src, /\{r \? fmtPct\(r\.tr\) : ''\}/)
+    const barBlock = src.slice(src.indexOf('trAbsMax > 0 && ('), src.indexOf('trAbsMax > 0 && (') + 500)
+    assert.match(barBlock, /aria-hidden="true"/)
+  })
+
+  it('best/worst ranking still excludes unavailable values and ambiguous-direction rows', () => {
+    assert.match(src, /if \(!highlight \|\| row\.dir === 0 \|\| value == null\) return null/)
+    assert.match(src, /const nums = values\.filter\(\(v\): v is number => v != null\)/)
+  })
+
+  it('best/worst emphasis is not color-only: title + sr-only text accompany the tint', () => {
+    assert.match(src, /title=\{rank \? rankLabel\(rank\) : undefined\}/)
+    assert.match(src, /\{rank && <span className="sr-only">\{rankLabel\(rank\)\}<\/span>\}/)
+  })
+
+  it('zero and negative values remain distinct from unavailable in the ranking and the bar', () => {
+    // The bar width uses Math.abs of a non-null value only; ranking filters
+    // nulls before Math.min/max — a genuine 0 or a negative participates,
+    // null never does, and nothing coerces a null to 0.
+    assert.match(src, /Math\.abs\(r\.tr\)/)
+    assert.ok(!/\btr \?\? 0\b|\bvalue \?\? 0\b/.test(src))
+  })
+
+  it('visual emphasis changes no sorting and no data — rowData/valids ordering logic is untouched', () => {
+    assert.match(src, /const rowData = valids\.map\(\(\{ slot, ticker \}\) => \{/)
+    assert.ok(!src.includes('.sort('), 'no sort was introduced on this route')
   })
 })

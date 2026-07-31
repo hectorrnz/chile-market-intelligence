@@ -37,6 +37,12 @@ function subtractDays(date: string, days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
+function addDays(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
 // ─── Live-provider (Yahoo Finance chart) date range ────────────────────────────
 // Unlike resolveHistoryDateRange (which returns null for 3Y/5Y — those require
 // years of accumulated Supabase snapshots we don't have yet), a live Yahoo
@@ -48,7 +54,13 @@ export function resolveLiveHistoryDateRange(
   today?: string,
 ): { from: string; to: string } {
   const todayStr = today ?? new Date().toISOString().slice(0, 10)
-  const to = todayStr
+  // R6.2 — `to` is TOMORROW, not today. Yahoo's chart `period2` is EXCLUSIVE,
+  // so passing today silently dropped the current session's bar: verified live
+  // on 2026-07-31, a request ending "today" returned bars only through 07-30
+  // even though a genuine 07-31 bar existed. That single off-by-one made every
+  // Compare column read one session stale, and it is why the Market Data
+  // as-of date lagged the current date.
+  const to = addDays(todayStr, 1)
 
   let from: string
   switch (timeframe) {

@@ -35,6 +35,15 @@ const USD_CLP_SYMBOL = 'USDCLP=X'
 export interface YahooValuation {
   /** Regular-market price in the quote currency. */
   price: number | null
+  /**
+   * R6.2 — previous official session close, from the SAME quote snapshot as
+   * `price`, so the 1D return and the displayed price can never be computed
+   * off different bases. Authoritative over the chart series, whose recent
+   * bars can be carried-forward filler (see shortTermReturns.ts).
+   */
+  previousClose: number | null
+  /** Observation date (YYYY-MM-DD) of `price` — the true market-data as-of. */
+  priceAsOf: string | null
   /** Quote currency (e.g. 'CLP'). */
   currency: string | null
   /** Market capitalization in the quote currency (raw units, not millions). */
@@ -69,7 +78,8 @@ export interface YahooRatios {
 }
 
 const EMPTY_VALUATION: YahooValuation = {
-  price: null, currency: null, marketCap: null, peFwd: null, psTtm: null,
+  price: null, previousClose: null, priceAsOf: null,
+  currency: null, marketCap: null, peFwd: null, psTtm: null,
   evEbitda: null, opMargin: null, grossMargin: null, roe: null, fcfYield: null,
   pb: null, dividendYield: null, netDebtEbitda: null,
 }
@@ -154,6 +164,19 @@ export async function fetchYahooValuation(tickers: string[]): Promise<Map<string
 
         const price = finite(r?.price?.regularMarketPrice)
         const marketCap = finite(r?.price?.marketCap ?? r?.summaryDetail?.marketCap)
+        // R6.2 — the 1D basis, read from this same snapshot. `regularMarketTime`
+        // is the observation instant; its calendar date is the honest as-of for
+        // every price-derived field (price, market cap, 1D).
+        const previousClose = finite(
+          r?.price?.regularMarketPreviousClose ?? r?.summaryDetail?.previousClose,
+        )
+        const rawTime = r?.price?.regularMarketTime
+        const timeMs =
+          rawTime instanceof Date ? rawTime.getTime()
+          : typeof rawTime === 'number' ? rawTime * 1000
+          : null
+        const priceAsOf =
+          timeMs != null && Number.isFinite(timeMs) ? new Date(timeMs).toISOString().slice(0, 10) : null
 
         const rawPb = finite(r?.defaultKeyStatistics?.priceToBook)
         const rawPs = finite(r?.summaryDetail?.priceToSalesTrailing12Months)
@@ -191,6 +214,8 @@ export async function fetchYahooValuation(tickers: string[]): Promise<Map<string
 
         out.set(ticker, {
           price,
+          previousClose,
+          priceAsOf,
           currency: quoteCurrency,
           marketCap,
           peFwd: round1(correct(rawPe)),

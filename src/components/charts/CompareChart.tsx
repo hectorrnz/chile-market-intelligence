@@ -185,7 +185,7 @@ export function CompareChart({ series, height = 300, showGrid = true, lineWidth 
             <button
               key={s.ticker}
               onClick={() => setHi(active ? null : s.ticker)}
-              title="Click to highlight"
+              title={t.compare.legendHint}
               className="flex items-center gap-1.5 text-xs rounded px-1 nv-transition"
               style={dimmed ? { opacity: 'var(--legend-inactive-opacity)' } : undefined}
               aria-pressed={active}

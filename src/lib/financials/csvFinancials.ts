@@ -15,7 +15,9 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-const companiesPath = fileURLToPath(new URL('../../data/companies.json', import.meta.url))
+// R6.1 — `.href`, never the URL object (bundler URL shims fail
+// fileURLToPath's brand check). See compareStatic.ts for the root cause.
+const companiesPath = fileURLToPath(new URL('../../data/companies.json', import.meta.url).href)
 const COVERED_TICKERS = new Set(
   (JSON.parse(readFileSync(companiesPath, 'utf8')) as { ticker: string }[]).map((c) => c.ticker.toUpperCase()),
 )

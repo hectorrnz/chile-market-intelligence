@@ -126,6 +126,10 @@ describe('Manual repair — macro chart popup uses a near-opaque analytical surf
   })
 
   it('14. unrelated modal consumers still use the sparse Tier-5 overlay glass, unchanged (defect was local to macro)', () => {
+    // Phase R6 migrated the Compare settings modal to the shared ModalShell
+    // (which itself carries nv-glass-overlay), so the compare page no longer
+    // holds raw overlay markup — a real phase boundary moving, not a relaxed
+    // assertion. The shell delegation is guarded in tests/fableComparePage.test.ts.
     const chartBuilder = read('src/app/chart-builder/page.tsx')
     const compare = read('src/app/compare/page.tsx')
     const commandPalette = read('src/components/ui/CommandPalette.tsx')
@@ -134,7 +138,6 @@ describe('Manual repair — macro chart popup uses a near-opaque analytical surf
     const mobileNavDrawer = read('src/components/layout/MobileNavDrawer.tsx')
     for (const [name, contents] of [
       ['chart-builder settings modal', chartBuilder],
-      ['compare settings modal', compare],
       ['CommandPalette', commandPalette],
       ['NotificationBell', notificationBell],
       ['DetailPanel', detailPanel],
@@ -142,5 +145,6 @@ describe('Manual repair — macro chart popup uses a near-opaque analytical surf
     ] as const) {
       assert.match(contents, /nv-glass-overlay/, `${name} must still use the Tier-5 overlay glass`)
     }
+    assert.match(compare, /<ModalShell/, 'compare settings modal now rides the shared ModalShell')
   })
 })

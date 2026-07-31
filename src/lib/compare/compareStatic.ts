@@ -7,8 +7,8 @@
 // '@/lib/data/companies' helper). Everything in this file is safely
 // unit-testable with plain `node --test`.
 
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import companiesJson from '../../data/companies.json' with { type: 'json' }
+import stockPricesJson from '../../data/stockPrices.json' with { type: 'json' }
 import type { StockHistoryResponse } from '../providers/market/types.ts'
 import {
   safeNumber,
@@ -44,17 +44,34 @@ export interface StaticStockSnapshot {
   dividendYield?: number
 }
 
-// The `new URL('literal', import.meta.url)` argument must be a string
-// literal, not a variable — Vercel's build-time file tracer (@vercel/nft)
-// only detects this pattern statically when it can see the literal path
-// directly in the call, matching portfolioRepository.ts's proven pattern.
-// A generic loadJson(path) helper silently breaks tracing (ENOENT at
-// runtime on Vercel, works fine locally) since the path becomes a runtime
-// value instead of an analyzable literal — caught via Preview validation.
-const companiesPath = fileURLToPath(new URL('../../data/companies.json', import.meta.url))
-const stockPricesPath = fileURLToPath(new URL('../../data/stockPrices.json', import.meta.url))
-export const STATIC_COMPANIES = JSON.parse(readFileSync(companiesPath, 'utf8')) as StaticCompany[]
-export const STATIC_SNAPSHOTS = JSON.parse(readFileSync(stockPricesPath, 'utf8')) as StaticStockSnapshot[]
+// R6.1 — the reference data is IMPORTED, never resolved to a filesystem path.
+//
+// This file previously did `fileURLToPath(new URL('<literal>', import.meta.url))`
+// + readFileSync. That crashed BOTH Compare API routes with a 500 at MODULE
+// IMPORT (before any provider ran, so the routes' own try/catch could not
+// help), because a bundler is free to rewrite both halves of that expression:
+//
+//   • `new URL(...)` → webpack substitutes its own runtime shim whose
+//     `protocol` is `''`. Node's `fileURLToPath` brand-checks by duck typing
+//     (`href && protocol && auth === undefined && path === undefined`), so the
+//     falsy protocol fails the guard — while the shim's prototype is
+//     `URL.prototype`, so Node's error names it `URL`, producing the
+//     self-contradictory `The "path" argument must be of type string or an
+//     instance of URL. Received an instance of URL`.
+//   • the JSON literal → webpack turns it into an ASSET MODULE whose value is
+//     a public web path (`/_next/static/media/companies.<hash>.json`), not a
+//     filesystem path. So even passing the string form (`.href`) only moves
+//     the failure to `TypeError: Invalid URL`.
+//
+// A JSON import has no path to rewrite: every bundler (webpack and Turbopack,
+// dev and build) inlines the data, Node's native test runner reads it directly
+// via the `with { type: 'json' }` attribute, and Vercel's file tracer has
+// nothing left to trace — which also permanently retires the ENOENT-on-Vercel
+// hazard the old `new URL('<literal>', …)` comment existed to warn about.
+// Identical values, identical shape, no filesystem access, no platform or
+// runtime dependence.
+export const STATIC_COMPANIES = companiesJson as StaticCompany[]
+export const STATIC_SNAPSHOTS = stockPricesJson as StaticStockSnapshot[]
 export const COMPANY_BY_TICKER = new Map(STATIC_COMPANIES.map((c) => [c.ticker.toUpperCase(), c]))
 export const SNAPSHOT_BY_TICKER = new Map(STATIC_SNAPSHOTS.map((s) => [s.ticker.toUpperCase(), s]))
 

@@ -33,7 +33,9 @@ import { getPositionSource } from './portfolioRepository.ts'
 type Client = SupabaseClient<Database>
 
 function loadCoveredTickers(): Set<string> {
-  const jsonPath = fileURLToPath(new URL('../../../data/companies.json', import.meta.url))
+  // R6.1 — `.href`, never the URL object (bundler URL shims fail
+  // fileURLToPath's brand check). See compareStatic.ts for the root cause.
+  const jsonPath = fileURLToPath(new URL('../../../data/companies.json', import.meta.url).href)
   const companies = JSON.parse(readFileSync(jsonPath, 'utf8')) as { ticker: string }[]
   return new Set(companies.map((c) => c.ticker.toUpperCase()))
 }

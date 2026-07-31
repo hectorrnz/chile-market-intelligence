@@ -25,7 +25,10 @@ interface CompanyAliasEntry {
   shortName: string
 }
 
-const companiesJsonPath = fileURLToPath(new URL('../../data/companies.json', import.meta.url))
+// R6.1 — `.href`, never the URL object: under a bundler `URL` may be a shim
+// that fails `fileURLToPath`'s duck-typed brand check and throws at module
+// import. See compareStatic.ts for the full root-cause note.
+const companiesJsonPath = fileURLToPath(new URL('../../data/companies.json', import.meta.url).href)
 const companies = JSON.parse(readFileSync(companiesJsonPath, 'utf8')) as CompanyAliasEntry[]
 
 /** Aliases too generic or ambiguous to trust even though they appear in the static data. */

@@ -185,7 +185,13 @@ describe('history parsing and timeframe filtering', () => {
   })
 
   it('7c. the 1D buffer is trimmed to the two most recent bars, not to whatever the buffer caught', () => {
-    assert.match(yahooProviderSrc, /timeframe === '1D' && points\.length > 2 \? points\.slice\(-2\) : points/)
+    // R6.2: the trim now runs over `realPoints` — the buffer with Yahoo's
+    // carried-forward filler bars (repeated close + volume 0) removed. Same
+    // "two most recent" rule, applied to genuine sessions only, because
+    // trimming the raw buffer compared a filler against a filler and produced
+    // exactly 0.00% for every ticker.
+    assert.match(yahooProviderSrc, /timeframe === '1D' && realPoints\.length > 2 \? realPoints\.slice\(-2\) : realPoints/)
+    assert.match(yahooProviderSrc, /stripNonTradingFillers\(/)
   })
 })
 

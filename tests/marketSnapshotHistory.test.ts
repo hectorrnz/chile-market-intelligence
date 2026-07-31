@@ -110,22 +110,37 @@ describe('resolveLiveHistoryDateRange', () => {
     }
   })
 
+  // R6.2: the LIVE range now ends at today+1. Yahoo's chart `period2` is
+  // EXCLUSIVE, so ending at `today` silently dropped the current session's bar
+  // (verified live 2026-07-31: a request ending "today" returned bars only
+  // through 07-30 while a genuine 07-31 bar existed), which is what made every
+  // Compare column read one session stale. A real behaviour change, so these
+  // guards move with it — the `from` bounds are unchanged.
+  const tomorrow = '2026-07-02'
+
   it('3Y range starts a little over 3 years earlier', () => {
     const r = resolveLiveHistoryDateRange('3Y', today)
-    assert.equal(r.to, today)
+    assert.equal(r.to, tomorrow)
     assert.equal(r.from, '2023-06-22')
   })
 
   it('5Y range starts a little over 5 years earlier', () => {
     const r = resolveLiveHistoryDateRange('5Y', today)
-    assert.equal(r.to, today)
+    assert.equal(r.to, tomorrow)
     assert.equal(r.from, '2021-06-17')
   })
 
-  it('short timeframes (1D..1Y) match resolveHistoryDateRange exactly', () => {
+  it('short timeframes (1D..1Y) share resolveHistoryDateRange’s `from`, but end a day later', () => {
+    // The persisted-snapshot range (resolveHistoryDateRange) queries an
+    // INCLUSIVE store, so it correctly still ends at today; only the live
+    // provider needs the exclusive-bound compensation.
     const timeframes = ['1D', '5D', '1M', 'MTD', 'YTD', '1Y'] as const
     for (const tf of timeframes) {
-      assert.deepEqual(resolveLiveHistoryDateRange(tf, today), resolveHistoryDateRange(tf, today))
+      const live = resolveLiveHistoryDateRange(tf, today)
+      const persisted = resolveHistoryDateRange(tf, today)
+      assert.equal(live.from, persisted!.from, `${tf} from must match`)
+      assert.equal(persisted!.to, today, `${tf} persisted range still ends today`)
+      assert.equal(live.to, tomorrow, `${tf} live range must clear Yahoo's exclusive period2`)
     }
   })
 

@@ -26,20 +26,73 @@ import {
   classifyPerformance,
   normalizeCompareTickers,
 } from './compareStatic.ts'
-import { safeNumber, type CompareEntry, type CompareFundamentals, type ComparePerformance, type CompareResolveResult, type ValuationResult } from './compareTypes.ts'
+import { safeNumber, type CompareEntry, type CompareFundamentals, type ComparePerformance, type ComparePerformanceMetric, type CompareResolveResult, type ValuationResult } from './compareTypes.ts'
 import type { DataSourceStatus } from '../providers/types.ts'
+import { oneDayReturn, fiveDayReturn, type DailyBar, type QuoteBasis, type ShortTermReturn } from '../market/shortTermReturns.ts'
 
 export { normalizeCompareTickers } from './compareStatic.ts'
 
-const PERFORMANCE_TIMEFRAMES: StockTimeframe[] = ['1D', '5D', '1M', 'YTD', '1Y']
+// 1M/YTD/1Y keep their existing definition (first vs last close of the
+// requested window, via classifyPerformance). 1D/5D no longer go through that
+// path at all — see resolveShortTerm below.
+const LONG_TIMEFRAMES: StockTimeframe[] = ['1M', 'YTD', '1Y']
 
-async function resolvePerformance(ticker: string): Promise<ComparePerformance> {
-  const [oneDay, fiveDay, oneMonth, ytd, oneYear] = await Promise.all(
-    PERFORMANCE_TIMEFRAMES.map((tf) => resolveStockHistory(ticker, tf)),
-  )
+/**
+ * R6.2 — 1D and 5D are computed from the live quote basis plus a
+ * filler-stripped session series, not from `classifyPerformance` over a narrow
+ * chart window.
+ *
+ * The old path compared the last two bars of a 1D/5D chart request. Verified
+ * live on 2026-07-31, Yahoo returned carried-forward filler bars (repeated
+ * close, `volume: 0`) for 2026-07-20…07-30 on every tracked ticker, so both
+ * windows compared a filler against a filler and produced exactly +0.00%
+ * across the whole comparison set — while the quote endpoint simultaneously
+ * reported real movement (CHILE 192.82 vs a 196.8 previous close, −2.02%).
+ *
+ * A 1M window is fetched once and reused for both metrics — deliberately a
+ * SEARCH BUFFER, not the measured window (the same technique the 1D chart
+ * fetch already used with a 5D buffer). Counting five *trading sessions* back
+ * is impossible from a 5-day request when the provider fills most of that
+ * span with placeholders: verified live, the 5D request yielded zero genuine
+ * sessions for these tickers while the 1M request yields ~15. The buffer only
+ * widens the search; `fiveDayReturn` still measures exactly five sessions.
+ */
+async function resolveShortTerm(
+  ticker: string,
+  quote: QuoteBasis | null,
+): Promise<{ oneDay: ComparePerformanceMetric; fiveDay: ComparePerformanceMetric }> {
+  const history = await resolveStockHistory(ticker, '1M')
+  const bars: DailyBar[] = history.data.map((p) => ({ date: p.date, close: p.close, volume: p.volume }))
+  const isFetched = history.metadata.status === 'live' || history.metadata.status === 'persisted'
+  const hasQuote = quote != null && quote.price != null
+
+  const toMetric = (r: ShortTermReturn): ComparePerformanceMetric => {
+    if (r.value === null) {
+      return {
+        value: null,
+        source: isFetched || hasQuote ? 'unavailable' : 'static_fallback',
+        // Reuses the existing CompareFallbackReason vocabulary — no API shape
+        // change. `insufficient_supabase_history` is the established "the
+        // window could not be covered" reason across this resolver.
+        fallbackReason: isFetched || hasQuote ? 'insufficient_supabase_history' : undefined,
+      }
+    }
+    // A quote-backed figure is genuinely live; otherwise it inherits the
+    // history tier's own honesty (persisted vs static fallback).
+    return { value: safeNumber(r.value), source: hasQuote || isFetched ? 'persisted' : 'static_fallback' }
+  }
+
+  return { oneDay: toMetric(oneDayReturn(quote, bars)), fiveDay: toMetric(fiveDayReturn(quote, bars)) }
+}
+
+async function resolvePerformance(ticker: string, quote: QuoteBasis | null): Promise<ComparePerformance> {
+  const [shortTerm, oneMonth, ytd, oneYear] = await Promise.all([
+    resolveShortTerm(ticker, quote),
+    ...LONG_TIMEFRAMES.map((tf) => resolveStockHistory(ticker, tf)),
+  ] as [Promise<{ oneDay: ComparePerformanceMetric; fiveDay: ComparePerformanceMetric }>, ...Promise<Awaited<ReturnType<typeof resolveStockHistory>>>[]])
   return {
-    oneDay: classifyPerformance(oneDay),
-    fiveDay: classifyPerformance(fiveDay),
+    oneDay: shortTerm.oneDay,
+    fiveDay: shortTerm.fiveDay,
     oneMonth: classifyPerformance(oneMonth),
     ytd: classifyPerformance(ytd),
     oneYear: classifyPerformance(oneYear),
@@ -200,6 +253,11 @@ export async function resolveCompareData(tickersInput: string[]): Promise<Compar
     const staticSnap = SNAPSHOT_BY_TICKER.get(ticker)
     const val = valuationByTicker.get(ticker)
     const core = await buildTickerValuationCore(ticker, company, val, snap, staticSnap)
+    // R6.2 — one quote basis per ticker, shared by the price/market-cap columns
+    // and the 1D/5D math, so a return can never be computed off a different
+    // price than the one displayed beside it.
+    const quote: QuoteBasis | null =
+      val?.price != null ? { price: val.price, previousClose: val.previousClose, asOf: val.priceAsOf } : null
 
     data.push({
       ticker,
@@ -209,14 +267,27 @@ export async function resolveCompareData(tickersInput: string[]): Promise<Compar
       latestPrice: core.latestPrice,
       dayChangePct: safeNumber(snap?.dayChangePct ?? staticSnap?.dayChangePct ?? null),
       marketCapCLP: core.marketCapCLP,
-      latestSnapshotDate: snapshotsResp.metadata.latestSnapshotDate ?? null,
+      // R6.2 — a live quote's own observation date is the honest as-of for this
+      // row's price-derived fields. The persisted-snapshot date is only correct
+      // when there is no live quote; using it regardless is what made the
+      // Market Data footer read several days stale while showing live prices.
+      latestSnapshotDate: val?.priceAsOf ?? snapshotsResp.metadata.latestSnapshotDate ?? null,
       latestSnapshotType: snapshotsResp.metadata.latestSnapshotType ?? null,
       marketDataSource: core.hasLiveValuation ? 'Yahoo Finance' : (snap?.source ?? 'Static MVP sample'),
       marketDataStatus: core.hasLiveValuation ? 'live' : snapshotsResp.metadata.status,
-      performance: await resolvePerformance(ticker),
+      performance: await resolvePerformance(ticker, quote),
       fundamentals: core.fundamentals,
     })
   }
+
+  // R6.2 — the surface-level as-of is the NEWEST row-level as-of actually on
+  // screen. Per-row `latestSnapshotDate` still carries each subject's own date,
+  // so a genuinely stale subject stays visible and disclosable rather than
+  // being hidden behind one blended figure.
+  const latestRowAsOf = data
+    .map((d) => d.latestSnapshotDate)
+    .filter((d): d is string => typeof d === 'string' && d.length > 0)
+    .reduce<string | null>((max, d) => (max === null || d > max ? d : max), null)
 
   return {
     data,
@@ -226,7 +297,7 @@ export async function resolveCompareData(tickersInput: string[]): Promise<Compar
       persistedAvailable: Boolean(snapshotsResp.metadata.persistedAvailable),
       staticFallbackUsed:
         snapshotsResp.metadata.dataModeUsed === 'static' && snapshotsResp.metadata.dataModeRequested !== 'static',
-      latestSnapshotDate: snapshotsResp.metadata.latestSnapshotDate ?? null,
+      latestSnapshotDate: latestRowAsOf ?? snapshotsResp.metadata.latestSnapshotDate ?? null,
       invalidTickers,
     },
   }
