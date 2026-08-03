@@ -31,7 +31,8 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
 | 10 | `/portfolio` 🔒 | Portfolio | protected | 1 Overview + 2 Portfolio + 4 Risk | No (reused Phase 3 `TableCard`/`KpiCapsule`/`ChangeIndicator`/`SegmentedControl`/`GlassSurface`/`AsyncState`) | **✓ Phase 5H (2026-07-29)** | **✓ Source-scan verified** |
 | 11 | `/structured-notes` 🔒 | Structured Notes | protected | 6 Structured Notes | Yes — barrier gauge, upload/extract panel, dashboard KPIs, bar/donut | Not started | Not verified |
 | 12 | `/structured-notes/[id]` 🔒 | note ISIN/name | protected | 6 SN detail panel | Yes — terms grid, current-levels table, schedule, allocation grid | Not started | Not verified |
-| 13 | `/settings/notifications` 🔒 | Notification Settings | protected | 10 Administration | Yes — recipients table, add form | Not started | Not verified |
+| 13 | `/settings` 🔒 | Settings | protected | 10 Administration | Yes — Account, Data Sources, Security cards | **R9.2 implemented (2026-08-03)** | Automated complete; manual pending |
+| 13b | `/settings/notifications` 🔒 | Notification Settings | protected | 10 Administration | Yes — recipients table, add form | Unchanged pending R9.4 | Not verified |
 | 14 | `/login` | Sign in / Create account | public (auth) | 0 Login | Yes — cinematic login shell, glass auth panel | **R1 implemented (2026-07-29)** | Automated complete; manual pending |
 | 15 | `/forgot-password` | Reset your password | public (auth) | 0 Login (variant) | Yes — auth-panel variant | Not started | Not verified |
 | 16 | `/auth/reset-password` | Set a new password | public (auth) | 0 Login (variant) | Yes — auth-panel variant | Not started | Not verified |
@@ -722,7 +723,48 @@ no shared Fable component modified; no CSS added (the meter fill reuses the exis
   allocation grid (as a full detail page; Fable offers the language via its SN detail panel).
 - **Impl. status:** Not started · **Verif. status:** Not verified.
 
-## 13. `/settings/notifications` 🔒 — Notification Settings
+## 13. `/settings` 🔒 — Settings (canonical) — **R9.2 as built**
+
+- **Canonical destination.** `/settings` is now what the primary Settings nav item points at.
+  `/settings/notifications` is **unchanged and still fully functional** — `matchesPrefix` keeps it
+  resolving to the same nav group, so its active-pill state and `getPageTitle` are untouched. Its
+  redirect and the NotificationBell repoint belong to **R9.4**, when a real `#notifications` target
+  exists to land on.
+- **Architecture:** `page.tsx` is a **server component** (`force-dynamic`) — the first in the app.
+  It is the only place account authority is read: `getCurrentUser()` (`supabase.auth.getUser()`,
+  Auth-server verified) and `getApprovalProfile()` (session-bound client, own-row RLS). Only
+  sanitized serializable facts cross into `SettingsClient.tsx`. **No new API route, no migration,
+  no service-role client, no `user_profiles` write.**
+- **Content sections:** (1) `PageHeader`; (2) **Account** — display name · email · username ·
+  access, as a `<dl>`; (3) **Data sources** — live rows from `GET /api/health/ingestion`;
+  (4) **Security** — four factual NMI invariants plus Reset-password → `/forgot-password` and
+  Sign out → `/logout`.
+- **Data source / API:** existing `/api/health/ingestion` only (macro + market domains). Fetched
+  after mount with an `AbortController`; `AsyncState` `loading` / `unavailable` / `empty` are
+  distinct, so a failure is never rendered as healthy or empty. Every subline field is guarded on
+  actually being returned; dates go through `formatSourceDate`.
+- **Account authority:** username comes from the authoritative `user_profiles` row **only** — a
+  failed read renders "Unavailable" rather than borrowing metadata. Access is a **tri-state**
+  (`approved` / `not_approved` / `unavailable`) so an unreadable profile is never silently
+  downgraded into a denial. `user_metadata` supplies a display name for presentation and never an
+  authority claim. `role` is neither selected nor displayed.
+- **Excluded Fable fixture content** (screen 10 is almost entirely prototype data): the four-person
+  user directory (RLS permits reading only your own row), the four invented feeds, the six security
+  capabilities NMI does not have (SSO · 2FA · session timeout · device trust · IP allowlist · export
+  watermark — rendering `ENFORCED` for these would be a fabricated security assurance), the five
+  inert notification switches, the four reporting policies, and the audit log with its seven-year
+  immutability claim. The **visual** composition is reproduced exactly; the content is NMI's.
+- **Auth:** **protected** — `private_page` under default-deny, same as before.
+- **Fable destination:** **10 Administration**, Fable proportions preserved (row 1 `1.6 1 420px`
+  beside `1 1 300px`, `min-width:min(100%,…)` stacking, 14px gaps, 22px glass, uppercase section
+  labels, primary-over-subline rows, right-aligned chips).
+- **New component required:** **No** — `PageHeader`, `GlassSurface`, `ChipLabel`, `AsyncState`,
+  `Reveal` all already existed.
+- **Pending:** Display card (theme · language) → **R9.3**; Notification Recipients card + the
+  `/settings/notifications` redirect and bell repoint → **R9.4**; Privacy Mode → **R9.6**.
+- **Impl. status:** R9.2 implemented · **Verif. status:** automated complete, manual pending.
+
+## 13b. `/settings/notifications` 🔒 — Notification Settings (unchanged pending R9.4)
 
 - **Page title:** `SectionHeader` `t.notifications.settings.tag`/`title`/`subtitle`; "Back" →
   `/structured-notes`.

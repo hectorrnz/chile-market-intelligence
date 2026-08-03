@@ -965,7 +965,10 @@ describe('Phase 5C repair — Settings is not hidden or truncated in the top nav
   })
 
   it('Settings keeps its real label and href — never hidden, never icon-only', () => {
-    assert.match(navModule, /key:\s*'settings',\s*\n\s*href:\s*'\/settings\/notifications',\s*\n\s*icon:\s*'settings',\s*\n\s*label:\s*\(t\) => t\.nav\.settings,/)
+    // R9.2 — href repointed to the canonical /settings. The property this case
+    // protects (Settings keeps a real label and href, never hidden, never
+    // icon-only) is unchanged; only the destination moved.
+    assert.match(navModule, /key:\s*'settings',\s*\n\s*href:\s*'\/settings',\s*\n\s*icon:\s*'settings',\s*\n\s*label:\s*\(t\) => t\.nav\.settings,/)
     assert.doesNotMatch(navSrc, /settings.*display:\s*none|settings.*hidden/i, 'Settings must never be conditionally hidden')
   })
 

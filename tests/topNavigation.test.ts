@@ -29,14 +29,21 @@ describe('navGroups — every existing route stays reachable', () => {
     const expected = [
       '/', '/stocks', '/stocks', '/watchlist', '/compare', '/compare', '/chart-builder',
       '/macro', '/macro', '/macro/calendar', '/earnings', '/portfolio', '/structured-notes',
-      '/settings/notifications',
+      // R9.2 — /settings is now the canonical Settings destination.
+      '/settings',
     ]
     assert.deepEqual(hrefs.sort(), expected.sort())
   })
 
   test('Settings is newly discoverable in nav (it was reachable only by direct URL before)', () => {
     const settings = navGroups.find((g) => g.key === 'settings')
-    assert.equal(settings?.href, '/settings/notifications')
+    // R9.2 — repointed from /settings/notifications to the canonical /settings.
+    // Key, icon and label are unchanged, and the nested route still resolves to
+    // this group via `matchesPrefix` (asserted below and in getPageTitle).
+    assert.equal(settings?.href, '/settings')
+    assert.equal(settings?.icon, 'settings')
+    assert.equal(settings?.label(dict.en), dict.en.nav.settings)
+    assert.equal(settings?.label(dict.es), dict.es.nav.settings)
   })
 
   test('every group has a non-empty EN and ES label', () => {

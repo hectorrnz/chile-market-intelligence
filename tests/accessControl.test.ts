@@ -780,9 +780,17 @@ describe('F · private responses are not publicly cacheable', () => {
       if (!route || !requiresApprovedSession(route)) continue
       const src = readFileSync(file, 'utf8')
       assert.doesNotMatch(src, /force-static|revalidate\s*=\s*\d|cache:\s*'force-cache'/, `${route} must not be cached`)
-      // Every private page is a client shell, so no private data is ever
-      // embedded in prerendered HTML — the API is the real boundary.
-      assert.match(src, /^'use client'/, `${route} is expected to be a client shell`)
+      // The invariant is that no private data is ever embedded in PRERENDERED
+      // HTML. A private page satisfies that either by being a client shell
+      // (the original form — data arrives over the API behind the same gate)
+      // or, since R9.2's /settings, by being a server component that is
+      // explicitly dynamic and therefore rendered per request. What is
+      // forbidden either way is static generation, asserted above.
+      assert.match(
+        src,
+        /^'use client'|export const dynamic = 'force-dynamic'/m,
+        `${route} must be a client shell or an explicitly dynamic server component`,
+      )
     }
   })
 

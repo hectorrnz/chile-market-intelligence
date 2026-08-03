@@ -695,6 +695,55 @@ loading state · empty state · error state · auth status — verified identica
   keyboard focus; Space and Enter activation; disabled cannot activate; touch target usable at
   390px; reduced motion removes the transition; no visual jump.
 
+#### R9.2 · Canonical Settings shell (Account · Data Sources · Security)
+- [x] **`/settings` is the canonical Settings destination.** Nav href repointed; key, icon, label
+  and group order unchanged. `matchesPrefix` keeps `/settings/notifications` resolving to the same
+  group, so its active-pill state and `getPageTitle` are byte-identical. Both routes remain
+  `private_page` under default-deny.
+- [x] **Visual structure derives directly from Fable Administration** (`:985–1068`): page header
+  above flowing cards, 22px glass, uppercase section labels, primary-label-over-muted-subline rows,
+  right-aligned chips, 14px gaps, `1.6 1 420px` beside `1 1 300px` with `min-width:min(100%,…)`
+  stacking, staggered `Reveal`. No sidebar, no tabs, no preferences-dashboard reinterpretation,
+  **no new shared primitive**.
+- [x] **Fabricated Fable content excluded**: the four-person user directory, the four invented
+  feeds, the six security capabilities NMI does not have (SSO · 2FA · session timeout · device trust
+  · IP allowlist · export watermark, all `ENFORCED`), the five inert notification switches, the four
+  reporting policies, and the audit log with its seven-year immutability claim. Every fixture string
+  is asserted absent from both the page and the i18n namespace.
+- [x] **Account card is truthful and read-only.** Username from the authoritative `user_profiles`
+  row only; access is a tri-state so an unreadable profile is `unavailable`, never a fabricated
+  denial; `user_metadata` is presentation-only and never an authority claim; `role` neither selected
+  nor displayed; no input, form, or button anywhere.
+- [x] **Data Sources uses the existing `/api/health/ingestion`** — exactly one `fetch`, no new
+  endpoint. Loading, unavailable and empty are three distinct `AsyncState` branches; a non-2xx
+  response throws; stale requests abort on unmount; no polling. No hardcoded status, sync time, feed
+  name, or provider absent from the response. No raw JSON, credentials, or backend error text.
+- [x] **Security card states only true NMI invariants** and links to canonical routes:
+  `/forgot-password` (worded "Send password reset email", never "Change password") and `/logout` in
+  the Fable negative treatment. No second auth workflow, no signup, no approval/role control.
+- [x] **Security boundaries preserved.** Server-component page is the only account-authority reader
+  (`supabase.auth.getUser()` + own-row RLS profile read); no service-role import; no `user_profiles`
+  write; no new API; no migration; no database-type change.
+- [x] **Accessibility.** `PageHeader` owns the single `h1`; the three cards are `h2`; account values
+  are a `<dl>`; loading/error carry `role="status"`/`role="alert"` + `aria-live` via `AsyncState`;
+  both actions are real links with text names; no native `alert`/`confirm`/`prompt`; no nested
+  interactive control; chips always carry text so meaning is never colour alone.
+- [x] **Localization.** New `settings` namespace, 45 keys, exact EN/ES parity; no hardcoded visible
+  English (asserted against string literals and JSX text, not raw substrings); existing
+  `notifications.settings.*` keys untouched.
+- [x] **Sequencing hold respected.** `src/app/settings/notifications/page.tsx` and
+  `NotificationBell.tsx` are untouched and asserted unchanged — no redirect, no bell repoint. Those
+  are **R9.4**. Display preferences are **R9.3**; Privacy Mode is **R9.6**.
+- [x] **Automated results.** New `tests/fableSettingsPage.test.ts` 38/38; focused suites 789/789;
+  full suite 3890 → 3930 (3927 pass, only the known `newsModule` trio failing); lint 0; build 0
+  errors with `/settings` correctly `ƒ` and `/settings/notifications` still `○`.
+- [ ] **Manual browser validation — PENDING.** 390/1024/1728 (+320), EN/ES, light/dark,
+  normal/reduced-motion: loads for an approved user; signed-out redirects; account read-only and
+  correct; no role; missing data does not fabricate; source status matches the live endpoint;
+  honest loading/failure; both links reach their canonical routes; cards stack at 390px with no
+  page-level horizontal scroll; long emails and Spanish strings do not collide; contrast correct in
+  both themes.
+
 ### C4 · Engineering gates (run at each phase boundary)
 - [x] `npm run build` → 0 errors, all routes present. *(Phase 1 boundary: compiled in 6.4s, 19/19
   static pages, full route list unchanged. Phase 2 boundary: 0 errors, 19/19 static pages, full

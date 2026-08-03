@@ -89,8 +89,11 @@ export const navGroups: NavGroup[] = [
     label: (t) => t.nav.structuredNotes,
   },
   {
+    // R9.2 — /settings is the canonical destination. `matchesPrefix` keeps
+    // /settings/notifications resolving to this same group, so its active-nav
+    // state and page title are unchanged.
     key: 'settings',
-    href: '/settings/notifications',
+    href: '/settings',
     icon: 'settings',
     label: (t) => t.nav.settings,
   },

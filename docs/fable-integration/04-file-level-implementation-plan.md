@@ -2650,6 +2650,100 @@ motion removes the transition, no visual jump.
 
 ---
 
+## Phase R9.2 — Canonical Settings shell + read-only Fable composition ✓ IMPLEMENTED (2026-08-03, automated validation complete, manual browser validation pending)
+
+`/settings` is now the canonical Settings destination, built on the Fable Administration composition
+and populated **only** with real NMI capabilities.
+
+### What Fable's screen 10 actually contains
+
+Almost entirely prototype fixtures (`standalone-html/nevada-frontend.html:985–1068`, data at
+`:1297–1302`). R9.2 reproduces the **visual** composition exactly and replaces the content:
+
+| Fable card | Verdict |
+|---|---|
+| Users & roles (4 named people, roles, last-active) | **Excluded** — RLS permits reading only your own row. Replaced by one truthful signed-in Account card. |
+| Data sources (4 invented feeds, "Synced 17:30", FX "DELAYED") | **Retained** — repointed at the real `/api/health/ingestion`. |
+| Security (SSO · 2FA · session timeout · device trust · IP allowlist · export watermark, all `ENFORCED`) | **Excluded** — NMI has none of the six. Rendering `ENFORCED` for capabilities that do not exist is a fabricated security assurance. Replaced with four factual invariants. |
+| Notifications (5 switches nothing consumes) | **Deferred to R9.4** as the real recipients workflow. |
+| Reporting (base ccy · calendar · benchmark set · valuation policy) | **Excluded** — no such concept exists. R9.3 puts the real Display card in this slot. |
+| Audit history (+ "Immutable log · retained 7 years") | **Excluded** — no user-action audit log exists; the retention claim is one NMI cannot make. |
+
+### Architecture — the app's first server-component page
+
+`src/app/settings/page.tsx` is a server component (`export const dynamic = 'force-dynamic'`) and the
+**only** place account authority is read:
+
+- `getCurrentUser()` → `supabase.auth.getUser()`, verified against the Auth server.
+- `getApprovalProfile()` → the **session-bound** client, so the own-row `users_own_profile_select`
+  policy authorises the read. The service-role client is never involved.
+
+Only sanitized, serializable facts cross into `SettingsClient.tsx` — no Supabase client, no token,
+no raw error, and never `user_profiles.role`. **No new API route, no migration, no dependency.**
+
+### Account authority and failure behaviour
+
+| Field | Source | On failure |
+|---|---|---|
+| Display name | profile `display_name` → `user_metadata.display_name` → `.username` — **presentation only** | localized "Unavailable" |
+| Email | authenticated user | localized "Unavailable" |
+| Username | **authoritative `user_profiles` row only** | localized "Unavailable" — never borrowed from metadata |
+| Access | `isApprovedProfile(profile)` | **tri-state**: an unreadable profile is `unavailable`, never silently downgraded into a denial |
+
+Read-only throughout: no input, form, `onChange`, `onSubmit`, or button anywhere on the page.
+
+### Data Sources
+
+Existing `/api/health/ingestion` only (asserted: exactly one `fetch`, and no `/api/settings` or
+`/api/account` exists). Fetched after mount with an `AbortController`; `loading` / `unavailable` /
+`empty` are three distinct `AsyncState` branches, so a failure can never render as healthy or empty.
+A non-2xx response throws rather than being rendered. Every subline segment is guarded on the field
+actually being returned; statuses and timestamps come only from the response; dates go through
+`formatSourceDate`. Chip tone is derived from the returned status and always accompanied by the
+localized status word — never colour alone.
+
+### Security card
+
+Four factual rows — Access (admin controlled) · Registration (public sign-up disabled) ·
+Authorization (row-level security) · Password (email recovery) — plus two links to **canonical
+existing routes**: `/forgot-password` (worded "Send password reset email", deliberately **not**
+"Change password" — no signed-in password-change flow was invented) and `/logout` in the Fable
+negative text treatment. No second auth workflow, no signup, no approval or role control.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `src/app/settings/page.tsx` **(new)** | Server component; resolves sanitized account facts. |
+| `src/app/settings/SettingsClient.tsx` **(new)** | The Fable composition: `PageHeader` + 3 `GlassSurface` cards, `ChipLabel`, `AsyncState`, `Reveal` (70/130ms). No new primitive. |
+| `src/lib/i18n.ts` | New `settings` namespace, EN + ES, 45 keys each. Existing `notifications.settings.*` untouched. |
+| `src/lib/navigation.ts` | Settings `href` `/settings/notifications` → `/settings`. Key, icon, label, order unchanged. |
+| `tests/fableSettingsPage.test.ts` **(new)** | 38 cases across all 67 required checks. |
+| `tests/topNavigation.test.ts` · `tests/fableCompanyDetailPage.test.ts` | href assertions updated for the new canonical destination; both strengthened with key/icon/label checks rather than merely repointed. |
+| `tests/accessControl.test.ts` | The private-page cacheability case asserted "every private page is a client shell". That was true when written; `/settings` is the first server-component page. Updated to encode the **actual** invariant — a private page must be a client shell **or** an explicitly dynamic server component; static generation stays forbidden. |
+| `tests/fableComponents.test.ts` | R9.1's "no Settings route yet" clause retired; the enduring property (the Switch still has no consumer) now scans the two new R9.2 files as well. |
+
+### Sequencing hold (deliberate)
+
+`src/app/settings/notifications/page.tsx` and `src/components/ui/NotificationBell.tsx` are
+**untouched and asserted unchanged** — no redirect, no bell repoint. Those land in **R9.4**, when a
+real `#notifications` target exists. Display preferences are **R9.3**; Privacy Mode is **R9.6**.
+
+**Gates:** focused suites **789/789** across `fableSettingsPage`, `topNavigation`, `accessControl`,
+`fableComponents`, `fableFoundation`, `fableR0Primitives`, `themeLanguageSync`, `responsiveLayout`,
+`notificationsPlatform`, `userProfilesRls`, `authWatchlist`, `credentials`. Full suite 3890 →
+**3930 · 3927 pass · 3 fail** (only the known `newsModule` date-dependent trio); lint 0; build 0
+errors — `/settings` correctly `ƒ` (dynamic), `/settings/notifications` still `○`.
+
+**Manual browser validation: PENDING** (390/1024/1728 + 320 stress, EN/ES, light/dark,
+normal/reduced-motion): `/settings` loads for an approved user; signed-out access redirects; account
+data correct and read-only; no role appears; missing profile data does not fabricate; data-source
+status matches the live endpoint; loading and failure states honest; both links reach their
+canonical routes; cards stack at 390px with no page-level horizontal scroll; long emails and Spanish
+strings do not collide; card contrast correct in both themes; no fabricated Administration content.
+
+---
+
 ## Phase 7 — i18n additions & cleanup (`src/lib/i18n.ts`)
 
 Any new visible string (login utility chips "Secure connection", contrast label, privacy-mask
