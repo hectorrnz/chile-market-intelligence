@@ -655,6 +655,46 @@ loading state · empty state · error state · auth status — verified identica
   immediately; the document dark/light class is correct. Language changed in one tab reaches
   another, survives reload, and retranslates the whole shell.
 
+#### R9.1 · Fable Switch primitive
+- [x] **Fable-exact geometry.** Track `w-[30px] h-[18px]` pill with a 1px `--nv-chipbd` border;
+  thumb `w-[13px] h-[13px]` resting at `top-[1.5px] left-[1.5px]`; ON at `translate-x-[12.5px]`
+  → 1.5 + 12.5 = **14px**, matching Fable's `left: 1.5px → 14px`. The test parses both arbitrary
+  values and asserts the arithmetic, so the geometry cannot drift.
+- [x] **Controlled, presentation-only contract.** `checked` + `onCheckedChange(!checked)` +
+  optional `disabled`/`id`/`className`. **Zero imports** — no state, no persistence, no network,
+  no dialog, no feedback, no knowledge of which preference it represents.
+- [x] **Accessibility semantics.** One native `<button type="button">` with `role="switch"` and
+  `aria-checked`; Enter/Space via native behaviour (no custom key handler, so no double
+  activation); `disabled` blocks activation at the platform level. No `aria-pressed`, no
+  `role="checkbox"`, no hidden input, no nested interactive element. State is exposed semantically
+  and reinforced by thumb position — never colour alone. A required `'aria-label'` prop supplies
+  the accessible name that a bare track cannot.
+- [x] **Focus and touch target.** The global `:focus-visible` ring is inherited and never
+  suppressed, and the button element *is* the 30×18 track so the ring hugs the control. The touch
+  target is a transparent `before:-inset-[13px]` pseudo-element giving **56 × 44px** with no layout
+  shift — a padded box plus cancelling negative margin was rejected because it would drag the ring
+  off the track.
+- [x] **Token-only styling.** `bg-muted` (off) · `bg-accent-2` (on) · `bg-surface` (thumb) — all
+  registered semantic utilities that invert together, so thumb-against-track contrast holds in all
+  four state × theme combinations. `bg-accent-2` is asserted through the full chain
+  (`--color-accent-2` → `--accent-2` → `--nv-acc2`) to Fable's own switch colour, so the class can
+  never be silently repointed. No hex, no raw Tailwind colour scale, no inline style object, no new
+  global CSS.
+- [x] **Reduced motion.** Motion is the shared `.nv-transition-state` token only; the global
+  `prefers-reduced-motion` rule collapses it to `.01ms` with no per-component escape hatch. No raw
+  transition utility, no inline duration, no keyframes, no `requestAnimationFrame`.
+- [x] **No Settings UI implemented yet, and no consumer.** `/settings/page.tsx` asserted absent;
+  the notifications settings page, `ThemeToggle` and `LangProvider` asserted free of
+  `Switch`/`role="switch"`.
+- [x] **No notification behaviour changed; no persistence, migration, API, schema, or dependency
+  change.**
+- [x] **Automated results.** `tests/fableComponents.test.ts` **134 → 155**, all passing; `Switch.tsx`
+  added to `NEW_COMPONENTS` so it is subject to every suite-wide primitive gate. No existing
+  assertion weakened or removed.
+- [ ] **Manual browser validation — PENDING.** Off/on geometry; dark and light appearance; visible
+  keyboard focus; Space and Enter activation; disabled cannot activate; touch target usable at
+  390px; reduced motion removes the transition; no visual jump.
+
 ### C4 · Engineering gates (run at each phase boundary)
 - [x] `npm run build` → 0 errors, all routes present. *(Phase 1 boundary: compiled in 6.4s, 19/19
   static pages, full route list unchanged. Phase 2 boundary: 0 errors, 19/19 static pages, full

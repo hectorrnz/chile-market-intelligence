@@ -2550,6 +2550,106 @@ and retranslates the whole shell.
 
 ---
 
+## Phase R9.1 — Fable Switch primitive ✓ IMPLEMENTED (2026-08-03, automated validation complete, manual browser validation pending)
+
+**The primitive only, wired to nothing.** No Settings page, no notification-recipient change, no
+privacy-mode consumer, no theme/language change. `role="switch"` did not exist anywhere in `src/`
+before this phase, so doc 03 §13's "toggle switch (30×18)" requirement had no component to satisfy it.
+
+### Fable-exact geometry
+
+Reference: `standalone-html/nevada-frontend.html:1036` (Administration → NOTIFICATIONS rows).
+
+| | Fable | Implemented |
+|---|---|---|
+| Track | `width:30px; height:18px; border-radius:99px; border:1px solid var(--nv-chipbd)` | `w-[30px] h-[18px] rounded-full border border-[var(--nv-chipbd)]` |
+| Thumb | `width:13px; height:13px; border-radius:99px` | `w-[13px] h-[13px] rounded-full` |
+| Resting | `top:1.5px; left:1.5px` | `top-[1.5px] left-[1.5px]` |
+| ON position | `left:14px` | `translate-x-[12.5px]` → 1.5 + 12.5 = **14px** |
+| Motion | `transition .25s` | `.nv-transition-state` (`--dur-state` 260ms, `--ease-primary`) |
+| ON fill | `#2F6EB6` | `bg-accent-2` → `--accent-2` → `--nv-acc2`, which **is** that value |
+
+The 1px border makes the padding box 28 × 16, so a 13px thumb inset 1.5px is vertically centred and
+travels edge to edge. **Position animates via `transform`, not `left`** — it is the property the
+shared motion token already covers, it cannot reflow (no layout shift between states), and it
+collapses to `.01ms` under the global `prefers-reduced-motion` rule with no per-component escape
+hatch. The test parses both arbitrary values and asserts the arithmetic lands on 14px, so the
+geometry cannot drift.
+
+### Controlled, presentation-only contract
+
+```ts
+export interface SwitchProps {
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+  disabled?: boolean
+  'aria-label': string   // REQUIRED — a bare track has no text to name it
+  id?: string
+  className?: string
+}
+```
+
+The component has **zero imports** — no React import, no state, no persistence, no network, no
+dialog, no feedback, and no knowledge of which preference it represents. It emits `!checked` and
+nothing else, so the same primitive serves recipient activation and any other genuinely wired
+boolean.
+
+### Accessibility
+
+A single native `<button type="button">` with `role="switch"` and `aria-checked`. Enter and Space
+activate through native semantics — **no custom key handler, so no double activation** — and
+`disabled` blocks activation at the platform level rather than through a JS guard. State is exposed
+semantically and reinforced by thumb position, never by colour alone. No `aria-pressed`, no
+`role="checkbox"`, no hidden input, no nested interactive element (the thumb is an `aria-hidden`
+span).
+
+**Focus** comes from the global `:focus-visible` ring and is never suppressed. The button element
+*is* the 30×18 track so the ring hugs the control; the **touch target** is a transparent
+`before:-inset-[13px]` pseudo-element giving **56 × 44px** without changing the visible control or
+the surrounding layout. A padded box with a cancelling negative margin was rejected — it would have
+dragged the focus ring off the track.
+
+### Token-only styling
+
+`bg-muted` (off) · `bg-accent-2` (on) · `bg-surface` (thumb) — all three registered semantic
+utilities that invert together, so thumb-against-track contrast holds in **all four** state × theme
+combinations (white thumb on mid-grey/blue in light; dark thumb on light-grey/pale-blue in dark).
+Fable's own answer here is a fixed white thumb plus a drop shadow; a shadow was rejected because
+every `--shadow-*` token in this system is a 22–40px container shadow, and design_principles forbids
+inventing one for a 13px puck. No hex, no raw Tailwind colour scale, no inline style object, no new
+global CSS, no new dependency.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `src/components/fable/Switch.tsx` **(new)** | The primitive, 90 lines including its doc block. |
+| `tests/fableComponents.test.ts` | `Switch.tsx` added to `NEW_COMPONENTS` (so it is subject to every suite-wide primitive gate: existence, no-hex, no-colour-scale, no self-declared token, no sample data, typed props) + a 12-case `R9.1 Switch` block. **134 → 155 tests.** No existing assertion was weakened or removed. |
+| docs 04 / 06 | This record. |
+
+One guard caught a self-inflicted slip: the doc block legitimately names the Fable screen
+("NOTIFICATIONS") and the first intended consumer ("recipient"), which tripped the
+forbidden-identifier scan. The **scan** was moved onto the comment-stripped body — the same fix R8
+applied — rather than the prose being blanded out or the guard weakened.
+
+### Not in R9.1
+
+No `/settings` page (asserted absent), no consumer anywhere (asserted: the notifications settings
+page, `ThemeToggle` and `LangProvider` contain no `Switch`/`role="switch"`), no notification-recipient
+behaviour change, no privacy-mode consumer, no theme/language change, **no persistence, migration,
+API, schema, or dependency change**.
+
+**Gates:** focused suites **647/647** across `fableComponents`, `fableFoundation`,
+`fableR0Primitives`, `themeLanguageSync`, `fableStructuredNoteDetailPage` (native-dialog
+convention), `responsiveLayout`, `notificationsPlatform`, `accessControl`. Full suite, lint, build
+and `git diff --check` recorded in the phase report.
+
+**Manual browser validation: PENDING** — off/on geometry, dark and light appearance, visible keyboard
+focus, Space and Enter activation, disabled cannot activate, touch target usable at 390px, reduced
+motion removes the transition, no visual jump.
+
+---
+
 ## Phase 7 — i18n additions & cleanup (`src/lib/i18n.ts`)
 
 Any new visible string (login utility chips "Secure connection", contrast label, privacy-mask

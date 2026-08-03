@@ -35,6 +35,8 @@ const NEW_COMPONENTS = [
   'DetailPanel.tsx',
   'AsyncState.tsx',
   'motion.tsx',
+  // R9.1 — shared Fable switch primitive (Administration NOTIFICATIONS rows).
+  'Switch.tsx',
 ]
 
 const MODIFIED_COMPONENTS = [
@@ -477,6 +479,196 @@ describe('motion primitives wrap the Phase 1 reduced-motion-gated utilities', ()
     assert.match(src, /\{children\}/)
     const occurrences = [...src.matchAll(/\{children\}/g)].length
     assert.ok(occurrences >= 4, 'every wrapper must render {children}')
+  })
+})
+
+// ── R9.1 · Switch primitive ─────────────────────────────────────────────────
+//
+// Structural assertions, consistent with the rest of this suite — the repo has
+// no headless renderer and R9.1 explicitly forbids adding one just to mount a
+// component. The behavioural properties these scans stand in for (Space/Enter
+// activation, disabled inertness, focus visibility, touch target, reduced
+// motion) are in the R9.1 manual-validation matrix.
+
+describe('R9.1 Switch — Fable geometry, controlled contract, native semantics', () => {
+  const SWITCH = read(`${FABLE_DIR}/Switch.tsx`)
+  /** Comment-stripped, so prose can neither satisfy nor trip a scan. */
+  const body = SWITCH.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+
+  test('1-2. the file exists and exports both Switch and SwitchProps', () => {
+    assert.ok(existsSync(join(ROOT, FABLE_DIR, 'Switch.tsx')))
+    assert.match(SWITCH, /export interface SwitchProps\b/)
+    assert.match(SWITCH, /export function Switch\(/)
+    assert.equal((SWITCH.match(/export function Switch\(/g) ?? []).length, 1)
+  })
+
+  test('3-5. a single native button carries type="button" and role="switch"', () => {
+    assert.match(body, /<button\b/)
+    assert.equal((body.match(/<button\b/g) ?? []).length, 1)
+    assert.match(body, /type="button"/)
+    assert.match(body, /role="switch"/)
+  })
+
+  test('6. checked state is exposed through aria-checked', () => {
+    assert.match(body, /aria-checked=\{checked\}/)
+  })
+
+  test('7. an accessible name is REQUIRED by the type, not optional', () => {
+    // Present and NOT followed by `?:` — a bare 30×18 track has no text to name it.
+    assert.match(SWITCH, /'aria-label':\s*string/)
+    assert.doesNotMatch(SWITCH, /'aria-label'\?:/)
+    assert.match(body, /aria-label=\{ariaLabel\}/)
+  })
+
+  test('8-9. controlled: the caller owns `checked` and the component emits !checked', () => {
+    assert.match(SWITCH, /checked:\s*boolean/)
+    assert.match(SWITCH, /onCheckedChange:\s*\(checked:\s*boolean\)\s*=>\s*void/)
+    assert.match(body, /onClick=\{\(\) => onCheckedChange\(!checked\)\}/)
+    // Exactly one activation path — no duplicate handler, no custom key handling
+    // on top of native button semantics.
+    assert.equal((body.match(/onCheckedChange\(/g) ?? []).length, 1)
+    assert.doesNotMatch(body, /onKeyDown|onKeyUp|onKeyPress|onMouseDown|onPointerDown/)
+  })
+
+  test('10-11. activation is blocked natively while disabled', () => {
+    assert.match(body, /disabled=\{disabled\}/)
+    assert.match(SWITCH, /disabled\?:\s*boolean/)
+    assert.match(body, /disabled = false/)
+    // The single onClick lives on the same element that carries `disabled`, so
+    // the platform suppresses it — nothing routes around that.
+    const button = body.match(/<button[\s\S]*?>/)
+    assert.ok(button)
+    assert.match(button![0], /disabled=\{disabled\}/)
+    assert.match(button![0], /onClick=/)
+  })
+
+  test('12-14. correct role only — no aria-pressed, no checkbox, no nested control', () => {
+    assert.doesNotMatch(body, /aria-pressed/)
+    assert.doesNotMatch(body, /role="checkbox"/)
+    assert.doesNotMatch(body, /<input\b/)
+    // The thumb is an inert decorative span.
+    assert.doesNotMatch(body, /<(a|select|textarea)\b/)
+    assert.equal((body.match(/<span\b/g) ?? []).length, 1)
+    assert.match(body, /<span\s+aria-hidden="true"/)
+  })
+
+  test('15 + 20. motion is the shared token class — reduced motion needs no escape hatch', () => {
+    assert.match(body, /nv-transition-state/)
+    assert.equal((body.match(/nv-transition-state/g) ?? []).length, 2, 'track fill and thumb travel')
+    // No raw/inline motion that would bypass the global collapse.
+    assert.doesNotMatch(body, /transition-(colors|all|transform|opacity)\b/)
+    assert.doesNotMatch(body, /transitionDuration|animation|@keyframes|requestAnimationFrame|duration-\[/)
+    // Position animates via transform (compositable, never reflows) — `left` is
+    // fixed, so no layout shift between states.
+    assert.doesNotMatch(body, /left-\[14px\]/)
+    assert.match(body, /translate-x-/)
+    // The global rule that does the collapsing still exists.
+    const css = read('src/app/globals.css')
+    assert.match(css, /@media \(prefers-reduced-motion: reduce\)/)
+    assert.match(css, /transition-duration: \.01ms !important/)
+    assert.match(css, /\.nv-transition-state \{[\s\S]*?transition-duration: var\(--dur-state\)/)
+  })
+
+  test('16. the ON fill is the approved accent token, which IS Fable\'s switch colour', () => {
+    assert.match(body, /checked \? 'bg-accent-2' : 'bg-muted'/)
+    const css = read('src/app/globals.css')
+    // bg-accent-2 → --accent-2 → --nv-acc2 → Fable's #2F6EB6 (light) and its
+    // dark counterpart. Asserted through the chain so the class can never be
+    // silently repointed at a different colour.
+    assert.match(css, /--color-accent-2:\s*var\(--accent-2\)/)
+    assert.match(css, /--accent-2:\s*var\(--nv-acc2\)/)
+    assert.match(css, /--nv-acc2:\s*#2F6EB6/)
+  })
+
+  test('17. no raw hex and no raw Tailwind colour scale (also enforced suite-wide)', () => {
+    assert.doesNotMatch(SWITCH, /#[0-9a-fA-F]{3,8}\b/)
+    assert.doesNotMatch(
+      SWITCH,
+      /\b(bg|text|border)-(gray|slate|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}\b/,
+    )
+    // Every colour is a registered semantic utility or an existing var().
+    assert.match(body, /bg-surface/)
+    assert.match(body, /border-\[var\(--nv-chipbd\)\]/)
+  })
+
+  test('18. the global focus ring is inherited and never suppressed, and it hugs the track', () => {
+    assert.doesNotMatch(body, /outline-none|focus:outline-none|focus-visible:outline-none/)
+    // The button element IS the 30×18 track, so :focus-visible outlines the
+    // control itself; the touch target is a transparent pseudo-element rather
+    // than padding + negative margin (which would drag the ring off the track).
+    assert.match(body, /before:-inset-\[13px\]/)
+    assert.doesNotMatch(body, /\bp-\d|\b-m-\d/)
+    const css = read('src/app/globals.css')
+    assert.match(css, /:focus-visible \{\s*outline: 2px solid var\(--focus\)/)
+  })
+
+  test('19. disabled has a visual treatment matching the existing chip convention', () => {
+    assert.match(body, /disabled:opacity-50/)
+    assert.match(body, /disabled:cursor-not-allowed/)
+    const chip = read(`${FABLE_DIR}/Chip.tsx`)
+    assert.match(chip, /disabled:opacity-50 disabled:cursor-not-allowed/)
+  })
+
+  test('21-23. geometry matches the Fable reference exactly', () => {
+    // Track 30 × 18, pill radius.
+    assert.match(body, /w-\[30px\] h-\[18px\] rounded-full/)
+    // Thumb 13 × 13.
+    assert.match(body, /w-\[13px\] h-\[13px\]/)
+    // Resting inset 1.5px; with the 1px border the padding box is 28 × 16, so
+    // the thumb is vertically centred.
+    assert.match(body, /top-\[1\.5px\] left-\[1\.5px\]/)
+    assert.match(body, /border border-\[var\(--nv-chipbd\)\]/)
+
+    // OFF at 1.5px, ON at 1.5 + 12.5 = 14px — Fable's `left: 1.5px → 14px`.
+    const rest = body.match(/left-\[([\d.]+)px\]/)
+    const travel = body.match(/translate-x-\[([\d.]+)px\]/)
+    assert.ok(rest && travel, 'both the resting offset and the travel must be explicit')
+    const off = Number(rest![1])
+    const on = off + Number(travel![1])
+    assert.equal(off, 1.5)
+    assert.equal(on, 14)
+    assert.match(body, /translate-x-0/, 'the OFF state pins transform so it never animates from `none`')
+
+    // Touch target: 30 + 2×13 = 56 wide, 18 + 2×13 = 44 tall.
+    const inset = Number(body.match(/before:-inset-\[(\d+)px\]/)![1])
+    assert.ok(18 + inset * 2 >= 44, 'touch target must reach at least 44px on the short axis')
+    assert.equal(30 + inset * 2, 56)
+  })
+
+  test('24-25. presentation only — no persistence, data, auth, theme, i18n, or feature import', () => {
+    const imports = [...SWITCH.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1])
+    assert.deepEqual(imports, [], 'the primitive needs no import at all')
+    // Comment-stripped: the doc block legitimately NAMES the Fable screen and
+    // the first intended consumer, and that prose must not trip the scan.
+    assert.doesNotMatch(
+      body,
+      /useTheme|useLang|usePersistentState|usePrivacyMode|notification|recipient|settings|supabase|@\/lib\/db|@\/lib\/auth|@\/lib\/providers/i,
+    )
+    assert.doesNotMatch(body, /\bfetch\(|localStorage|sessionStorage|document\.|window\./)
+  })
+
+  test('26. owns no state of its own — the caller is the single source of truth', () => {
+    assert.doesNotMatch(body, /useState|useReducer|useRef|useEffect|useId|createContext|useContext/)
+    assert.doesNotMatch(SWITCH, /import .* from 'react'/)
+  })
+
+  test('27-28. the shared-primitive inventory now includes Switch', () => {
+    assert.ok(NEW_COMPONENTS.includes('Switch.tsx'))
+    // And it is genuinely subject to every suite-wide primitive gate above.
+    assert.ok(NEW_COMPONENTS.filter((f) => f === 'Switch.tsx').length === 1)
+  })
+
+  test('scope — R9.1 ships the primitive only, wired to nothing', () => {
+    // No Settings route yet, and no consumer anywhere in the app.
+    assert.equal(existsSync(join(ROOT, 'src/app/settings/page.tsx')), false)
+    const consumers = [
+      'src/app/settings/notifications/page.tsx',
+      'src/components/ui/ThemeToggle.tsx',
+      'src/components/providers/LangProvider.tsx',
+    ]
+    for (const f of consumers) {
+      assert.doesNotMatch(read(f), /Switch|role="switch"/, `${f} must be untouched by R9.1`)
+    }
   })
 })
 
