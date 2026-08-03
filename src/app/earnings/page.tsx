@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { SectionHeader } from '@/components/ui/SectionHeader'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { MarketDataSourceBadge } from '@/components/ui/MarketDataSourceBadge'
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
@@ -10,11 +9,46 @@ import { useLang } from '@/components/providers/LangProvider'
 import { useGlobalRefresh } from '@/components/providers/useGlobalRefresh'
 import { fetchEarningsCalendar, upcomingWithinDays, type EarningsCalendarResult } from '@/lib/data/earningsCalendar'
 import { fetchEarningsResults, type EarningsResultsPayload } from '@/lib/data/earningsResults'
-import { formatPct, changeColor } from '@/lib/formatters'
+import { getAllCompanies } from '@/lib/data/companies'
+import { formatDate, formatPct, changeColor } from '@/lib/formatters'
 import { exportCSV } from '@/lib/export'
+import { PageHeader } from '@/components/fable/PageHeader'
 import { TableCard } from '@/components/fable/TableCard'
-import { AsyncState } from '@/components/fable/AsyncState'
+import { ChipButton } from '@/components/fable/Chip'
+import { AsyncState, type AsyncStateKind } from '@/components/fable/AsyncState'
 import { Reveal } from '@/components/fable/motion'
+
+/**
+ * Upcoming window, in days. The committed CMF snapshot carries ABSOLUTE report
+ * dates, so this window is recomputed live on every render and the snapshot
+ * stays correct between refreshes. Home deliberately uses its own, shorter
+ * (7-day) window — this constant governs THIS page only. (R8: was an inline
+ * literal in the render body.)
+ */
+const UPCOMING_WINDOW_DAYS = 45
+
+/**
+ * The client-safe company registry, read ONCE at module scope (a pure JSON
+ * import — no API request) and used for BOTH the coverage denominator and the
+ * ticker→name lookup below, so the two can never disagree about which universe
+ * is being measured.
+ */
+const COMPANY_REGISTRY = getAllCompanies()
+
+/**
+ * The authoritative tracked-company universe. Coverage is measured against this
+ * and NEVER against the number of rows on screen — see CoverageNote. Derived
+ * from the registry, never hardcoded and never taken from a provider-side
+ * symbol map, so adding a company to the registry moves the denominator.
+ */
+const trackedCompanyCount = COMPANY_REGISTRY.length
+
+/**
+ * Ticker → company name, from that same registry. `name` is the field the
+ * server-side results resolver uses for its own `companyName`, so one company
+ * reads identically in both tables.
+ */
+const COMPANY_NAME = new Map(COMPANY_REGISTRY.map((c) => [c.ticker, c.name]))
 
 /** Millions of the row's own reporting currency (Yahoo reports some issuers in USD). */
 function fmtMM(v: number | null): string {
@@ -32,6 +66,51 @@ function fmtEps(v: number | null): string {
   if (v == null) return '—'
   const d = Math.abs(v) < 1 ? 4 : 2
   return v.toLocaleString('es-CL', { minimumFractionDigits: d, maximumFractionDigits: d })
+}
+
+/**
+ * CMF report dates are date-only (`YYYY-MM-DD`). JS parses such a string as UTC
+ * midnight, which in Chile (UTC-4/-3) formats as the PREVIOUS calendar day —
+ * verified: a raw `formatDate('2026-08-04')` prints "03 ago 2026". Appending an
+ * explicit zero time makes it parse in LOCAL time, so the shared formatter
+ * prints the real report date. The formatter itself is untouched; only its
+ * input is normalized, and no date segment is rearranged by hand.
+ */
+function reportDateLabel(iso: string): string {
+  return formatDate(`${iso}T00:00:00`)
+}
+
+/**
+ * Per-table source-coverage disclosure.
+ *
+ * Rendered once per table and never merged into a single page-level figure:
+ * the CMF calendar and the Yahoo results feed are INDEPENDENT sources whose
+ * coverage genuinely differs (CMF does not publish BSANTANDER/ITAUCL at all,
+ * while Yahoo can omit a different set on any given fetch).
+ *
+ * Coverage is derived from the tracked-company registry minus that payload's
+ * own `missingTickers`, never from the number of rows on screen: Recent Results
+ * prints two quarters per company and Upcoming prints only companies reporting
+ * inside the window, so a row count could never express "this source has no
+ * data for this issuer at all".
+ *
+ * Lives beside the footer, never inside `TableSourceFooter`'s source string
+ * (Source Badge Rule: the source string stays a plain source name).
+ */
+function CoverageNote({ missing }: { missing: string[] }) {
+  const { t } = useLang()
+  return (
+    <p className="ui-meta text-muted-fg">
+      <span className="ui-number">{trackedCompanyCount - missing.length}/{trackedCompanyCount}</span>{' '}
+      {t.earnings.companiesCovered}
+      {missing.length > 0 && (
+        <>
+          {' · '}
+          {t.earnings.notCovered}: <span className="font-mono">{missing.join(', ')}</span>
+        </>
+      )}
+    </p>
+  )
 }
 
 export default function EarningsPage() {
@@ -73,11 +152,50 @@ export default function EarningsPage() {
     setLoading(false)
   }, [refreshAll])
 
-  // Upcoming = real CMF EEFF-sending dates (next 45 days), replacing the old
-  // static sample. Absolute dates, so the window is always computed live.
-  const upcoming = cal?.status === 'live' ? upcomingWithinDays(cal.events, 45) : []
+  // Upcoming = real CMF EEFF-sending dates, replacing the old static sample.
+  // Absolute dates, so the window is always computed live.
+  const calLive = cal?.status === 'live'
+  const upcoming = calLive ? upcomingWithinDays(cal.events, UPCOMING_WINDOW_DAYS) : []
   const rows = results?.rows ?? []
   const live = results?.status === 'live'
+
+  /**
+   * Three genuinely different situations, deliberately never collapsed:
+   *  • loading     — the fetch is still in flight
+   *  • unavailable — the source explicitly reported `unavailable`, OR the fetch
+   *                  failed and the payload is null. There is NO static
+   *                  earnings source, so this is never "showing a sample".
+   *  • empty       — a healthy live payload that legitimately has no rows (e.g.
+   *                  no CMF report falls inside the window between reporting
+   *                  waves). Real data, honestly zero.
+   */
+  const stateFor = (sourceIsLive: boolean): AsyncStateKind =>
+    loading ? 'loading' : sourceIsLive ? 'empty' : 'unavailable'
+
+  /** `undefined` for `unavailable` so AsyncState uses its own bilingual copy. */
+  const messageFor = (kind: AsyncStateKind, emptyMessage: string): string | undefined =>
+    kind === 'loading' ? t.common.loading : kind === 'empty' ? emptyMessage : undefined
+
+  const calState = stateFor(calLive)
+  const resultsState = stateFor(live)
+
+  /**
+   * The calendar's period enum is `Q1 | Q2 | Q3 | Annual` (no Q4 — the annual
+   * filing replaces it). Q1–Q3 are locale-neutral, but "Annual" is an English
+   * word that must never reach the Spanish UI. An unrecognized value falls
+   * through unchanged rather than rendering blank.
+   *
+   * Recent Results' own `period` is a different field ("Q1 2026", produced by
+   * quarterLabel() in the pure core) and is already language-neutral — there is
+   * nothing in it to translate.
+   */
+  const periodLabel = (p: string): string =>
+    ({
+      Q1: t.earnings.calPeriods.q1,
+      Q2: t.earnings.calPeriods.q2,
+      Q3: t.earnings.calPeriods.q3,
+      Annual: t.earnings.calPeriods.annual,
+    } as Record<string, string>)[p] ?? p
 
   const handleExport = () => {
     exportCSV(
@@ -104,10 +222,10 @@ export default function EarningsPage() {
   return (
     <div className="w-full space-y-5">
       <Reveal>
-        <SectionHeader
-          tag={t.earnings.tag}
+        <PageHeader
+          eyebrow={t.earnings.tag}
           title={t.earnings.title}
-          subtitle={t.earnings.subtitle}
+          metadata={t.earnings.subtitle}
           actions={<UpdateDataButton onRefresh={refreshEarnings} />}
         />
       </Reveal>
@@ -116,15 +234,21 @@ export default function EarningsPage() {
       <Reveal delayMs={70}>
         <TableCard
           title={t.earnings.upcomingLabel}
-          controls={<MarketDataSourceBadge status={cal?.status === 'live' ? 'live' : 'static'} />}
+          controls={<MarketDataSourceBadge status={calLive ? 'live' : 'live-unavailable'} />}
           minWidth={360}
-          footer={<TableSourceFooter source={t.home.earningsCalSource} asOf={cal?.asOf ?? null} />}
+          footer={
+            <div className="space-y-0.5">
+              <TableSourceFooter source={t.home.earningsCalSource} asOf={cal?.asOf ?? null} />
+              {calLive && <CoverageNote missing={cal.missingTickers} />}
+            </div>
+          }
         >
           <table className="w-full" style={{ fontSize: 'var(--fs-table-cell)' }}>
             <caption className="sr-only">{t.earnings.upcomingLabel}</caption>
             <thead>
               <tr>
                 <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-left py-2.5 pl-4 pr-3 border-b border-border ui-table-header text-muted-fg">{t.earnings.calCols.ticker}</th>
+                <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-left py-2.5 px-3 border-b border-border ui-table-header text-muted-fg">{t.earnings.calCols.company}</th>
                 <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-left py-2.5 px-3 border-b border-border ui-table-header text-muted-fg">{t.earnings.calCols.period}</th>
                 <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="text-left py-2.5 px-3 pr-4 border-b border-border ui-table-header text-muted-fg">{t.earnings.calCols.expected}</th>
               </tr>
@@ -135,14 +259,15 @@ export default function EarningsPage() {
                   <td className="py-2.5 pl-4 pr-3">
                     <Link href={`/companies/${e.ticker}`} className="font-mono text-primary hover:underline">{e.ticker}</Link>
                   </td>
-                  <td className="py-2.5 px-3 text-muted-fg">{e.period}</td>
-                  <td className="py-2.5 px-3 pr-4 ui-number text-muted-fg">{e.reportDate}</td>
+                  <td className="py-2.5 px-3 text-foreground">{COMPANY_NAME.get(e.ticker) ?? '—'}</td>
+                  <td className="py-2.5 px-3 text-muted-fg">{periodLabel(e.period)}</td>
+                  <td className="py-2.5 px-3 pr-4 ui-number text-muted-fg">{reportDateLabel(e.reportDate)}</td>
                 </tr>
               ))}
               {upcoming.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="p-0">
-                    <AsyncState kind={loading ? 'loading' : 'empty'} message={loading ? t.common.loading : t.earnings.noUpcoming} />
+                  <td colSpan={4} className="p-0">
+                    <AsyncState kind={calState} message={messageFor(calState, t.earnings.noUpcoming)} />
                   </td>
                 </tr>
               )}
@@ -157,21 +282,17 @@ export default function EarningsPage() {
           title={t.earnings.recentResults}
           minWidth={720}
           controls={<>
-            <MarketDataSourceBadge status={live ? 'live' : 'static'} />
-            <button
-              type="button"
-              onClick={handleExport}
-              className="flex items-center gap-1.5 h-7 px-2.5 rounded-full text-xs text-muted-fg hover:text-foreground nv-transition"
-              style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' }}
-            >
+            <MarketDataSourceBadge status={live ? 'live' : 'live-unavailable'} />
+            <ChipButton onClick={handleExport}>
               <span aria-hidden>⤓</span>{t.common.exportCsv}
-            </button>
+            </ChipButton>
           </>}
           footer={
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
               <div className="space-y-0.5">
                 <TableSourceFooter source={t.stocks.footer} asOf={results?.asOf ?? null} />
                 <p className="text-xs text-muted-fg">{t.earnings.amountsNote}</p>
+                {live && <CoverageNote missing={results.missingTickers} />}
               </div>
               <span className="ui-meta ui-number text-muted-fg" aria-live="polite">{rows.length} {t.common.records}</span>
             </div>
@@ -217,7 +338,7 @@ export default function EarningsPage() {
               {rows.length === 0 && (
                 <tr>
                   <td colSpan={11} className="p-0">
-                    <AsyncState kind={loading ? 'loading' : 'empty'} message={loading ? t.common.loading : t.common.noResults} />
+                    <AsyncState kind={resultsState} message={messageFor(resultsState, t.common.noResults)} />
                   </td>
                 </tr>
               )}

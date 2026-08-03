@@ -552,6 +552,20 @@ export const dict = {
       amountsNote: 'Amounts in millions of each company’s reporting currency (Cur. column). YoY compares the same quarter one year earlier.',
       recentResults: 'Recent Results',
       upcomingLabel: 'Upcoming',
+      // R8 — per-table source-coverage disclosure. The calendar and the results
+      // feed are independent sources with independently different coverage, so
+      // these render once per table, never as one combined page-level number.
+      companiesCovered: 'companies covered',
+      notCovered:       'Not published by this source',
+      // R8 — the CMF calendar's period enum (Q1 | Q2 | Q3 | Annual; no Q4, the
+      // annual filing replaces it). Q1–Q3 are locale-neutral, but "Annual" is
+      // an English word that must never reach the Spanish UI.
+      calPeriods: {
+        q1:     'Q1',
+        q2:     'Q2',
+        q3:     'Q3',
+        annual: 'Annual',
+      },
       cols: {
         company:    'Company',
         period:     'Period',
@@ -568,7 +582,6 @@ export const dict = {
         ticker:   'Ticker',
         period:   'Period',
         expected: 'Expected Date',
-        notes:    'Notes',
       },
     },
     auth: {
@@ -1411,6 +1424,15 @@ export const dict = {
       amountsNote: 'Montos en millones de la moneda de reporte de cada empresa (columna Mon.). YoY compara el mismo trimestre del año anterior.',
       recentResults: 'Resultados Recientes',
       upcomingLabel: 'Próximos',
+      // R8 — ver el comentario del diccionario en inglés.
+      companiesCovered: 'empresas cubiertas',
+      notCovered:       'No publicado por esta fuente',
+      calPeriods: {
+        q1:     'Q1',
+        q2:     'Q2',
+        q3:     'Q3',
+        annual: 'Anual',
+      },
       cols: {
         company:    'Empresa',
         period:     'Período',
@@ -1427,7 +1449,6 @@ export const dict = {
         ticker:   'Ticker',
         period:   'Período',
         expected: 'Fecha Esperada',
-        notes:    'Notas',
       },
     },
     auth: {

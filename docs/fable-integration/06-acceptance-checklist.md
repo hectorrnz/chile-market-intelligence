@@ -315,7 +315,8 @@ loading state · empty state · error state · auth status — verified identica
   ADP and Existing Home Sales stay honestly dates-only. Guarded by
   `tests/calendarEnrichmentRepair.test.ts` (42 cases, fully mocked). Manual browser pass still
   pending.)*
-- [x] `/earnings` — upcoming + recent results tables; Update/CSV; loading/empty; public.
+- [x] `/earnings` — upcoming + recent results tables; Update/CSV; loading/empty/unavailable;
+  private_page.
   *Phase 5G (2026-07-29). Both tables, all 3 Upcoming columns and all 11 Recent Results columns in
   their original order, every ticker link, per-row currency, YoY field, the bank-no-EBITDA tooltip,
   both `MarketDataSourceBadge`/`TableSourceFooter` instances, the amounts note, the record count,
@@ -326,6 +327,33 @@ loading state · empty state · error state · auth status — verified identica
   `/companies/[ticker]`. No consensus/surprise/beat-miss field, no fabricated quarter, no
   reintroduced Clean/Mixed/Weak label, no use of the dead `earnings.json` file (confirmed via a
   repo-wide scan) — locked by 57 tests in `tests/fableEarningsPage.test.ts`.*
+  *(**R8 2026-08-03** — source honesty, per-source coverage, composition. **Two data-correctness
+  fixes:** (1) both badges fell back to **`'static'`**, naming a static earnings sample that does not
+  exist — both payload unions are `'live' | 'unavailable'` and `earnings.json` is deleted, so a
+  Yahoo outage, an unavailable CMF snapshot AND a plain network failure all printed "Static" over an
+  empty table; both now resolve **`'live-unavailable'`**, a status the shared badge and both
+  dictionaries already carried (`t.marketData.*` untouched). (2) Both payloads carry
+  `missingTickers` — the resolvers' own documented honest-gap channel — and **no component read it**,
+  so the issuers CMF structurally never publishes (**BSANTANDER, ITAUCL**) were silently invisible;
+  each table now carries **its own** coverage disclosure, deliberately not one combined figure (the
+  two sources have independently different coverage), computed as tracked-registry count − that
+  payload's `missingTickers` and **never** from the displayed row count. `unavailable` is no longer
+  collapsed into `empty`: a null-or-unavailable payload gets `AsyncState kind="unavailable"`, while a
+  healthy live payload with zero rows keeps `empty` and its original copy. **Localization:** the
+  calendar period enum was printed raw, so Spanish showed the English word "Annual" → new bilingual
+  `earnings.calPeriods.*` (`Anual`). **Dates:** raw ISO → shared `formatDate`; a real trap was closed
+  in the process — `new Date('2026-08-04')` is UTC midnight and renders **one day early** in Chile,
+  so the input is normalized to local midnight rather than the out-of-scope formatter being edited.
+  **Composition:** `SectionHeader` → shared `PageHeader`, export capsule → shared `ChipButton`,
+  Upcoming gained a **Company** column (2nd position, client-safe registry, no added request,
+  `colSpan` 3→4, `scope="col"` 14→15), and the inline `45` became `UPCOMING_WINDOW_DAYS`. Dead
+  `calCols.notes` removed. **Unchanged:** rolling 2-quarter window, exact-period YoY, currency
+  semantics, bank-EBITDA suppression, `fmtMM`/`fmtEps`/`pctCell`, both footers, CSV filename/headers/
+  row mapping (the new Company column is deliberately NOT exported), `Promise.all` isolation, force
+  refresh, no sort/filter/persistence/KPI/consensus. The coverage denominator is `trackedCompanyCount`
+  — the length of a single module-scope `getAllCompanies()` read that also backs the Upcoming name
+  lookup — never hardcoded and never a provider-side symbol map. Locked by **99** tests (9 updated in
+  place with R8 rationale + 42 new). Manual browser pass still **pending**.)*
 - [x] `/companies/[ticker]` — KPI strip + business cards + price chart (8 TF + markers) + results +
   valuation grid + news; Print/Watchlist/Graph-fundamentals; `cmi.chartTimeframe`; public.
   *Phase 5C (2026-07-28). All 7 content sections, all 6 KPIs, all 8 chart timeframes (now a

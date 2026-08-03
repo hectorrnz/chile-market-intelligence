@@ -25,7 +25,7 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
 | 4 | `/chart-builder` | Charting | public | 3 Performance (chart) | No (reused Phase 3 `TableCard`/`GlassSurface`/`SegmentedControl`) | **✓ Phase 5E (2026-07-28)** | **✓ Source-scan verified** |
 | 5 | `/macro` | Macroeconomic Indicators | public | 7 Macro | No (reused Phase 3 `TableCard`/`GlassSurface`/`SegmentedControl`) | **✓ Phase 5F (2026-07-28)** | **✓ Source-scan verified** |
 | 6 | `/macro/calendar` | Economic Calendar | public | 7 Macro / 9 Documents table | No (reused Phase 3 `TableCard`) | **✓ Phase 5F (2026-07-28)** | **✓ Source-scan verified** |
-| 7 | `/earnings` | Earnings | public | 8 Research (upcoming earnings) / DataTable | No (reused Phase 3 `TableCard`/`AsyncState`) | **✓ Phase 5G (2026-07-29)** | **✓ Source-scan verified** |
+| 7 | `/earnings` | Earnings | private_page | 8 Research (upcoming earnings) / DataTable | No (reused Phase 3 `TableCard`/`AsyncState`) | **✓ Phase 5G (2026-07-29)** · **✓ R8 (2026-08-03)** | **✓ Source-scan verified** |
 | 8 | `/companies/[ticker]` | Stocks · TICKER | public | 2 Portfolio detail panel + 3 Performance | Yes — company detail (KPI capsules, chart, valuation grid, results, news) | Done | Verified |
 | 9 | `/watchlist` 🔒 | Watchlist | protected | 2 Portfolio (DataTable) | No (reused Phase 3 `TableCard` + `AsyncState`) | **✓ Phase 5B (2026-07-28)** | **✓ Source + protected-route verified** |
 | 10 | `/portfolio` 🔒 | Portfolio | protected | 1 Overview + 2 Portfolio + 4 Risk | No (reused Phase 3 `TableCard`/`KpiCapsule`/`ChangeIndicator`/`SegmentedControl`/`GlassSurface`/`AsyncState`) | **✓ Phase 5H (2026-07-29)** | **✓ Source-scan verified** |
@@ -349,26 +349,38 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
 
 ## 7. `/earnings` — Earnings
 
-- **Page title:** `SectionHeader` `t.earnings.tag`/`title`/`subtitle`.
-- **Content sections:** (1) Upcoming table (CMF EEFF next 45d: Ticker·Period·Expected); (2)
-  Recent Results table (rolling 2 quarters/ticker: Ticker·Company·Period·Cur.·Revenue·Rev.YoY·
-  EBITDA·EBITDA YoY·Net Income·Net Inc.YoY·EPS, Export CSV, footer + amounts note + count).
+- **Page title:** `PageHeader` `t.earnings.tag` (eyebrow) / `title` / `subtitle` (metadata). *(R8 —
+  was `SectionHeader`.)*
+- **Content sections:** (1) Upcoming table (CMF EEFF next 45d: Ticker·**Company**·Period·Expected);
+  (2) Recent Results table (rolling 2 quarters/ticker: Ticker·Company·Period·Cur.·Revenue·Rev.YoY·
+  EBITDA·EBITDA YoY·Net Income·Net Inc.YoY·EPS, Export CSV, footer + amounts note + count). Each
+  table carries its **own** source-coverage disclosure. *(R8 added the Upcoming Company column and
+  both coverage lines.)*
 - **Data source / API:** `useGlobalRefresh`; `fetchEarningsCalendar`→`/api/earnings/calendar`,
-  `fetchEarningsResults(force)`→`/api/earnings/results` (6h cache).
-- **User interactions:** `UpdateDataButton` (force-refetch both), Export CSV, ticker links.
+  `fetchEarningsResults(force)`→`/api/earnings/results` (6h cache). Company names and the coverage
+  denominator come from the client-safe `@/lib/data/companies` registry — no added request.
+- **User interactions:** `UpdateDataButton` (force-refetch both), Export CSV (`ChipButton`), ticker
+  links. No sort, no filter, no persistence.
 - **Loading state:** shared `AsyncState kind="loading"`, `t.common.loading`.
-- **Empty state:** shared `AsyncState kind="empty"`, `t.earnings.noUpcoming`; `t.common.noResults`.
-- **Error state:** all fetches `.catch(()=>null)` — unchanged; a fetch failure and an explicit
-  `status:'unavailable'` from either resolver render identically to "empty" today (a pre-existing
-  NMI behavior, not invented or altered this phase).
-- **Auth:** public.
+- **Empty state:** shared `AsyncState kind="empty"`, `t.earnings.noUpcoming`; `t.common.noResults` —
+  reserved for a **healthy live payload that legitimately has no rows**.
+- **Error/unavailable state:** all fetches still `.catch(()=>null)`. **R8 corrected the collapse:** a
+  null payload *or* an explicit `status:'unavailable'` now renders `AsyncState kind="unavailable"`
+  (its own bilingual copy) and a `live-unavailable` badge — distinct from "empty". Previously both
+  rendered as "empty" under a **`static`** badge, which named a static earnings sample that does not
+  exist.
+- **Auth:** private_page (shared R1.5 default-deny policy; `classifyPath('/earnings')`). *(R8 doc
+  correction — the runtime was always correct, this table said "public".)*
 - **Fable destination:** **8 Research** (Upcoming-earnings module) + glass DataTable.
 - **Fable component mapping:** both tables → `TableCard` (near-opaque dense body, `scope="col"` +
   `sr-only` caption headers); `MarketDataSourceBadge` stays the status chip (unchanged component);
   loading/empty rows → shared `AsyncState`. Preserve bank-no-EBITDA tooltip + `TableSourceFooter`.
-- **New component required:** **No** — reused Phase 3 `TableCard`/`AsyncState`/`Reveal`.
-- **Impl. status:** ✓ Phase 5G (2026-07-29) · **Verif. status:** ✓ Source-scan verified (57 new
-  tests in `tests/fableEarningsPage.test.ts`; build 0 errors, `/earnings` still static/`○`).
+- **New component required:** **No** — Phase 3 `TableCard`/`AsyncState`/`Reveal` plus, in R8, the
+  shared `PageHeader` and `ChipButton`. One page-local presentational helper (`CoverageNote`).
+- **Impl. status:** ✓ Phase 5G (2026-07-29) · ✓ **R8 (2026-08-03)** · **Verif. status:** ✓
+  Source-scan verified (97 tests in `tests/fableEarningsPage.test.ts` — 57 Phase 5G, 9 of them
+  updated in place for R8, + 40 new R8 cases; lint 0, build 0 errors). **Manual browser validation
+  PENDING** for R8.
 
 **Phase 5G — `/earnings` as built.** Presentation only; every hook, state variable, effect, and
 computed value (`cal`, `results`, `loading`, `upcoming`, `rows`, `live`, `handleExport`, `pctCell`,
@@ -400,6 +412,62 @@ computed value (`cal`, `results`, `loading`, `upcoming`, `rows`, `live`, `handle
   `earnings_events` from Phase 8C manual-CSV ingestion, carries a stale comment referencing the
   long-deleted `earnings.json` fallback) was noted as a pre-existing loose end but is out of scope
   (backend API file) and was left untouched.
+
+**R8 — `/earnings` as built (2026-08-03).** Two data-correctness fixes and one composition pass. No
+resolver, API, cache, calculation, or access rule was touched; the whole change lives in
+`page.tsx` + `i18n.ts`.
+
+- **Source honesty (the headline fix).** Both badges fell back to **`'static'`**, asserting that a
+  static earnings sample was on screen. No such source exists: both payload unions are
+  `'live' | 'unavailable'` and `earnings.json` is deleted. A *network failure* also printed "Static".
+  Both now resolve **`'live-unavailable'`** — a state the shared `MarketDataSourceBadge` and both
+  dictionaries already supported, so **no shared string was edited**.
+- **Unavailable ≠ empty.** Phase 5G deliberately preserved the collapse of these two states; R8 was
+  commissioned to correct it. A null payload *or* an explicit `status:'unavailable'` now renders
+  `AsyncState kind="unavailable"` (existing bilingual copy); a healthy live payload with zero rows
+  keeps `kind="empty"` and its original `t.earnings.noUpcoming` / `t.common.noResults` message — a
+  real case for Upcoming between reporting waves. `partial`/`stale` stay unused: no payload field
+  distinguishes them, so using them would be invention.
+- **Per-source coverage disclosure.** Both payloads carry `missingTickers` — the resolvers' own
+  documented honest-gap channel — and **no component read it**, so issuers CMF structurally never
+  publishes (BSANTANDER, ITAUCL) were silently invisible. Each table now carries its own
+  `CoverageNote`, deliberately **not** one combined page-level figure: the calendar and the results
+  feed are independent sources whose coverage genuinely differs, so a merged number would be false
+  for at least one of them. Coverage = `trackedCompanyCount` − that payload's own `missingTickers`,
+  and **never** the displayed row count (Recent Results prints 2 quarters per company; Upcoming
+  prints only companies reporting inside the window — neither row count can express "this source has
+  no data for this issuer at all"). `trackedCompanyCount` is the length of `COMPANY_REGISTRY =
+  getAllCompanies()`, read once at module scope and backing the Upcoming name lookup too, so the
+  denominator and the lookup can never disagree about which universe is measured — never hardcoded,
+  and never a provider-side symbol map (`TICKER_YF` is not imported here). Rendered beside
+  `TableSourceFooter`, never inside its `source` string; exactly one footer per table survives.
+- **Localization.** The calendar period enum (`Q1|Q2|Q3|Annual`, no Q4 — the annual filing replaces
+  it) was printed raw, so the Spanish UI showed the English word **"Annual"**. New bilingual
+  `earnings.calPeriods.*` (`Anual` in ES). Recent Results' own `period` is left alone — `"Q1 2026"`
+  from `quarterLabel()` is already language-neutral.
+- **Report dates.** Raw ISO (`2026-08-04`) → the shared `formatDate`. **A real trap was found and
+  closed here:** `new Date('2026-08-04')` parses as UTC midnight, which in Chile (UTC-4/-3) formats
+  as **03 ago — one day early**, on a page whose entire job is stating when a company reports.
+  `formatDate` had zero prior call sites, so nothing depended on the behaviour. Since
+  `src/lib/formatters.ts` is out of scope, the *input* is normalized to local midnight
+  (`formatDate(\`${iso}T00:00:00\`)`) rather than the formatter changed — no second formatter, no
+  hand-rolled segment surgery. Guarded by a behavioural test that also proves the drift is real
+  when running west of UTC.
+- **Composition.** `SectionHeader` → shared **`PageHeader`** (tag→eyebrow, subtitle→metadata,
+  Update Data action unchanged) — the last R-series header migration for this route. The hand-rolled
+  export capsule → shared **`ChipButton`** (same handler, filename, headers, row mapping, accessible
+  name). Upcoming gained a **Company** column in 2nd position (the name+id identity anatomy R6
+  established and Recent Results already had), resolved from the client-safe `@/lib/data/companies`
+  registry with an honest `—` fallback and **no added API request**; `colSpan` 3→4, `scope="col"`
+  14→15. The inline `45` became `UPCOMING_WINDOW_DAYS`.
+- **Deliberately NOT changed:** no sort, filter, period selector, KPI strip, sparkline, detail
+  drawer, consensus/forecast/surprise field, quality pill, static fallback, new cache, or new route.
+  The Recent Results CSV is byte-identical and deliberately does **not** gain the new Upcoming
+  Company column. `fmtMM`/`fmtEps`/`pctCell`, the currency column, bank-EBITDA suppression, negative
+  styling, the amounts note, the record count, `Promise.all` isolation with 4 independent
+  `.catch(() => null)`, force-refresh semantics, `w-full`, both `minWidth` floors and the `Reveal`
+  cadence are all unchanged. Home shares the identical raw-period and date-format defects but is a
+  separate route and was **not** touched.
 
 ## 8. `/companies/[ticker]` — Company Detail
 

@@ -2358,6 +2358,138 @@ users enter custody data.
 
 ---
 
+## Phase R8 — Earnings source honesty, per-source coverage, composition ✓ IMPLEMENTED (2026-08-03, automated validation complete, manual browser validation pending)
+
+Baseline `5bd6b2b` (clean). `/earnings` was re-skinned onto the Fable foundation in Phase 5G
+(`TableCard` ×2, `AsyncState`, `Reveal`, tokenised hover, near-opaque dense headers); R8 is the
+fidelity-deepening pass that brings the route into the R3–R6 family **and** closes two real
+data-integrity defects that predate the re-skin. Preceded by a read-only audit whose gap list this
+section implements.
+
+**Fable reference:** doc 02 §8 Research (the "Upcoming earnings" module) + the glass DataTable
+pattern, exactly as recorded in doc 03 §7. The composition adopts primitives already shipped in
+R0/R6 — no new shared component was created.
+
+### The two data-correctness fixes (not styling)
+
+**1 · Both source badges claimed a static sample that does not exist.** `page.tsx` rendered
+`status={… ? 'live' : 'static'}` for both tables. There is no static earnings source: both payload
+unions are `'live' | 'unavailable'`, and `src/data/earnings.json` is a deleted file whose absence
+`tests/auditSourceIntegrity.test.ts` already asserts. So a Yahoo outage, a CMF-unavailable snapshot,
+**and a plain network failure** (`.catch(() => null)`) all printed **"Static"** under an empty table
+— telling the reader a sample was on screen when nothing was. Both now resolve
+**`'live-unavailable'`**, a status the shared `MarketDataSourceBadge` and both dictionaries already
+carried, so **no shared string was edited** (`t.marketData.*` untouched — it is consumed by Stocks,
+Home and Company).
+
+**2 · `missingTickers` never reached the user.** Both payloads carry it, and both resolvers document
+it in-source as the honest-gap channel ("never faked" / "documented gap, e.g. Santander/Itaú"). A
+repo-wide scan confirmed **no component in `src/` read it**. Live consequence: CMF genuinely does not
+publish BSANTANDER or ITAUCL (only 3 banks appear on its calendar), so a reader saw 23 of 25 tracked
+companies with zero indication two were missing *by construction* rather than "not reporting yet".
+
+**Coverage is per-table, deliberately.** The calendar and the results feed are independent sources
+with independently different coverage; one merged page-level figure would be false for at least one
+of them, so the R8 brief's architecture correction (no combined number in `PageHeader`) is
+implemented as one `CoverageNote` per table. Coverage = `trackedCompanyCount` −
+that payload's own `missingTickers`, and **never** the displayed row count: Recent Results prints two
+quarters per company and Upcoming prints only companies reporting inside the window, so neither row
+count can express "this source has no data for this issuer at all". The note renders beside
+`TableSourceFooter`, never inside its `source` string (Source Badge Rule), and exactly one footer per
+table survives.
+
+**One registry, read once** *(R8 follow-up correction, 2026-08-03)*. `COMPANY_REGISTRY =
+getAllCompanies()` is evaluated a single time at module scope and backs **both** the coverage
+denominator (`trackedCompanyCount = COMPANY_REGISTRY.length`) and the Upcoming ticker→name lookup, so
+the two can never disagree about which universe is being measured. The denominator is never
+hardcoded and never taken from a provider-side symbol map: `TICKER_YF` is a Yahoo symbol map in
+server-facing code, not the app's company registry, and the page does not import it. Guarded by three
+dedicated tests (registry read exactly once; no `TICKER_YF`/`liveOverlay`/hardcoded size; coverage
+derived from `missingTickers` and never from either payload's row arrays).
+
+**Unavailable is no longer collapsed into empty.** Phase 5G explicitly asserted the collapse as
+preserved NMI behaviour; R8 was commissioned to correct it. Null-or-explicitly-unavailable →
+`AsyncState kind="unavailable"` (existing bilingual copy, no message override); a healthy live
+payload with zero rows keeps `kind="empty"` and its original message — a genuinely real case for
+Upcoming between quarterly reporting waves. `partial`/`stale` remain unused because no payload field
+distinguishes them; using them would be invention.
+
+### A latent date bug found and closed
+
+The audit prescribed replacing the raw ISO `reportDate` with the shared `formatDate`. Doing so
+literally would have **introduced a regression**: `new Date('2026-08-04')` parses as UTC midnight,
+and in Chile (UTC-4/-3) `toLocaleDateString` then renders **"03 ago 2026" — one day early**, on a
+page whose entire purpose is stating when a company reports. Verified directly; every sampled date
+drifted. `formatDate` had **zero prior call sites**, so no existing behaviour depended on it.
+
+`src/lib/formatters.ts` is out of scope for this phase, so the fix normalizes the *input* to local
+midnight (`formatDate(\`${iso}T00:00:00\`)` inside a documented one-line `reportDateLabel` helper)
+rather than editing the formatter — no second date formatter, and no hand-rolled segment
+rearrangement (the `slice(8,10)/slice(5,7)` recipe Home uses is explicitly not adopted). Guarded by a
+behavioural test asserting the normalized parse yields the right day in **every** timezone, plus a
+timezone-gated assertion that proves the naive drift is real when running west of UTC.
+*Recommended follow-up, out of scope here: `formatDate` itself should take an explicit
+`timeZone`/date-only path so the next caller cannot re-enter this trap.*
+
+### Composition (presentation only)
+
+- `SectionHeader` → shared **`PageHeader`** — tag→`eyebrow`, subtitle→`metadata`, Update Data action
+  byte-identical. This was the last non-R header on the route.
+- Hand-rolled export capsule → shared **`ChipButton`** (same handler, filename, headers, row mapping,
+  keyboard operation and accessible name; the inline `--nv-chip` recipe is gone from the page).
+- Upcoming gained a **Company** column in 2nd position — the name+id subject-identity anatomy R6
+  established and Recent Results already had. Resolved from the client-safe `@/lib/data/companies`
+  registry (`c.name`, the same field the server-side results resolver uses, so one company reads
+  identically in both tables), honest `—` fallback, **no added API request**. `colSpan` 3→4,
+  `scope="col"` 14→15.
+- The inline `45` literal became `UPCOMING_WINDOW_DAYS` (business rule out of the render body; the
+  value and the calendar resolver are unchanged — Home keeps its own 7-day window).
+- Dead `earnings.calCols.notes` removed from both dictionaries after confirming zero references in
+  `src/` and `tests/`.
+
+**New i18n (both dictionaries):** `earnings.calPeriods.{q1,q2,q3,annual}` (`Annual`/`Anual` — the
+calendar enum was printed raw, so the Spanish UI showed an English word; Recent Results' own
+`"Q1 2026"` is already language-neutral and is left alone), `earnings.companiesCovered`,
+`earnings.notCovered`.
+
+**Data integrity:** the rolling two-quarter window, exact-period prior-year YoY matching, per-row
+reporting currency, bank-EBITDA suppression and its tooltip, `fmtMM`/`fmtEps`/`pctCell`, negative
+styling, the amounts note, the record count, both `TableSourceFooter` source/as-of expressions,
+`Promise.all` per-source isolation with four independent `.catch(() => null)`, and force-refresh
+semantics are all byte-identical. No resolver, API route, cache, provider, schema, cron or access
+rule was touched.
+
+**Deliberate omissions:** no sorting, filter, period selector, KPI capsule strip, sparkline, detail
+drawer, consensus/forecast/surprise field, quality pill, static fallback, new cache, or new route.
+The Recent Results CSV is unchanged and deliberately does **not** gain the new Upcoming Company
+column. Home carries the identical raw-period and date-format defects (and a
+`t.home.earningsSource = 'Static sample'` label naming a dataset that no longer exists) but is a
+separate route and was **not** touched.
+
+**Tests:** `tests/fableEarningsPage.test.ts` 57 → **99**. Nine Phase 5G cases updated in place with
+documented R8 rationale (header→`PageHeader`, Upcoming column order, live-data helper bindings,
+badge ternaries, three-way state mapping, `AsyncState` type import, `scope="col"` count, `colSpan`,
+and the `partial/stale/unavailable` case whose original premise R8 explicitly supersedes) + 40 new
+R8 cases across source honesty, async-state distinction, per-source coverage (including three that
+pin the denominator's provenance), localization, date normalization, composition, preserved business
+contracts, and access-control documentation. One
+guard caught a real self-inflicted slip: the word "miss" in a new code comment tripped the
+beat/miss field scan, so the **comment** was reworded rather than the guard weakened.
+
+**Gates:** focused suites green (**738/738** across the 11 R8 cross-check suites); full suite
+3794 → **3836 · 3833 pass · 3 fail** — the +42 is exactly this phase's new cases, and the 3 failures
+are only the known date-dependent `newsModule` trio (lines 311/351/361); lint 0; build 0 errors
+(`/earnings` still prerendered `○`); `git diff --check` clean.
+
+**Manual browser validation: PENDING** (390/1024/1728 + 320 stress, EN/ES, light/dark,
+normal/reduced-motion). No browser is connected this session and the route requires a session whose
+credentials cannot be entered. One item to watch specifically: Upcoming's `minWidth` was
+deliberately left at 360 despite the 4th column — the table sizes to its own content and the card
+scrolls, so no truncation is expected, but this is the one place browser evidence could justify a
+minimal raise.
+
+---
+
 ## Phase 7 — i18n additions & cleanup (`src/lib/i18n.ts`)
 
 Any new visible string (login utility chips "Secure connection", contrast label, privacy-mask
