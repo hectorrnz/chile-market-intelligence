@@ -621,6 +621,40 @@ loading state · empty state · error state · auth status — verified identica
   still derives `priceStatus` as live → persisted → static; both asserted by test and confirmed in
   the rendered markup.*
 
+#### R9.0 · Preference architecture (theme + language)
+- [x] **Raw theme storage format preserved.** Key `theme`, values `dark`/`light`, **raw string —
+  never JSON**, default `dark`. `usePersistentState` is deliberately NOT used for theme: it
+  JSON-stringifies, and `"\"light\""` can never satisfy the pre-paint comparison
+  `localStorage.getItem('theme')==='light'`. Asserted by test (raw write, no `JSON.stringify`,
+  exactly one storage key touched).
+- [x] **`src/app/layout.tsx` pre-paint script byte-identical.** Not modified in R9.0; its exact
+  IIFE and the `<html lang="en" className="h-full dark" suppressHydrationWarning>` element are
+  both pinned by test, and the file is asserted never to reference the new store.
+- [x] **One shared, synchronized theme store** (`src/lib/useTheme.ts`). `useSyncExternalStore`;
+  same-tab notification over the existing `cmi-ls:theme` convention; cross-tab over the native
+  `storage` event (which also applies the `<html class="dark">` effect in the receiving tab).
+  No second provider, no second key, no second default, no `matchMedia`. Verified behaviourally
+  against a browser stub: three subscribers share one state, unrelated keys are ignored,
+  `clear()` resolves to the default, and writing the current value settles in exactly one
+  notification per call.
+- [x] **`ThemeToggle` migrated with zero visual change.** Only state ownership moved. `role="group"`,
+  both `aria-pressed`, both `aria-label`s and `title`s, both icons, the `hidden sm:inline`
+  icon-only collapse below `sm`, chip tokens and `nv-transition` all asserted unchanged; the
+  component now holds no `useState`/`useEffect`/`localStorage`/`documentElement` of its own.
+- [x] **Language cross-tab synchronization.** One added `storage` listener in the existing
+  `LangProvider` — same provider, same `lang` key, same raw `en`/`es` format, same `en` default,
+  same `useLang()` signature, same dictionary. Unrelated keys and non-`en`/`es` values (including
+  the `null` from `removeItem`/`clear()`) are ignored rather than applied; listener removed on
+  unmount.
+- [x] **No Settings UI implemented yet.** No `/settings` page, no `Switch` primitive, no
+  notification-recipient change, no privacy-mode consumer — asserted by test.
+- [x] **No migration, API, schema, or dependency change.** The three touched source files are
+  asserted to reference no Supabase, `/api/`, `@/lib/db`, `user_profiles`, or `fetch(`.
+- [ ] **Manual browser validation — PENDING.** Theme changed in the TopBar propagates to every
+  mounted control; reload preserves it with no wrong-theme flash; a second tab updates
+  immediately; the document dark/light class is correct. Language changed in one tab reaches
+  another, survives reload, and retranslates the whole shell.
+
 ### C4 · Engineering gates (run at each phase boundary)
 - [x] `npm run build` → 0 errors, all routes present. *(Phase 1 boundary: compiled in 6.4s, 19/19
   static pages, full route list unchanged. Phase 2 boundary: 0 errors, 19/19 static pages, full

@@ -2490,6 +2490,66 @@ minimal raise.
 
 ---
 
+## Phase R9.0 — Shared theme state + language cross-tab sync ✓ IMPLEMENTED (2026-08-03, automated validation complete, manual browser validation pending)
+
+**Preference architecture only. No Settings UI was implemented, no `Switch` primitive was created,
+no notification-recipient behaviour was touched, and no privacy-mode consumer was wired.** R9.0
+exists so that when the Settings Display card arrives it is a *view* of the preferences the TopBar
+already owns, rather than a second copy of them.
+
+### Why a purpose-built theme store rather than `usePersistentState`
+
+`usePersistentState` is the right tool for every other preference in this app and it is deliberately
+**not** used here. It JSON-stringifies, so it would store `"\"light\""` at key `theme`. The pre-paint
+script in `src/app/layout.tsx` compares `localStorage.getItem('theme')==='light'` against a **raw**
+string, so a JSON-encoded value can never match: the stored preference would be silently ignored on
+every first paint and the app would flash dark before hydration corrected it. The raw storage
+contract is authoritative and unchanged:
+
+| | |
+|---|---|
+| Key | `theme` |
+| Values | `dark` \| `light` |
+| Format | **raw string, never JSON** |
+| Default | `dark` (also the server-rendered value — `<html className="dark">`) |
+| First paint | the existing pre-paint script, **byte-identical**, `layout.tsx` untouched |
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `src/lib/useTheme.ts` **(new)** | The one theme store. `useSyncExternalStore` over module-scope functions; strict validation (only the exact string `light` is light, everything else resolves to `dark`); raw read/write; `applyTheme` owns the `<html class="dark">` effect; `subscribe` listens to **`cmi-ls:theme`** (same-tab, the app's existing custom-event convention) *and* the native **`storage`** event (cross-tab, where it also applies the document class because no `setTheme` ran locally). SSR-guarded on both `window` and `document`; nothing persists during server rendering. No provider, no context, no `matchMedia`, no second default. Exports `useTheme`, `readTheme`, `setTheme`, `applyTheme`, `subscribeToTheme`, `THEME_STORAGE_KEY`, `DEFAULT_THEME`, `Theme`. |
+| `src/components/ui/ThemeToggle.tsx` | State ownership only: `useState`/`useEffect`/`localStorage`/`documentElement` removed in favour of `const { isDark, setTheme } = useTheme()`; the two handlers now pass `'light'`/`'dark'` instead of `false`/`true`. **Zero visual change** — markup, both segments, `role="group"`, both `aria-pressed`, both `aria-label`s and `title`s, the `hidden sm:inline` icon-only collapse, chip tokens and `nv-transition` are untouched. |
+| `src/components/providers/LangProvider.tsx` | One added effect: a native `storage` listener for key `lang` that applies a cross-tab write. Same provider, same `lang` key, same raw `'en'`/`'es'` format, same `'en'` default, same `useLang()` signature, same dictionary. Any other key is ignored; any value that is not exactly `en`/`es` — including the `null` a `removeItem`/`clear()` produces — leaves the current language alone rather than silently resetting the UI. Listener removed on unmount. |
+| `tests/themeLanguageSync.test.ts` **(new)** | 33 cases. Theme is tested **behaviourally**: the store lives outside React, so a minimal browser stub (Map-backed `localStorage`, class-set `documentElement`, event registry) exercises the real read/normalize/write/subscribe/notify logic — no DOM library, no new dependency, no React renderer. Covers default/raw-dark/raw-light/invalid resolution, raw-not-JSON writes, out-of-range normalization, same-tab and cross-tab notification, unrelated-key isolation, `clear()` handling, dark-class tracking in both directions, three subscribers sharing one state, writing the current value settling in exactly one notification per call, both listeners removed on unsubscribe, and the SSR path. LangProvider (a React component with no headless renderer available here) is covered by source scan, the established convention for components in this repo. |
+| `tests/fableR0Primitives.test.ts` | One existing case updated deliberately: the persisted-choice and dark-class assertions used to read `ThemeToggle.tsx`. The **contract is unchanged and still asserted** — it now reads `src/lib/useTheme.ts`, its new home, and `ThemeToggle` is asserted to consume `useTheme()`. Every accessibility/markup assertion in that case is untouched. |
+
+### Synchronization guarantees
+
+- **Same tab** — any control calling `setTheme` dispatches `cmi-ls:theme`; every subscriber re-reads. Verified with three concurrent subscribers.
+- **Across tabs** — the native `storage` event updates value *and* document class in the receiving tab. Verified for both directions.
+- **No loop** — writing the current value notifies once per call and `useSyncExternalStore` bails out on the identical primitive. Verified with three consecutive same-value writes.
+- **Isolation** — `lang`, `cmi.privacyMode` and `cmi.compare*` storage events do not wake the theme store. Verified.
+- **Language** — a cross-tab `en`/`es` write updates the provider; invalid values and unrelated keys are ignored; the listener is cleaned up.
+
+### Not in R9.0
+
+No `/settings` page, no `Switch` primitive, no notification-recipient change, no privacy-mode
+consumer, no server-side preference persistence, **no migration, no API, no schema, no new
+dependency**, no change to `src/app/layout.tsx`.
+
+**Gates:** focused suites green — **697/697** across `fableR0Primitives`, `fableFoundation`,
+`fableAuthShell`, `fableAuthRecovery`, `topNavigation`, `accessControl`,
+`mobileShellResponsiveRepair`, `fableComponents`, `notificationsPlatform`; new file **33/33**.
+Full suite, lint, build and `git diff --check` recorded in the phase report.
+
+**Manual browser validation: PENDING** — theme changed in the TopBar propagates to every mounted
+control; reload preserves it with no wrong-theme flash; a second tab updates immediately; the
+document dark/light class is correct; language changed in one tab reaches another, survives reload,
+and retranslates the whole shell.
+
+---
+
 ## Phase 7 — i18n additions & cleanup (`src/lib/i18n.ts`)
 
 Any new visible string (login utility chips "Secure connection", contrast label, privacy-mask

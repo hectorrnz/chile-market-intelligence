@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { useLang } from '@/components/providers/LangProvider'
+import { useTheme } from '@/lib/useTheme'
 
 function SunIcon() {
   return (
@@ -38,19 +38,13 @@ function MoonIcon() {
 
 export function ThemeToggle() {
   const { t } = useLang()
-  const [isDark, setIsDark] = useState(false)
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setIsDark(document.documentElement.classList.contains('dark'))
-  }, [])
-
-  function setTheme(dark: boolean) {
-    if (dark === isDark) return
-    document.documentElement.classList.toggle('dark', dark)
-    try { localStorage.setItem('theme', dark ? 'dark' : 'light') } catch {}
-    setIsDark(dark)
-  }
+  // R9.0 — state ownership moved out of this component into the ONE shared
+  // theme store (`@/lib/useTheme`). The storage key, its raw 'dark' | 'light'
+  // format, the dark-class effect and every rendered/accessibility detail below
+  // are unchanged; this toggle is now simply one synchronized VIEW of the
+  // preference rather than a private copy of it, so any other mounted theme
+  // control (and any other tab) stays in step with it.
+  const { isDark, setTheme } = useTheme()
 
   return (
     <div
@@ -66,7 +60,7 @@ export function ThemeToggle() {
           (theme-toggle rule). */}
       {/* Light segment */}
       <button
-        onClick={() => setTheme(false)}
+        onClick={() => setTheme('light')}
         aria-pressed={!isDark}
         aria-label={t.topbar.switchToLight}
         title={t.topbar.switchToLight}
@@ -83,7 +77,7 @@ export function ThemeToggle() {
 
       {/* Dark segment */}
       <button
-        onClick={() => setTheme(true)}
+        onClick={() => setTheme('dark')}
         aria-pressed={isDark}
         aria-label={t.topbar.switchToDark}
         title={t.topbar.switchToDark}

@@ -24,6 +24,10 @@ const TABLE_CARD = read('src/components/fable/TableCard.tsx')
 const UPDATE = read('src/components/ui/UpdateDataButton.tsx')
 const LANG = read('src/components/ui/LangToggle.tsx')
 const THEME = read('src/components/ui/ThemeToggle.tsx')
+// R9.0 — the persisted-choice + dark-class half of ThemeToggle's original
+// contract now lives in the ONE shared theme store. The contract is unchanged
+// and still asserted below; only its home moved.
+const THEME_STORE = read('src/lib/useTheme.ts')
 const TOPBAR = read('src/components/layout/TopBar.tsx')
 const SECONDARY = read('src/components/layout/SecondaryNav.tsx')
 const APPSHELL = read('src/components/layout/AppShell.tsx')
@@ -384,8 +388,15 @@ describe('LangToggle & ThemeToggle — normalized segmented capsules', () => {
   })
 
   test('ThemeToggle behavior preserved: persisted choice, class toggle, group + aria-pressed + per-option titles', () => {
-    assert.match(THEME, /localStorage\.setItem\('theme', dark \? 'dark' : 'light'\)/)
-    assert.match(THEME, /document\.documentElement\.classList\.toggle\('dark', dark\)/)
+    // R9.0 — these two lines used to live inside ThemeToggle itself. State
+    // ownership moved to `@/lib/useTheme` so the toggle and the future Settings
+    // Display card are synchronized views of ONE preference; the storage key,
+    // its raw (non-JSON) format and the dark-class effect are byte-for-byte the
+    // same behaviour, now asserted at their new home.
+    assert.match(THEME, /useTheme\(\)/)
+    assert.match(THEME_STORE, /THEME_STORAGE_KEY = 'theme'/)
+    assert.match(THEME_STORE, /localStorage\.setItem\(THEME_STORAGE_KEY, theme\)/)
+    assert.match(THEME_STORE, /document\.documentElement\.classList\.toggle\('dark', dark\)/)
     assert.match(THEME, /role="group"/)
     assert.match(THEME, /aria-label=\{t\.topbar\.theme\}/)
     assert.equal((THEME.match(/aria-pressed=/g) ?? []).length, 2)
