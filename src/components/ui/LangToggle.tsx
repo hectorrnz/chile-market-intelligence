@@ -32,7 +32,7 @@ export function LangToggle() {
             type="button"
             onClick={() => switchTo(code)}
             aria-pressed={active}
-            className="inline-flex items-center h-full px-2.5 rounded-full text-xs uppercase nv-transition"
+            className="inline-flex items-center h-full px-1.5 sm:px-2.5 rounded-full text-xs uppercase nv-transition"
             style={
               active
                 ? { backgroundColor: 'var(--surface)', color: 'var(--foreground)', fontWeight: 600 }

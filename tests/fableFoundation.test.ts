@@ -87,7 +87,8 @@ describe('dark is the first-visit default; a stored choice wins', () => {
 const THEME_VARYING = [
   // Fable material tokens
   '--nv-bg0', '--nv-bg1', '--nv-text', '--nv-text2', '--nv-text3',
-  '--nv-line', '--nv-bd', '--nv-card', '--nv-card-solid', '--nv-mod', '--nv-tbl',
+  '--nv-line', '--nv-bd', '--nv-card', '--nv-card-solid', '--nv-overlay-fill', // R7.1A: near-opaque Tier-5 overlay fill
+  '--nv-mod', '--nv-tbl',
   '--nv-chip', '--nv-chipbd', '--nv-acc', '--nv-acc2', '--nv-hdrbg',
   '--nv-hdrbg-solid', '--nv-hover', '--nv-selected', '--nv-onnav', '--nv-focus',
   '--nv-scrim', '--nv-actioncard',

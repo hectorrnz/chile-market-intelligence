@@ -11,6 +11,14 @@
 // no destination sit behind multiple interactions. The Macro Chile/US region
 // control is included here too, writing the same persisted key and
 // dispatching the same window event as SecondaryNav/the old Sidebar.
+//
+// R7.1A — the drawer surface is the shared Tier-5 `nv-glass-overlay`, whose
+// blurred fill is now the near-opaque `--nv-overlay-fill` (≥ .92 alpha, both
+// themes): page headings/values must never remain readable through the open
+// drawer. Layering follows the documented scale in globals.css (drawer +
+// scrim at z-[80], above the un-z-indexed header and all page content, below
+// the z-[90] dialogs and z-[100] palette). The username lives in a dedicated
+// identity section at the drawer foot — see the comment there.
 
 import { useEffect, useRef } from 'react'
 import Link from 'next/link'
@@ -119,12 +127,6 @@ export function MobileNavDrawer() {
           </button>
         </div>
 
-        {authReady && displayName && (
-          <div className="px-4 py-2 text-xs text-muted-fg truncate" style={{ borderBottom: '1px solid var(--nv-line)' }} title={displayName}>
-            {displayName}
-          </div>
-        )}
-
         <nav aria-label={t.common.primaryNav} className="flex-1 py-2">
           {navGroups.map((group) => {
             const groupActive = activeGroup?.key === group.key
@@ -194,12 +196,32 @@ export function MobileNavDrawer() {
           })}
         </nav>
 
-        <div className="px-4 py-3" style={{ borderTop: '1px solid var(--nv-line)' }}>
+        {/* R7.1A — dedicated identity section. The pre-R7.1A drawer squeezed
+            the username into a one-line truncating strip under the drawer
+            header (hard to read, and — on the old translucent surface — it
+            visually blended with page text underneath). It now has its own
+            block: an eyebrow label, the username allowed to wrap to two lines
+            (full value always available via title), and sign-out as a
+            visually distinct chip on its own row. The divider is the block's
+            top border only — it never crosses text. */}
+        <div className="shrink-0 px-4 py-3" style={{ borderTop: '1px solid var(--nv-line)' }}>
           {authReady &&
             (displayName ? (
-              <a href="/logout" className="text-xs text-muted-fg hover:text-foreground nv-transition">
-                {t.auth.signOut}
-              </a>
+              <div className="min-w-0 space-y-2">
+                <div className="min-w-0">
+                  <div className="ui-micro-label text-muted-fg">{t.auth.signedInAs}</div>
+                  <div className="text-sm font-medium text-foreground break-words line-clamp-2" title={displayName}>
+                    {displayName}
+                  </div>
+                </div>
+                <a
+                  href="/logout"
+                  className="inline-flex items-center h-8 px-3 rounded-full text-xs text-muted-fg hover:text-foreground nv-transition"
+                  style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' }}
+                >
+                  {t.auth.signOut}
+                </a>
+              </div>
             ) : (
               <Link href="/login" onClick={closeNav} className="text-xs text-muted-fg hover:text-foreground nv-transition">
                 {t.auth.signIn}

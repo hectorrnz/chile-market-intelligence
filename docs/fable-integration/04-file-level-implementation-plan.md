@@ -2116,6 +2116,103 @@ carried-forward bar published with non-zero or absent volume would still be coun
 
 ---
 
+## Phase R7.1A — targeted mobile shell + Structured Notes responsive repair ✓ IMPLEMENTED (2026-08-03, automated validation complete, manual browser validation pending)
+
+Triggered by the R7 no-code approval gate, which confirmed four mobile defects with screenshots
+(390 × 844). Visual geometry / responsive composition only — no calculation, API, schema, auth, or
+structured-note business-logic change; the proposed custody/guarantor exposure chart was NOT added.
+
+**Defect 1 — mobile search collided with the Nevada logo.** Root cause: the TopBar's left flex
+group (`min-w-0 grow basis-0`) contained the hamburger and the brand as `shrink-0` children. The
+group's `min-w-0` let the flex line treat it as zero-width — so `flex-wrap` never triggered — while
+its unshrinkable children visually overflowed the group box to the right, underneath the utility
+cluster painted later in DOM order: the collapsed search chip landed on the logo. Repair: three
+independent top-level slots — (1) protected `shrink-0` slot (nav trigger + brand, min-content always
+respected), (2) the only squeezable slot (`shrink min-w-0 grow basis-0`, breadcrumb + truncating
+title — doubling as the guaranteed clear area around the mark), (3) `shrink-0 ml-auto` utility
+cluster. With the line's min-content honest again, genuine overflow (extreme font scaling) wraps the
+utilities to a second header row instead of overlapping. Compaction so one row fits 320 px at
+default scaling: search becomes a `w-9` icon-only square below `md` (accessible name via
+`aria-label`, glyph `aria-hidden`); ThemeToggle segments become icon-only below `sm` (labels
+`hidden sm:inline`; both segments stay rendered, `aria-pressed`, `aria-label` + `title` — never a
+text-only reduction); Theme/Lang segment padding `px-1.5 sm:px-2.5`. The hamburger's `-ml-1`
+optical nudge was dropped — the header now contains no negative margin, no absolute positioning,
+no z-index.
+
+**Defect 2 — drawer username clipped/contaminated.** Root cause: a one-line `truncate` strip
+squeezed under the drawer header, on the old translucent surface (defect 4) that let page text show
+through it. Repair: the strip is gone; a dedicated identity section at the drawer foot carries an
+eyebrow label (`t.auth.signedInAs`, new EN/ES key), the username allowed to wrap to two lines
+(`break-words line-clamp-2`, full value always on `title`), and sign-out as a visually distinct
+chip on its own row. The divider is the section's top border only — it never crosses text.
+
+**Defect 3 — allocation legend overflowed the card.** Root cause: the Allocation-by-entity donut
+card (`/structured-notes`) kept `donut (w-44, shrink-0) + legend (flex-1)` side by side at every
+card width. In the wrapping two-up exposure row a card is ~340 px wide at tablet widths, so the
+legend was squeezed to ~120 px while each row's `whitespace-nowrap` value span is ~200 px — the
+amounts escaped the card boundary, and the spill surfaced a scrollbar inside the app shell
+(`<main>` is `overflow-y-auto`, which computes the unspecified `overflow-x` to `auto`). Repair:
+**container-query composition** (first Tailwind v4 native `@container` use in the codebase — the
+card is ~340 px at tablet but ~590 px on a phone in the single-column stack, so no viewport
+breakpoint can express this). Base styles = donut stacked above a full-width legend (the safe
+degradation for engines without container-query support); side-by-side returns only from `@lg`
+(32 rem of the card's own width), which preserves the effective desktop composition and also fixes
+the previously-broken tablet case. Legend rows now `flex-wrap`: the entity name is the flexible
+truncating part (full identity via `title`); the numeric block is two atomic `whitespace-nowrap`
+units — `12,3% of total` and `· USD 1.234.567` — right-aligned (`justify-end`, `ui-number` tabular
+numerals, formatting/precision unchanged) that drop to a right-aligned second line when the row is
+too narrow. No value can leave the card; no nested scroll container exists; card height grows
+naturally. Chart data, percentages, gapped segments, center total, and hover linking are unchanged.
+
+**Defect 4 — drawer (and shared overlays) too transparent.** Root cause: the Tier-5
+`.nv-glass-overlay` blurred fill reused the in-flow `--nv-card` gradient (.75–.9 alpha light,
+.58–.72 dark) — tuned for cards sitting IN the page, not for surfaces covering live analytical
+content; underlying headings/values stayed legible through the open drawer and dialogs. Repair
+(shared-token fix, §C audit): new `--nv-overlay-fill` in both themes (light .97/.94, dark .97/.95 —
+all stops ≥ the §8 .92 dense floor), consumed by `.nv-glass-overlay` in the `@supports` block; blur
+30 px + saturation + border + shadow retained, so the Liquid Glass identity survives in the ≤ 6 %
+translucency. Every Tier-5 consumer (nav drawer, ModalShell, DetailPanel, NotificationBell panel,
+CommandPalette, chart-builder settings) is corrected by the one token — no per-overlay redesign.
+The shared scrim was raised .38 → .45 (light) and .48 → .56 (dark) so the backdrop clearly
+suppresses the page; its 3 px blur is unchanged. The z-index layering scale is now documented in
+`globals.css` beside the Tier-5 rule (sticky chrome 10/20 · drawer 80 · dialogs/panels 90 ·
+palette 100 · header un-z-indexed) — audited consistent across all overlay components; no value
+changed.
+
+**Files.** `globals.css` (tokens + Tier-5 fill + scrim + layering doc), `TopBar.tsx`,
+`ThemeToggle.tsx`, `LangToggle.tsx`, `MobileNavDrawer.tsx`, `structured-notes/page.tsx` (Donut
+only), `i18n.ts` (`auth.signedInAs` EN/ES), tests (below), docs 04 + 06.
+
+**Tests.** New `tests/mobileShellResponsiveRepair.test.ts` — 25 cases mapping 1:1 onto the brief's
+§G items (slot independence, non-overlap geometry, protected mark, 320-px compaction proxy,
+overlay-fill ≥ .92 both themes, scrim suppression, layering scale, identity container, focus
+trap/Escape/restore/scroll-lock, ModalShell contract, stacked composition, full-width legend,
+no-overflow numeric structure, no nested scroll, desktop preservation, unchanged chart data, no
+mock data, no API/schema reference, no native dialogs, EN/ES complete, token-driven themes, no
+weakened overflow rule). `fableFoundation.test.ts` gained `--nv-overlay-fill` in the theme-parity
+list (additive). No existing assertion was weakened; all existing shell/notes suites pass
+unmodified apart from that additive line.
+
+**Validation status.** Focused suites (mobileShellResponsiveRepair, topNavigation,
+fableR0Primitives, responsiveLayout, fableFoundation, fableStructuredNotesPage,
+fableMacroChartModalOpacity, fableComponents, all Fable page suites): green. The §E viewport
+matrix (320/360/390/430/768/1024/1728 × EN/ES × light/dark) and §I screenshot evidence could
+**not** be captured — no browser is connected to this environment (verified via the browser
+extension: not connected) and the protected routes additionally require a session whose
+credentials Claude cannot enter. The geometry contracts are locked by the source-scan suite above;
+in-browser confirmation remains pending, as it has for every Fable round in this environment.
+
+**Limitations.** (1) Manual browser/viewport/theme matrix pending (above). (2) The 320-px
+"fits in one row" claim is a computed min-content budget (≈ 292 px vs the 296 px content box at
+default font scale), not a rendered measurement; under browser font scaling the header wraps to a
+second row by design rather than overflowing. (3) Container queries require a 2023+ engine; the
+declared base composition (stacked) is the fallback, so older engines degrade to the mobile-safe
+layout, never the overflowing one. (4) `--nv-overlay-fill` intentionally makes ALL Tier-5 overlays
+near-opaque; if a future overlay genuinely wants the old in-flow card translucency it must use the
+card tier, not lower the overlay token.
+
+---
+
 ## Phase 7 — i18n additions & cleanup (`src/lib/i18n.ts`)
 
 Any new visible string (login utility chips "Secure connection", contrast label, privacy-mask

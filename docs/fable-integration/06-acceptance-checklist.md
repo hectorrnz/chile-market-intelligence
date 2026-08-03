@@ -145,6 +145,22 @@ stays `[ ]` or `[~]`.
   tests in `tests/topNavigation.test.ts` (55 in that suite). Manual re-check at 390px still pending —
   note the EN|ES and Light|Dark capsules together consume ~234px of the 366px content line at that
   width, so Spanish is the tightest case.*
+  *R7.1A shell repair (2026-08-03, from the R7 approval-gate screenshots): four confirmed mobile
+  defects fixed. (1) Search-over-logo collision — the left header group's `min-w-0` hid its
+  unshrinkable children's width from the flex line, so the later-painted utility cluster overlaid
+  the mark; the header is now three independent slots (protected `shrink-0` trigger+brand · the
+  single squeezable title slot · `shrink-0` utilities) and compacts (icon-only search below `md`,
+  icon-only theme segments below `sm`, `px-1.5 sm:px-2.5` segment padding) to fit one 320px row,
+  wrapping — never overlapping — under font scaling. (2) Drawer username — the truncating one-line
+  strip replaced by a dedicated identity section at the drawer foot (`auth.signedInAs` eyebrow,
+  two-line `line-clamp-2` + `title` username, sign-out as a distinct chip). (3) Drawer/overlay
+  bleed-through — the shared Tier-5 fill moved off the in-flow `--nv-card` alphas to the new
+  `--nv-overlay-fill` (all stops ≥ .92 in both themes, blur/saturation/border/shadow retained), the
+  scrim raised to .45/.56, and the z-layering scale documented in `globals.css` (drawer 80 ·
+  dialogs 90 · palette 100); every Tier-5 consumer is corrected by the one token. (4) See the
+  `/structured-notes` allocation-card annotation. Guarded by the 25-case
+  `tests/mobileShellResponsiveRepair.test.ts`. The §E viewport/theme/language matrix and §I
+  screenshot evidence remain pending — no browser is connected to this environment.*
 - [ ] **10 · Source labels, data-quality disclosures, and timestamps preserved.** Every table
   ends in one `TableSourceFooter` (plain source name); badges show correct state word + tooltip;
   monitoring-estimate/derived/unofficial disclaimers intact; as-of timestamps correct.
@@ -390,6 +406,16 @@ loading state · empty state · error state · auth status — verified identica
   reading, centered dense columns (Status/Note left, gauge centered), truncate+`title` safety
   nets on Issuer/Worst/Notional. Card-contained scrolling below the sum is unchanged. Guarded by
   R3.R3. Manual browser pass still pending.)*
+  *(R7.1A 2026-08-03, from the R7 approval-gate screenshots: the Allocation-by-entity card no
+  longer overflows at mobile/tablet card widths — first Tailwind v4 `@container` use: donut stacks
+  above a full-width legend below `@lg` (32rem of CARD width; a viewport breakpoint cannot express
+  this because the card is ~340px in the two-up tablet row but ~590px in the phone single-column
+  stack), side-by-side preserved at wide cards. Legend rows wrap — flexible truncating name
+  (`title` keeps full identity) + two atomic nowrap numeric units that drop to a right-aligned
+  second line — so amounts can never leave the card and no nested scrollbar exists. Data,
+  percentages, formatting, center total, and hover linking unchanged. Guarded by
+  `tests/mobileShellResponsiveRepair.test.ts` §G14–19. Manual browser pass still pending — no
+  browser is connected to this environment.)*
 - [~] `/structured-notes/[id]` 🔒 — metrics strip + terms + current levels + underlyings + schedule
   + allocation grid + provenance/delete; protected.
   *(R4 2026-07-31: recomposed to the approved Fable note-detail anatomy (SPECS §6 "Row → panel"

@@ -559,6 +559,7 @@ export const dict = {
     auth: {
       signIn:           'Sign in',
       signOut:          'Sign out',
+      signedInAs:       'Signed in as',
       signInTitle:      'Sign in',
       signInSubtitle:   'Enter your username and password.',
       createAccountTitle:    'Create your account',
@@ -1405,6 +1406,7 @@ export const dict = {
     auth: {
       signIn:           'Ingresar',
       signOut:          'Cerrar sesión',
+      signedInAs:       'Sesión iniciada como',
       signInTitle:      'Ingresar',
       signInSubtitle:   'Ingresa tu usuario y contraseña.',
       createAccountTitle:    'Crea tu cuenta',

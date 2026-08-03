@@ -59,12 +59,18 @@ export function ThemeToggle() {
       className="inline-flex items-center h-7 p-0.5 rounded-full border gap-px"
       style={{ backgroundColor: 'var(--nv-chip)', borderColor: 'var(--nv-chipbd)' }}
     >
+      {/* R7.1A — below `sm` each segment compacts to its icon so the header
+          fits a 320px viewport; the text labels return at `sm`. Both options
+          stay individually rendered, keyboard-operable, aria-pressed, and
+          `title`-named at every width — never reduced to a text-only label
+          (theme-toggle rule). */}
       {/* Light segment */}
       <button
         onClick={() => setTheme(false)}
         aria-pressed={!isDark}
+        aria-label={t.topbar.switchToLight}
         title={t.topbar.switchToLight}
-        className="inline-flex items-center gap-1.5 h-full px-2.5 rounded-full text-xs nv-transition"
+        className="inline-flex items-center gap-1.5 h-full px-1.5 sm:px-2.5 rounded-full text-xs nv-transition"
         style={
           !isDark
             ? { backgroundColor: 'var(--surface)', color: 'var(--foreground)' }
@@ -72,15 +78,16 @@ export function ThemeToggle() {
         }
       >
         <SunIcon />
-        <span>{t.topbar.light}</span>
+        <span className="hidden sm:inline">{t.topbar.light}</span>
       </button>
 
       {/* Dark segment */}
       <button
         onClick={() => setTheme(true)}
         aria-pressed={isDark}
+        aria-label={t.topbar.switchToDark}
         title={t.topbar.switchToDark}
-        className="inline-flex items-center gap-1.5 h-full px-2.5 rounded-full text-xs nv-transition"
+        className="inline-flex items-center gap-1.5 h-full px-1.5 sm:px-2.5 rounded-full text-xs nv-transition"
         style={
           isDark
             ? { backgroundColor: 'var(--surface)', color: 'var(--foreground)' }
@@ -88,7 +95,7 @@ export function ThemeToggle() {
         }
       >
         <MoonIcon />
-        <span>{t.topbar.dark}</span>
+        <span className="hidden sm:inline">{t.topbar.dark}</span>
       </button>
     </div>
   )

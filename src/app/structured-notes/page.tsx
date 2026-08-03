@@ -826,7 +826,17 @@ function Donut({ data, currency, ofTotal, totalLabel }: { data: { label: string;
     return { label: d.label, value: d.value, frac, dash: Math.max(frac * C - gap, 0.9), offset: precedingFrac * C, color: CHART_PALETTE[i % CHART_PALETTE.length] }
   })
   return (
-    <div className="flex items-center gap-5 flex-wrap">
+    // R7.1A — container-query composition (Tailwind v4 native @container).
+    // The donut + legend go side by side ONLY when this card itself is at
+    // least @lg (32rem) wide; below that the chart stacks above a full-width
+    // legend. A viewport breakpoint cannot express this: the exposure cards
+    // sit in a wrapping two-up row, so a card is ~340px wide at tablet
+    // widths (where side-by-side overflowed the card) yet ~590px on a phone
+    // in the single-column stack (where side-by-side fits). The base styles
+    // are the stacked composition, so an engine without container-query
+    // support degrades to the mobile-safe layout, never the overflowing one.
+    <div className="@container">
+      <div className="flex flex-col items-center gap-4 @lg:flex-row @lg:gap-5">
       <div className="relative w-44 h-44 shrink-0">
         {total > 0 ? (
           <svg viewBox="0 0 100 100" className="w-full h-full" style={{ transform: 'rotate(-90deg)' }}>
@@ -848,22 +858,32 @@ function Donut({ data, currency, ofTotal, totalLabel }: { data: { label: string;
           </div>
         )}
       </div>
-      <div className="text-xs space-y-0.5 min-w-0 flex-1">
+      {/* R7.1A — the legend takes the full card width when stacked, and each
+          row wraps instead of overflowing: the entity name is the flexible
+          part (truncate + title keep the full identity accessible) and the
+          numeric block is two atomic nowrap units — "12,3% of total" and
+          "· USD 1.234.567" — that drop to a right-aligned second line when
+          the row is too narrow, so an amount can never leave the card and
+          never needs a nested scrollbar. */}
+      <div className="w-full text-xs space-y-0.5 min-w-0 @lg:flex-1">
         {segs.map((s) => (
           <div
             key={s.label}
-            className={`flex items-center gap-2 rounded-lg px-2 py-1 -mx-2 nv-row-hover nv-transition ${hi && hi !== s.label ? 'opacity-50' : ''}`}
+            className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg px-2 py-1 -mx-2 nv-row-hover nv-transition ${hi && hi !== s.label ? 'opacity-50' : ''}`}
             onMouseEnter={() => setHi(s.label)}
             onMouseLeave={() => setHi(null)}
           >
             <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
-            <span className="text-foreground truncate" title={s.label}>{s.label}</span>
-            <span className="whitespace-nowrap ui-number ml-auto">
-              <span className="text-foreground font-medium">{(s.frac * 100).toFixed(1)}%</span>
-              <span className="text-muted-fg"> {ofTotal} · {currency} {fmtNum(s.value)}</span>
+            <span className="text-foreground truncate min-w-0 flex-1 basis-24" title={s.label}>{s.label}</span>
+            <span className="ui-number ml-auto flex flex-wrap justify-end gap-x-1 text-right">
+              <span className="text-foreground font-medium whitespace-nowrap">
+                {(s.frac * 100).toFixed(1)}%<span className="text-muted-fg font-normal"> {ofTotal}</span>
+              </span>
+              <span className="text-muted-fg whitespace-nowrap">· {currency} {fmtNum(s.value)}</span>
             </span>
           </div>
         ))}
+      </div>
       </div>
     </div>
   )

@@ -40,17 +40,30 @@ export function TopBar() {
           The header height follows intrinsically — `min-h-14` when the rail is
           hidden (below `lg`), taller once it wraps onto its own line. */}
       <div className="flex flex-wrap items-center gap-1.5 sm:gap-3 py-2 w-full max-w-(--content-max-w) mx-auto min-w-0">
-      {/* Left: mobile-nav trigger + brand + contextual title. `basis-0 grow`
-          keeps its hypothetical size at zero so it can never force the utility
-          cluster onto a second line; it grows into whatever the utilities
-          leave and the page title truncates inside it. */}
-      <div className="flex items-center gap-2.5 shrink min-w-0 grow basis-0">
+      {/* R7.1A — three independent layout slots, in DOM and visual order:
+            1. protected slot (nav trigger + brand) — `shrink-0`, so its
+               min-content width is always respected;
+            2. squeezable slot (breadcrumb + page title) — the ONLY child that
+               may shrink (`min-w-0 grow basis-0`), truncating internally;
+            3. utility cluster (search · bell · language · theme) — `shrink-0`.
+          The pre-R7.1A geometry put the trigger + brand INSIDE the squeezable
+          group: the group's `min-w-0` let the flex line consider it
+          zero-width, so no wrap ever triggered, while its `shrink-0` children
+          visually overflowed the group box to the right — underneath the
+          utility cluster, painted later in DOM order. That is the exact
+          390px search-over-logo collision. With the brand in its own
+          `shrink-0` slot the line's min-content is honest again: when the
+          utilities genuinely cannot fit (extreme font scaling), `flex-wrap`
+          drops them to a second header row — never an overlap, never
+          page-level horizontal overflow. Every slot is in normal flow with
+          non-negative margins. */}
+      <div className="flex items-center gap-2.5 shrink-0">
         <button
           type="button"
           onClick={toggleNav}
           aria-expanded={open}
           aria-haspopup="dialog"
-          className="lg:hidden shrink-0 flex items-center justify-center w-9 h-9 -ml-1 rounded-md text-muted-fg hover:text-foreground hover:bg-surface-2 nv-transition"
+          className="lg:hidden shrink-0 flex items-center justify-center w-9 h-9 rounded-md text-muted-fg hover:text-foreground hover:bg-surface-2 nv-transition"
           aria-label={open ? t.common.closeMenu : t.common.openMenu}
           title={open ? t.common.closeMenu : t.common.openMenu}
         >
@@ -76,14 +89,18 @@ export function TopBar() {
           <NevadaMark variant="symbol" size={28} alt="" className="shrink-0" />
           <span className="text-sm font-medium text-foreground whitespace-nowrap hidden md:inline">Inversiones Nevada</span>
         </Link>
-        {/* Breadcrumb — separator with the wordmark at `md`, page title from `sm`.
-            Below `sm` the title is absent rather than merely truncated: the
-            utility cluster opposite is `shrink-0`, so the only flexible child on
-            the line is this span, and leaving it in the DOM at 390px drives it to
-            ~0 width where it renders a clipped partial glyph beside the symbol
-            (on routes with no active nav group `getPageTitle` returns the literal
-            'Nevada Market Intelligence', which is what read as a broken
-            wordmark). The drawer is the navigation surface at that width. */}
+      </div>
+
+      {/* Breadcrumb — separator with the wordmark at `md`, page title from `sm`.
+          Below `sm` the title is absent rather than merely truncated: leaving it
+          in the DOM at 390px drives it to ~0 width where it renders a clipped
+          partial glyph beside the symbol (on routes with no active nav group
+          `getPageTitle` returns the literal 'Nevada Market Intelligence', which
+          is what read as a broken wordmark). The drawer is the navigation
+          surface at that width. This slot is the only squeezable child on the
+          line (R7.1A) — its collapsed width also acts as the guaranteed clear
+          area between the Nevada mark and the utility cluster. */}
+      <div className="flex items-center gap-2.5 shrink min-w-0 grow basis-0">
         <span className="text-muted-fg text-sm hidden md:inline">/</span>
         <span className="text-sm text-foreground font-medium truncate hidden sm:block">{title}</span>
       </div>
@@ -91,14 +108,20 @@ export function TopBar() {
       {/* Right: search + icon controls + date + auth. The date and full
           brand text are the first to go on narrow viewports. */}
       <div className="flex items-center gap-1 sm:gap-2 shrink-0 ml-auto">
+        {/* R7.1A — below `md` the search trigger is a constant-width icon-only
+            square (`w-9`, centered glyph) in its own shrink-0 slot: it can
+            neither be squeezed nor painted over the brand. The visible label
+            returns at `md`; the accessible name stays constant via aria-label
+            (the bare ⌕ glyph is not a name). */}
         <button
           type="button"
           onClick={() => window.dispatchEvent(new Event('cmdk:open'))}
-          className="flex items-center gap-2 h-9 px-2.5 sm:px-3 rounded-full text-sm text-muted-fg hover:text-foreground nv-transition"
+          className="shrink-0 flex items-center justify-center md:justify-start gap-2 h-9 w-9 px-0 md:w-auto md:px-3 rounded-full text-sm text-muted-fg hover:text-foreground nv-transition"
           style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' }}
+          aria-label={t.common.search}
           title={t.common.search}
         >
-          <span>⌕</span>
+          <span aria-hidden="true">⌕</span>
           <span className="truncate hidden md:inline">{t.common.search}</span>
           <kbd className="border border-border rounded px-1.5 text-xs hidden xl:inline">⌘K</kbd>
         </button>

@@ -147,6 +147,14 @@
   --nv-card:  linear-gradient(168deg, rgba(255, 255, 255, .9), rgba(245, 248, 251, .75));
   /* Opaque composite of --nv-card, used as the no-backdrop-filter / print fallback */
   --nv-card-solid: #FCFDFE;
+  /* R7.1A — Tier-5 overlay fill. Overlays (nav drawer, modal dialogs, menus,
+     slide-in panels) sit OVER dense analytical content, so they follow the §8
+     dense-surface floor (≥ .92 alpha), not the in-flow card alpha: at the old
+     --nv-card alphas (.75–.9 light, .58–.72 dark) underlying headings, table
+     values, and labels stayed legible through an open drawer/dialog. The blur
+     + saturation + border + shadow keep the Liquid Glass identity; the fill
+     carries the content separation. Never lower these below .92. */
+  --nv-overlay-fill: linear-gradient(168deg, rgba(255, 255, 255, .97), rgba(245, 248, 251, .94));
   --nv-mod:   rgba(255, 255, 255, .94);  /* near-opaque analytical surface (§8) */
   --nv-tbl:   rgba(255, 255, 255, .97);  /* near-opaque dense table surface (§8) */
   --nv-chip:   rgba(47, 110, 182, .07);
@@ -161,7 +169,9 @@
   --nv-selected: rgba(47, 110, 182, .12);
   --nv-onnav: #FFFFFF;
   --nv-focus: #2F6EB6;
-  --nv-scrim: rgba(4, 10, 16, .38);
+  /* R7.1A — scrim raised .38 → .45: the backdrop outside an open drawer/modal
+     must clearly suppress the page, not merely tint it. */
+  --nv-scrim: rgba(4, 10, 16, .45);
   --nv-actioncard: linear-gradient(160deg, #004A64, #00355F);
 
   /* Signal fills — Fable pairs a translucent *bg with the signal color as text.
@@ -458,6 +468,8 @@
   --nv-bd:    rgba(172, 212, 241, .13);
   --nv-card:  linear-gradient(168deg, rgba(27, 38, 48, .72), rgba(15, 22, 29, .58));
   --nv-card-solid: #151E25;
+  /* R7.1A — see the light-theme note: ≥ .92 alpha floor for overlays. */
+  --nv-overlay-fill: linear-gradient(168deg, rgba(27, 38, 48, .97), rgba(15, 22, 29, .95));
   --nv-mod:   rgba(19, 27, 35, .94);
   --nv-tbl:   rgba(15, 21, 27, .97);
   --nv-chip:   rgba(172, 212, 241, .08);
@@ -472,7 +484,8 @@
   --nv-selected: rgba(172, 212, 241, .14);
   --nv-onnav: #EAF4FC;
   --nv-focus: #68A6D6;
-  --nv-scrim: rgba(4, 10, 16, .48);
+  /* R7.1A — scrim raised .48 → .56 (see light-theme note). */
+  --nv-scrim: rgba(4, 10, 16, .56);
   --nv-actioncard: linear-gradient(160deg, #0A4157, #003A52 55%, #00304A);
 
   --nv-posbg:  rgba(62, 164, 100, .16);
@@ -679,7 +692,16 @@
     box-shadow: var(--nv-sh);
   }
 
-  /* Tier 5 — elevated modal / drawer / menu glass */
+  /* Tier 5 — elevated modal / drawer / menu glass.
+
+     Layering scale (R7.1A, documented — do not invent new page-level values):
+       z-10 / z-20   sticky table chrome, in-card affordances (component-local)
+       z-[80]        mobile navigation drawer (+ its scrim) — above header/page
+       z-[90]        modal dialogs, detail panels, notification panel (+ scrims)
+       z-[100]       command palette (may open over any of the above)
+     The TopBar deliberately carries NO z-index: every overlay above out-stacks
+     it. A new overlay picks the tier matching its role; page content never
+     escalates past z-20. */
   .nv-glass-overlay {
     border-radius: var(--radius-module);
     background: var(--nv-card-solid);
@@ -824,8 +846,12 @@
     backdrop-filter: blur(var(--nv-blur)) saturate(var(--nv-sat-card));
     -webkit-backdrop-filter: blur(var(--nv-blur)) saturate(var(--nv-sat-card));
   }
+  /* R7.1A — the blurred Tier-5 fill is --nv-overlay-fill (≥ .92 alpha), NOT
+     the in-flow --nv-card gradient: overlays cover live analytical content,
+     and the old card-alpha fill left that content readable through drawers
+     and dialogs. Do not point this back at --nv-card. */
   .nv-glass-overlay {
-    background: var(--nv-card);
+    background: var(--nv-overlay-fill);
     backdrop-filter: blur(var(--nv-blur-overlay)) saturate(var(--nv-sat-overlay));
     -webkit-backdrop-filter: blur(var(--nv-blur-overlay)) saturate(var(--nv-sat-overlay));
   }
