@@ -214,6 +214,9 @@ export const parseCitiHsbc: IssuerParser = (ctx) => {
   const note: StructuredNote = {
     isin, productName: productName ?? (isin ? `Structured Note ${isin}` : 'Structured Note'),
     issuerName, issuerDisplayName: issuerDisplay, guarantorName,
+    // Custody is portfolio data, never a product term — a term sheet cannot
+    // say who Nevada banks with, so extraction ALWAYS leaves it unrecorded.
+    custodian: null,
     structureType: structureType || 'note', payoffType, currency,
     issueSize, denomination, issuePricePct,
     tradeDate, issueDate, initialValuationDate: tradeDate, finalValuationDate, maturityDate, redemptionDate: maturityDate,

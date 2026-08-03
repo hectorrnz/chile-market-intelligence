@@ -15,6 +15,7 @@ import type {
   StructuredNoteAllocationRow as DbAlloc,
 } from '../../supabase/database.types.ts'
 import { ARCHIVED_STATUSES } from '../../structuredNotes/types.ts'
+import { normalizeCustodianName, custodianKey } from '../../structuredNotes/calculations.ts'
 import type {
   StructuredNote,
   StructuredNoteUnderlying,
@@ -99,6 +100,11 @@ function mapNote(r: DbNote, children?: { underlyings?: DbUnderlying[]; observati
     productName: r.product_name,
     issuerName: r.issuer_name,
     issuerDisplayName: r.issuer_display_name,
+    // `?? null` keeps the domain type honest while the additive R7.1B.1
+    // migration is still pending on an environment: reads use `select('*')`,
+    // so a missing column yields undefined rather than an error, and every
+    // note simply classifies as "Custodian unavailable" until it is applied.
+    custodian: r.custodian ?? null,
     guarantorName: r.guarantor_name,
     structureType: r.structure_type,
     payoffType: r.payoff_type,
@@ -196,6 +202,8 @@ export async function importStructuredNote(
     product_name: note.productName,
     issuer_name: note.issuerName,
     issuer_display_name: note.issuerDisplayName,
+    // Custody is never part of an imported term sheet — it stays null until a
+    // user records it on the note.
     guarantor_name: note.guarantorName,
     structure_type: note.structureType,
     payoff_type: note.payoffType,
@@ -274,7 +282,7 @@ export async function importStructuredNote(
 export async function updateStructuredNote(
   client: Client,
   id: string,
-  patch: Partial<Pick<StructuredNote, 'status' | 'issuerDisplayName' | 'productName' | 'sourceName'>>,
+  patch: Partial<Pick<StructuredNote, 'status' | 'issuerDisplayName' | 'productName' | 'sourceName' | 'custodian'>>,
 ): Promise<boolean> {
   const dbPatch: Record<string, unknown> = {}
   if (patch.status !== undefined) {
@@ -286,14 +294,48 @@ export async function updateStructuredNote(
   if (patch.issuerDisplayName !== undefined) dbPatch.issuer_display_name = patch.issuerDisplayName
   if (patch.productName !== undefined) dbPatch.product_name = patch.productName
   if (patch.sourceName !== undefined) dbPatch.source_name = patch.sourceName
+  // R7.1B.1 — note-level custody. Normalized on the way in (whitespace/casing
+  // preserved as the user typed the legal name); an explicit null clears it.
+  if (patch.custodian !== undefined) dbPatch.custodian = normalizeCustodianName(patch.custodian)
   if (Object.keys(dbPatch).length === 0) return true
   const res = await q(client).from('structured_notes').update(dbPatch).eq('id', id)
   return !res.error
 }
 
-export async function deleteStructuredNote(client: Client, id: string): Promise<boolean> {
+export type DeleteNoteResult = 'ok' | 'not_found' | 'delete_failed'
+
+/**
+ * Permanently removes a note. HARD delete — the repository has no soft-delete
+ * convention for structured notes (`archived_at`/`status` model the note being
+ * CALLED, a real lifecycle event, and archived notes stay fully visible in the
+ * Archived view; reusing them to mean "deleted" would corrupt that meaning).
+ *
+ * R7.1B — dependent records, classified explicitly against the declared
+ * foreign keys in 20260706000000_structured_notes_foundation.sql (this is the
+ * documented, tested contract, not incidental database behavior):
+ *
+ *   delete with note      structured_note_underlyings        (note_id, cascade)
+ *                         structured_note_observations       (note_id, cascade)
+ *                         structured_note_allocations        (note_id, cascade)
+ *                         structured_note_price_snapshots    (note_id, cascade)
+ *                         structured_note_extracted_fields   (note_id, cascade)
+ *   preserve but detach   structured_note_extraction_runs    (extracted_note_id
+ *                         → SET NULL: the upload/extraction audit trail must
+ *                         survive the record it produced)
+ *   preserve, shared      structured_note_monitoring_runs    (book-level, no
+ *                         note FK — one run covers every note)
+ *
+ * Nothing shared is destroyed: entities and custodians are text attributes of
+ * the allocation rows, not shared records, and this module owns no document
+ * store. One statement, so the cascade is a single atomic database operation —
+ * a partial delete is not reachable.
+ */
+export async function deleteStructuredNote(client: Client, id: string): Promise<DeleteNoteResult> {
+  const existing = await q(client).from('structured_notes').select('id').eq('id', id).maybeSingle()
+  if (existing.error) return 'delete_failed'
+  if (existing.data == null) return 'not_found'
   const res = await q(client).from('structured_notes').delete().eq('id', id)
-  return !res.error
+  return res.error ? 'delete_failed' : 'ok'
 }
 
 // ─── Allocations (internal — never from PDF) ──────────────────────────────────
@@ -303,29 +345,56 @@ export async function deleteStructuredNote(client: Client, id: string): Promise<
  * note_id + entity_name). A notional of 0 (or less) removes the allocation so
  * the grid can clear an entity by zeroing it.
  */
+export type UpsertAllocationResult = 'ok' | 'invalid_entity' | 'write_failed'
+
+/**
+ * R7.1B.1 — allocations carry an account and its notional ONLY. Custody is a
+ * note-level fact (all of a note's accounts trade through one custodian), so
+ * it is neither read nor written here; the superseded
+ * `structured_note_allocations.custodian` column is left untouched and empty.
+ */
 export async function upsertAllocation(
   client: Client,
   noteId: string,
-  alloc: { entityName: string; custodian?: string | null; notionalAmount: number; currency?: string; active?: boolean },
-): Promise<boolean> {
+  alloc: { entityName: string; notionalAmount: number; currency?: string; active?: boolean },
+): Promise<UpsertAllocationResult> {
   const entity = alloc.entityName.trim()
-  if (!entity) return false
+  if (!entity) return 'invalid_entity'
   if (!(alloc.notionalAmount > 0)) {
     const res = await q(client).from('structured_note_allocations').delete().eq('note_id', noteId).eq('entity_name', entity)
-    return !res.error
+    return res.error ? 'write_failed' : 'ok'
   }
   const res = await q(client).from('structured_note_allocations').upsert(
     {
       note_id: noteId,
       entity_name: entity,
-      custodian: alloc.custodian ?? null,
       notional_amount: alloc.notionalAmount,
       currency: alloc.currency ?? 'USD',
       active: alloc.active ?? true,
     },
     { onConflict: 'note_id,entity_name' },
   )
-  return !res.error
+  return res.error ? 'write_failed' : 'ok'
+}
+
+/**
+ * R7.1B.1 — the distinct custodians already recorded across the book, for the
+ * note form's suggestion list. This IS the custodian registry: it is built
+ * from values users actually entered on their notes, so the app never ships a
+ * guessed roster of institutions and never auto-merges two distinct legal
+ * entities.
+ */
+export async function getKnownCustodians(client: Client): Promise<string[]> {
+  const res = await q(client).from('structured_notes').select('custodian')
+  if (res.error || !res.data) return []
+  const byKey = new Map<string, string>()
+  for (const row of res.data as { custodian: string | null }[]) {
+    const name = normalizeCustodianName(row.custodian)
+    if (name === null) continue
+    const key = custodianKey(name)
+    if (key !== null && !byKey.has(key)) byKey.set(key, name)
+  }
+  return [...byKey.values()].sort((a, b) => a.localeCompare(b))
 }
 
 export async function deleteAllocation(client: Client, allocationId: string): Promise<boolean> {

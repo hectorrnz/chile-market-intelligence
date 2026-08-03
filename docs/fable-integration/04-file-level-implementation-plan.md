@@ -2213,6 +2213,151 @@ card tier, not lower the overlay token.
 
 ---
 
+## Phase R7.1B — custodian exposure, notional semantics, delete controls ✓ IMPLEMENTED (2026-08-03, automated validation complete, manual browser validation pending)
+
+Portfolio-accounting repair on top of R7.1A. No visual redesign, no guarantor analysis, no guarantor
+fields, no custodian inference from any document.
+
+**Custodian — business definition and storage.** Custodian is the institution holding Nevada's
+position/account. It is a PORTFOLIO fact, not a product term: an issuer's term sheet does not state
+who Nevada banks with, so it can only be user-entered. It is explicitly never derived from the
+issuer, dealer, distributor, calculation agent, paying agent, clearing system (Euroclear/Clearstream
+are settlement infrastructure, not a custodian), ISIN prefix, document sender, file name, or
+financial-group parent — asserted by test.
+
+**Custodian is stored on the NOTE (R7.1B.1 correction).** The first implementation put custody on
+each account allocation, following the brief's default. The desk then corrected the business fact:
+**every account allocation of a note is traded through the same custodian** — the accounts are
+traded together — and the custodian varies from note to note, not between accounts within a note.
+Per-allocation storage was therefore the wrong shape: it invited three copies of one fact that could
+drift apart, and asked the user to type the same institution three times. Custody now lives in one
+place, `structured_notes.custodian`, captured by ONE field on the note.
+
+**Migration `20260803000000_structured_notes_custodian.sql`** (forward-only, re-runnable, additive):
+adds the nullable column, plus column comments recording the rule. It follows the current CLI
+workflow convention (`supabase db push`), not the older SQL-Editor paste. The superseded
+`structured_note_allocations.custodian` column is deliberately **not dropped** — dropping is
+destructive, this project's migrations are additive, and the column holds no data (all 27 allocation
+rows are NULL, because the field was never capturable). Nothing reads or writes it any more.
+Pending-migration behavior is graceful: reads use `select('*')`, so a missing column yields
+`undefined`, `mapNote` coerces it to `null`, and every note simply classifies "Custodian
+unavailable"; only an attempt to SAVE a custodian fails, loudly, until the migration is applied.
+
+**Custodian registry.** The suggestion list is the set of distinct custodians users have already
+recorded on their notes (`getKnownCustodians`, served by `GET /api/structured-notes/{id}/
+allocations`, rendered as a `<datalist>`). The app never ships a guessed roster of institutions.
+Normalization trims and collapses internal whitespace and groups case-insensitively, so
+`"  banco   DE chile "` and `"Banco de Chile"` are one institution while the user's own legal name
+and casing are preserved for display. Punctuation and legal suffixes are deliberately NOT stripped,
+because that is precisely what would merge "Banco de Chile" with "Banchile Corredores de Bolsa", or
+"JPMorgan Chase Bank, N.A." with "J.P. Morgan Securities LLC".
+
+**Missing custodian.** A note imported from a term sheet cannot know its custodian (custody is not a
+product term — every parser sets `custodian: null` explicitly), so notes start unrecorded, stay
+fully readable, and are classified `Custodian unavailable`. The single field is border-flagged with
+the warning token until filled. Nothing is ever backfilled or defaulted from the issuer, the entity
+name, or a clearing system. The write path is the note `PATCH`, which acts only when the client
+actually sends the key; an explicit null clears it.
+
+**Nevada investment.** `calculateNevadaInvestmentNotional(allocations)` = the sum of valid ACTIVE
+account allocations, delegating to the single existing `calculateAllocationTotal` implementation, so
+two authoritative totals cannot exist. There is no stored note-level investment field to
+synchronize.
+
+**Issue size.** Product metadata only — the total notional issued across ALL investors. The rule
+that Nevada's investment must equal it was **removed in both places that carried it**: the detail
+page's `mismatch = n.issueSize !== null && Math.abs(allocationTotal - n.issueSize) > 0.01`, and the
+allocations route's `allocationsMismatch = ... > 0.01`. The two quantities are now labelled and
+shown separately (Total issuance size / Nevada investment notional), each with its own help text.
+The only surviving comparison is `classifyIssueSizePlausibility`, which returns `not_comparable`
+unless both values exist in the same known currency and the issue size is not flagged indicative,
+then `below` (normal) · `equal` (valid, never required) · `review` (Nevada above the recorded issue
+size — a NON-BLOCKING advisory line, since the stored figure may be stale, indicative, or superseded
+by a tap/reopening). Nothing rejects a note, and nothing is overwritten to force agreement. The
+`allocationsMismatch` wire field is retained for compatibility but now means only the review case,
+alongside the new explicit `nevadaInvestmentNotional` and `issueSizeComparison`.
+
+**XS3164820824 (real book data, read-only audit).** Issue size USD 1,500,000; Nevada investment
+USD 1,000,000 across 3 active same-currency allocations; 0 allocations carried a custodian. The
+removed rule DID fire on it (`|1,000,000 − 1,500,000| > 0.01` → "Allocations do not match the issue
+size"). After: `below` — silent, correct, nothing overwritten, and its three allocations are what
+feed both issuer and custodian exposure.
+
+**Exposure by Custodian.** Each note contributes its whole Nevada position (its
+`calculateCurrentNotional`, i.e. the sum of its active account allocations, 0 once archived) to its
+own custodian. Because custody is note-level, a position cannot be split across custodians and
+double-counting is structurally impossible. Notes with no recorded custodian are kept under the
+`null` key and rendered "Custodian unavailable", so they stay in the total and the denominator and
+are never re-attributed to the issuer, entity, broker, or clearing system; that bucket always sorts
+last. The universe, archived-note rule, and unconverted currency basis are deliberately identical to
+`calculateIssuerExposure` — the two functions now have the same shape — so the charts always share a
+denominator (asserted). The card reuses the issuer card's own `ExposureHeader` + `BarChart`, so the
+issuer card is untouched, the two can never drift, and no chart library was added.
+
+**Dashboard exposure layout (R7.1B.1).** The two ranked lists were each consuming a full-width third
+of a wrapping row while the entity allocation donut — the more decision-useful view — was squeezed
+into the remainder. They now **stack in a narrower left column** (Issuer above Custodian) with the
+**allocation chart beside them** in the wider column: `grid-cols-1 lg:grid-cols-[minmax(0,5fr)_
+minmax(0,7fr)] items-start`. Below `lg` everything collapses to one column in the same reading
+order. Both columns are `min-w-0`, so a long label truncates inside its card rather than widening
+the page. The donut is drawn larger to match its new prominence (`w-52` stacked, `w-60` side by
+side) and its R7.1A container-query composition is otherwise unchanged.
+
+**Delete architecture — HARD delete, and why.** There is no soft-delete convention for structured
+notes to reuse: `status`/`archived_at` model a note being CALLED (a real lifecycle event, still
+fully visible in the Archived view), so overloading them to mean "deleted" would corrupt that
+meaning. `deleteStructuredNote` therefore removes the row in one statement, and the confirmation
+honestly says it cannot be undone. Dependent records, classified explicitly against the declared
+foreign keys (documented in the repository and asserted against the migration, never left to
+incidental cascade behavior): **delete with note** — underlyings, observations, allocations, price
+snapshots, extracted fields (all `note_id ... on delete cascade`); **preserve but detach** —
+`structured_note_extraction_runs.extracted_note_id` is `on delete set null`, so the upload/extraction
+audit trail survives; **preserve because shared** — `structured_note_monitoring_runs` is book-level
+with no note FK. No orphan is reachable, and nothing shared is destroyed: entities and custodians
+are text attributes of allocation rows, not shared records, and this module owns no document store.
+
+**Delete surfaces.** New far-right Actions column on the dashboard table (56 px in the R3 fixed-width
+COLS system) with an icon-only trash `<button>` — localized accessible name naming the note, tooltip,
+32 px target, focus ring, and no row navigation (the row handler already skips `a, button, input,
+label`). It only opens the shared `DestructiveConfirm`; the detail page's existing delete action is
+unchanged in contract and now carries the same richer description. Both call `DELETE
+/api/structured-notes/{id}`. Dashboard success closes the dialog and reloads, so the table AND both
+exposure aggregates recompute server-side; detail success redirects to `/structured-notes`. Failure
+keeps the row, the page, and the dialog open for retry.
+
+**API.** `DELETE /api/structured-notes/{id}` gained id validation and a controlled `404 not_found`
+(deliberately not idempotent, so a UI can tell "removed by this action" from "already gone"); every
+failure path is structured JSON with no stack, path, SQL, or env detail. `POST .../allocations`
+gained custodian passthrough with preserve-on-omit semantics and the new response fields. Access is
+unchanged: default-deny middleware classifies the path `private_api` (JSON 401), and handlers run on
+the RLS-scoped user client — never the service-role client.
+
+**Data audit (read-only query against the live book, aggregates only).** 9 notes (9 active, 0
+archived) · 27 allocation rows, all active · 0 with an explicit custodian, 27 missing (custody was
+never capturable) · 0 distinct custodians · 0 notes at one custodian, 0 across several, 9 with none ·
+issue size == Nevada investment on 5 notes, differs on 4 (1 of those with Nevada ABOVE the recorded
+issue size — a genuine review case the new rule surfaces as advisory) · 0 notes where only one value
+exists · 0 with an allocation currency differing from the note currency · **4 notes were affected by
+the removed equality validation** (the 4 that differ, including XS3164820824). Dependent records:
+underlyings 18 · observations 68 · allocations 27 · price snapshots 18 · extracted fields 0 (all
+delete-with-note) · extraction runs 34 (preserve-detached) · monitoring runs 26 (preserve-shared).
+
+**Limitations.** (1) **The migration has not been applied to the live database.** The Supabase CLI is
+blocked by Windows security policy on this machine, `.env.local` carries no direct Postgres URL, and
+the JS client cannot execute DDL — so `supabase db push` (or an equivalent) must be run before
+custody can be saved. Until then the app degrades cleanly: every note reads as "Custodian
+unavailable" and only a save attempt fails. (2) Manual browser acceptance (§U: dashboard, detail,
+XS3164820824, 390/1024/1728, EN/ES, light/dark) was NOT performed — no browser is connected and the
+routes require a session whose credentials cannot be entered; the live evidence recorded here is
+server-side and read-only. (3) Final-vs-indicative issue-size provenance is not modelled, so
+`issueSizeBasis` defaults to `unknown`; the comparison stays advisory-only, which is its maximum
+permitted outcome anyway. (4) Cross-currency comparison is refused rather than converted — there is
+no FX layer in this module (the book is currently single-currency per note). (5) With 0 custodians
+recorded today, the new chart will legitimately show a single "Custodian unavailable" band until
+users enter custody data.
+
+---
+
 ## Phase 7 — i18n additions & cleanup (`src/lib/i18n.ts`)
 
 Any new visible string (login utility chips "Secure connection", contrast label, privacy-mask

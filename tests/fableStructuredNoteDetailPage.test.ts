@@ -102,7 +102,11 @@ describe('R4.3 — API contracts and monitoring math unchanged', () => {
   it('the page calls exactly the pre-R4 endpoints with the same payloads', () => {
     assert.match(DETAIL, /fetch\(`\/api\/structured-notes\/\$\{id\}`, \{ cache: 'no-store' \}\)/)
     assert.match(DETAIL, /fetch\(`\/api\/structured-notes\/\$\{id\}\/allocations`, \{/)
+    // R7.1B.1 — the allocation payload is unchanged: custody is a NOTE-level
+    // fact (all of a note's accounts trade through one custodian), so it is
+    // written by the note PATCH below, never as part of an allocation.
     assert.match(DETAIL, /body: JSON\.stringify\(\{ entityName, notionalAmount: notional \}\)/)
+    assert.match(DETAIL, /method: 'PATCH'[\s\S]{0,160}custodian: value\.trim\(\) \|\| null/)
     assert.match(DETAIL, /fetch\(`\/api\/structured-notes\/\$\{id\}`, \{ method: 'DELETE' \}\)/)
   })
 
@@ -143,7 +147,11 @@ describe('R4.4 — every real section remains represented', () => {
   it('terms: grouped Fable grid with identity, coupon & barriers, and key dates', () => {
     assert.match(DETAIL, /t\.sn\.generalTerms/)
     for (const key of ['termsIdentity', 'termsEconomics', 'termsDates']) assert.ok(DETAIL.includes(`t.sn.${key}`))
-    for (const field of ['colIsin', 'guarantor', 'payoffType', 'currencyLabel', 'issueSize', 'denomination', 'issuePrice', 'couponFrequency', 'couponBarrier', 'colKnockIn', 'autocallBarrier', 'colTrade', 'initialValuation', 'finalValuation', 'colMaturity', 'redemption']) {
+    // R7.1B — the issue-size term is now labelled `totalIssuanceSize`
+    // ("Total issuance size") everywhere, so it can never be read as Nevada's
+    // own position. The FIELD is unchanged and still present; only its label
+    // key moved. Guarded further in structuredNotesCustodianExposure.test.ts.
+    for (const field of ['colIsin', 'guarantor', 'payoffType', 'currencyLabel', 'totalIssuanceSize', 'denomination', 'issuePrice', 'couponFrequency', 'couponBarrier', 'colKnockIn', 'autocallBarrier', 'colTrade', 'initialValuation', 'finalValuation', 'colMaturity', 'redemption']) {
       assert.ok(DETAIL.includes(`t.sn.${field}`), `terms field ${field} must be present`)
     }
   })
@@ -200,10 +208,18 @@ describe('R4.4 — every real section remains represented', () => {
     assert.match(DETAIL, /function EntityAllocationGrid/)
     assert.match(DETAIL, /function formatWithThousands/)
     assert.match(DETAIL, /function parseFormattedNumber/)
-    assert.match(DETAIL, /t\.sn\.allocationTotal/)
+    // R7.1B — the single "Allocated total / Issue size" line was replaced by
+    // two SEPARATE, separately-explained quantities, because conflating them
+    // is exactly what produced the false "does not match" warning. The total
+    // is still shown (as Nevada investment notional); `allocationMismatch` is
+    // still rendered but now only for the advisory review case.
+    assert.match(DETAIL, /t\.sn\.nevadaInvestment\b/)
+    assert.match(DETAIL, /t\.sn\.totalIssuanceSize\b/)
     assert.match(DETAIL, /t\.sn\.allocationMismatch/)
     assert.match(DETAIL, /t\.sn\.addAllocation/)
     assert.match(DETAIL, /t\.sn\.allocationsNote/)
+    // R7.1B — the per-account custodian field joins the same grid workflow.
+    assert.match(DETAIL, /t\.sn\.custodian\b/)
   })
 
   it('provenance: source type, file name and extraction confidence stay visible', () => {
@@ -288,7 +304,15 @@ describe('R4.5b — R4.1 shared-dialog contract (locked in the shared component,
   })
 
   it('the dialog description names the REAL record from existing fields only', () => {
-    assert.match(DETAIL, /description=\{`\$\{n\.productName\}\$\{n\.isin \? ` · \$\{n\.isin\}` : ''\}`\}/)
+    // R7.1B — the description was widened (product · ISIN · issuer · Nevada
+    // investment notional · active allocation count) so the user can identify
+    // what they are destroying. Every part is still read from fields already
+    // on the loaded payload — nothing estimated, nothing fabricated.
+    const desc = DETAIL.slice(DETAIL.indexOf('description={['), DETAIL.indexOf("].filter(Boolean).join(' · ')"))
+    for (const field of ['n.productName', 'n.isin', 'n.issuerDisplayName', 't.sn.nevadaInvestment', 'activeAllocations.length']) {
+      assert.ok(desc.includes(field), `${field} must identify the record`)
+    }
+    assert.doesNotMatch(desc, /Math\.|estimate|approx/i, 'no derived or estimated value in the identification')
   })
 
   it('EN and ES labels come from the existing dictionary — no new hardcoded copy', () => {
@@ -382,7 +406,12 @@ describe('R4.8 — localization and accessibility', () => {
 
   it('form controls carry accessible names', () => {
     assert.match(DETAIL, /aria-label=\{t\.sn\.entity\}/)
-    assert.match(DETAIL, /aria-label=\{`\$\{name\} — \$\{currency\}`\}/)
+    // R7.1B — the notional input's name says WHICH quantity it is
+    // ("Account notional: <entity> — <currency>").
+    assert.match(DETAIL, /aria-label=\{`\$\{t\.sn\.accountNotional\}: \$\{name\} — \$\{currency\}`\}/)
+    // R7.1B.1 — one labelled custodian field for the whole note.
+    assert.match(DETAIL, /<label htmlFor="sn-custodian"/)
+    assert.match(DETAIL, /aria-label=\{t\.sn\.custodian\}/)
     assert.match(DETAIL, /aria-label=\{`\$\{t\.sn\.removeEntity\}: \$\{name\}`\}/)
   })
 

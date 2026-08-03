@@ -416,6 +416,30 @@ loading state · empty state · error state · auth status — verified identica
   percentages, formatting, center total, and hover linking unchanged. Guarded by
   `tests/mobileShellResponsiveRepair.test.ts` §G14–19. Manual browser pass still pending — no
   browser is connected to this environment.)*
+  *(R7.1B 2026-08-03 — custodian exposure, notional semantics, delete controls. **Custodian** is a
+  user-entered portfolio fact stored on the **note** (R7.1B.1 correction from the desk: all of a
+  note's accounts are traded through one custodian, and it varies note to note — so it is captured
+  once, by one field, via migration `20260803000000`; the superseded per-allocation column is
+  retained empty, not dropped); it is never inferred from issuer/dealer/calculation agent/Euroclear/
+  Clearstream, every parser sets it explicitly null, and the suggestion registry is built from
+  custodians users actually recorded. Notes without one stay valid as "Custodian unavailable".
+  **Removed the
+  issue-size equality rule** from both the detail page and the allocations API: total issuance size
+  and Nevada investment notional are now labelled separately with help text, and the only surviving
+  comparison is advisory (`review` when Nevada exceeds a same-currency issue size). Verified against
+  the live book: 4 of 9 notes were raising the false warning, including **XS3164820824** (USD 1.0M
+  held vs a USD 1.5M issuance — now silent, nothing overwritten). **Exposure by Custodian** added,
+  reusing the issuer card's own ExposureHeader + BarChart (issuer card untouched, no new chart
+  library), attributing each note's whole Nevada position to its own custodian and sharing the
+  issuer denominator exactly. **Exposure layout recomposed** (R7.1B.1): the two ranked lists stack
+  in a narrower left column (Issuer above Custodian) with the allocation donut — the more
+  decision-useful view — beside them in the wider column and drawn larger; one column below `lg`,
+  both columns `min-w-0`, R7.1A container-query behavior preserved.
+  **Delete** is now available from a far-right Actions column on the dashboard as well as the detail
+  page, both through the shared `DestructiveConfirm` and the same `DELETE /api/structured-notes/{id}`
+  (hard delete — children cascade, extraction audit detaches, book-level monitoring runs are
+  preserved; contract documented and asserted against the migration). Guarded by
+  `tests/structuredNotesCustodianExposure.test.ts`. Manual browser pass still pending.)*
 - [~] `/structured-notes/[id]` 🔒 — metrics strip + terms + current levels + underlyings + schedule
   + allocation grid + provenance/delete; protected.
   *(R4 2026-07-31: recomposed to the approved Fable note-detail anatomy (SPECS §6 "Row → panel"

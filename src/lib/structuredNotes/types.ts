@@ -95,6 +95,15 @@ export interface StructuredNote {
   productName: string
   issuerName: string | null
   issuerDisplayName: string | null
+  /**
+   * R7.1B.1 — the institution holding Nevada's position in this note. A
+   * NOTE-level fact: every account allocation of a note is traded through the
+   * same custodian (the accounts trade together), while the custodian varies
+   * from note to note. User-entered portfolio data — never extracted from a
+   * term sheet, never derived from the issuer, dealer, calculation agent, or
+   * a clearing system. Null = not yet recorded ("Custodian unavailable").
+   */
+  custodian: string | null
   guarantorName: string | null
   structureType: string
   payoffType: string | null

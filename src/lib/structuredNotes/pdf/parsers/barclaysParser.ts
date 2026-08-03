@@ -180,6 +180,8 @@ export const parseBarclays: IssuerParser = (ctx) => {
 
   const note: StructuredNote = {
     isin, productName, issuerName, issuerDisplayName: issuerDisplay, guarantorName,
+    // Custody is portfolio data, never a product term (see citiHsbcParser).
+    custodian: null,
     structureType: structureType || 'note', payoffType: null, currency,
     issueSize: issueSizeRes.amount, denomination: denomRes.amount, issuePricePct,
     tradeDate, issueDate, initialValuationDate: tradeDate, finalValuationDate, maturityDate, redemptionDate: maturityDate,

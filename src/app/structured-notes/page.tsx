@@ -71,6 +71,7 @@ import { useRouter } from 'next/navigation'
 import { useLang } from '@/components/providers/LangProvider'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { ARCHIVED_STATUSES } from '@/lib/structuredNotes/types'
+import { calculateNevadaInvestmentNotional } from '@/lib/structuredNotes/calculations'
 import type { StructuredNote } from '@/lib/structuredNotes/types'
 import type { NoteDashboardMetrics, BookSummary } from '@/lib/structuredNotes/dashboard'
 import { PageHeader } from '@/components/fable/PageHeader'
@@ -79,6 +80,7 @@ import { TableCard } from '@/components/fable/TableCard'
 import { BarrierGauge, type BarrierMark } from '@/components/fable/BarrierGauge'
 import { SegmentedControl } from '@/components/fable/SegmentedControl'
 import { ChipButton, ChipSelect } from '@/components/fable/Chip'
+import { DestructiveConfirm } from '@/components/fable/ModalShell'
 import { Reveal, Pop } from '@/components/fable/motion'
 
 interface MonitoringStatus {
@@ -181,6 +183,11 @@ export default function StructuredNotesPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [monitoring, setMonitoring] = useState<MonitoringStatus | null>(null)
+  // R7.1B — dashboard row deletion. `pendingDelete` holds the note the trash
+  // trigger opened the shared confirmation for; nothing mutates until confirm.
+  const [pendingDelete, setPendingDelete] = useState<StructuredNote | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteFailed, setDeleteFailed] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const ingest = useCallback((json: { notes?: StructuredNote[]; metrics?: NoteDashboardMetrics[]; summary?: BookSummary }) => {
@@ -244,6 +251,29 @@ export default function StructuredNotesPage() {
       body: JSON.stringify({ status: called ? 'autocalled' : 'active' }),
     })
     await load()
+  }
+
+  /**
+   * R7.1B — deletes the note behind the open confirmation. Same contract as the
+   * detail page's action: one DELETE to /api/structured-notes/{id}, the shared
+   * destructive dialog as the only gate, and a reload on success so the table
+   * AND both exposure aggregates (issuer, custodian) recompute from the server.
+   * A failure keeps the row and the dialog so the user can retry or cancel.
+   */
+  async function confirmDeleteNote() {
+    const note = pendingDelete
+    if (!note?.id) return
+    setDeleting(true); setDeleteFailed(false)
+    try {
+      const res = await fetch(`/api/structured-notes/${note.id}`, { method: 'DELETE' })
+      if (!res.ok) { setDeleteFailed(true); return }
+      setPendingDelete(null)
+      await load()
+    } catch {
+      setDeleteFailed(true)
+    } finally {
+      setDeleting(false)
+    }
   }
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -403,6 +433,7 @@ export default function StructuredNotesPage() {
     85,                              // issued
     100,                             // notional
     80,                              // called
+    56,                              // R7.1B actions (trash) — far right
   ]
 
   return (
@@ -454,20 +485,50 @@ export default function StructuredNotesPage() {
           gapped donut with center total and hover-linked legend). */}
       {summary && (summary.issuerExposure.length > 0 || summary.entityExposure.length > 0) && (
         <Reveal delayMs={70}>
-          <div className="flex flex-wrap items-stretch gap-3.5 mb-3.5">
-            {summary.issuerExposure.length > 0 && (
-              <GlassSurface variant="card" as="section" className="px-5 py-4" style={{ flex: '1 1 340px', minWidth: 'min(100%, 300px)' }}>
-                <ExposureHeader
-                  title={t.sn.exposureByIssuer}
-                  totalLabel={t.sn.totalLabel}
-                  currency={summary.currency}
-                  total={summary.issuerExposure.reduce((s, e) => s + (Number.isFinite(e.notional) ? e.notional : 0), 0)}
-                />
-                <BarChart data={summary.issuerExposure.map((e) => ({ label: e.issuer, value: e.notional }))} currency={summary.currency} ofTotal={t.sn.ofTotal} />
-              </GlassSurface>
-            )}
+          {/* R7.1B.1 layout — the two ranked lists were eating a full row each
+              while the allocation donut, the more decision-useful view, was
+              squeezed into a third. They now STACK in a narrower left column
+              (issuer above custodian) with the donut beside them at lg+ and
+              given the larger share of the width; below lg everything falls
+              into one column in the same reading order. */}
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start gap-3.5 mb-3.5">
+            <div className="flex flex-col gap-3.5 min-w-0">
+              {summary.issuerExposure.length > 0 && (
+                <GlassSurface variant="card" as="section" className="px-5 py-4">
+                  <ExposureHeader
+                    title={t.sn.exposureByIssuer}
+                    totalLabel={t.sn.totalLabel}
+                    currency={summary.currency}
+                    total={summary.issuerExposure.reduce((s, e) => s + (Number.isFinite(e.notional) ? e.notional : 0), 0)}
+                  />
+                  <BarChart data={summary.issuerExposure.map((e) => ({ label: e.issuer, value: e.notional }))} currency={summary.currency} ofTotal={t.sn.ofTotal} />
+                </GlassSurface>
+              )}
+              {/* R7.1B — Exposure by Custodian, directly below Exposure by
+                  Issuer and in the SAME visual language (the shared BarChart,
+                  so the issuer card is untouched and the two can never drift).
+                  Each note contributes its whole Nevada position to its own
+                  custodian; issue size is never involved. Notes with no
+                  recorded custodian stay in the total under "Custodian
+                  unavailable" — never dropped, never re-attributed. */}
+              {summary.custodianExposure.length > 0 && (
+                <GlassSurface variant="card" as="section" className="px-5 py-4">
+                  <ExposureHeader
+                    title={t.sn.exposureByCustodian}
+                    totalLabel={t.sn.totalLabel}
+                    currency={summary.currency}
+                    total={summary.custodianExposure.reduce((s, e) => s + (Number.isFinite(e.notional) ? e.notional : 0), 0)}
+                  />
+                  <BarChart
+                    data={summary.custodianExposure.map((e) => ({ label: e.custodian ?? t.sn.custodianUnavailable, value: e.notional }))}
+                    currency={summary.currency}
+                    ofTotal={t.sn.ofTotal}
+                  />
+                </GlassSurface>
+              )}
+            </div>
             {summary.entityExposure.length > 0 && (
-              <GlassSurface variant="card" as="section" className="px-5 py-4" style={{ flex: '1 1 340px', minWidth: 'min(100%, 300px)' }}>
+              <GlassSurface variant="card" as="section" className="px-5 py-4 min-w-0">
                 <ExposureHeader
                   title={t.sn.exposureByEntity}
                   totalLabel={t.sn.totalLabel}
@@ -584,6 +645,12 @@ export default function StructuredNotesPage() {
                 <SortableHeader label={t.sn.colIssued} sortTitle={t.sn.sortBy} active={sortKey === 'issued'} arrow={sortArrow('issued')} onClick={() => toggleSort('issued')} dir={sortDir} align="center" />
                 <th scope="col" className={`${thBase} text-center`} style={thBg}>{t.sn.colNotional}</th>
                 <th scope="col" className={`${thBase} text-center no-print`} style={thBg}>{t.sn.colCalled}</th>
+                {/* R7.1B — far-right Actions column. The header word is
+                    visually hidden: the column holds one icon-only control
+                    whose own accessible name identifies the note. */}
+                <th scope="col" className={`${thBase} text-center no-print`} style={thBg}>
+                  <span className="sr-only">{t.sn.colActions}</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -671,6 +738,27 @@ export default function StructuredNotesPage() {
                     <td className={`${cellPad} text-center no-print`}>
                       <input type="checkbox" checked={isArchived(n)} onChange={(e) => n.id && setCalled(n.id, e.target.checked)} title={t.sn.dashCalled} aria-label={`${t.sn.colCalled}: ${n.productName}`} />
                     </td>
+                    {/* R7.1B — icon-only delete trigger. It is a real <button>,
+                        so the row's own click handler skips it (interactive
+                        cells opt out) and it can never navigate; it only opens
+                        the shared confirmation. 32px touch target, localized
+                        accessible name naming the note, tooltip, and the
+                        global focus-visible ring. */}
+                    <td className={`${cellPad} text-center no-print`}>
+                      <button
+                        type="button"
+                        onClick={() => { setDeleteFailed(false); setPendingDelete(n) }}
+                        disabled={deleting}
+                        title={t.sn.delete}
+                        aria-label={`${t.sn.delete}: ${n.productName || n.isin || ''}`}
+                        className="inline-flex items-center justify-center w-8 h-8 rounded-full cursor-pointer nv-transition hover:bg-surface-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        style={{ color: 'var(--negative)' }}
+                      >
+                        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-4 h-4" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h12M8.5 6V4.5h3V6M6 6l.7 9.2a1 1 0 0 0 1 .8h4.6a1 1 0 0 0 1-.8L14 6M8.7 9v4.3M11.3 9v4.3" />
+                        </svg>
+                      </button>
+                    </td>
                   </tr>
                 )
               })}
@@ -678,6 +766,34 @@ export default function StructuredNotesPage() {
           </table>
         </TableCard>
       </Reveal>
+
+      {/* R7.1B — the SAME shared destructive-confirmation component the detail
+          page uses (ModalShell alertdialog: focus trap, Escape cancels unless
+          pending, scroll lock, focus restored to the trash trigger,
+          confirm-at-most-once). The description names the real record —
+          product, ISIN, issuer, Nevada investment, allocation count — built
+          only from values already on this payload. Deletion is permanent
+          (hard delete), which is what the confirmation says. */}
+      <DestructiveConfirm
+        open={pendingDelete !== null}
+        title={t.sn.delete}
+        description={pendingDelete ? [
+          pendingDelete.productName,
+          pendingDelete.isin,
+          pendingDelete.issuerDisplayName,
+          `${t.sn.nevadaInvestment}: ${pendingDelete.currency} ${fmtNum(calculateNevadaInvestmentNotional(pendingDelete.allocations))}`,
+          `${pendingDelete.allocations.filter((a) => a.active).length} ${t.sn.accountAllocations}`,
+        ].filter(Boolean).join(' · ') : undefined}
+        confirmLabel={deleting ? t.sn.deleting : t.sn.delete}
+        cancelLabel={t.sn.cancel}
+        pending={deleting}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={confirmDeleteNote}
+      >
+        <p className="text-sm text-foreground">{t.sn.confirmDelete}</p>
+        {deleting && <p className="sr-only" role="status">{t.sn.deleting}</p>}
+        {deleteFailed && <p className="mt-2 text-xs text-negative" role="alert">{t.sn.deleteError}</p>}
+      </DestructiveConfirm>
     </div>
   )
 }
@@ -836,8 +952,10 @@ function Donut({ data, currency, ofTotal, totalLabel }: { data: { label: string;
     // are the stacked composition, so an engine without container-query
     // support degrades to the mobile-safe layout, never the overflowing one.
     <div className="@container">
-      <div className="flex flex-col items-center gap-4 @lg:flex-row @lg:gap-5">
-      <div className="relative w-44 h-44 shrink-0">
+      <div className="flex flex-col items-center gap-4 @lg:flex-row @lg:gap-6">
+      {/* R7.1B.1 — the allocation chart carries the wider column now, so the
+          donut is drawn larger (its center total gets more room too). */}
+      <div className="relative w-52 h-52 @lg:w-60 @lg:h-60 shrink-0">
         {total > 0 ? (
           <svg viewBox="0 0 100 100" className="w-full h-full" style={{ transform: 'rotate(-90deg)' }}>
             {segs.map((s) => (

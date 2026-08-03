@@ -41,9 +41,12 @@
 //                 next ● · maturity ○) as the card's header strip, above the
 //                 COMPLETE real observation table (every historical row kept;
 //                 completed rows muted, the next observation highlighted).
-//   Allocation  — the entity allocation grid preserved verbatim in behavior
-//                 (upsert API, custom entities, thousands formatting, total +
-//                 issue-size mismatch warning), re-housed on Fable card glass.
+//   Allocation  — the account allocation grid (upsert API, custom entities,
+//                 thousands formatting) on Fable card glass. R7.1B adds the
+//                 per-account CUSTODIAN field and states Nevada's investment
+//                 notional and the total issuance size as two separate,
+//                 separately-explained quantities; the pre-R7.1B warning that
+//                 fired whenever they differed is gone (see below).
 //   Provenance  — source type/file/confidence + the delete workflow (same
 //                 confirmation text, DELETE endpoint and success-only
 //                 redirect, gated by the shared Fable DestructiveConfirm
@@ -63,6 +66,7 @@ import { useLang } from '@/components/providers/LangProvider'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { DEFAULT_ENTITIES } from '@/lib/structuredNotes/types'
 import { dedupeObservationsByDate } from '@/lib/structuredNotes/pdf/extractStructuredNoteTerms'
+import { calculateNevadaInvestmentNotional, classifyIssueSizePlausibility, nevadaInvestmentCurrency } from '@/lib/structuredNotes/calculations'
 import type { StructuredNote, UnderlyingPrice, RiskStatus } from '@/lib/structuredNotes/types'
 import { fmtPct, fmtNum, distanceTone, shortUnderlying, StatCapsule, RISK_TONE } from '../page'
 import { PageHeader } from '@/components/fable/PageHeader'
@@ -110,6 +114,8 @@ export default function StructuredNoteDetailPage() {
   const [deleting, setDeleting] = useState(false)
   const [deleteFailed, setDeleteFailed] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [allocError, setAllocError] = useState<string | null>(null)
+  const [knownCustodians, setKnownCustodians] = useState<string[]>([])
 
   const load = useCallback(async () => {
     try {
@@ -143,12 +149,45 @@ export default function StructuredNoteDetailPage() {
     return () => { cancelled.value = true }
   }, [id])
 
-  // Upsert the notional for one entity (0 clears it).
+  // R7.1B — the custodian suggestion list IS the registry: the distinct
+  // custodians users have already recorded across the book. The app never
+  // ships a guessed roster of institutions.
+  useEffect(() => {
+    const cancelled = { value: false }
+    void (async () => {
+      try {
+        const res = await fetch(`/api/structured-notes/${id}/allocations`, { cache: 'no-store' })
+        const json = await res.json().catch(() => null)
+        if (!cancelled.value && Array.isArray(json?.custodians)) setKnownCustodians(json.custodians)
+      } catch {
+        // A missing suggestion list only removes autocomplete — typing still works.
+      }
+    })()
+    return () => { cancelled.value = true }
+  }, [id])
+
+  // Upsert the notional for one account (0 clears it). Custody is NOT part of
+  // an allocation — see `setCustodian`.
   async function setEntityAllocation(entityName: string, notional: number) {
-    await fetch(`/api/structured-notes/${id}/allocations`, {
+    setAllocError(null)
+    const res = await fetch(`/api/structured-notes/${id}/allocations`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ entityName, notionalAmount: notional }),
     })
+    if (!res.ok) { setAllocError(t.sn.saveError); return }
+    await load()
+  }
+
+  // R7.1B.1 — custody is recorded ONCE per note: every account allocation of a
+  // note is traded through the same custodian, so a single field owns it. An
+  // empty value clears it (the note returns to "Custodian unavailable").
+  async function setCustodian(value: string) {
+    setAllocError(null)
+    const res = await fetch(`/api/structured-notes/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ custodian: value.trim() || null }),
+    })
+    if (!res.ok) { setAllocError(t.sn.saveError); return }
     await load()
   }
   // R4.1 — the confirmation gate is the shared Fable DestructiveConfirm
@@ -195,8 +234,20 @@ export default function StructuredNoteDetailPage() {
 
   const n = data.note
   const worst = data.metrics.worstPerformer
-  const allocationTotal = n.allocations.filter((a) => a.active).reduce((s, a) => s + (Number.isFinite(a.notionalAmount) ? a.notionalAmount : 0), 0)
-  const mismatch = n.issueSize !== null && Math.abs(allocationTotal - n.issueSize) > 0.01
+  // R7.1B — Nevada's investment notional is the sum of the note's valid ACTIVE
+  // account allocations, and is a different quantity from the issue size (the
+  // total issuance across all investors). The old `Math.abs(total - issueSize)
+  // > 0.01` warning asserted they must be equal, which is simply not true —
+  // Nevada ordinarily owns a fraction of an issuance. The only surviving
+  // comparison is the advisory review case below.
+  const activeAllocations = n.allocations.filter((a) => a.active)
+  const nevadaInvestment = calculateNevadaInvestmentNotional(n.allocations)
+  const issueSizeComparison = classifyIssueSizePlausibility({
+    nevadaInvestmentNotional: activeAllocations.length > 0 ? nevadaInvestment : null,
+    nevadaCurrency: nevadaInvestmentCurrency(n.allocations),
+    issueSize: n.issueSize,
+    issueSizeCurrency: n.currency,
+  })
 
   // Display-only SELECTION of the per-underlying knock-in distances the API
   // already computed (barrier/current − 1; negative = headroom, so the
@@ -361,7 +412,9 @@ export default function StructuredNoteDetailPage() {
               <TermField k={t.sn.colStructure} v={n.structureType} />
               <TermField k={t.sn.payoffType} v={n.payoffType} />
               <TermField k={t.sn.currencyLabel} v={n.currency} />
-              <TermField k={t.sn.issueSize} v={n.issueSize !== null ? `${n.currency} ${fmtNum(n.issueSize)}` : null} />
+              {/* R7.1B — named "Total issuance size" everywhere, so it can
+                  never be read as Nevada's position. */}
+              <TermField k={t.sn.totalIssuanceSize} v={n.issueSize !== null ? `${n.currency} ${fmtNum(n.issueSize)}` : null} />
               <TermField k={t.sn.denomination} v={n.denomination !== null ? `${n.currency} ${fmtNum(n.denomination)}` : null} />
               <TermField k={t.sn.issuePrice} v={n.issuePricePct !== null ? fmtPct(n.issuePricePct) : null} />
             </TermGroup>
@@ -506,17 +559,40 @@ export default function StructuredNoteDetailPage() {
               <h2 className="ui-label text-muted-fg">{t.sn.allocations}</h2>
               <span className="ui-meta text-muted-fg">{t.sn.allocationsNote}</span>
             </div>
+            {/* R7.1B.1 — ONE custodian for the whole note: the accounts are
+                traded together, so custody is captured once here rather than
+                repeated on every allocation row. Suggestions come from the
+                custodians already recorded on other notes. */}
+            <CustodianField
+              value={n.custodian}
+              knownCustodians={knownCustodians}
+              onCommit={setCustodian}
+            />
             <EntityAllocationGrid
               allocations={n.allocations}
               currency={n.currency}
               onSet={setEntityAllocation}
               onAddCustom={(name) => setEntityAllocation(name, 0)}
             />
-            <div className="text-xs mt-3">
-              {t.sn.allocationTotal}: <span className="ui-number text-foreground">{n.currency} {fmtNum(allocationTotal)}</span>
-              {n.issueSize !== null && <span className="text-muted-fg"> / {t.sn.issueSize} {n.currency} {fmtNum(n.issueSize)}</span>}
-              {mismatch && <span className="text-warning ml-2" role="status">⚠ {t.sn.allocationMismatch}</span>}
-            </div>
+            {allocError && <p className="mt-2 text-xs text-negative" role="alert">{allocError}</p>}
+            {/* R7.1B — the two quantities are stated SEPARATELY, each with its
+                own help text, so neither can be read as the other. Issue size
+                is never used as exposure, an allocation, or a fallback. */}
+            <dl className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs">
+              <div>
+                <dt className="ui-micro-label text-muted-fg" title={t.sn.nevadaInvestmentHelp}>{t.sn.nevadaInvestment}</dt>
+                <dd className="ui-number text-foreground">{nevadaInvestmentCurrency(n.allocations) ?? n.currency} {fmtNum(nevadaInvestment)}</dd>
+                <dd className="ui-meta text-muted-fg">{t.sn.nevadaInvestmentHelp}</dd>
+              </div>
+              <div>
+                <dt className="ui-micro-label text-muted-fg" title={t.sn.totalIssuanceSizeHelp}>{t.sn.totalIssuanceSize}</dt>
+                <dd className="ui-number text-foreground">{n.issueSize !== null ? `${n.currency} ${fmtNum(n.issueSize)}` : '—'}</dd>
+                <dd className="ui-meta text-muted-fg">{t.sn.totalIssuanceSizeHelp}</dd>
+              </div>
+            </dl>
+            {issueSizeComparison === 'review' && (
+              <p className="mt-2 text-xs text-warning" role="status">⚠ {t.sn.allocationMismatch}</p>
+            )}
           </GlassSurface>
 
           <GlassSurface variant="card" as="section" className="px-5 py-4">
@@ -547,7 +623,13 @@ export default function StructuredNoteDetailPage() {
       <DestructiveConfirm
         open={confirmingDelete}
         title={t.sn.delete}
-        description={`${n.productName}${n.isin ? ` · ${n.isin}` : ''}`}
+        description={[
+          n.productName,
+          n.isin,
+          n.issuerDisplayName,
+          `${t.sn.nevadaInvestment}: ${nevadaInvestmentCurrency(n.allocations) ?? n.currency} ${fmtNum(nevadaInvestment)}`,
+          `${activeAllocations.length} ${t.sn.accountAllocations}`,
+        ].filter(Boolean).join(' · ')}
         confirmLabel={deleting ? t.sn.deleting : t.sn.delete}
         cancelLabel={t.sn.cancel}
         pending={deleting}
@@ -649,6 +731,50 @@ function parseFormattedNumber(formatted: string): number {
   return Number.isFinite(n) ? n : 0
 }
 
+/**
+ * R7.1B.1 — the note's single custodian field.
+ *
+ * Custody is a PORTFOLIO fact, not a product term: an issuer's term sheet does
+ * not say who Nevada banks with, so this is always user-entered (or picked
+ * from custodians already recorded on other notes) and is never derived from
+ * the issuer, dealer, calculation agent, or a clearing system — Euroclear and
+ * Clearstream are settlement infrastructure, not a custodian. One field per
+ * note, because a note's accounts are all traded through the same institution.
+ * An unrecorded custodian is shown honestly, never guessed.
+ */
+function CustodianField({ value, knownCustodians, onCommit }: {
+  value: string | null; knownCustodians: string[]; onCommit: (v: string) => void
+}) {
+  const { t } = useLang()
+  const [draft, setDraft] = useState(value ?? '')
+  const [prev, setPrev] = useState(value)
+  if (value !== prev) { setPrev(value); setDraft(value ?? '') }
+  const listId = 'sn-custodian-options'
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-3 pb-3 text-sm" style={{ borderBottom: '1px solid var(--nv-line)' }}>
+      <datalist id={listId}>
+        {knownCustodians.map((c) => <option key={c} value={c} />)}
+      </datalist>
+      <label htmlFor="sn-custodian" className="ui-micro-label text-muted-fg" title={t.sn.custodianHelp}>{t.sn.custodian}</label>
+      <input
+        id="sn-custodian"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => { if (draft.trim() !== (value ?? '')) onCommit(draft) }}
+        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+        list={listId}
+        placeholder={t.sn.custodianUnavailable}
+        aria-label={t.sn.custodian}
+        title={t.sn.custodianHelp}
+        className="flex-1 min-w-0 basis-40 px-2.5 py-1 text-sm border rounded-lg bg-surface no-print"
+        style={{ borderColor: (value ?? '').trim() === '' ? 'var(--warning)' : 'var(--border)' }}
+      />
+      <span className="basis-full ui-meta text-muted-fg">{t.sn.custodianHelp}</span>
+    </div>
+  )
+}
+
 function EntityRow({ name, currency, value, onCommit, removable, onRemove }: { name: string; currency: string; value: number; onCommit: (v: number) => void; removable: boolean; onRemove: () => void }) {
   const { t } = useLang()
   const [draft, setDraft] = useState(value ? formatWithThousands(String(value)) : '')
@@ -664,7 +790,9 @@ function EntityRow({ name, currency, value, onCommit, removable, onRemove }: { n
         onChange={(e) => setDraft(formatWithThousands(e.target.value))}
         onBlur={() => { const v = parseFormattedNumber(draft); if (v !== value) onCommit(v > 0 ? v : 0) }}
         onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-        inputMode="decimal" placeholder="0" aria-label={`${name} — ${currency}`}
+        inputMode="decimal" placeholder="0"
+        aria-label={`${t.sn.accountNotional}: ${name} — ${currency}`}
+        title={t.sn.accountNotionalHelp}
         className="w-32 px-2.5 py-1 text-sm text-right border border-border rounded-lg bg-surface ui-number no-print"
       />
       {removable && <button onClick={onRemove} className="text-xs text-negative no-print cursor-pointer" title={t.sn.removeEntity} aria-label={`${t.sn.removeEntity}: ${name}`}>✕</button>}

@@ -140,6 +140,8 @@ export const parseBbva: IssuerParser = (ctx) => {
 
   const note: StructuredNote = {
     isin, productName, issuerName, issuerDisplayName: issuerDisplay, guarantorName,
+    // Custody is portfolio data, never a product term (see citiHsbcParser).
+    custodian: null,
     structureType: structureType || 'note', payoffType: null, currency,
     issueSize, denomination: denomM ? parseNum(denomM[2]) : null, issuePricePct: null,
     tradeDate, issueDate, initialValuationDate: tradeDate, finalValuationDate: null, maturityDate, redemptionDate: maturityDate,

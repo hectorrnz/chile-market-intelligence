@@ -141,9 +141,17 @@ describe('R3.3 — canonical routing preserved', () => {
   })
 
   it('introduces no modal-only detail, duplicate route, or query-string replacement', () => {
-    assert.ok(!PAGE_CODE.includes('ModalShell'), 'no modal-only note detail')
+    // R7.1B — the page now imports the shared ModalShell module for its
+    // DestructiveConfirm delete gate. That is a confirmation dialog, not a
+    // note-detail surface, so the rule this test protects (a modal may never
+    // stand in for the canonical /structured-notes/[id] route) is unchanged
+    // and is asserted directly below instead of by the import's absence.
+    assert.ok(!/<ModalShell/.test(PAGE_CODE), 'no raw modal renders note detail')
     assert.ok(!PAGE_CODE.includes('DetailPanel'), 'no panel replacing the canonical route')
     assert.ok(!/\?note=|noteId=/.test(PAGE_CODE), 'no query-string detail navigation')
+    assert.match(PAGE_CODE, /router\.push\(`\/structured-notes\/\$\{n\.id\}`\)/, 'rows still route to the canonical page')
+    // The only dialog on this page is the destructive-confirmation gate.
+    assert.match(PAGE_CODE, /<DestructiveConfirm/)
   })
 })
 
@@ -357,8 +365,11 @@ describe('R3.R3 — table-density repair: compact desktop column system', () => 
     const thead = PAGE.slice(PAGE.indexOf('<thead>'), PAGE.indexOf('</thead>'))
     // centered sortable headers: Next obs, Issuer, Issued
     assert.equal((thead.match(/align="center"/g) ?? []).length, 3)
-    // centered plain headers: Archived-as-of, Level, Distance, Worst, Coupon, Knock-in, Notional, Called
-    assert.equal((thead.match(/text-center/g) ?? []).length, 8)
+    // centered plain headers: Archived-as-of, Level, Distance, Worst, Coupon,
+    // Knock-in, Notional, Called — plus (R7.1B) the far-right Actions header,
+    // whose label is sr-only because the column holds one icon-only control.
+    assert.equal((thead.match(/text-center/g) ?? []).length, 9)
+    assert.match(thead, /<span className="sr-only">\{t\.sn\.colActions\}<\/span>/)
     // Status header stays left (no align override), Note header explicit left
     assert.match(thead, /label=\{t\.sn\.colStatus\} sortTitle=\{t\.sn\.sortBy\} active=\{sortKey === 'status'\} arrow=\{sortArrow\('status'\)\} onClick=\{\(\) => toggleSort\('status'\)\} dir=\{sortDir\} \/>/)
     assert.match(thead, /text-left`\} style=\{thBg\}>\{t\.sn\.colNote\}/)

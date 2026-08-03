@@ -1013,6 +1013,8 @@ export interface Database {
           product_name: string
           issuer_name: string | null
           issuer_display_name: string | null
+          /** R7.1B.1 — note-level custody (all accounts of a note share one custodian). */
+          custodian: string | null
           guarantor_name: string | null
           structure_type: string
           payoff_type: string | null

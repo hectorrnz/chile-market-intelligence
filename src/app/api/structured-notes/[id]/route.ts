@@ -96,24 +96,44 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
     return NextResponse.json({ error: 'invalid_request' }, { status: 400 })
   }
 
-  const patch: { status?: NoteStatus; issuerDisplayName?: string; productName?: string } = {}
+  const patch: { status?: NoteStatus; issuerDisplayName?: string; productName?: string; custodian?: string | null } = {}
   if (typeof body.status === 'string') {
     if (!VALID_STATUS.includes(body.status as NoteStatus)) return NextResponse.json({ error: 'invalid_status' }, { status: 400 })
     patch.status = body.status as NoteStatus
   }
   if (typeof body.issuerDisplayName === 'string') patch.issuerDisplayName = body.issuerDisplayName.slice(0, 80)
   if (typeof body.productName === 'string') patch.productName = body.productName.slice(0, 300)
+  // R7.1B.1 — note-level custody, user-entered. Sent only when the user edits
+  // it; an explicit null clears it. Never defaulted from any other field.
+  if (Object.prototype.hasOwnProperty.call(body, 'custodian')) {
+    patch.custodian = typeof body.custodian === 'string' ? body.custodian.slice(0, 120) : null
+  }
 
   const ok = await updateStructuredNote(client, id, patch)
   if (!ok) return NextResponse.json({ error: 'update_failed' }, { status: 500 })
   return NextResponse.json({ ok: true })
 }
 
+/**
+ * R7.1B — DELETE /api/structured-notes/{id}. Access is enforced upstream by the
+ * default-deny middleware (this path classifies as `private_api`, so an
+ * unauthenticated or unapproved caller never reaches this handler and receives
+ * the standard JSON 401); the query itself additionally runs on the user-session
+ * client, so RLS applies. One transactional statement — see
+ * `deleteStructuredNote` for the per-child-table deletion contract.
+ *
+ * Not idempotent by design: a second DELETE of the same id returns a controlled
+ * 404 `not_found` rather than a silent 200, so a UI can distinguish "removed by
+ * this action" from "was already gone". Every failure path returns structured
+ * JSON — never an HTML error page, a stack trace, a path, or SQL.
+ */
 export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }): Promise<NextResponse> {
   const client = await getSupabaseUserClient()
   if (!client) return NextResponse.json({ error: 'Not configured' }, { status: 503 })
   const { id } = await ctx.params
-  const ok = await deleteStructuredNote(client, id)
-  if (!ok) return NextResponse.json({ error: 'delete_failed' }, { status: 500 })
+  if (!id || typeof id !== 'string') return NextResponse.json({ error: 'invalid_id' }, { status: 400 })
+  const result = await deleteStructuredNote(client, id)
+  if (result === 'not_found') return NextResponse.json({ error: 'not_found' }, { status: 404 })
+  if (result !== 'ok') return NextResponse.json({ error: 'delete_failed' }, { status: 500 })
   return NextResponse.json({ ok: true })
 }

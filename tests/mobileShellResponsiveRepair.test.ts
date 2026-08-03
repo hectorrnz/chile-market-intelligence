@@ -214,8 +214,11 @@ describe('R7.1A §G14-19 — allocation card responsive composition', () => {
   it('14. the card switches to a stacked composition below the container breakpoint', () => {
     // Container query (card-width, not viewport-width): base = stacked,
     // side-by-side only from @lg (32rem of card width).
+    // R7.1B.1 widened the gap 5 → 6 when the allocation chart moved into the
+    // wider dashboard column. The container-query rule itself — stacked base,
+    // side-by-side only from @lg of CARD width — is unchanged.
     assert.match(DONUT, /<div className="@container">/)
-    assert.match(DONUT, /flex flex-col items-center gap-4 @lg:flex-row @lg:gap-5/)
+    assert.match(DONUT, /flex flex-col items-center gap-4 @lg:flex-row @lg:gap-6/)
   })
 
   it('15. the legend occupies the full card width when stacked', () => {
@@ -241,7 +244,10 @@ describe('R7.1A §G14-19 — allocation card responsive composition', () => {
 
   it('18. the desktop composition is preserved (side-by-side at wide cards, same donut geometry)', () => {
     assert.match(DONUT, /@lg:flex-row/)
-    assert.match(DONUT, /relative w-44 h-44 shrink-0/)
+    // R7.1B.1 — the donut is drawn larger (w-52 stacked, w-60 side-by-side)
+    // now that it owns the wider dashboard column; it is still a fixed square
+    // that cannot be squeezed out of aspect ratio.
+    assert.match(DONUT, /relative w-52 h-52 @lg:w-60 @lg:h-60 shrink-0/)
     // Center total still present and unclipped by construction.
     assert.match(DONUT, /\{totalLabel\}/)
     assert.match(DONUT, /max-w-full truncate" title=\{`\$\{currency\} \$\{fmtNum\(total\)\}`\}/)

@@ -18,7 +18,9 @@ import {
   calculateDistanceToBarrier,
   calculateIssuerExposure,
   calculateEntityExposure,
+  calculateCustodianExposure,
 } from './calculations.ts'
+import type { CustodianExposure } from './calculations.ts'
 import { ARCHIVED_STATUSES } from './types.ts'
 
 export interface NoteDashboardMetrics {
@@ -48,6 +50,13 @@ export interface BookSummary {
   mixedCurrency: boolean
   issuerExposure: { issuer: string; notional: number; noteCount: number }[]
   entityExposure: { entityName: string; notional: number; noteCount: number }[]
+  /**
+   * R7.1B.1 — exposure by each note's custodian (all of a note's accounts
+   * trade through one custodian). Same universe/position/currency basis as
+   * issuerExposure, so the two charts always share a denominator.
+   * `custodian: null` = "Custodian unavailable".
+   */
+  custodianExposure: CustodianExposure[]
   pricesAsOf: string | null
 }
 
@@ -125,6 +134,7 @@ export function buildBookDashboard(
     mixedCurrency: currencies.size > 1,
     issuerExposure: calculateIssuerExposure(notes.map((n) => ({ issuerDisplayName: n.issuerDisplayName, status: n.status, allocations: n.allocations }))),
     entityExposure: calculateEntityExposure(notes.map((n) => ({ status: n.status, allocations: n.allocations }))),
+    custodianExposure: calculateCustodianExposure(notes.map((n) => ({ custodian: n.custodian, status: n.status, allocations: n.allocations }))),
     pricesAsOf: asOf,
   }
   return { metrics, summary }

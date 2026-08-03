@@ -237,6 +237,40 @@ export function calculateDaysToNextObservation(
   return Math.round((d - asOf) / 86_400_000)
 }
 
+/**
+ * R7.1B — Nevada's investment size in a note: the total principal amount held
+ * by Nevada across its accounts. This is a DERIVED value with exactly one
+ * implementation (`calculateAllocationTotal` below) — there is deliberately no
+ * stored note-level investment field, so two authoritative totals cannot
+ * disagree.
+ *
+ * It is NOT the issue size. Issue size (`StructuredNote.issueSize`) is product
+ * metadata — the total notional of the issuance across ALL investors — and is
+ * never used as portfolio exposure, an allocation, or a missing-notional
+ * fallback. See `classifyIssueSizePlausibility` for the only permitted
+ * relationship between the two.
+ */
+export function calculateNevadaInvestmentNotional(allocations: StructuredNoteAllocation[]): number {
+  return calculateAllocationTotal(allocations)
+}
+
+/**
+ * The single currency Nevada's investment total is expressed in, or null when
+ * the active allocations disagree (the sum would then be meaningless to
+ * compare against anything). No FX conversion is performed anywhere in this
+ * module — the same basis issuer/entity/custodian exposure already use.
+ */
+export function nevadaInvestmentCurrency(allocations: StructuredNoteAllocation[]): string | null {
+  const cur = new Set<string>()
+  for (const a of allocations) {
+    if (!a.active) continue
+    if (finite(a.notionalAmount) === null) continue
+    const c = (a.currency ?? '').trim().toLocaleUpperCase()
+    if (c !== '') cur.add(c)
+  }
+  return cur.size === 1 ? [...cur][0] : null
+}
+
 /** Sum of active allocations. Workbook R51 `=SUM(...)`. */
 export function calculateAllocationTotal(allocations: StructuredNoteAllocation[]): number {
   let total = 0
@@ -310,6 +344,130 @@ export function calculateEntityExposure(
     }
   }
   return [...byEntity.values()].sort((a, b) => b.notional - a.notional)
+}
+
+// ─── R7.1B — custodian ────────────────────────────────────────────────────────
+
+/**
+ * Custodian = the institution holding Nevada's position/account. It is a
+ * PORTFOLIO fact, never a product term: it is user-entered per account
+ * allocation and must never be derived from the issuer, dealer, distributor,
+ * calculation agent, paying agent, clearing system (Euroclear/Clearstream are
+ * settlement infrastructure, not Nevada's custodian), ISIN prefix, document
+ * sender, file name, or financial-group parent.
+ *
+ * Display normalization ONLY: trims and collapses runs of internal whitespace,
+ * preserving the user's own legal/commercial name and casing. Returns null for
+ * an absent/blank value — never a guessed institution.
+ */
+export function normalizeCustodianName(raw: string | null | undefined): string | null {
+  if (typeof raw !== 'string') return null
+  const cleaned = raw.replace(/\s+/g, ' ').trim()
+  return cleaned.length > 0 ? cleaned : null
+}
+
+/**
+ * Grouping key for a custodian. Case- and whitespace-insensitive, so
+ * "banco de chile" and "Banco de Chile " are one institution — but nothing
+ * more: two genuinely distinct legal entities that merely share a brand
+ * ("Banco de Chile" vs "Banchile Corredores de Bolsa"; "JPMorgan Chase Bank,
+ * N.A." vs "J.P. Morgan Securities LLC") differ after normalization and are
+ * therefore never merged. Punctuation and legal suffixes are deliberately NOT
+ * stripped for exactly that reason.
+ */
+export function custodianKey(raw: string | null | undefined): string | null {
+  const n = normalizeCustodianName(raw)
+  return n === null ? null : n.toLocaleLowerCase()
+}
+
+export interface CustodianExposure {
+  /** Null = no custodian recorded for those allocations ("Custodian unavailable"). */
+  custodian: string | null
+  notional: number
+  noteCount: number
+}
+
+/**
+ * Exposure grouped by each NOTE's custodian.
+ *
+ * R7.1B.1 — custody is a NOTE-level fact: all of a note's account allocations
+ * are traded through the same custodian (the accounts trade together), while
+ * the custodian varies from note to note. A note therefore contributes its
+ * whole Nevada position to exactly one custodian, and double-counting is
+ * structurally impossible.
+ *
+ * Basis: deliberately the same shape as `calculateIssuerExposure` — the same
+ * note universe, the same `calculateCurrentNotional` position (archived/called
+ * notes contribute 0), and the same unconverted currency basis, so the two
+ * charts always share a denominator. Issue size is never involved.
+ *
+ * Notes with no recorded custodian are kept under the `null` key so they stay
+ * in the total (and the denominator) as "Custodian unavailable" — never
+ * dropped, and never re-attributed to the issuer, entity, broker, or clearing
+ * system.
+ */
+export function calculateCustodianExposure(
+  notes: { custodian: string | null; status: StructuredNote['status']; allocations: StructuredNoteAllocation[] }[],
+): CustodianExposure[] {
+  const byKey = new Map<string, CustodianExposure>()
+  for (const n of notes) {
+    const notional = calculateCurrentNotional(n, n.allocations)
+    const display = normalizeCustodianName(n.custodian)
+    const key = custodianKey(n.custodian) ?? ' unavailable'
+    const cur = byKey.get(key) ?? { custodian: display, notional: 0, noteCount: 0 }
+    cur.notional += notional
+    cur.noteCount += 1
+    byKey.set(key, cur)
+  }
+  return [...byKey.values()]
+    // Unavailable always sorts last so a real custodian never sits below it.
+    .sort((a, b) => (a.custodian === null ? 1 : b.custodian === null ? -1 : b.notional - a.notional))
+}
+
+// ─── R7.1B — issue size vs Nevada investment ─────────────────────────────────
+
+/**
+ * The ONLY permitted relationship between Nevada's investment size and the
+ * product's issue size. There is no rule that they must be equal — Nevada
+ * ordinarily owns a fraction of an issuance — and nothing here ever rejects a
+ * note or overwrites a value to force agreement.
+ *
+ *   'not_comparable' — a value is missing, a currency is unknown, the two
+ *                      currencies differ, or the issue size is indicative
+ *                      rather than final. No comparison is shown.
+ *   'below'          — Nevada < issue size. The normal case.
+ *   'equal'          — within `tolerance`. Valid, never required.
+ *   'review'         — Nevada > issue size. A NON-BLOCKING data-quality
+ *                      warning only: the stored issue size may be stale,
+ *                      indicative, or superseded by a tap/reopening/upsizing.
+ *
+ * `issueSizeBasis` defaults to 'unknown' because this app does not model
+ * final-vs-indicative provenance; 'unknown' still permits the advisory
+ * comparison (its strongest outcome is a review flag), while an explicitly
+ * 'indicative' basis suppresses it entirely.
+ */
+export type IssueSizeComparison = 'not_comparable' | 'below' | 'equal' | 'review'
+
+export function classifyIssueSizePlausibility(input: {
+  nevadaInvestmentNotional: number | null
+  nevadaCurrency: string | null
+  issueSize: number | null
+  issueSizeCurrency: string | null
+  issueSizeBasis?: 'final' | 'indicative' | 'unknown'
+  /** Absolute rounding tolerance in currency units. */
+  tolerance?: number
+}): IssueSizeComparison {
+  const { issueSizeBasis = 'unknown', tolerance = 0.01 } = input
+  if (issueSizeBasis === 'indicative') return 'not_comparable'
+  const nevada = finite(input.nevadaInvestmentNotional)
+  const issue = finite(input.issueSize)
+  if (nevada === null || issue === null) return 'not_comparable'
+  const a = (input.nevadaCurrency ?? '').trim().toLocaleUpperCase()
+  const b = (input.issueSizeCurrency ?? '').trim().toLocaleUpperCase()
+  if (a === '' || b === '') return 'not_comparable'
+  if (a !== b) return 'not_comparable'
+  if (Math.abs(nevada - issue) <= Math.abs(tolerance)) return 'equal'
+  return nevada > issue ? 'review' : 'below'
 }
 
 /** Tenor in whole months between two ISO dates. Null if unparseable. */

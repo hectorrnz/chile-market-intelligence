@@ -167,6 +167,8 @@ export const parseSantander: IssuerParser = (ctx) => {
 
   const note: StructuredNote = {
     isin, productName, issuerName, issuerDisplayName: issuerDisplay, guarantorName,
+    // Custody is portfolio data, never a product term (see citiHsbcParser).
+    custodian: null,
     structureType: structureType || 'note', payoffType: null, currency,
     issueSize: issueSizeM ? parseNum(issueSizeM[2]) : null,
     denomination: calcAmountM ? parseNum(calcAmountM[2]) : null, issuePricePct,

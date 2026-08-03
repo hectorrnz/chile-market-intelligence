@@ -42,10 +42,19 @@ const DOC = read('docs/security_access_control.md')
 const SQL = MIGRATION.split('\n').filter((l) => !l.trim().startsWith('--')).join('\n')
 
 describe('migration file conventions', () => {
-  test('it is the newest migration and follows the repository naming convention', () => {
+  test('it sorts after every migration that preceded it and follows the naming convention', () => {
+    // Written when this was the newest migration. Later phases legitimately add
+    // newer ones (R7.1B.1 added 20260803000000_structured_notes_custodian.sql),
+    // so the invariant that actually matters is forward-only ordering: nothing
+    // that existed before it may sort after it. Every migration must also
+    // follow the timestamp naming convention.
     const files = readdirSync(join(ROOT, MIGRATION_DIR)).filter((f) => f.endsWith('.sql')).sort()
-    assert.equal(files.at(-1), MIGRATION_NAME, 'must sort last — forward-only')
-    assert.match(MIGRATION_NAME, /^\d{14}_[a-z0-9_]+\.sql$/)
+    const idx = files.indexOf(MIGRATION_NAME)
+    assert.ok(idx > -1, 'the migration must exist')
+    for (const f of files.slice(0, idx)) {
+      assert.ok(f < MIGRATION_NAME, `${f} must sort before ${MIGRATION_NAME}`)
+    }
+    for (const f of files) assert.match(f, /^\d{14}_[a-z0-9_]+\.sql$/)
   })
 
   test('it is declared forward-only and re-runnable, not a SQL-Editor paste', () => {
