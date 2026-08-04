@@ -943,6 +943,69 @@ documentation defect** were demonstrated and repaired; everything else audited c
   failed toggle rollback, concurrent row usability, and cancel/Escape/failed/successful delete —
   with focus after a successful delete explicitly checked.
 
+#### R9.6 · Privacy Mode — wired consumers + the Settings control
+- [x] **Existing architecture reused, extended by nothing.** `usePrivacyMode()` →
+  `usePersistentState<boolean>('cmi.privacyMode', false)`. One hook, one key, JSON format, default
+  **OFF**, same-tab `cmi-ls:cmi.privacyMode` event, cross-tab native `storage`, reload-persistent. The
+  hook's public API is byte-identical. No provider, server/account preference, API, cookie, URL
+  parameter, migration, database column, dependency or new shared primitive.
+- [x] **Found: zero consumers.** `usePrivacyMode` was never called; `PrivacyValue` was reachable only
+  via `KpiHero`/`KpiCapsule`, which have no callers. R9.6 is the wiring phase.
+- [x] **Hydration fails closed.** `usePersistentState` renders its default during SSR/hydration — for
+  privacy that default is the *unsafe* answer. `PrivacyValue` now also reads the canonical
+  `useSyncExternalStore` hydration signal and masks when `masked` **or** unresolved, so a stored-ON
+  preference can never paint a raw value. The decision lives in the boundary, once, so no caller can
+  forget it. On both wired routes the window is invisible: Portfolio's values arrive from
+  `/api/portfolios/*` strictly after hydration. No blocking spinner, app-wide gate, CSS blur, timer,
+  cookie or pre-paint script.
+- [x] **Central accessibility repair.** `role="text"` is not in the ARIA specification — only Safari
+  honours it, so elsewhere the `aria-label` was dropped and five bullets were announced. Now
+  `role="img"` + the same localized "Value hidden" / "Valor oculto". The masked branch renders bullets
+  *instead of* `children`, so the raw value never enters the DOM — no leak through text, `title`, a
+  data attribute, hidden markup, the clipboard or the accessibility tree. Not a blur, opacity, filter
+  or recolour.
+- [x] **Portfolio masked:** total market value · total cost basis · unrealized P&L amount · realized
+  P&L · cash balance · all five cash-summary totals · ledger amount · per position quantity, average
+  cost, market value, P&L amount · per transaction quantity, price, fees, taxes, net, realized P&L.
+  Quantity and per-unit costs mask **with** the totals so two visible numbers cannot be multiplied
+  back into a masked one.
+- [x] **Deliberately visible:** public last price, ticker, company, sector; every user-derived
+  PERCENTAGE (P&L %, position weight, sector exposure, concentration) — they disclose proportion and
+  performance, never an amount, they keep the page usable on a shared screen, and the meter bars
+  encode weight graphically, so masking only their printed number would be theatre while hiding the
+  bars would be the redesign this phase is not; holdings count; transaction date/type; ledger
+  description; and the inline editor and add-forms, which are the user's own explicit input.
+- [x] **Home: no consumer, and none fabricated.** Home renders no user-specific amount — its watchlist
+  prints ticker, company, public last price, day % and YTD %, and it calls no portfolio endpoint. The
+  only user-specific element is *which* tickers are listed, which is not a value. Reported, not invented.
+- [x] **Settings control.** Third Display row, after Theme and Language. Shared R9.1 `Switch` (a
+  genuine boolean; the two multi-option selectors above stay radiogroups), `role="switch"` +
+  `aria-checked`, localized accessible name, Space/Enter through native semantics, position + colour.
+  Immediate save — no Save/Apply/Cancel/Reset/confirmation/toast/fake Saved/disabled placeholder. The
+  composition is unchanged: 4 cards, Display beside Security, Recipients full width below, 3 Reveals.
+- [x] **Truthful copy.** "Hides portfolio amounts on screen in this browser — a screen-sharing aid,
+  not a security control" / "Oculta en pantalla los montos de la cartera en este navegador — una ayuda
+  para compartir pantalla, no un control de seguridad". No claim of encryption, security, deletion,
+  restriction, server behaviour, screenshot prevention or cross-device scope. EN/ES parity holds; no
+  hardcoded visible copy.
+- [x] **Preserved.** No calculation, sort, filter, fetch, payload, endpoint, schema, RLS, auth,
+  middleware, `user_profiles`, theme or language behaviour changed. No protected value or privacy
+  state logged, no analytics, no `process.env`, service-role client or admin repository in client
+  code. Both routes stay private under the unchanged default-deny policy.
+- [x] **Superseded holds (none weakened).** Six R9.1–R9.5 assertions stated "Privacy Mode is deferred
+  / the Switch has exactly one consumer / Display has two preference rows". R9.6 is the phase that
+  makes them false by design; each now asserts the enduring property instead.
+- [x] **Automated results.** `fableSettingsPage` 113 → **126**; `fableComponents` +2 and 3 updated;
+  `fablePortfolioPage` 2 updated; `responsiveLayout` +3. Focused **1141/1141**. Full suite 4014 →
+  **4035 · 4032 pass · 3 fail** (only the known `newsModule` trio); lint 0; build 0 errors.
+- [x] **R10 — the Fable Home redesign — remains PENDING.**
+- [ ] **Manual browser validation — PENDING.** 320/390/1024/1728, EN/ES, light/dark, privacy OFF/ON,
+  reload with each stored state, cross-tab both directions, across Settings, Home and Portfolio. See
+  the R9.6 gate: control placement and accuracy, immediate save, truthful copy, Spanish wrapping,
+  keyboard and focus; only private amounts masked on Portfolio with public prices and percentages
+  intact; sorting and filtering still working; tables still aligned; **no raw-value flash on a
+  stored-ON reload**; Home unchanged; and no page-level overflow anywhere.
+
 ### C4 · Engineering gates (run at each phase boundary)
 - [x] `npm run build` → 0 errors, all routes present. *(Phase 1 boundary: compiled in 6.4s, 19/19
   static pages, full route list unchanged. Phase 2 boundary: 0 errors, 19/19 static pages, full

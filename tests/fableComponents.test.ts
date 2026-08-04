@@ -16,6 +16,8 @@ import { dict } from '../src/lib/i18n.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
+/** Comment-stripped, so prose can neither satisfy nor trip a scan. */
+const stripComments = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 
 const FABLE_DIR = 'src/components/fable'
 const NEW_COMPONENTS = [
@@ -362,12 +364,44 @@ describe('privacy masking', () => {
   })
 
   test('masking never alters the underlying value — only swaps rendered text', () => {
-    assert.match(valueSrc, /if \(!masked\) return <span className=\{className\}>\{children\}<\/span>/)
+    // R9.6 added the fail-closed hydration gate, so the pass-through is now
+    // `!masked && resolved`. The property is unchanged: unmasked renders the
+    // children verbatim, and nothing is ever parsed or rewritten.
+    assert.match(valueSrc, /if \(!masked && resolved\) return <span className=\{className\}>\{children\}<\/span>/)
     assert.doesNotMatch(valueSrc, /children\.replace|Number\(children\)|parseFloat/)
+  })
+
+  test('R9.6 — the boundary fails closed while the stored preference is unresolved', () => {
+    // `usePersistentState` renders its DEFAULT during hydration, and for privacy
+    // the default is the unsafe answer. The gate lives HERE, once, so no caller
+    // can forget it and no protected value can be painted raw before the stored
+    // preference is known.
+    assert.match(valueSrc, /useSyncExternalStore\(subscribeNever, resolvedOnClient, unresolvedDuringHydration\)/)
+    assert.match(valueSrc, /const resolvedOnClient = \(\) => true/)
+    assert.match(valueSrc, /const unresolvedDuringHydration = \(\) => false/)
+    // It is a hydration signal, not a second privacy store: it reads and writes nothing.
+    assert.doesNotMatch(valueSrc, /localStorage|sessionStorage|cmi\.privacyMode|fetch\(/)
   })
 
   test('the masked state is announced to assistive technology, not silently visual-only', () => {
     assert.match(valueSrc, /aria-label=\{t\.fable\.privacy\.masked\}/)
+    // R9.6: `role="text"` is not in the ARIA specification — only Safari honours
+    // it, so everywhere else the label was dropped and the bullets were read out.
+    assert.match(valueSrc, /role="img" aria-label=\{t\.fable\.privacy\.masked\}/)
+    assert.doesNotMatch(stripComments(valueSrc), /role="text"/)
+  })
+
+  test('R9.6 — a masked value never reaches the DOM at all', () => {
+    // The masked branch renders bullets and NOTHING else: no children, no
+    // title/data attribute, and no blur/opacity/filter trick that would leave
+    // the real text one screenshot or one inspector away.
+    // Scoped to PrivacyValue — the file also exports the unrelated PrivacyToggle
+    // icon button, which legitimately has onClick/title and is untouched.
+    const src = stripComments(valueSrc)
+    const boundary = src.slice(src.indexOf('export function PrivacyValue'), src.indexOf('interface PrivacyToggleProps'))
+    const maskedBranch = boundary.slice(boundary.lastIndexOf('return ('))
+    assert.doesNotMatch(maskedBranch, /\{children\}/)
+    assert.doesNotMatch(boundary, /blur\(|opacity|filter:|text-shadow|data-value|title=/)
   })
 
   test('no logging of sensitive values', () => {
@@ -658,20 +692,25 @@ describe('R9.1 Switch — Fable geometry, controlled contract, native semantics'
     assert.ok(NEW_COMPONENTS.filter((f) => f === 'Switch.tsx').length === 1)
   })
 
-  test('scope — the primitive is consumed by exactly its one intended surface', () => {
-    // R9.1 shipped it wired to nothing and R9.2/R9.3 left it that way. R9.4
-    // wired it to the recipient Active toggle — the consumer the primitive was
-    // built for. The enduring property is no longer "no consumer" but "exactly
-    // that consumer, and the primitive itself unchanged".
-    assert.match(
-      read('src/app/settings/NotificationRecipientsCard.tsx'),
-      /import \{ Switch \} from '@\/components\/fable\/Switch'/,
-      'R9.4 wired the Switch to the recipient Active toggle',
-    )
+  test('scope — the primitive is consumed only by genuine two-state preferences', () => {
+    // R9.1 shipped it wired to nothing; R9.4 wired the recipient Active toggle;
+    // R9.6 wired the Privacy Mode row. Both are genuine booleans. The enduring
+    // property is that ONLY booleans use it, nobody hand-rolls one, and the
+    // primitive itself is never modified by a consumer.
+    const consumers = [
+      'src/app/settings/NotificationRecipientsCard.tsx',
+      'src/app/settings/SettingsClient.tsx',
+    ]
+    for (const f of consumers) {
+      assert.match(read(f), /import \{ Switch \} from '@\/components\/fable\/Switch'/, `${f} consumes the shared Switch`)
+    }
+    // A multi-option choice must never be dressed as a switch — Theme and
+    // Language stay radiogroups.
+    assert.match(read('src/app/settings/SettingsClient.tsx'), /<SegmentedControl<Theme>/)
+    assert.match(read('src/app/settings/SettingsClient.tsx'), /<SegmentedControl<Lang>/)
     // Nothing else consumes it, and no surface hand-rolls a switch of its own.
     const nonConsumers = [
       'src/app/settings/page.tsx',
-      'src/app/settings/SettingsClient.tsx',
       'src/app/settings/notifications/page.tsx',
       'src/components/ui/ThemeToggle.tsx',
       'src/components/providers/LangProvider.tsx',

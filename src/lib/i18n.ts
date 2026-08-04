@@ -294,6 +294,12 @@ export const dict = {
         languageDesc: 'Language of labels, headings and status text',
         english: 'English',
         spanish: 'Español',
+        // R9.6 — deliberately states the real, narrow effect. It is a
+        // screen-sharing aid: it changes what is drawn, nothing else. It must
+        // never imply the data is secured, encrypted, withheld from the server,
+        // or hidden from anyone but the person looking at this screen.
+        privacy: 'Privacy Mode',
+        privacyDesc: 'Hides portfolio amounts on screen in this browser — a screen-sharing aid, not a security control',
         note: 'Applied immediately and remembered in this browser.',
       },
     },
@@ -1246,6 +1252,8 @@ export const dict = {
         languageDesc: 'Idioma de etiquetas, títulos y textos de estado',
         english: 'English',
         spanish: 'Español',
+        privacy: 'Modo privado',
+        privacyDesc: 'Oculta en pantalla los montos de la cartera en este navegador — una ayuda para compartir pantalla, no un control de seguridad',
         note: 'Se aplica de inmediato y se recuerda en este navegador.',
       },
     },

@@ -3017,6 +3017,72 @@ build 0 errors; `git diff --check` clean. Privacy Mode remains **R9.6**.
 
 ---
 
+### Phase R9.6 — Privacy Mode: wired consumers + the Settings control ✅ (2026-08-04)
+
+The final Settings subphase. Privacy Mode already existed as architecture and had **zero consumers**:
+`usePrivacyMode` was never called anywhere, and `PrivacyValue` was reachable only through `KpiHero`/
+`KpiCapsule`, which themselves have no callers. R9.6 wires it and adds the control.
+
+**Architecture — reused entirely, extended by nothing.** `usePrivacyMode()` →
+`usePersistentState<boolean>('cmi.privacyMode', false)`. One hook, one key, JSON format, default OFF,
+same-tab `cmi-ls:cmi.privacyMode` event, cross-tab native `storage`. No provider, no server or account
+preference, no API, no cookie, no URL parameter, no migration, no dependency. The hook's public API is
+**byte-identical** to before.
+
+**Hydration — the boundary now fails closed.** `usePersistentState` renders its DEFAULT during SSR and
+the hydration render, then reconciles. For every other preference that is harmless; for privacy the
+default is the *unsafe* answer, so a stored-ON user would be told "not masked" for as long as
+hydration takes. `PrivacyValue` now also reads the canonical `useSyncExternalStore` hydration signal
+(`false` on the server and during hydration, `true` afterwards) and masks when `masked` **or** not yet
+resolved. Putting the decision in the boundary rather than in each caller means no consumer can forget
+it. On the two routes wired here the window is invisible anyway — Portfolio is a client page whose
+values arrive from `/api/portfolios/*` strictly after hydration, so nothing protected exists to paint
+yet. No blocking spinner, no app-wide gate, no CSS blur, no timer, no cookie, no pre-paint script.
+
+**A defect repaired centrally.** `PrivacyValue` used `role="text"`, which is **not in the ARIA
+specification** — only Safari honours it, so in every other browser the `aria-label` was dropped and
+the five bullet characters were read out instead. Now `role="img"` + the same localized label, so
+assistive technology gets exactly one truthful phrase. The masked branch renders bullets *instead of*
+`children`, so the raw value never enters the DOM at all — it cannot leak through text, `title`, a
+data attribute, hidden markup, the clipboard or the accessibility tree.
+
+**Home: no consumer, and none fabricated.** Home renders no user-specific amount. Its watchlist prints
+ticker, company, public last price, day % and YTD %, and it calls no portfolio endpoint. The only
+user-specific thing is *which* tickers are listed — not a value, and masking a list whose purpose is
+that list would be the Home redesign R10 owns. Reported rather than invented.
+
+| File | Change |
+|---|---|
+| `src/components/fable/PrivacyValue.tsx` | Fail-closed hydration gate + the `role="text"` → `role="img"` repair. `PrivacyToggle` in the same file untouched. |
+| `src/app/portfolio/page.tsx` | Masking wrappers only, in 5 components, plus a header block recording the classification. No calculation, sort, fetch, payload, layout ratio or column changed. |
+| `src/app/settings/SettingsClient.tsx` | Third `PreferenceRow` — Privacy Mode, shared `Switch`, `usePrivacyMode`. |
+| `src/lib/i18n.ts` | `settings.display.privacy` + `privacyDesc`, EN + ES. |
+| `tests/fableSettingsPage.test.ts` | +13 R9.6 cases (113 → **126**); six R9.1–R9.5 "privacy is deferred" holds superseded. |
+| `tests/fableComponents.test.ts` | +2 (fail-closed gate, no-value-in-DOM); 3 updated for the new boundary contract and the second legitimate Switch consumer. |
+| `tests/fablePortfolioPage.test.ts` | 2 hero assertions follow the value into the boundary. |
+| `tests/responsiveLayout.test.ts` | +3: the mask is layout-neutral, applied inside the cell, and the Settings row adds no new responsive shape. |
+
+**Superseded holds (none weakened).** Six assertions across R9.1–R9.5 asserted "Privacy Mode is
+deferred / the Switch has one consumer / Display has two rows". R9.6 is the phase that makes them
+false by design; each was rewritten to the enduring property (only genuine booleans use the Switch;
+Display has exactly three rows in a fixed order; no *placeholder* preference may ever exist; the
+recipients card still owns no preference).
+
+**Deliberate classification.** Privacy Mode hides **how much**, not how the book is distributed or how
+it is doing. Amounts, quantities and per-unit costs mask — quantity and price alongside the totals
+precisely so an observer cannot multiply two visible numbers back into a masked one. Percentages and
+weights stay visible: they disclose no amount, they keep the page usable on a shared screen, and the
+exposure/concentration meters encode weight in the bar itself, so masking only their text would be
+theatre while hiding the bars would be a redesign.
+
+**Gates:** focused suites **1141/1141**. Full suite 4014 → **4035 · 4032 pass · 3 fail** (only the
+known `newsModule` date-dependent trio); lint 0; build 0 errors; `git diff --check` clean.
+**R10 — the Fable Home redesign — remains pending.**
+
+**Manual browser validation: PENDING** — see the R9.6 manual gate in `06-acceptance-checklist.md`.
+
+---
+
 ## Phase 7 — i18n additions & cleanup (`src/lib/i18n.ts`)
 
 Any new visible string (login utility chips "Secure connection", contrast label, privacy-mask

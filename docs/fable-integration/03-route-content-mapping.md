@@ -818,9 +818,24 @@ no shared Fable component modified; no CSS added (the meter fill reuses the exis
   focus on the confirmed-success path only; (2) the confirmation dialog's target email, one
   unbreakable token in a clipping dialog, could be cut off at 320px — it now wraps exactly as the
   table cell already did. Everything else audited clean; see `06-acceptance-checklist.md` § R9.5.
-- **Pending:** Privacy Mode → **R9.6** (deliberately not stubbed — it still has no real consumer, and
-  a disabled or "coming soon" row would be a placeholder control).
-- **Impl. status:** R9.2 + R9.3 + R9.4 implemented, R9.5 audited · **Verif. status:** automated
+- **R9.6 — Privacy Mode (2026-08-04):** the Display card's **third** row, after Theme and Language.
+  Existing architecture, unchanged: `usePrivacyMode` → `usePersistentState<boolean>('cmi.privacyMode',
+  false)` — one hook, one key, JSON-serialized, default OFF, same-tab `cmi-ls:cmi.privacyMode` event,
+  cross-tab native `storage`. The control is the shared R9.1 `Switch` (a genuine boolean, unlike the
+  two radiogroup selectors above it), immediate-save, no Save/Cancel/toast. Copy states the real,
+  narrow effect and explicitly disclaims being a security control.
+  **Masked (Portfolio):** total market value, total cost basis, unrealized and realized P&L amounts,
+  cash balance, all five cash-summary totals, ledger amounts; per position quantity, average cost,
+  market value and P&L amount; per transaction quantity, price, fees, taxes, net and realized P&L.
+  **Deliberately visible:** public last price, ticker, company, sector; all user-derived
+  PERCENTAGES (P&L %, position weight, sector exposure, concentration — proportions and performance
+  disclose no amount, and the meter bars encode weight graphically, so masking only their printed
+  number would be theatre); holdings count; transaction date/type; ledger description; and the
+  inline editor and add-forms, which are the user's own explicit input.
+  **Home has NO user-specific amount** — its watchlist prints only public market data and it reads no
+  portfolio endpoint, so no consumer was fabricated there.
+- **Pending:** the Fable **Home redesign → R10**.
+- **Impl. status:** R9.2 + R9.3 + R9.4 + R9.6 implemented, R9.5 audited · **Verif. status:** automated
   complete, manual pending.
 
 ## 13b. `/settings/notifications` 🔒 — preserved redirect — **R9.4 as built**

@@ -157,14 +157,19 @@ describe('Phase 5H parity — primary vs secondary metric hierarchy', () => {
 
   it('Market Value is the single primary metric, at the Fable hero type scale', () => {
     assert.match(hero, /<div className="ui-label text-muted-fg">\{t\.portfolio\.totalMarketValue\}<\/div>/)
-    assert.match(hero, /<div className="ui-kpi-hero ui-number text-foreground mt-2">\{formatCLP\(totals\.totalMarketValue\)\}<\/div>/)
+    // R9.6 wrapped the value in the shared privacy boundary. The type scale, the
+    // container and the value itself are unchanged — only masking was added.
+    assert.match(hero, /<div className="ui-kpi-hero ui-number text-foreground mt-2">/)
+    assert.match(hero, /<PrivacyValue masked=\{masked\}>\{formatCLP\(totals\.totalMarketValue\)\}<\/PrivacyValue>/)
     assert.equal(count(hero, 'ui-kpi-hero'), 1, 'exactly one hero-scale value — the hierarchy would be lost with two')
   })
 
   it('Unrealized P&L is the Fable delta pill directly beneath the hero value', () => {
     assert.match(hero, /className="inline-flex items-center rounded-full px-3 py-1"/)
     assert.match(hero, /backgroundColor: `color-mix\(in oklab, \$\{toneToken\(pnl\)\} 14%, transparent\)`/)
-    assert.match(hero, /<ChangeIndicator value=\{pnl\} label=\{pnl !== null \? formatCLP\(pnl\) : undefined\} \/>/)
+    // R9.6 masks the amount inside the pill; the direction tint stays, because
+    // "up or down" is not an amount.
+    assert.match(hero, /<PrivacyValue masked=\{masked\}>\s*<ChangeIndicator value=\{pnl\} label=\{pnl !== null \? formatCLP\(pnl\) : undefined\} \/>\s*<\/PrivacyValue>/)
     assert.match(hero, /\{t\.portfolio\.unrealizedPnL\} · \{t\.portfolio\.vsCostBasis\}/)
   })
 

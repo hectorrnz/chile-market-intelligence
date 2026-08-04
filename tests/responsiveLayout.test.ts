@@ -256,6 +256,41 @@ describe('the Settings recipient form stacks instead of overflowing', () => {
   })
 })
 
+// R9.6 — Privacy Mode must not become a layout event. The mask is a short inline
+// token inside the cell that already existed, so cards and columns keep their
+// geometry whether it is on or off.
+describe('the privacy mask is layout-neutral', () => {
+  const boundary = read('src/components/fable/PrivacyValue.tsx')
+  const portfolio = read('src/app/portfolio/page.tsx')
+
+  test('the mask is an inline span with no width, height or block behaviour of its own', () => {
+    assert.doesNotMatch(boundary, /\bw-\[|\bh-\[|\bmin-w-|\bmax-w-|block|absolute|fixed/)
+    assert.match(boundary, /<span className=\{`ui-number tracking-wide \$\{className\}`\}/)
+    // It never adds an overflow container that could nest inside a scrolling card.
+    assert.doesNotMatch(boundary, /overflow-/)
+  })
+
+  test('masking is applied inside the existing cell, never around it', () => {
+    // A <td> wrapped in the boundary would move the column; the boundary always
+    // sits INSIDE the cell that already set the alignment and padding.
+    assert.doesNotMatch(portfolio, /<PrivacyValue[^>]*>\s*\n?\s*<td/)
+    assert.match(portfolio, /<td className="py-2\.5 px-3 text-right ui-number text-foreground">\s*\n\s*<PrivacyValue/)
+    // The Portfolio table floors and the card-local scroll are untouched.
+    assert.match(portfolio, /minWidth=\{720\}/)
+    assert.match(portfolio, /minWidth=\{440\}/)
+  })
+
+  test('the Settings privacy row reuses PreferenceRow — no new responsive shape', () => {
+    const client = read('src/app/settings/SettingsClient.tsx')
+    assert.equal((client.match(/<PreferenceRow/g) ?? []).length, 3)
+    // The Switch is right-aligned exactly like the two selectors above it, and
+    // the row's own flex-wrap is what lets it drop at a narrow width.
+    assert.equal((client.match(/className="shrink-0 ml-auto"/g) ?? []).length, 3)
+    assert.match(client, /\$\{ROW\} flex-wrap/)
+    assert.doesNotMatch(client, /\bw-\[\d+px\]/)
+  })
+})
+
 describe('shared components wrap instead of overflowing', () => {
   test('SectionHeader wraps its actions row', () => {
     const src = read('src/components/ui/SectionHeader.tsx')

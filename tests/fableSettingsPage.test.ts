@@ -33,6 +33,23 @@ const LANG_TOGGLE = read('src/components/ui/LangToggle.tsx')
 const SEGMENTED = read('src/components/fable/SegmentedControl.tsx')
 const LAYOUT = read('src/app/layout.tsx')
 
+// R9.6 — the privacy architecture and the two routes that render user-specific
+// values, so the wiring can be asserted across the file boundary.
+const PRIVACY_VALUE = read('src/components/fable/PrivacyValue.tsx')
+const PRIVACY_HOOK = read('src/components/fable/usePrivacyMode.ts')
+const PORTFOLIO = read('src/app/portfolio/page.tsx')
+const HOME = read('src/app/page.tsx')
+/**
+ * The masking boundary ALONE. `PrivacyValue.tsx` also exports the unrelated
+ * `PrivacyToggle` icon button (untouched by R9.6), which legitimately has a
+ * `<button>`, an `onClick` and a `title` — none of which may appear inside the
+ * boundary itself.
+ */
+const BOUNDARY = PRIVACY_VALUE.slice(
+  PRIVACY_VALUE.indexOf('export function PrivacyValue'),
+  PRIVACY_VALUE.indexOf('interface PrivacyToggleProps'),
+)
+
 // R9.5 — the consolidation audit reads the surface as one product: the page
 // header that owns the h1, and the shell that decides whether anything can
 // cover the `#notifications` anchor.
@@ -107,9 +124,13 @@ describe('R9.2 · route and Fable composition', () => {
   })
 
   test('9-11. no placeholder card and no early privacy stub', () => {
-    // R9.3 owns Display and R9.4 owns Recipients (each has its own describe
-    // below). R9.6 owns privacy — still the one thing that may not be stubbed.
-    assert.doesNotMatch(CLIENT_CODE, /ThemeToggle|LangToggle|<Switch\b|role="switch"/)
+    // R9.3 owns Display, R9.4 Recipients, R9.6 Privacy Mode — each has its own
+    // describe below. The TopBar's own controls are still never embedded (their
+    // icon-collapse and header geometry are top-bar-specific), and the page
+    // still hand-rolls no switch of its own.
+    assert.doesNotMatch(CLIENT_CODE, /ThemeToggle|LangToggle|role="switch"/)
+    // R9.6's Switch is the SHARED primitive, imported — never re-implemented.
+    assert.match(CLIENT_CODE, /import \{ Switch \} from '@\/components\/fable\/Switch'/)
     // The card is "Display", never a second "Appearance" concept.
     assert.doesNotMatch(CLIENT_CODE, /appearance|apariencia/i)
     assert.doesNotMatch(CLIENT_CODE, /placeholder|TODO|Coming soon|comingSoon|pr[óo]ximamente/i)
@@ -370,11 +391,12 @@ describe('R9.2 · security card', () => {
 // ── Scope ───────────────────────────────────────────────────────────────────
 
 describe('R9.2 · scope restraint', () => {
-  test('53-56. no Switch, privacy, or ad-hoc persistence import', () => {
-    assert.doesNotMatch(BOTH, /fable\/Switch|<Switch\b|role="switch"/)
-    // R9.3 legitimately consumes `useTheme` — the ONE shared store. What stays
-    // forbidden is a private persistence path or an early privacy consumer.
-    assert.doesNotMatch(BOTH, /usePrivacyMode|usePersistentState|localStorage|sessionStorage/)
+  test('53-56. every preference is a shared store — no ad-hoc persistence path', () => {
+    // R9.3 consumes `useTheme`, R9.6 `usePrivacyMode` — both the ONE shared
+    // store for their preference. What stays forbidden is this file reaching
+    // storage itself, or standing up a second persistence path.
+    assert.doesNotMatch(BOTH, /usePersistentState|localStorage|sessionStorage|document\.cookie/)
+    assert.match(CLIENT, /import \{ usePrivacyMode \} from '@\/components\/fable\/usePrivacyMode'/)
     assert.match(CLIENT, /import \{ useLang \} from '@\/components\/providers\/LangProvider'/)
     // The TopBar's own controls are never embedded — their icon-collapse and
     // header geometry are top-bar-specific.
@@ -517,10 +539,12 @@ describe('R9.3 · Display card composition', () => {
     // Primary label over muted subline, control pinned right — same as StatusRow.
     assert.match(CLIENT_CODE, /<span className="block text-xs text-foreground font-medium break-words">\{label\}<\/span>/)
     assert.match(CLIENT_CODE, /<span className="block ui-meta text-muted-fg mt-0\.5 break-words">\{detail\}<\/span>/)
-    // Both rows carry a label AND an explanatory subline.
+    // Every row carries a label AND an explanatory subline.
     assert.match(CLIENT_CODE, /label=\{s\.display\.theme\}\s*\n\s*detail=\{s\.display\.themeDesc\}/)
     assert.match(CLIENT_CODE, /label=\{s\.display\.language\}\s*\n\s*detail=\{s\.display\.languageDesc\}/)
-    assert.equal((CLIENT_CODE.match(/<PreferenceRow/g) ?? []).length, 2, 'exactly Theme and Language')
+    // R9.6 added the third and final row — Privacy Mode. Order asserted in the R9.6 block.
+    assert.match(CLIENT_CODE, /label=\{s\.display\.privacy\}\s*\n\s*detail=\{s\.display\.privacyDesc\}/)
+    assert.equal((CLIENT_CODE.match(/<PreferenceRow/g) ?? []).length, 3, 'exactly Theme, Language and Privacy Mode')
     // StatusRow is untouched, so the other three cards render identically.
     assert.match(CLIENT_CODE, /function StatusRow\(\{ name, detail, chip \}/)
     assert.match(CLIENT_CODE, /const ROW = 'flex items-center gap-3 py-2\.5 border-b border-\[var\(--nv-line\)\] last:border-0'/)
@@ -650,15 +674,16 @@ describe('R9.3 · language preference', () => {
   })
 })
 
-describe('R9.3 · privacy restraint and scope preservation', () => {
-  test('33-36. no privacy import, control, or placeholder copy', () => {
-    assert.doesNotMatch(BOTH, /usePrivacyMode|PrivacyToggle|PrivacyValue|privacyMasked/)
-    assert.doesNotMatch(BOTH, /mask|ocultar saldo|hide balance|sensitive/i)
-    for (const d of [dict.en, dict.es]) {
-      assert.doesNotMatch(JSON.stringify(d.settings), /privacy|privacidad|mask|enmascar/i)
-    }
-    // A disabled/"coming soon" preference row would be a placeholder control.
+describe('R9.3 · scope preservation', () => {
+  test('33-36. no placeholder control, and the server component owns no preference', () => {
+    // R9.6 legitimately added the privacy consumer. What never becomes true is a
+    // stubbed, disabled or "coming soon" preference row.
     assert.doesNotMatch(CLIENT_CODE, /disabled: true|disabled=\{true\}|\bdisabled\b/)
+    assert.doesNotMatch(CLIENT_CODE, /comingSoon|coming soon|pr[óo]ximamente|TODO/i)
+    // The masking BOUNDARY belongs to the pages that render values — Settings
+    // only owns the control, so it must never import PrivacyValue itself.
+    assert.doesNotMatch(BOTH, /PrivacyValue|PrivacyToggle|privacyMasked/)
+    assert.doesNotMatch(PAGE_CODE, /usePrivacyMode|Switch/)
   })
 
   test('37-39. the three R9.2 cards are still present and unchanged in substance', () => {
@@ -794,7 +819,8 @@ describe('R9.3 · accessibility, localization and responsive behavior', () => {
     assert.match(CLIENT_CODE, /\$\{ROW\} flex-wrap/)
     assert.match(CLIENT_CODE, /grow shrink basis-\[140px\] min-w-0/)
     assert.match(CLIENT_CODE, /className="shrink-0 ml-auto"/)
-    assert.equal((CLIENT_CODE.match(/className="shrink-0 ml-auto"/g) ?? []).length, 2)
+    // One per preference row — R9.6's Privacy switch is right-aligned the same way.
+    assert.equal((CLIENT_CODE.match(/className="shrink-0 ml-auto"/g) ?? []).length, 3)
     // No fixed-width selector container and no viewport-busting width anywhere.
     assert.doesNotMatch(CLIENT_CODE, /\bw-\[\d+px\]/)
     assert.doesNotMatch(CLIENT_CODE, /min-w-\[\d{3,}px\]/)
@@ -1243,11 +1269,10 @@ describe('R9.4 · scope and localization', () => {
     return []
   }
 
-  test('93-96. privacy still absent; theme, language, Portfolio and Home untouched', () => {
-    assert.doesNotMatch(`${CARD}\n${CLIENT}`, /usePrivacyMode|PrivacyToggle|PrivacyValue|privacyMasked/)
-    for (const d of [dict.en, dict.es]) {
-      assert.doesNotMatch(JSON.stringify(d.settings), /privacy|privacidad/i)
-    }
+  test('93-96. the recipients card owns no preference; theme and language unchanged', () => {
+    // R9.6 put the privacy CONTROL in the Display card. The recipients workflow
+    // must still hold no preference state of any kind.
+    assert.doesNotMatch(CARD, /usePrivacyMode|PrivacyToggle|PrivacyValue|privacyMasked/)
     assert.doesNotMatch(CARD, /useTheme|useLang\(\)\.setLang|SegmentedControl/)
     assert.match(CARD, /import \{ useLang \} from '@\/components\/providers\/LangProvider'/)
     // No notification preference types, categories, schedules or test sends.
@@ -1479,15 +1504,244 @@ describe('R9.5 · regression control', () => {
     assert.equal(classifyPath('/api/notification-recipients'), 'private_api')
   })
 
-  test('Privacy Mode is still deferred to R9.6 across the whole surface', () => {
+  test('the surface still invents no preference beyond the three real ones', () => {
     const surface = `${PAGE_CODE}\n${CLIENT_CODE}\n${CARD_CODE}`
-    assert.doesNotMatch(surface, /usePrivacyMode|PrivacyToggle|PrivacyValue|privacyMasked|maskBalances|hideNotional/i)
-    for (const d of [dict.en, dict.es]) {
-      assert.doesNotMatch(JSON.stringify(d.settings), /privacy|privacidad|mask|ocultar valores/i)
-    }
-    // Portfolio and Home remain untouched by this phase.
+    // R9.6 delivered Privacy Mode. What must never appear is a preference this
+    // app does not actually implement.
+    assert.doesNotMatch(surface, /maskBalances|hideNotional|privacyMasked|blurValues|stealthMode/i)
+    // Home and Portfolio still carry no Settings/notification concern.
     for (const f of ['src/app/portfolio/page.tsx', 'src/app/page.tsx']) {
-      assert.doesNotMatch(read(f), /R9\.5|NotificationRecipientsCard|usePrivacyMode/)
+      assert.doesNotMatch(read(f), /NotificationRecipientsCard|notification-recipients|SettingsClient/)
     }
+  })
+})
+
+// ── R9.6 · Privacy Mode — wired consumers and the Settings control ───────────
+
+describe('R9.6 · privacy architecture is the existing one, extended by nothing', () => {
+  test('1-4. one hook, one key, the existing raw format and the existing default', () => {
+    assert.match(PRIVACY_HOOK, /usePersistentState<boolean>\('cmi\.privacyMode', false\)/)
+    // Exactly one place in the whole app names the key.
+    const all = [PRIVACY_HOOK, PRIVACY_VALUE, CLIENT, PORTFOLIO, HOME].map(code).join('\n')
+    assert.equal((all.match(/cmi\.privacyMode/g) ?? []).length, 1)
+    // `usePersistentState` is the app-wide `cmi.*` mechanism — JSON-serialized,
+    // same-tab `cmi-ls:<key>` event, native cross-tab `storage` event.
+    const store = read('src/lib/usePersistentState.ts')
+    assert.match(store, /JSON\.stringify\(resolved\)/)
+    assert.match(store, /const evt = `cmi-ls:\$\{key\}`/)
+    assert.match(store, /window\.addEventListener\('storage', onStorage\)/)
+  })
+
+  test('5-10. no provider, server preference, API, migration or second persistence path', () => {
+    const surface = `${PRIVACY_HOOK}\n${PRIVACY_VALUE}\n${code(CLIENT)}\n${code(PORTFOLIO)}`
+    assert.doesNotMatch(surface, /createContext|PrivacyProvider|\.Provider\b/)
+    assert.doesNotMatch(surface, /\/api\/privacy|privacy_mode|user_profiles|document\.cookie|searchParams\.set/)
+    assert.doesNotMatch(PRIVACY_HOOK, /fetch\(|await |supabase/i)
+    // No migration was added by this phase.
+    const migrations = readdirSync(join(ROOT, 'supabase/migrations'))
+    assert.ok(!migrations.some((m) => /privacy/i.test(m)), 'privacy is presentation state — never a column')
+  })
+})
+
+describe('R9.6 · the Settings control', () => {
+  const display = CLIENT_CODE.slice(CLIENT_CODE.indexOf('{s.display.title}'), CLIENT_CODE.indexOf('{s.display.note}'))
+
+  test('11-14. Privacy Mode is the third Display row, and the composition is unchanged', () => {
+    const theme = display.indexOf('s.display.theme')
+    const language = display.indexOf('s.display.language')
+    const privacy = display.indexOf('s.display.privacy')
+    assert.ok(theme > -1 && language > theme, 'Language follows Theme')
+    assert.ok(privacy > language, 'Privacy Mode follows Language')
+    // Still one Display card beside Security in row 2, recipients full width below.
+    assert.equal((CLIENT_CODE.match(/<CardTitle>/g) ?? []).length, 4)
+    assert.equal((CLIENT_CODE.match(/<GlassSurface as="section"/g) ?? []).length, 4)
+    assert.match(CLIENT_CODE, /<CardTitle>\{s\.security\.title\}<\/CardTitle>/)
+    assert.ok(CLIENT_CODE.indexOf('<NotificationRecipientsCard') > privacy)
+    assert.equal((CLIENT_CODE.match(/<Reveal /g) ?? []).length, 3)
+  })
+
+  test('15-18. the shared Switch, driven by the shared store — no local authority', () => {
+    assert.match(CLIENT_CODE, /const \[privacy, setPrivacy\] = usePrivacyMode\(\)/)
+    assert.match(display, /<Switch\s*\n\s*checked=\{privacy\}\s*\n\s*onCheckedChange=\{setPrivacy\}/)
+    // The setter is the store's own — never wrapped in local state.
+    assert.doesNotMatch(CLIENT_CODE, /useState<boolean>|setPrivacyState|localPrivacy/)
+    // A two-state preference gets a switch; multi-option ones stay radiogroups.
+    assert.equal((CLIENT_CODE.match(/<Switch\b/g) ?? []).length, 1)
+    assert.equal((CLIENT_CODE.match(/<SegmentedControl</g) ?? []).length, 2)
+  })
+
+  test('19-22. immediate save, truthful localized copy, no security claim, no separate page', () => {
+    assert.doesNotMatch(CLIENT_CODE, /onSave|handleSave|isDirty|unsavedChanges|>Save<|>Apply<|>Reset<|toast/i)
+    assert.match(display, /aria-label=\{s\.display\.privacy\}/)
+    for (const d of [dict.en, dict.es]) {
+      const copy = `${d.settings.display.privacy} ${d.settings.display.privacyDesc}`
+      // It must say what it really does: change what is drawn, in this browser.
+      assert.match(copy, /browser|navegador/i)
+      // And must never overclaim.
+      assert.doesNotMatch(copy, /encrypt|secure|cifrad|segur(?!idad\b)|protects|delete|borra|restrict/i)
+      assert.doesNotMatch(copy, /prevents? screenshots|every device|todos los dispositivos|server|servidor/i)
+    }
+    // Honest by construction: the subline names it as NOT a security control.
+    assert.match(dict.en.settings.display.privacyDesc, /not a security control/i)
+    assert.match(dict.es.settings.display.privacyDesc, /no un control de seguridad/i)
+    // No Privacy card, route or page was created.
+    assert.ok(!existsSync(join(ROOT, 'src/app/settings/privacy')))
+    assert.equal((CLIENT_CODE.match(/<CardTitle>/g) ?? []).length, 4)
+  })
+
+  test('67-70. EN/ES parity and no hardcoded privacy copy', () => {
+    for (const d of [dict.en, dict.es]) {
+      for (const k of ['privacy', 'privacyDesc']) {
+        const v = (d.settings.display as unknown as Record<string, string>)[k]
+        assert.equal(typeof v, 'string')
+        assert.ok(v.trim().length > 0)
+      }
+    }
+    assert.deepEqual(
+      Object.keys(dict.es.settings.display).sort(),
+      Object.keys(dict.en.settings.display).sort(),
+    )
+    for (const d of [dict.en, dict.es]) {
+      assert.ok(!CLIENT_CODE.includes(d.settings.display.privacy) || CLIENT_CODE.includes('s.display.privacy'))
+      assert.ok(!CLIENT_CODE.includes(d.settings.display.privacyDesc))
+    }
+  })
+})
+
+describe('R9.6 · Home and Portfolio consumers', () => {
+  test('23, 25-29. Home renders no user-specific AMOUNT, so no consumer was fabricated', () => {
+    // Home's only user-specific element is WHICH tickers are on the watchlist;
+    // every value it prints beside them is public market data. It reads no
+    // portfolio endpoint at all, so there is nothing here to mask.
+    assert.doesNotMatch(HOME, /\/api\/portfolios|portfolioValue|totalMarketValue|costBasis|netCashBalance|unrealizedPnL/)
+    assert.doesNotMatch(HOME, /PrivacyValue|usePrivacyMode/)
+    // And its watchlist columns are exactly the public ones.
+    assert.match(HOME, /formatCLP\(price\)/)
+    assert.match(HOME, /\/api\/watchlists/)
+  })
+
+  test('24, 30-32. every protected Portfolio value goes through the shared boundary', () => {
+    assert.match(PORTFOLIO, /import \{ PrivacyValue \} from '@\/components\/fable\/PrivacyValue'/)
+    assert.match(PORTFOLIO, /import \{ usePrivacyMode \} from '@\/components\/fable\/usePrivacyMode'/)
+    // Summary, positions, transactions and cash all mask.
+    for (const expr of [
+      'formatCLP(totals.totalMarketValue)',
+      'formatCLP(totals.totalCostBasis)',
+      'formatCLP(cashBalance)',
+      '{position.quantity}',
+      'formatCLP(position.marketValue)',
+      'formatCLP(tx.price)',
+      'formatCLP(tx.fees)',
+      '{formatCLP(e.amount)}',
+    ]) {
+      const at = PORTFOLIO.indexOf(expr)
+      assert.ok(at > -1, `${expr} must still render`)
+      const before = PORTFOLIO.slice(Math.max(0, at - 260), at)
+      assert.ok(before.includes('<PrivacyValue masked={masked}>'), `${expr} must be masked`)
+    }
+    // Every masking component reads the ONE store — no prop-drilled copy.
+    assert.equal((PORTFOLIO.match(/const \[masked\] = usePrivacyMode\(\)/g) ?? []).length, 5)
+  })
+
+  test('33. public prices and metadata stay visible', () => {
+    // The latest price is public: it renders bare, with an explicit comment.
+    assert.match(PORTFOLIO, /\{\/\* Public last price — never masked\. \*\/\}\s*\n\s*<td[^>]*>\{position\.latestPrice !== null \? formatCLP\(position\.latestPrice\) : '—'\}<\/td>/)
+    // Ticker, company and sector are untouched.
+    assert.match(PORTFOLIO, /\{position\.companyName\}<\/td>/)
+    assert.match(PORTFOLIO, /\{position\.sector \?\? '—'\}<\/td>/)
+  })
+
+  test('user-derived PERCENTAGES stay visible — a deliberate, documented classification', () => {
+    // P&L %, weight, sector exposure and concentration disclose performance and
+    // proportion, never an amount — and the meter bars encode the weight
+    // graphically, so masking only their printed number would be theatre.
+    assert.match(PORTFOLIO, /\{position\.unrealizedPnLPct !== null \? formatPct\(position\.unrealizedPnLPct\) : '—'\}/)
+    assert.match(PORTFOLIO, /\{position\.weight !== null \? formatPct\(position\.weight, 1\)\.replace\('\+', ''\) : '—'\}/)
+    for (const fn of ['function SectorExposurePanel', 'function ConcentrationPanel', 'function MeterRow']) {
+      const body = PORTFOLIO.slice(PORTFOLIO.indexOf(fn), PORTFOLIO.indexOf(fn) + 900)
+      assert.doesNotMatch(body, /PrivacyValue/, `${fn} deliberately shows proportions`)
+    }
+    // The reasoning is recorded in the file, not just in a report.
+    assert.match(PORTFOLIO, /Privacy Mode hides HOW MUCH/)
+  })
+
+  test('34-36. calculations, sorting and data flow are untouched', () => {
+    assert.match(PORTFOLIO, /valuePositions, calculatePortfolioTotals, calculateSectorExposure/)
+    assert.match(PORTFOLIO, /topByWeight/)
+    assert.doesNotMatch(code(PORTFOLIO), /masked \? 0|masked \? null|if \(masked\) return/)
+    // Masking is presentation only — it never reaches a fetch or a payload.
+    for (const m of code(PORTFOLIO).matchAll(/fetch\([^)]*\)/g)) {
+      assert.doesNotMatch(m[0], /masked|privacy/i)
+    }
+  })
+
+  test('37-40. no raw value survives masking, and it is not a CSS trick', () => {
+    // The boundary renders bullets INSTEAD of children — the value never
+    // reaches the DOM, so title/data/hidden-text leaks are impossible.
+    assert.match(PRIVACY_VALUE, /if \(!masked && resolved\) return <span className=\{className\}>\{children\}<\/span>/)
+    assert.doesNotMatch(BOUNDARY, /blur|opacity|filter|text-shadow|aria-hidden=\{false\}/)
+    // No page hand-writes the mask literal.
+    assert.doesNotMatch(code(PORTFOLIO), /•/)
+    assert.doesNotMatch(code(CLIENT), /•/)
+  })
+})
+
+describe('R9.6 · hydration, accessibility and honesty', () => {
+  test('41-47. the boundary fails closed while the stored preference is unresolved', () => {
+    assert.match(PRIVACY_VALUE, /useSyncExternalStore\(subscribeNever, resolvedOnClient, unresolvedDuringHydration\)/)
+    // Fail CLOSED: the pass-through requires BOTH not-masked and resolved.
+    assert.match(PRIVACY_VALUE, /!masked && resolved/)
+    // No blocking spinner, no whole-app gate, no timer, no cookie, no script.
+    assert.doesNotMatch(PRIVACY_VALUE, /setTimeout|requestAnimationFrame|document\.cookie|dangerouslySetInnerHTML/)
+    assert.doesNotMatch(read('src/app/layout.tsx'), /privacy/i)
+    // Cross-tab and same-tab updates are the store's, so both directions work.
+    const store = read('src/lib/usePersistentState.ts')
+    assert.match(store, /if \(e\.key === key\) onChange\(\)/)
+    assert.match(store, /window\.dispatchEvent\(new Event\(evt\)\)/)
+  })
+
+  test('48-58. switch semantics, a truthful mask replacement, and no colour-only state', () => {
+    const sw = read('src/components/fable/Switch.tsx')
+    assert.match(sw, /role="switch"/)
+    assert.match(sw, /aria-checked=\{checked\}/)
+    assert.match(sw, /type="button"/) // Space/Enter come from native semantics
+    assert.match(sw, /translate-x-\[12\.5px\]/) // position, not colour alone
+    // The mask is announced once, truthfully, and localized.
+    assert.match(PRIVACY_VALUE, /role="img" aria-label=\{t\.fable\.privacy\.masked\}/)
+    assert.equal(dict.en.fable.privacy.masked, 'Value hidden')
+    assert.equal(dict.es.fable.privacy.masked, 'Valor oculto')
+    // Table semantics survive: the boundary is a <span> inside the cell.
+    assert.match(PORTFOLIO, /<td[^>]*>\s*\n?\s*<PrivacyValue/)
+    assert.doesNotMatch(BOUNDARY, /<div|<td|<tr|role="cell"|role="row"/)
+    // No interactive control is nested inside the boundary.
+    assert.doesNotMatch(BOUNDARY, /<button|onClick/)
+  })
+
+  test('71-78. presentation state only — no security, auth or backend surface moved', () => {
+    const surface = `${PRIVACY_HOOK}\n${PRIVACY_VALUE}\n${code(CLIENT)}\n${code(PORTFOLIO)}`
+    assert.doesNotMatch(surface, /service_role|SERVICE_ROLE|createAdminClient|process\.env|@\/lib\/db\/repositories/)
+    assert.doesNotMatch(surface, /console\.(log|debug|info|warn|error)/)
+    assert.doesNotMatch(surface, /analytics|track\(|gtag/)
+    // Both pages stay private under the unchanged default-deny policy.
+    assert.equal(classifyPath('/portfolio'), 'private_page')
+    assert.equal(classifyPath('/settings'), 'private_page')
+    assert.ok(requiresApprovedSession('/portfolio'))
+  })
+
+  test('79-86. scope — no redesign, no new primitive, no dependency, R10 still pending', () => {
+    // Portfolio keeps its Fable composition ratios and every region.
+    for (const c of ['FABLE_HERO', 'FABLE_ASIDE', 'FABLE_MAIN', 'FABLE_RAIL']) {
+      assert.ok(PORTFOLIO.includes(c), `${c} composition preserved`)
+    }
+    assert.match(PORTFOLIO, /<SegmentedControl/)
+    assert.equal((PORTFOLIO.match(/<TableCard/g) ?? []).length, 3)
+    // Home was not touched at all by this phase.
+    assert.doesNotMatch(HOME, /R9\.6|PrivacyValue|usePrivacyMode/)
+    // No new shared primitive file appeared.
+    assert.ok(existsSync(join(ROOT, 'src/components/fable/PrivacyValue.tsx')))
+    assert.ok(!existsSync(join(ROOT, 'src/components/fable/PrivacyProvider.tsx')))
+    // No dependency was added.
+    const pkg = JSON.parse(read('package.json')) as { dependencies: Record<string, string> }
+    assert.ok(!Object.keys(pkg.dependencies).some((d) => /privacy|mask/i.test(d)))
   })
 })

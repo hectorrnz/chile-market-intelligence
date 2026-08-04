@@ -34,6 +34,8 @@ import { GlassSurface } from '@/components/fable/GlassSurface'
 import { ChipLabel } from '@/components/fable/Chip'
 import { AsyncState } from '@/components/fable/AsyncState'
 import { SegmentedControl } from '@/components/fable/SegmentedControl'
+import { Switch } from '@/components/fable/Switch'
+import { usePrivacyMode } from '@/components/fable/usePrivacyMode'
 import { Reveal } from '@/components/fable/motion'
 import { NotificationRecipientsCard } from './NotificationRecipientsCard'
 import { formatSourceDate } from '@/lib/formatters'
@@ -130,6 +132,10 @@ export function SettingsClient({ account }: { account: SettingsAccount }) {
   // component adds no authoritative state of its own for either one.
   const { lang, setLang, t } = useLang()
   const { theme, setTheme } = useTheme()
+  // R9.6 — the same `cmi.privacyMode` preference the Portfolio masking reads.
+  // This is a VIEW of it, exactly like Theme and Language above: no second key,
+  // no second store, no authoritative local copy.
+  const [privacy, setPrivacy] = usePrivacyMode()
   const s = t.settings
 
   const [health, setHealth] = useState<IngestionHealth | null>(null)
@@ -321,6 +327,22 @@ export function SettingsClient({ account }: { account: SettingsAccount }) {
                     value={lang}
                     onChange={setLang}
                     ariaLabel={s.display.language}
+                    className="shrink-0 ml-auto"
+                  />
+                }
+              />
+              {/* Privacy Mode — third, after Theme and Language. Same row
+                  anatomy; the trailing control is the shared R9.1 Switch
+                  because this genuinely IS a two-state on/off preference,
+                  where Theme and Language are multi-option choices. */}
+              <PreferenceRow
+                label={s.display.privacy}
+                detail={s.display.privacyDesc}
+                control={
+                  <Switch
+                    checked={privacy}
+                    onCheckedChange={setPrivacy}
+                    aria-label={s.display.privacy}
                     className="shrink-0 ml-auto"
                   />
                 }

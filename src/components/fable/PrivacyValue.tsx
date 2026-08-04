@@ -1,6 +1,6 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useSyncExternalStore, type ReactNode } from 'react'
 import { useLang } from '@/components/providers/LangProvider'
 
 interface PrivacyValueProps {
@@ -11,16 +11,55 @@ interface PrivacyValueProps {
 }
 
 /**
+ * R9.6 — "has the client-side preference store resolved yet?"
+ *
+ * `usePrivacyMode` is built on `usePersistentState`, which (correctly, for
+ * hydration safety) renders its DEFAULT on the server and during the hydration
+ * render, then reconciles to the stored value. For every other preference in
+ * this app that is harmless. For privacy it is the one case where the default
+ * is the UNSAFE answer: a user whose stored preference is ON would be told
+ * "not masked" for exactly as long as hydration takes.
+ *
+ * This is the canonical `useSyncExternalStore` hydration signal — `false` on the
+ * server and during hydration, `true` from the first client render onwards. It
+ * is not a second privacy hook, a second key, or a second persistence path: it
+ * stores nothing and reads nothing.
+ */
+const subscribeNever = () => () => {}
+const resolvedOnClient = () => true
+const unresolvedDuringHydration = () => false
+
+/**
  * Visually masks a sensitive financial value. The underlying value is never
  * altered, logged, or transmitted — only the rendered text changes, and the
  * masked state is announced to assistive technology rather than silently
  * swapped.
+ *
+ * ── R9.6: THE BOUNDARY FAILS CLOSED ────────────────────────────────────────
+ * It masks when `masked` is true OR while the preference is still unresolved.
+ * Putting that decision HERE rather than in each caller means no consumer can
+ * forget it, and a value can never be painted raw in the window before the
+ * stored preference is known. A brief mask is acceptable; a brief disclosure is
+ * not. On the two routes wired in R9.6 that window is invisible anyway — both
+ * fetch their values on the client, so nothing protected exists to render yet.
+ *
+ * When masked, `children` is NOT rendered at all: the raw value never reaches
+ * the DOM, so it cannot leak through text, `title`, a data attribute, hidden
+ * markup, the clipboard, or the accessibility tree. This is deliberately not a
+ * blur, an opacity change, a filter, or a recolour — all of which keep the real
+ * text one screenshot or one DOM inspection away.
  */
 export function PrivacyValue({ masked, children, className = '' }: PrivacyValueProps) {
   const { t } = useLang()
-  if (!masked) return <span className={className}>{children}</span>
+  const resolved = useSyncExternalStore(subscribeNever, resolvedOnClient, unresolvedDuringHydration)
+  if (!masked && resolved) return <span className={className}>{children}</span>
   return (
-    <span className={`ui-number tracking-wide ${className}`} aria-label={t.fable.privacy.masked} role="text">
+    // `role="img"` + `aria-label`: the bullets are a glyph standing in for the
+    // value, so assistive technology reads one truthful phrase ("Value hidden")
+    // instead of five bullet characters. (`role="text"` was used before R9.6 —
+    // it is not in the ARIA specification and only Safari honours it, so in
+    // every other browser the label was silently dropped.)
+    <span className={`ui-number tracking-wide ${className}`} role="img" aria-label={t.fable.privacy.masked}>
       •••••
     </span>
   )

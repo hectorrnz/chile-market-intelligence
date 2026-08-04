@@ -51,6 +51,8 @@ import { GlassSurface } from '@/components/fable/GlassSurface'
 import { ChangeIndicator } from '@/components/fable/ChangeIndicator'
 import { SegmentedControl } from '@/components/fable/SegmentedControl'
 import { Reveal } from '@/components/fable/motion'
+import { PrivacyValue } from '@/components/fable/PrivacyValue'
+import { usePrivacyMode } from '@/components/fable/usePrivacyMode'
 
 const ALL_COMPANIES = getAllCompanies()
 const VALID_TICKERS = new Set(ALL_COMPANIES.map(c => c.ticker.toUpperCase()))
@@ -70,6 +72,36 @@ const CHIP_INPUT =
   'h-8 w-full px-3 rounded-full text-xs text-foreground placeholder:text-muted outline-none focus:border-accent nv-transition'
 const CHIP_STYLE = { backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' } as const
 const PILL_BUTTON = 'h-8 w-full px-4 rounded-full bg-primary text-primary-fg text-xs font-medium disabled:opacity-50 nv-transition'
+
+// ── R9.6 · what Privacy Mode masks on this page, and why ─────────────────────
+//
+// Privacy Mode hides HOW MUCH, not how it is distributed or how it is doing. It
+// is a screen-share / shoulder-surfing feature, so the line is drawn at values
+// that disclose the size of the book:
+//
+//   MASKED — every absolute amount derived from the user's holdings: total
+//     market value, total cost basis, unrealized and realized P&L amounts, cash
+//     balance and every cash-summary total, per-position quantity, average cost,
+//     market value and P&L amount, and every transaction quantity, price, fee,
+//     tax, net amount and realized P&L. Quantity and the per-unit costs are
+//     masked alongside the totals precisely so an observer cannot multiply two
+//     visible numbers back into a masked one.
+//
+//   NOT MASKED — public market data (latest price, ticker, company, sector) and
+//     user-derived PERCENTAGES: P&L %, position weight, sector exposure and
+//     concentration. Percentages disclose performance and proportion, never an
+//     amount, and keeping them is what lets the page stay analytically useful
+//     while it is on a shared screen. The exposure and concentration meters are
+//     an additional, decisive reason: the bar width itself encodes the weight,
+//     so masking only the printed number would be theatre — and hiding the bars
+//     would be the Portfolio redesign this phase is explicitly not.
+//
+//   NOT MASKED — the holdings count, the transaction date/type and the ledger
+//     description: none of them is an amount.
+//
+//   NOT MASKED — the inline editor and the add-position/transaction/cash forms.
+//     Those are the user's own explicit input on their own record, and a masked
+//     field cannot be edited.
 
 /** Presentational tint only — mirrors ChangeIndicator's own direction→token map for a pill backdrop. */
 function toneToken(v: number | null | undefined): string {
@@ -350,20 +382,26 @@ function PortfolioHero({
   cashBalance: number
 }) {
   const { t } = useLang()
+  const [masked] = usePrivacyMode()
   const pnl = totals.totalUnrealizedPnL
   const pnlPct = totals.totalUnrealizedPnLPct
 
   return (
     <GlassSurface variant="card" className="px-5 py-5" style={FABLE_HERO}>
       <div className="ui-label text-muted-fg">{t.portfolio.totalMarketValue}</div>
-      <div className="ui-kpi-hero ui-number text-foreground mt-2">{formatCLP(totals.totalMarketValue)}</div>
+      <div className="ui-kpi-hero ui-number text-foreground mt-2">
+        <PrivacyValue masked={masked}>{formatCLP(totals.totalMarketValue)}</PrivacyValue>
+      </div>
 
       <div className="mt-3 flex items-center gap-2 flex-wrap">
         <span
           className="inline-flex items-center rounded-full px-3 py-1"
           style={{ backgroundColor: `color-mix(in oklab, ${toneToken(pnl)} 14%, transparent)` }}
         >
-          <ChangeIndicator value={pnl} label={pnl !== null ? formatCLP(pnl) : undefined} />
+          {/* The direction tint stays — up or down is not an amount. */}
+          <PrivacyValue masked={masked}>
+            <ChangeIndicator value={pnl} label={pnl !== null ? formatCLP(pnl) : undefined} />
+          </PrivacyValue>
         </span>
         <span className="ui-meta text-muted-fg">
           {t.portfolio.unrealizedPnL} · {t.portfolio.vsCostBasis}
@@ -375,20 +413,29 @@ function PortfolioHero({
         style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))' }}
       >
         <div>
+          {/* A return PERCENTAGE — performance, not size. Deliberately visible. */}
           <div className="ui-micro-label text-muted-fg">{t.portfolio.unrealizedPnLPct}</div>
           <div className="mt-1"><ChangeIndicator value={pnlPct} label={pnlPct !== null ? formatPct(pnlPct) : undefined} /></div>
         </div>
         <div>
           <div className="ui-micro-label text-muted-fg">{t.portfolio.totalCostBasis}</div>
-          <div className="ui-card-value ui-number text-foreground mt-1">{formatCLP(totals.totalCostBasis)}</div>
+          <div className="ui-card-value ui-number text-foreground mt-1">
+            <PrivacyValue masked={masked}>{formatCLP(totals.totalCostBasis)}</PrivacyValue>
+          </div>
         </div>
         <div>
           <div className="ui-micro-label text-muted-fg">{t.portfolio.realizedPnL}</div>
-          <div className="mt-1"><ChangeIndicator value={realizedPnl} label={formatCLP(realizedPnl)} /></div>
+          <div className="mt-1">
+            <PrivacyValue masked={masked}>
+              <ChangeIndicator value={realizedPnl} label={formatCLP(realizedPnl)} />
+            </PrivacyValue>
+          </div>
         </div>
         <div>
           <div className="ui-micro-label text-muted-fg">{t.portfolio.cashBalance}</div>
-          <div className="ui-card-value ui-number text-foreground mt-1">{formatCLP(cashBalance)}</div>
+          <div className="ui-card-value ui-number text-foreground mt-1">
+            <PrivacyValue masked={masked}>{formatCLP(cashBalance)}</PrivacyValue>
+          </div>
         </div>
         <div>
           <div className="ui-micro-label text-muted-fg">{t.portfolio.positionCount}</div>
@@ -458,6 +505,7 @@ function PositionRow({
   onChanged: () => void
 }) {
   const { t } = useLang()
+  const [masked] = usePrivacyMode()
   const [editing, setEditing] = useState(false)
   const [quantity, setQuantity] = useState(String(position.quantity))
   const [avgCost, setAvgCost] = useState(position.averageCost !== null ? String(position.averageCost) : '')
@@ -566,13 +614,21 @@ function PositionRow({
       </td>
       <td className="py-2.5 px-3 text-foreground">{position.companyName}</td>
       <td className="py-2.5 px-3 text-muted-fg">{position.sector ?? '—'}</td>
-      <td className="py-2.5 px-3 text-right ui-number text-foreground">{position.quantity}</td>
-      <td className="py-2.5 px-3 text-right ui-number text-foreground">{position.averageCost !== null ? formatCLP(position.averageCost) : '—'}</td>
-      <td className="py-2.5 px-3 text-right ui-number text-foreground">{position.latestPrice !== null ? formatCLP(position.latestPrice) : '—'}</td>
-      <td className="py-2.5 px-3 text-right ui-number text-foreground">{position.marketValue !== null ? formatCLP(position.marketValue) : '—'}</td>
-      <td className={`py-2.5 px-3 text-right ui-number ${position.unrealizedPnL !== null ? changeColor(position.unrealizedPnL) : 'text-muted-fg'}`}>
-        {position.unrealizedPnL !== null ? formatCLP(position.unrealizedPnL) : '—'}
+      <td className="py-2.5 px-3 text-right ui-number text-foreground">
+        <PrivacyValue masked={masked}>{position.quantity}</PrivacyValue>
       </td>
+      <td className="py-2.5 px-3 text-right ui-number text-foreground">
+        <PrivacyValue masked={masked}>{position.averageCost !== null ? formatCLP(position.averageCost) : '—'}</PrivacyValue>
+      </td>
+      {/* Public last price — never masked. */}
+      <td className="py-2.5 px-3 text-right ui-number text-foreground">{position.latestPrice !== null ? formatCLP(position.latestPrice) : '—'}</td>
+      <td className="py-2.5 px-3 text-right ui-number text-foreground">
+        <PrivacyValue masked={masked}>{position.marketValue !== null ? formatCLP(position.marketValue) : '—'}</PrivacyValue>
+      </td>
+      <td className={`py-2.5 px-3 text-right ui-number ${position.unrealizedPnL !== null ? changeColor(position.unrealizedPnL) : 'text-muted-fg'}`}>
+        <PrivacyValue masked={masked}>{position.unrealizedPnL !== null ? formatCLP(position.unrealizedPnL) : '—'}</PrivacyValue>
+      </td>
+      {/* P&L PERCENTAGE and weight — performance and proportion, not size. */}
       <td className={`py-2.5 px-3 text-right ui-number ${position.unrealizedPnLPct !== null ? changeColor(position.unrealizedPnLPct) : 'text-muted-fg'}`}>
         {position.unrealizedPnLPct !== null ? formatPct(position.unrealizedPnLPct) : '—'}
       </td>
@@ -832,6 +888,7 @@ function TransactionsTable({
   controls: ReactNode
 }) {
   const { t } = useLang()
+  const [masked] = usePrivacyMode()
   const [busyId, setBusyId] = useState<string | null>(null)
 
   async function handleRemove(id: string) {
@@ -878,13 +935,25 @@ function TransactionsTable({
               <td className={`py-2.5 px-3 ${tx.transactionType === 'buy' ? 'text-positive' : 'text-negative'}`}>
                 {tx.transactionType === 'buy' ? t.portfolio.tx.buy : t.portfolio.tx.sell}
               </td>
-              <td className="py-2.5 px-3 text-right ui-number text-foreground">{tx.quantity}</td>
-              <td className="py-2.5 px-3 text-right ui-number text-foreground">{formatCLP(tx.price)}</td>
-              <td className="py-2.5 px-3 text-right ui-number text-muted-fg">{formatCLP(tx.fees)}</td>
-              <td className="py-2.5 px-3 text-right ui-number text-muted-fg">{formatCLP(tx.taxes)}</td>
-              <td className="py-2.5 px-3 text-right ui-number text-foreground">{tx.netAmount !== null ? formatCLP(tx.netAmount) : '—'}</td>
+              {/* Quantity and the executed price are masked with the amounts —
+                  otherwise the two of them multiply straight back into `net`. */}
+              <td className="py-2.5 px-3 text-right ui-number text-foreground">
+                <PrivacyValue masked={masked}>{tx.quantity}</PrivacyValue>
+              </td>
+              <td className="py-2.5 px-3 text-right ui-number text-foreground">
+                <PrivacyValue masked={masked}>{formatCLP(tx.price)}</PrivacyValue>
+              </td>
+              <td className="py-2.5 px-3 text-right ui-number text-muted-fg">
+                <PrivacyValue masked={masked}>{formatCLP(tx.fees)}</PrivacyValue>
+              </td>
+              <td className="py-2.5 px-3 text-right ui-number text-muted-fg">
+                <PrivacyValue masked={masked}>{formatCLP(tx.taxes)}</PrivacyValue>
+              </td>
+              <td className="py-2.5 px-3 text-right ui-number text-foreground">
+                <PrivacyValue masked={masked}>{tx.netAmount !== null ? formatCLP(tx.netAmount) : '—'}</PrivacyValue>
+              </td>
               <td className={`py-2.5 px-3 text-right ui-number ${tx.realizedPnl !== null ? changeColor(tx.realizedPnl) : 'text-muted-fg'}`}>
-                {tx.realizedPnl !== null ? formatCLP(tx.realizedPnl) : '—'}
+                <PrivacyValue masked={masked}>{tx.realizedPnl !== null ? formatCLP(tx.realizedPnl) : '—'}</PrivacyValue>
               </td>
               <td className="py-2.5 px-3 pr-4 text-right whitespace-nowrap">
                 <button
@@ -1010,6 +1079,7 @@ function AddCashForm({
 
 function CashSummaryCards({ summary }: { summary: CashSummary }) {
   const { t } = useLang()
+  const [masked] = usePrivacyMode()
   // Secondary metrics, kept adjacent to the table they describe (Fable's
   // secondary-information placement). Each figure carries a FIXED cash-flow
   // direction colour in the original design (deposits/sells green,
@@ -1027,7 +1097,9 @@ function CashSummaryCards({ summary }: { summary: CashSummary }) {
       {cards.map((c) => (
         <GlassSurface key={c.label} variant="kpi" className="p-3 flex flex-col gap-1">
           <span className="ui-micro-label text-muted-fg">{c.label}</span>
-          <span className={`ui-card-value ui-number ${c.color}`}>{c.value}</span>
+          <span className={`ui-card-value ui-number ${c.color}`}>
+            <PrivacyValue masked={masked}>{c.value}</PrivacyValue>
+          </span>
         </GlassSurface>
       ))}
     </div>
@@ -1048,6 +1120,7 @@ function cashEntryLabel(t: ReturnType<typeof useLang>['t'], entryType: CashEntry
 
 function CashLedgerTable({ entries, controls }: { entries: CashEntryOut[]; controls: ReactNode }) {
   const { t } = useLang()
+  const [masked] = usePrivacyMode()
 
   return (
     <TableCard
@@ -1072,7 +1145,9 @@ function CashLedgerTable({ entries, controls }: { entries: CashEntryOut[]; contr
             <tr key={e.id} className="border-b border-border last:border-0 nv-row-hover nv-transition">
               <td className="py-2.5 pl-4 pr-3 ui-number text-foreground">{e.ledgerDate}</td>
               <td className="py-2.5 px-3 text-muted-fg">{cashEntryLabel(t, e.entryType)}</td>
-              <td className={`py-2.5 px-3 text-right ui-number ${changeColor(e.amount)}`}>{formatCLP(e.amount)}</td>
+              <td className={`py-2.5 px-3 text-right ui-number ${changeColor(e.amount)}`}>
+                <PrivacyValue masked={masked}>{formatCLP(e.amount)}</PrivacyValue>
+              </td>
               <td className="py-2.5 pr-4 px-3 text-muted-fg">{e.description ?? '—'}</td>
             </tr>
           ))}
