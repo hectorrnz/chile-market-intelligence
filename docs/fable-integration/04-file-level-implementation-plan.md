@@ -2953,6 +2953,70 @@ the existing cards remain intact; signed-out access redirects to login.
 
 ---
 
+### Phase R9.5 — Settings final responsive, accessibility and regression audit ✅ (2026-08-04)
+
+An audit phase, not a redesign. R9.0–R9.4 were re-read as **one product surface** across composition,
+responsive structure, accessibility, theme/language architecture, routes and anchors, mutation
+integrity, security boundaries and documentation. **Two source defects** were demonstrated and
+repaired; a third defect was documentary. Everything else audited clean and was deliberately left
+alone — an audit's restraint matters as much as its findings.
+
+**Defect 1 · focus lost after a confirmed removal.** `ModalShell` captures the invoking control and
+refocuses it on close. That is correct for cancel, Escape and a failed delete. On SUCCESS the invoker
+is the deleted row's Remove chip, which unmounts with its row — `.focus()` on a detached node is a
+no-op, so focus fell to `<body>` and a keyboard user was dropped at the top of the document. The
+section is now `tabIndex={-1}` with a ref, focused from an effect keyed on a counter bumped **only**
+on the confirmed-success path. `ModalShell` is a child, so its restoration effect runs first in the
+same commit and this lands last. Repaired entirely in the caller.
+
+**Defect 2 · the destructive target could be clipped at 320px.** An email address is a single
+unbreakable token, and the dialog clips (`overflow-hidden`) rather than scrolls — so a long address
+could be cut off in the one place that has to state exactly what is about to be deleted, while the
+same value already wrapped correctly in the table cell. `description` already accepted a `ReactNode`,
+so the fix is a wrapping node (`break-all` on the address, `break-words` on the label): same two
+fields, same order, no primitive change.
+
+**Defect 3 · stale route inventory.** `06-acceptance-checklist.md` §C3 still described
+`/settings/notifications` as an unimplemented page owning the recipient form, table and toggle, and
+carried no `/settings` entry at all.
+
+| File | Change |
+|---|---|
+| `src/app/settings/NotificationRecipientsCard.tsx` | Both source repairs: `sectionRef`/`tabIndex={-1}`, a success-only `removedSeq` counter and its focus effect, and the wrapping dialog description. No endpoint, payload, state machine or feedback contract changed. |
+| `tests/fableSettingsPage.test.ts` | +14 R9.5 cases (99 → **113**): one-product composition, single-`h1` heading structure, the anchor-cannot-be-covered guard, both repairs' scope, and regression control. Three pre-existing R9.4 assertions updated — see below. |
+| `tests/responsiveLayout.test.ts` | +1: the confirmation dialog wraps the recipient it names, and the shell keeps its viewport gutter and width cap. Every existing entry and threshold preserved. |
+| `docs/fable-integration/03` · `06` | Route inventory corrected; R9.5 audit record added. |
+
+**Three deliberately-updated assertions** (the underlying contract legitimately changed; none
+weakened): the section tag now carries `ref`/`tabIndex` before `id`, so the tag matcher is
+attribute-order-tolerant while still banning any width/flex class on it; the dialog-description
+matcher follows the expression to its wrapping form and additionally bans internal fields; and the
+card's blanket "contains no `focus()`" ban becomes the precise property — **exactly one** focus move,
+on the section ref, only after a confirmed removal — with the dialog-contract bans (`role="dialog"`,
+`aria-modal`, focus trap) kept intact.
+
+**Audited clean, no repair made.** Fable composition and reveal cadence; responsive structure at
+every breakpoint; radiogroup/switch semantics and contextual accessible names; the separate
+`role="alert"` and `aria-live="polite"` regions; theme (`theme` → raw `dark|light`, pre-paint script
+byte-identical) and language (`lang` → raw `en|es`, one provider, one dictionary); both routes private
+under default-deny with a one-directional redirect; mutation integrity end to end; and the security
+boundary (no service-role client, admin repository, `process.env`, `user_profiles` access, ownership
+column or per-user filtering in client code). Two findings were explicitly **accepted rather than
+converted into defects**: the now-unconsumed `notifications.settings.tag` key (pinned by three
+existing preservation assertions, parity-correct, no user-visible effect) and the absent table
+`<caption>` (not a repo convention — 16 of 64 tables carry one — and the `TableCard` heading sits
+directly above).
+
+**Gates:** focused suites **872/872** (`fableSettingsPage` 113/113, `notificationsPlatform`,
+`responsiveLayout`, `themeLanguageSync`, `topNavigation`, `accessControl`, `fableComponents`,
+`fableFoundation`, `fableR0Primitives`, `userProfilesRls`, `authWatchlist`, `credentials`). Full
+suite 3999 → **4014 · 4011 pass · 3 fail** (only the known `newsModule` date-dependent trio); lint 0;
+build 0 errors; `git diff --check` clean. Privacy Mode remains **R9.6**.
+
+**Manual browser validation: PENDING** — see the R9.5 manual gate in `06-acceptance-checklist.md`.
+
+---
+
 ## Phase 7 — i18n additions & cleanup (`src/lib/i18n.ts`)
 
 Any new visible string (login utility chips "Secure connection", contrast label, privacy-mask

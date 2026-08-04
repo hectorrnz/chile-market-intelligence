@@ -239,6 +239,21 @@ describe('the Settings recipient form stacks instead of overflowing', () => {
     assert.match(src, /font-mono break-all/)
     assert.match(src, /text-muted-fg break-words/)
   })
+
+  // R9.5 audit repair: the same address also appears in the remove-confirmation
+  // dialog, which CLIPS (`overflow-hidden`) rather than scrolls. An email is one
+  // unbreakable token, so an unwrapped one could be cut off at 320px in the one
+  // place that has to state exactly what is about to be deleted.
+  test('the confirmation dialog wraps the recipient it names', () => {
+    const el = src.slice(src.indexOf('<DestructiveConfirm'))
+    const desc = el.slice(el.indexOf('description={'), el.indexOf('confirmLabel='))
+    assert.match(desc, /<span className="break-all">\{confirming\.email\}<\/span>/)
+    assert.match(desc, /<span className="break-words"> · \{confirming\.label\}<\/span>/)
+    // The shell still keeps a viewport gutter and caps its own width.
+    const modal = read('src/components/fable/ModalShell.tsx')
+    assert.match(modal, /fixed inset-0 z-\[90\] flex items-start justify-center pt-\[8vh\] px-4/)
+    assert.match(modal, /sm: 'max-w-sm'/)
+  })
 })
 
 describe('shared components wrap instead of overflowing', () => {

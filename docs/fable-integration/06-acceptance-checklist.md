@@ -492,8 +492,18 @@ loading state · empty state · error state · auth status — verified identica
   destructive action). Same DELETE endpoint and success-only redirect; failure keeps the dialog
   open with the error inside. That was the ONLY app-controlled native dialog in src — a
   recursive scan test now bans them repo-wide. Manual dialog pass still pending.)*
-- [ ] `/settings/notifications` 🔒 — add-recipient form + recipients table + active toggle; back
-  link; protected.
+- [~] `/settings` 🔒 — canonical Settings surface: page header + Account · Data Sources (row 1),
+  Security · Display (row 2), Notification Recipients full-width (row 3); protected.
+  *(R9.2 + R9.3 + R9.4, 2026-08-04. Account and Data Sources are read-only and honest about a
+  failed profile or health read; Display drives the ONE shared theme store and the existing
+  `LangProvider` (no second key, provider or format); Notification Recipients owns the full
+  add/toggle/confirmed-delete workflow against the four unchanged endpoints. Guarded by
+  `tests/fableSettingsPage.test.ts` (113 tests). Ticks to `[x]` after the R9.5 manual pass.)*
+- [x] `/settings/notifications` 🔒 — **preserved redirect only.** Since R9.4 this route's entire
+  body is `redirect('/settings#notifications')`; the add-recipient form, recipients table, active
+  toggle and back link all moved to `/settings`'s third row. Kept so existing bookmarks and any
+  pre-R9.4 link still resolve; one-directional by construction (`/settings` redirects nowhere);
+  still `private_page` under default-deny and still resolving to the Settings nav group.
 - [~] `/login` — cinematic shell + glass auth panel; username/password + create toggle + forgot
   link; real `/api/auth/login|register`; error mapping; `next` redirect; public (full-bleed).
   *(R1 2026-07-29: implemented + automated validation complete (`tests/fableAuthShell.test.ts`);
@@ -879,6 +889,59 @@ loading state · empty state · error state · auth status — verified identica
   themes and does not overlap Remove; the form stacks at 390px; table scroll stays inside the card;
   long email and Spanish text do not overflow; no Privacy Mode; existing cards intact; signed-out
   access redirects to login.
+
+#### R9.5 · Final Settings consolidation audit
+Read R9.0–R9.4 as ONE product surface rather than five slices. **Two source defects and one
+documentation defect** were demonstrated and repaired; everything else audited clean.
+
+- [x] **Defect 1 — focus was lost after a confirmed removal.** `ModalShell` restores focus to the
+  control that opened the dialog. On a successful delete that control is the deleted row's Remove
+  chip, which unmounts with its row, so `.focus()` landed on a detached node and focus fell to
+  `<body>`. The section is now programmatically focusable (`tabIndex={-1}`) and receives focus
+  **only** on the confirmed-success path — never on cancel, Escape, or a failed delete, where the
+  shell's own restoration is still correct. Repaired in the caller; **no primitive changed**.
+- [x] **Defect 2 — the destructive target could be clipped at 320px.** An email address is one
+  unbreakable token and the dialog clips (`overflow-hidden`) rather than scrolls, so a long address
+  could be cut off in the one place that must state exactly what is about to be deleted — while the
+  same value already wrapped correctly in the table cell. The description now wraps (`break-all` on
+  the address, `break-words` on the label). Same two fields, same order; `ModalShell` already
+  accepted a `ReactNode`, so again **no primitive changed**.
+- [x] **Defect 3 — stale route inventory.** §C3 still listed `/settings/notifications` as an
+  unimplemented page owning the recipient form, table and toggle, and had no `/settings` entry at
+  all. Both corrected above.
+- [x] **Audited clean, no repair required.** Fable composition (three rows, Fable flex proportions,
+  14px gaps, 22px glass, uppercase labels, 70/130/190ms reveal cadence, dense near-opaque table);
+  responsive structure (no fixed-width field, card-local table scroll at a 560px floor, form stacks,
+  row cards wrap at their `min-width:min(100%,…)` clamps, no page-level overflow workaround);
+  exactly one `h1` with only `h2` below it; radiogroup semantics for both selectors and `role="switch"`
+  for the toggle, each with a contextual accessible name; separate `role="alert"` / `aria-live="polite"`
+  regions; `scope="col"` headers; reduced motion handled globally; theme raw-`dark|light`-under-`theme`
+  and language raw-`en|es`-under-`lang` contracts intact with the pre-paint script untouched; both
+  routes private under default-deny with a one-directional redirect and no loop; mutation integrity
+  (failed GET ≠ empty, fields preserved until confirmed, row-scoped rollback, no optimistic delete,
+  no swallowed catch); no service-role client, admin repository, `process.env`, `user_profiles` access,
+  ownership column or per-user filtering in client code.
+- [x] **Accepted as-is, not defects.** `notifications.settings.tag` is now unconsumed but is
+  preserved deliberately — three existing preservation assertions pin it, it holds EN/ES parity, and
+  it has no user-visible effect; removing it would mean weakening tests for no benefit. The table has
+  no `<caption>`, which is not a repo convention (16 of 64 tables carry one) and the `TableCard`
+  heading sits directly above it. The hydration-time selector correction is the documented
+  `useSyncExternalStore` shape the whole app uses, and the pre-paint script means the *page* never
+  flashes the wrong theme.
+- [x] **No scope creep.** No new feature, route, API, primitive, migration, dependency, schema, RLS
+  or auth change. Privacy Mode remains **R9.6** — still absent, not imported, not stubbed.
+- [x] **Automated results.** `tests/fableSettingsPage.test.ts` 99 → **113** (+14 R9.5 cases);
+  `responsiveLayout` +1 (dialog target wrapping). **Three** pre-existing R9.4 assertions were updated
+  because the repairs legitimately changed the contract they encoded — the section tag's attribute
+  set, the dialog-description expression, and the card's blanket "no focus management" ban (now the
+  precise "exactly one focus move, on the section ref, only after a confirmed removal"). None was
+  weakened; each still asserts the same or a stronger property.
+- [ ] **Manual browser validation — PENDING.** See the R9.5 manual gate: 320/390/1024/1728, EN/ES,
+  light/dark, normal/reduced motion; theme and language synchronization in both directions plus
+  reload and cross-tab; `/settings`, `/settings#notifications`, the legacy redirect, the bell anchor,
+  Back/Forward and the signed-out redirect; the full recipient matrix including a failed GET, a
+  failed toggle rollback, concurrent row usability, and cancel/Escape/failed/successful delete —
+  with focus after a successful delete explicitly checked.
 
 ### C4 · Engineering gates (run at each phase boundary)
 - [x] `npm run build` → 0 errors, all routes present. *(Phase 1 boundary: compiled in 6.4s, 19/19

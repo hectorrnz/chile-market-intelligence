@@ -30,8 +30,23 @@
 //     behind `.catch(() => {})`, so a failed delete looked like a success. Now
 //     the row is removed only after a confirmed response, behind a real
 //     confirmation dialog rather than no confirmation at all.
+//
+// ── R9.5 AUDIT REPAIRS ─────────────────────────────────────────────────────
+// Two defects the R9.5 consolidation audit demonstrated, both repaired here
+// without touching a shared primitive:
+//
+//   · Focus after a confirmed removal — `ModalShell` restores focus to the
+//     control that opened the dialog, but on SUCCESS that control is the
+//     deleted row's Remove chip, which unmounts with its row. Focusing a
+//     detached node is a no-op, so focus fell to `<body>` and a keyboard user
+//     was dropped at the top of the document. Focus now lands on this section.
+//   · Naming the destructive target at narrow widths — an email address is one
+//     unbreakable token, and the dialog clips (`overflow-hidden`) rather than
+//     scrolls, so a long address could be cut off at 320–390px in the one place
+//     that has to say exactly what is about to be deleted. It now wraps, the
+//     same way the table cell already did.
 
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useLang } from '@/components/providers/LangProvider'
 import { TableCard } from '@/components/fable/TableCard'
 import { ChipButton } from '@/components/fable/Chip'
@@ -92,7 +107,14 @@ export function NotificationRecipientsCard() {
   const [pendingIds, setPendingIds] = useState<string[]>([])
   const [confirming, setConfirming] = useState<Recipient | null>(null)
   const [feedback, setFeedback] = useState<Feedback>(null)
+  /**
+   * R9.5 — bumped ONLY by a server-confirmed removal, so the focus repair below
+   * can never fire for a cancelled or failed delete (where the Remove control
+   * still exists and `ModalShell`'s own restoration is correct).
+   */
+  const [removedSeq, setRemovedSeq] = useState(0)
 
+  const sectionRef = useRef<HTMLElement>(null)
   const emailId = useId()
   const labelId = useId()
   const errorId = useId()
@@ -116,6 +138,22 @@ export function NotificationRecipientsCard() {
     })()
     return () => controller.abort()
   }, [])
+
+  /**
+   * R9.5 — park focus on this section after a confirmed removal.
+   *
+   * `ModalShell` captures the invoking control and refocuses it on close, which
+   * is right for cancel, Escape and a failed delete. On SUCCESS the invoker was
+   * that row's Remove chip, which has just unmounted — `.focus()` on a detached
+   * node does nothing and focus falls to `<body>`. `ModalShell` is a CHILD, so
+   * its restoration effect runs before this one in the same commit and this
+   * lands last. `tabIndex={-1}` makes the section programmatically focusable
+   * without adding it to the tab order.
+   */
+  useEffect(() => {
+    if (removedSeq === 0) return
+    sectionRef.current?.focus()
+  }, [removedSeq])
 
   /** Re-reads the confirmed list after a successful POST — the route returns `{ ok: true }`, not the row. */
   async function fetchConfirmed(): Promise<Recipient[] | null> {
@@ -203,6 +241,8 @@ export function NotificationRecipientsCard() {
       // Removed only now — never optimistically.
       setRecipients((prev) => prev.filter((x) => x.id !== target.id))
       setFeedback({ tone: 'success', message: n.removeSuccess, scope: 'row' })
+      // Only on the confirmed-success path: the invoking control is now gone.
+      setRemovedSeq((seq) => seq + 1)
     } catch {
       setFeedback({ tone: 'error', message: n.removeError, scope: 'row' })
     } finally {
@@ -224,7 +264,7 @@ export function NotificationRecipientsCard() {
           : undefined
 
   return (
-    <section id="notifications" className="mt-[14px] scroll-mt-6">
+    <section ref={sectionRef} tabIndex={-1} id="notifications" className="mt-[14px] scroll-mt-6">
       <TableCard
         title={n.title}
         controls={
@@ -335,10 +375,17 @@ export function NotificationRecipientsCard() {
       <DestructiveConfirm
         open={confirming !== null}
         title={n.confirmRemoveTitle}
+        // R9.5 — the same value, wrapped the same way the table cell wraps it.
+        // An email is one unbreakable token and the dialog clips rather than
+        // scrolls, so at 320px an unwrapped address could be cut off in the one
+        // place that must state exactly what is about to be deleted.
         description={
-          confirming
-            ? [confirming.email, confirming.label].filter(Boolean).join(' · ')
-            : undefined
+          confirming ? (
+            <>
+              <span className="break-all">{confirming.email}</span>
+              {confirming.label ? <span className="break-words"> · {confirming.label}</span> : null}
+            </>
+          ) : undefined
         }
         confirmLabel={confirming && pendingIds.includes(confirming.id) ? n.removing : n.remove}
         cancelLabel={n.cancel}

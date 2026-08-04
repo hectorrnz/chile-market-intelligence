@@ -33,6 +33,14 @@ const LANG_TOGGLE = read('src/components/ui/LangToggle.tsx')
 const SEGMENTED = read('src/components/fable/SegmentedControl.tsx')
 const LAYOUT = read('src/app/layout.tsx')
 
+// R9.5 — the consolidation audit reads the surface as one product: the page
+// header that owns the h1, and the shell that decides whether anything can
+// cover the `#notifications` anchor.
+const PAGE_HEADER = read('src/components/fable/PageHeader.tsx')
+const APP_SHELL = read('src/components/layout/AppShell.tsx')
+const TOP_BAR = read('src/components/layout/TopBar.tsx')
+const SECONDARY_NAV = read('src/components/layout/SecondaryNav.tsx')
+
 // R9.4 — the integrated recipients workflow and the shared components it reuses.
 const CARD = read('src/app/settings/NotificationRecipientsCard.tsx')
 const TABLE_CARD = read('src/components/fable/TableCard.tsx')
@@ -802,11 +810,13 @@ describe('R9.3 · accessibility, localization and responsive behavior', () => {
 describe('R9.4 · composition', () => {
   test('1-3. the section exists, carries id="notifications", and is the full-width third row', () => {
     assert.ok(existsSync(join(ROOT, 'src/app/settings/NotificationRecipientsCard.tsx')))
-    assert.match(CARD_CODE, /<section id="notifications"/)
+    // R9.5 added `ref`/`tabIndex={-1}` to this tag (see the focus repair); the
+    // anchor id, the spacing and the full-width property are unchanged.
+    assert.match(CARD_CODE, /<section [^>]*id="notifications"/)
     // Full width: the SECTION itself carries no flex basis/grow (the add-form
     // fields legitimately do), and it is not inside either two-card row.
-    assert.match(CARD_CODE, /<section id="notifications" className="mt-\[14px\] scroll-mt-6">/)
-    const sectionTag = CARD_CODE.match(/<section id="notifications"[^>]*>/)![0]
+    assert.match(CARD_CODE, /<section [^>]*id="notifications" className="mt-\[14px\] scroll-mt-6">/)
+    const sectionTag = CARD_CODE.match(/<section [^>]*id="notifications"[^>]*>/)![0]
     assert.doesNotMatch(sectionTag, /basis-|grow|shrink|w-\[|max-w-/)
     // Rendered after both rows, in its own staggered reveal.
     const idx = CLIENT_CODE.indexOf('<NotificationRecipientsCard />')
@@ -1040,7 +1050,14 @@ describe('R9.4 · confirmed delete', () => {
     assert.match(RECIPIENT_ID_ROUTE, /export async function DELETE\(_request: NextRequest, ctx: \{ params: Promise<\{ id: string \}> \}\)/)
     assert.match(CARD_CODE, /<DestructiveConfirm\s*\n\s*open=\{confirming !== null\}/)
     // The dialog description is built from THIS recipient's real fields only.
-    assert.match(CARD_CODE, /\[confirming\.email, confirming\.label\]\.filter\(Boolean\)\.join\(' · '\)/)
+    // R9.5 made the same two fields wrap (they were an unbreakable string that
+    // the clipping dialog could cut off at 320px) — same fields, same order.
+    const el = CARD_CODE.slice(CARD_CODE.indexOf('<DestructiveConfirm'))
+    const desc = el.slice(el.indexOf('description={'), el.indexOf('confirmLabel='))
+    assert.match(desc, /\{confirming\.email\}/)
+    assert.match(desc, /confirming\.label \? [\s\S]{0,90}\{confirming\.label\}/)
+    // Only the two human-readable fields — never an internal one.
+    assert.doesNotMatch(desc, /confirming\.(id|createdAt|active)/, 'names the recipient, nothing internal')
     assert.match(CARD_CODE, /title=\{n\.confirmRemoveTitle\}/)
     assert.match(CARD_CODE, /cancelLabel=\{n\.cancel\}/)
   })
@@ -1077,8 +1094,14 @@ describe('R9.4 · confirmed delete', () => {
     assert.match(CARD_CODE, /pending=\{confirming \? pendingIds\.includes\(confirming\.id\) : false\}/)
   })
 
-  test('66. focus, trap, scroll-lock and restoration stay the shared shell\'s contract', () => {
-    assert.doesNotMatch(CARD_CODE, /focus\(\)|role="dialog"|aria-modal|FOCUSABLE/)
+  test('66. the trap, scroll-lock and restoration stay the shared shell\'s contract', () => {
+    // The card never reimplements any part of the dialog contract.
+    assert.doesNotMatch(CARD_CODE, /role="dialog"|aria-modal|FOCUSABLE|addEventListener\('keydown'/)
+    // R9.5: it does make exactly ONE focus move, and only because the shell's
+    // restoration target — the deleted row's Remove chip — no longer exists by
+    // then. Scope is asserted precisely in "R9.5 · focus is never lost…".
+    assert.equal((CARD_CODE.match(/\.focus\(\)/g) ?? []).length, 1)
+    assert.match(CARD_CODE, /sectionRef\.current\?\.focus\(\)/)
     assert.match(MODAL, /triggerRef\.current = document\.activeElement/)
     assert.match(MODAL, /if \(wasOpenRef\.current && !open\) \(triggerRef\.current as HTMLElement \| null\)\?\.focus\?\.\(\)/)
     assert.match(MODAL, /document\.body\.style\.overflow = 'hidden'/)
@@ -1286,5 +1309,185 @@ describe('R9.4 · scope and localization', () => {
       }
     }
     assert.match(CARD_CODE, /const n = t\.notifications\.settings/)
+  })
+})
+
+// ── R9.5 · final consolidation audit ────────────────────────────────────────
+// R9.0–R9.4 each guarded its own slice. These assert the properties that only
+// exist once the five phases are read as ONE surface, plus the two defects the
+// audit demonstrated and repaired.
+
+describe('R9.5 · the surface is one integrated product', () => {
+  test('1-8. exactly one canonical Settings page — no sidebar, tabs, subpage or fabricated control', () => {
+    // The settings tree is exactly the canonical page, its client composition,
+    // the recipients card, and the preserved redirect. Nothing else.
+    const files = readdirSync(join(ROOT, 'src/app/settings'), { withFileTypes: true })
+    assert.deepEqual(
+      files.map((f) => f.name).sort(),
+      ['NotificationRecipientsCard.tsx', 'SettingsClient.tsx', 'notifications', 'page.tsx'].sort(),
+    )
+    assert.deepEqual(readdirSync(join(ROOT, 'src/app/settings/notifications')), ['page.tsx'])
+
+    const surface = `${PAGE_CODE}\n${CLIENT_CODE}\n${CARD_CODE}`
+    // No secondary navigation model was invented inside the page.
+    assert.doesNotMatch(surface, /role="tab"|role="tablist"|aria-selected|<Sidebar|SettingsNav|settingsTabs/)
+    // Immediate-save only: no form-level commit or revert affordance anywhere.
+    // (`cancelLabel` is the destructive dialog's safe exit, not a page control.)
+    assert.doesNotMatch(surface, /n\.save|s\.save|onSave|handleSave|isDirty|unsavedChanges|pendingChanges|>Save<|>Apply<|>Reset<|>Discard</i)
+    // No disabled or "coming soon" placeholder control.
+    assert.doesNotMatch(surface, /comingSoon|coming soon|próximamente|placeholder control|disabled aria-label/i)
+  })
+
+  test('9. the three approved rows are present, in order, each with its own Reveal', () => {
+    const rows = ['s.account.title', 's.sources.title', 's.security.title', 's.display.title']
+    let cursor = -1
+    for (const key of rows) {
+      const at = CLIENT_CODE.indexOf(key)
+      assert.ok(at > cursor, `${key} must appear after the previous card`)
+      cursor = at
+    }
+    // Row 3 is the recipients card, last.
+    assert.ok(CLIENT_CODE.indexOf('<NotificationRecipientsCard') > cursor)
+    // Exactly three staggered reveals — one per row, cadence preserved.
+    assert.equal((CLIENT_CODE.match(/<Reveal /g) ?? []).length, 3)
+    for (const ms of [70, 130, 190]) assert.match(CLIENT_CODE, new RegExp(`delayMs=\\{${ms}\\}`))
+  })
+
+  test('45-46. exactly one h1 for the whole surface, and only h2 below it', () => {
+    const surface = `${PAGE_CODE}\n${CLIENT_CODE}\n${CARD_CODE}`
+    // The page composition declares no heading of its own — PageHeader owns the h1.
+    assert.doesNotMatch(surface, /<h1[\s>]/)
+    assert.match(code(PAGE_HEADER), /<h1[\s>]/)
+    assert.equal((CLIENT_CODE.match(/<PageHeader\b/g) ?? []).length, 1)
+    // Card titles are real subordinate headings, not styled spans.
+    assert.match(CLIENT_CODE, /<h2 className="ui-label text-muted-fg">\{children\}<\/h2>/)
+    assert.match(code(TABLE_CARD), /<h2 className="ui-label text-muted-fg">\{title\}<\/h2>/)
+    // No level is skipped by anything this surface renders.
+    assert.doesNotMatch(surface, /<h[3-6][\s>]/)
+  })
+
+  test('the `#notifications` anchor cannot be covered by fixed navigation', () => {
+    // The shell scrolls <main>; TopBar and SecondaryNav are flex siblings ABOVE
+    // it, not fixed/sticky overlays, so an in-page anchor can never land under
+    // the chrome. Locked here because a later `sticky` on either would break it.
+    assert.match(code(APP_SHELL), /<main className="flex-1 overflow-y-auto/)
+    for (const [name, src] of [['TopBar', TOP_BAR], ['SecondaryNav', SECONDARY_NAV]] as const) {
+      assert.doesNotMatch(code(src), /\b(fixed|sticky)\s/, `${name} must not overlay the scroll container`)
+    }
+    assert.match(CARD_CODE, /id="notifications"[^>]*className="[^"]*scroll-mt-/)
+  })
+})
+
+describe('R9.5 · focus is never lost after a confirmed removal', () => {
+  test('the section is programmatically focusable without joining the tab order', () => {
+    assert.match(CARD_CODE, /const sectionRef = useRef<HTMLElement>\(null\)/)
+    assert.match(CARD_CODE, /<section ref=\{sectionRef\} tabIndex=\{-1\} id="notifications"/)
+    // -1 only: the section must never become a tab stop of its own.
+    assert.doesNotMatch(CARD_CODE, /tabIndex=\{0\}|tabIndex="0"/)
+  })
+
+  test('focus moves ONLY after the server confirmed the delete', () => {
+    // One increment, on the success path: after the res.ok throw and before the catch.
+    assert.equal((CARD_CODE.match(/setRemovedSeq\(/g) ?? []).length, 1)
+    const confirm = CARD_CODE.slice(CARD_CODE.indexOf('async function confirmRemove'))
+    const okThrow = confirm.indexOf("throw new Error('delete_failed')")
+    const bump = confirm.indexOf('setRemovedSeq(')
+    const catchAt = confirm.indexOf('} catch {')
+    assert.ok(okThrow > -1 && bump > okThrow, 'focus must not move before the response is confirmed')
+    assert.ok(bump < catchAt, 'a failed delete must not move focus — its row still exists')
+    // The rollback/failure path never touches focus.
+    const failure = confirm.slice(catchAt, confirm.indexOf('} finally {'))
+    assert.doesNotMatch(failure, /setRemovedSeq|\.focus\(/)
+  })
+
+  test('the effect is guarded so a fresh mount never steals focus', () => {
+    assert.match(CARD_CODE, /if \(removedSeq === 0\) return\s*\n\s*sectionRef\.current\?\.focus\(\)/)
+    assert.match(CARD_CODE, /\}, \[removedSeq\]\)/)
+    // The card manages exactly this one focus move and nothing else.
+    assert.equal((CARD_CODE.match(/\.focus\(\)/g) ?? []).length, 1)
+    assert.doesNotMatch(CARD_CODE, /document\.activeElement|autoFocus/)
+  })
+
+  test('the shared dialog contract is unchanged — it still owns cancel, Escape and failure', () => {
+    const modal = code(MODAL)
+    assert.match(modal, /triggerRef\.current = document\.activeElement/)
+    assert.match(modal, /if \(wasOpenRef\.current && !open\) \(triggerRef\.current as HTMLElement \| null\)\?\.focus\?\.\(\)/)
+    assert.match(modal, /document\.body\.style\.overflow = 'hidden'/)
+    assert.match(modal, /useEscape\(open && canDismiss, onClose\)/)
+    assert.match(modal, /role=\{role\}[\s\S]{0,80}aria-modal="true"/)
+    // The repair lives in the caller — no primitive was modified to achieve it.
+    assert.doesNotMatch(modal, /removedSeq|sectionRef|notification|recipient/i)
+  })
+})
+
+describe('R9.5 · the destructive target survives a 320px viewport', () => {
+  test('the dialog still names the recipient, and the name can wrap', () => {
+    const desc = CARD_CODE.slice(CARD_CODE.indexOf('<DestructiveConfirm'))
+    // Both real fields still identify the target — no information was traded away.
+    assert.match(desc, /<span className="break-all">\{confirming\.email\}<\/span>/)
+    assert.match(desc, /confirming\.label \? <span className="break-words"> · \{confirming\.label\}<\/span> : null/)
+    // Still honest: only fields the API actually returns.
+    assert.doesNotMatch(desc, /lastSent|owner|role|createdBy/i)
+  })
+
+  test('the same value wraps the same way in the table cell', () => {
+    assert.match(CARD_CODE, /<td className="py-3 px-4 font-mono break-all text-foreground">\{r\.email\}<\/td>/)
+    assert.match(CARD_CODE, /<td className="py-3 px-3 text-muted-fg break-words">\{r\.label \?\? '—'\}<\/td>/)
+  })
+
+  test('the dialog clips rather than scrolls, which is why wrapping is required', () => {
+    // Documents the constraint the repair answers: if this ever becomes a
+    // scrolling surface the wrap is still correct, but the reason changes.
+    const modal = code(MODAL)
+    assert.match(modal, /'nv-pop relative w-full flex flex-col overflow-hidden max-h-\[85vh\]'/)
+    assert.match(modal, /max-w-sm/)
+    assert.match(modal, /px-4/, 'the dialog keeps a viewport gutter at narrow widths')
+  })
+})
+
+describe('R9.5 · regression control', () => {
+  test('no repair leaked into a primitive, an API, auth or the bell', () => {
+    for (const [name, src] of [
+      ['Switch', SWITCH], ['SegmentedControl', SEGMENTED], ['TableCard', TABLE_CARD],
+      ['ThemeToggle', THEME_TOGGLE], ['LangToggle', LANG_TOGGLE], ['LangProvider', LANG_PROVIDER],
+      ['useTheme', THEME_STORE], ['layout', LAYOUT],
+    ] as const) {
+      assert.doesNotMatch(code(src), /R9\.5|removedSeq|sectionRef/, `${name} must not be touched by the audit`)
+    }
+    // The bell still points at the integrated section and nothing else moved.
+    assert.match(BELL, /href="\/settings#notifications"/)
+    assert.equal((BELL.match(/href="\/settings/g) ?? []).length, 1)
+    assert.match(BELL, /const POLL_MS = 60_000/)
+    // The preserved redirect is still exactly one statement.
+    assert.match(code(NOTIF_PAGE), /redirect\('\/settings#notifications'\)/)
+    assert.doesNotMatch(code(NOTIF_PAGE), /useState|fetch\(|<form|<table/)
+  })
+
+  test('the four recipient endpoints, payloads and the shared-trust model are unchanged', () => {
+    assert.equal((CARD_CODE.match(/const ENDPOINT = '\/api\/notification-recipients'/g) ?? []).length, 1)
+    assert.match(CARD_CODE, /method: 'POST'[\s\S]{0,160}JSON\.stringify\(\{ email: trimmedEmail, label: label\.trim\(\) \|\| undefined \}\)/)
+    assert.match(CARD_CODE, /`\$\{ENDPOINT\}\/\$\{r\.id\}`[\s\S]{0,80}method: 'PATCH'[\s\S]{0,120}JSON\.stringify\(\{ active: next \}\)/)
+    assert.match(CARD_CODE, /`\$\{ENDPOINT\}\/\$\{target\.id\}`, \{ method: 'DELETE' \}/)
+    // No ownership, per-user filtering or client-side authorization crept in.
+    assert.doesNotMatch(CARD_CODE, /user_id|userId|owner_id|process\.env|service_role|createAdminClient/)
+    // Both routes stay private under default-deny.
+    for (const p of ['/settings', '/settings/notifications', '/api/notification-recipients']) {
+      assert.ok(requiresApprovedSession(p), `${p} must remain private`)
+    }
+    assert.equal(classifyPath('/settings'), 'private_page')
+    assert.equal(classifyPath('/settings/notifications'), 'private_page')
+    assert.equal(classifyPath('/api/notification-recipients'), 'private_api')
+  })
+
+  test('Privacy Mode is still deferred to R9.6 across the whole surface', () => {
+    const surface = `${PAGE_CODE}\n${CLIENT_CODE}\n${CARD_CODE}`
+    assert.doesNotMatch(surface, /usePrivacyMode|PrivacyToggle|PrivacyValue|privacyMasked|maskBalances|hideNotional/i)
+    for (const d of [dict.en, dict.es]) {
+      assert.doesNotMatch(JSON.stringify(d.settings), /privacy|privacidad|mask|ocultar valores/i)
+    }
+    // Portfolio and Home remain untouched by this phase.
+    for (const f of ['src/app/portfolio/page.tsx', 'src/app/page.tsx']) {
+      assert.doesNotMatch(read(f), /R9\.5|NotificationRecipientsCard|usePrivacyMode/)
+    }
   })
 })

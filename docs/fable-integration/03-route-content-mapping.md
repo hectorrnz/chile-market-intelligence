@@ -811,10 +811,17 @@ no shared Fable component modified; no CSS added (the meter fill reuses the exis
   `Reveal`, `SegmentedControl` (R9.3) and `TableCard`/`ChipButton`/`Switch`/`DestructiveConfirm`
   (R9.4) all already existed. No shared primitive was introduced or modified in either phase; R9.4
   is the R9.1 `Switch`'s first and only consumer.
+- **R9.5 consolidation audit (2026-08-04):** the five phases were re-read as one surface. Two source
+  defects repaired, both in `NotificationRecipientsCard.tsx` and neither touching a primitive:
+  (1) focus fell to `<body>` after a confirmed removal, because `ModalShell` restores focus to the
+  Remove chip that had just unmounted with its row — the section is now `tabIndex={-1}` and takes
+  focus on the confirmed-success path only; (2) the confirmation dialog's target email, one
+  unbreakable token in a clipping dialog, could be cut off at 320px — it now wraps exactly as the
+  table cell already did. Everything else audited clean; see `06-acceptance-checklist.md` § R9.5.
 - **Pending:** Privacy Mode → **R9.6** (deliberately not stubbed — it still has no real consumer, and
   a disabled or "coming soon" row would be a placeholder control).
-- **Impl. status:** R9.2 + R9.3 + R9.4 implemented · **Verif. status:** automated complete, manual
-  pending.
+- **Impl. status:** R9.2 + R9.3 + R9.4 implemented, R9.5 audited · **Verif. status:** automated
+  complete, manual pending.
 
 ## 13b. `/settings/notifications` 🔒 — preserved redirect — **R9.4 as built**
 
