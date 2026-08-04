@@ -805,6 +805,81 @@ loading state · empty state · error state · auth status — verified identica
   labels do not collide or overflow; controls remain touch-usable; no Privacy Mode; no Save or
   Cancel; no page-level horizontal overflow.
 
+#### R9.4 · Notification Recipients integrated into Settings
+- [x] **Integrated as the full-width third Fable row**, completing the approved composition
+  (Account · Data Sources / Security · Display / Notification Recipients). Built on the Audit-History
+  slot's structural authority through `TableCard` — card glass, compact uppercase label, near-opaque
+  dense table material, dense rows, card-level horizontal overflow, bordered footer note, the same
+  14px rhythm and a third staggered `Reveal` at 190ms. No sidebar, no tabs, no legacy `SectionHeader`,
+  **no new or modified shared primitive**.
+- [x] **Existing `/settings/notifications` preserved through a one-directional redirect** to
+  `/settings#notifications`. `/settings` redirects nowhere, so no loop is possible; both paths remain
+  `private_page`, both still resolve to the Settings nav group, and `getPageTitle` is unchanged.
+- [x] **Notification bell repointed directly** at `/settings#notifications` — one navigation instead
+  of two. Its fetching, polling, unread badge, drawer, focus trap and icons are untouched.
+- [x] **Existing CRUD and RLS contracts preserved exactly** — the same four endpoints, methods,
+  payload shapes, email validation, 80-character label cap, trimming, recipient fields, shared-trust
+  policies and delivery consumer. No API, repository, database type, migration, auth rule,
+  dependency or remote resource changed.
+- [x] **Add clears only after confirmed success.** `POST` returns `{ ok: true }`, so a success
+  re-reads the confirmed list; a non-ok response preserves both entered values, shows a localized
+  failure and inserts no unconfirmed row. Duplicate submission is blocked while pending.
+  `invalid_email` keeps its exact prior behaviour; a unique-violation is now named specifically. The
+  server's own error text is classified, never rendered.
+- [x] **Toggle rollback is row-scoped.** The prior value is captured per recipient and restored for
+  that id alone — never a whole-list snapshot, which would discard another row's concurrently
+  confirmed result. Pending is keyed by id, so one row's request never disables another and a second
+  PATCH for the same row is refused. No `.catch(() => {})` survives anywhere in the file.
+- [x] **Delete is server-confirmed and uses `DestructiveConfirm`.** The dialog names the recipient
+  from real fields only; cancel, Escape, the scrim and ✕ send no DELETE; exactly one DELETE per
+  confirmation; the row stays visible (with its Switch and Remove disabled) while pending and is
+  removed only after a confirmed response; a failure preserves it and surfaces a localized message.
+  Focus trap, scroll lock and focus restoration stay the shared shell's contract.
+- [x] **Initial-load failure is not empty.** `loading` / `ready` / `error` are three explicit states;
+  the throw precedes the array check that previously made a failed GET indistinguishable from an
+  empty list. Stale requests abort on unmount and are ignored after the await. No polling.
+- [x] **Success and error feedback are honest.** One coherent region, two permanently-mounted live
+  areas — `role="alert"` for errors and a separate `aria-live="polite"` for success, deliberately not
+  the same node (an alert is implicitly assertive). Every message follows a confirmed server outcome;
+  a new operation clears the previous one. `aria-invalid`/`aria-describedby` are scoped to an *add*
+  error, so a row failure never marks the form invalid.
+- [x] **The R9.1 Switch is now consumed** — by the recipient Active toggle, its intended and only
+  consumer, with `role="switch"`, `aria-checked`, a per-recipient accessible name including the
+  email, and a row-scoped `disabled` while that recipient has a request in flight. The primitive
+  itself was not modified.
+- [x] **Accessibility.** Subordinate heading; visible labels on both inputs; `type="email"` +
+  `autoComplete="email"`; four `scope="col"` headers; pending communicated by `aria-busy` *and*
+  visible text, never a disabled attribute alone; contextual Remove name; no colour-only state; no
+  nested interactive control; no native `alert`/`confirm`/`prompt`.
+- [x] **Responsive.** No fixed `w-64`/`w-48` field — both inputs are full width from a flex basis and
+  the form stacks below `lg`; a 560px table floor scrolling inside `TableCard` only, with no
+  page-level overflow workaround; long emails `break-all` and long Spanish labels `break-words`; the
+  Switch's 13px invisible touch inset cannot reach the Remove chip (both control cells carry `px-4`,
+  ≥34px of separation) and `py-3` rows clear its 44px hit height vertically.
+- [x] **Security boundaries preserved.** No service-role import, no admin repository in client code,
+  no `user_profiles` read or write, no per-user recipient filtering, no ownership column, no
+  authorization derived from client state, no `process.env` in client code, no recipient email or API
+  error logged, no Supabase internals exposed.
+- [x] **Privacy Mode remains pending R9.6** — absent, not imported, not stubbed. Theme and language
+  architecture, Portfolio and Home untouched. No notification categories, delivery schedules,
+  per-recipient types, test/verification email, bulk import, or mock recipients.
+- [x] **Localization.** 14 new `notifications.settings.*` keys in both dictionaries with exact
+  parity; every pre-existing notification key preserved; no hardcoded visible copy.
+- [x] **Automated results.** `tests/fableSettingsPage.test.ts` 99/99 (+34) covering all 103 required
+  checks; `notificationsPlatform` recipient assertions followed the workflow to its canonical
+  component (none weakened); `responsiveLayout` gained the 560px floor and form-stacking guards. Full
+  suite 3957 → 3999 (3996 pass, only the known `newsModule` trio failing); lint 0; build 0 errors.
+- [ ] **Manual browser validation — PENDING.** 390/1024/1728 (+320), EN/ES, light/dark,
+  normal/reduced-motion: `/settings#notifications` lands on the section; `/settings/notifications`
+  redirects; the bell lands directly; Back/Forward predictable; recipients load; empty and blocked
+  states honest; add success clears and failure preserves; duplicate handling correct; toggle
+  persists across reload and visibly rolls back on failure; other rows usable during a row PATCH;
+  cancel and Escape send no DELETE; confirm sends exactly one; the row survives a pending or failed
+  delete; messages announced; dialog traps and restores focus; the Switch reads correctly in both
+  themes and does not overlap Remove; the form stacks at 390px; table scroll stays inside the card;
+  long email and Spanish text do not overflow; no Privacy Mode; existing cards intact; signed-out
+  access redirects to login.
+
 ### C4 · Engineering gates (run at each phase boundary)
 - [x] `npm run build` → 0 errors, all routes present. *(Phase 1 boundary: compiled in 6.4s, 19/19
   static pages, full route list unchanged. Phase 2 boundary: 0 errors, 19/19 static pages, full

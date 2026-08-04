@@ -35,6 +35,7 @@ import { ChipLabel } from '@/components/fable/Chip'
 import { AsyncState } from '@/components/fable/AsyncState'
 import { SegmentedControl } from '@/components/fable/SegmentedControl'
 import { Reveal } from '@/components/fable/motion'
+import { NotificationRecipientsCard } from './NotificationRecipientsCard'
 import { formatSourceDate } from '@/lib/formatters'
 import { useTheme, type Theme } from '@/lib/useTheme'
 import type { Lang } from '@/lib/i18n'
@@ -330,6 +331,13 @@ export function SettingsClient({ account }: { account: SettingsAccount }) {
             <p className="mt-2.5 ui-meta text-muted-fg">{s.display.note}</p>
           </GlassSurface>
         </div>
+      </Reveal>
+
+      {/* Row 3 — Fable's full-width Audit History slot. R9.4 gives it to the
+          Notification Recipients workflow, which is the one mutation-heavy
+          surface here and therefore owns its own component. */}
+      <Reveal delayMs={190}>
+        <NotificationRecipientsCard />
       </Reveal>
     </div>
   )

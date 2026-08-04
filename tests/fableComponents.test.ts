@@ -658,20 +658,26 @@ describe('R9.1 Switch — Fable geometry, controlled contract, native semantics'
     assert.ok(NEW_COMPONENTS.filter((f) => f === 'Switch.tsx').length === 1)
   })
 
-  test('scope — the primitive still has no consumer', () => {
-    // R9.1 shipped it wired to nothing; R9.2 added /settings without consuming
-    // it (the recipients toggle that will is R9.4's). The enduring property is
-    // the absence of a consumer, so the R9.2 files join the scan rather than
-    // the "no Settings route" clause surviving past the phase that owned it.
-    const consumers = [
+  test('scope — the primitive is consumed by exactly its one intended surface', () => {
+    // R9.1 shipped it wired to nothing and R9.2/R9.3 left it that way. R9.4
+    // wired it to the recipient Active toggle — the consumer the primitive was
+    // built for. The enduring property is no longer "no consumer" but "exactly
+    // that consumer, and the primitive itself unchanged".
+    assert.match(
+      read('src/app/settings/NotificationRecipientsCard.tsx'),
+      /import \{ Switch \} from '@\/components\/fable\/Switch'/,
+      'R9.4 wired the Switch to the recipient Active toggle',
+    )
+    // Nothing else consumes it, and no surface hand-rolls a switch of its own.
+    const nonConsumers = [
       'src/app/settings/page.tsx',
       'src/app/settings/SettingsClient.tsx',
       'src/app/settings/notifications/page.tsx',
       'src/components/ui/ThemeToggle.tsx',
       'src/components/providers/LangProvider.tsx',
     ]
-    for (const f of consumers) {
-      assert.doesNotMatch(read(f), /Switch|role="switch"/, `${f} must be untouched by R9.1`)
+    for (const f of nonConsumers) {
+      assert.doesNotMatch(read(f), /Switch|role="switch"/, `${f} must not consume the Switch`)
     }
   })
 })

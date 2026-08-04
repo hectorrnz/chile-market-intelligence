@@ -33,10 +33,19 @@ const LANG_TOGGLE = read('src/components/ui/LangToggle.tsx')
 const SEGMENTED = read('src/components/fable/SegmentedControl.tsx')
 const LAYOUT = read('src/app/layout.tsx')
 
+// R9.4 — the integrated recipients workflow and the shared components it reuses.
+const CARD = read('src/app/settings/NotificationRecipientsCard.tsx')
+const TABLE_CARD = read('src/components/fable/TableCard.tsx')
+const MODAL = read('src/components/fable/ModalShell.tsx')
+const SWITCH = read('src/components/fable/Switch.tsx')
+const RECIPIENTS_ROUTE = read('src/app/api/notification-recipients/route.ts')
+const RECIPIENT_ID_ROUTE = read('src/app/api/notification-recipients/[id]/route.ts')
+
 /** Comment-stripped, so prose can neither satisfy nor trip a scan. */
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 const PAGE_CODE = code(PAGE)
 const CLIENT_CODE = code(CLIENT)
+const CARD_CODE = code(CARD)
 const BOTH = `${PAGE_CODE}\n${CLIENT_CODE}`
 
 /** Every Fable Administration fixture string R9.2 must never reproduce. */
@@ -73,11 +82,12 @@ describe('R9.2 · route and Fable composition', () => {
     assert.match(CLIENT, /from '@\/components\/fable\/GlassSurface'/)
     assert.match(CLIENT, /from '@\/components\/fable\/motion'/)
     assert.equal((CLIENT_CODE.match(/<GlassSurface as="section"/g) ?? []).length, 4)
-    // R9.3 added a fourth card INSIDE the existing second-row Reveal, so the
-    // staggered cadence is still exactly two reveals.
-    assert.equal((CLIENT_CODE.match(/<Reveal delayMs=/g) ?? []).length, 2)
+    // R9.3 added a fourth card INSIDE the existing second-row Reveal; R9.4 adds
+    // the full-width third row as its own staggered reveal.
+    assert.equal((CLIENT_CODE.match(/<Reveal delayMs=/g) ?? []).length, 3)
     assert.match(CLIENT_CODE, /<Reveal delayMs=\{70\}>/)
     assert.match(CLIENT_CODE, /<Reveal delayMs=\{130\}>/)
+    assert.match(CLIENT_CODE, /<Reveal delayMs=\{190\}>/)
   })
 
   test('6-8. exactly the four cards render: Account, Data sources, Security, Display', () => {
@@ -88,14 +98,16 @@ describe('R9.2 · route and Fable composition', () => {
     assert.equal((CLIENT_CODE.match(/<CardTitle>/g) ?? []).length, 4)
   })
 
-  test('9-11. no Notification Recipients card, no placeholder card, no early privacy stub', () => {
-    // R9.3 owns Display (its own describe below). R9.4 owns recipients and
-    // R9.6 owns privacy — neither may be stubbed early.
+  test('9-11. no placeholder card and no early privacy stub', () => {
+    // R9.3 owns Display and R9.4 owns Recipients (each has its own describe
+    // below). R9.6 owns privacy — still the one thing that may not be stubbed.
     assert.doesNotMatch(CLIENT_CODE, /ThemeToggle|LangToggle|<Switch\b|role="switch"/)
     // The card is "Display", never a second "Appearance" concept.
     assert.doesNotMatch(CLIENT_CODE, /appearance|apariencia/i)
-    assert.doesNotMatch(CLIENT_CODE, /recipient|notification-recipients|destinatario/i)
     assert.doesNotMatch(CLIENT_CODE, /placeholder|TODO|Coming soon|comingSoon|pr[óo]ximamente/i)
+    // The composition delegates the mutation-heavy workflow rather than
+    // inlining it — no recipient state or request lives in this file.
+    assert.doesNotMatch(CLIENT_CODE, /notification-recipients|useState<Recipient|handleAdd/)
     // Card count already pinned at 4 above — an empty fifth card cannot exist.
   })
 
@@ -131,21 +143,18 @@ describe('R9.2 · navigation', () => {
     assert.equal(settings?.children, undefined, 'R9.2 adds no nav child')
   })
 
-  test('15. /settings/notifications still exists and is untouched by R9.2', () => {
+  test('15. /settings/notifications still exists — now as the backward-compatible redirect (R9.4)', () => {
+    // The route is PRESERVED, not deleted: existing bookmarks must resolve.
     assert.ok(existsSync(join(ROOT, 'src/app/settings/notifications/page.tsx')))
-    for (const marker of ['handleAdd', 'async function remove', 'toggleActive', 'SectionHeader']) {
-      assert.ok(NOTIF_PAGE.includes(marker), `notifications page must still contain ${marker}`)
-    }
-    for (const call of ["'/api/notification-recipients'", '`/api/notification-recipients/${r.id}`', '`/api/notification-recipients/${id}`']) {
-      assert.ok(NOTIF_PAGE.includes(call), `notifications page must still call ${call}`)
-    }
-    // R9.4 owns the redirect — it must not exist yet.
-    assert.doesNotMatch(NOTIF_PAGE, /redirect\(/)
+    assert.match(NOTIF_PAGE, /import \{ redirect \} from 'next\/navigation'/)
+    assert.match(NOTIF_PAGE, /redirect\('\/settings#notifications'\)/)
+    // One direction only — and the workflow itself no longer lives here.
+    assert.doesNotMatch(NOTIF_PAGE, /notification-recipients|handleAdd|toggleActive|SectionHeader/)
   })
 
-  test('16. the NotificationBell href is unchanged pending R9.4', () => {
-    assert.ok(BELL.includes('/settings/notifications'))
-    assert.doesNotMatch(BELL, /\/settings#notifications/)
+  test('16. the NotificationBell points directly at the integrated section (R9.4)', () => {
+    assert.ok(BELL.includes('/settings#notifications'))
+    assert.doesNotMatch(BELL, /href="\/settings\/notifications"/)
   })
 
   test('17 + 19. the nested route still resolves to the Settings group and its title', () => {
@@ -366,11 +375,14 @@ describe('R9.2 · scope restraint', () => {
     assert.doesNotMatch(PAGE_CODE, /useTheme|useLang|setTheme|setLang|SegmentedControl/)
   })
 
-  test('57-58. no notification-recipient call, and the existing page is byte-compatible', () => {
+  test('57-58. the composition delegates the recipient workflow instead of inlining it', () => {
+    // R9.4 integrated recipients, but the read-only composition itself still
+    // issues no recipient request and holds no recipient state.
     assert.doesNotMatch(BOTH, /notification-recipients|notificationsRepository/)
-    // The R9.4 sequencing hold: the notifications page still owns its own flow.
-    assert.match(NOTIF_PAGE, /export default function NotificationSettingsPage\(\)/)
-    assert.match(NOTIF_PAGE, /t\.notifications\.settings\.note/)
+    assert.match(CLIENT_CODE, /import \{ NotificationRecipientsCard \} from '\.\/NotificationRecipientsCard'/)
+    assert.match(CLIENT_CODE, /<NotificationRecipientsCard \/>/)
+    // The legacy route is now purely the preserved redirect.
+    assert.match(NOTIF_PAGE, /export default function NotificationSettingsRedirect\(\)/)
   })
 
   test('59. no migration or generated database-type change', () => {
@@ -651,16 +663,13 @@ describe('R9.3 · privacy restraint and scope preservation', () => {
     assert.match(CLIENT_CODE, /\{f\.value \?\? s\.account\.unavailable\}/)
   })
 
-  test('40-43. recipients stay in R9.4 — no card, no redirect, no bell repoint, no API call', () => {
-    assert.doesNotMatch(BOTH, /notification-recipients|notificationsRepository|recipient/i)
-    assert.match(NOTIF_PAGE, /export default function NotificationSettingsPage\(\)/)
-    for (const marker of ['handleAdd', 'async function remove', 'toggleActive']) {
-      assert.ok(NOTIF_PAGE.includes(marker), `notifications page must still contain ${marker}`)
-    }
-    assert.doesNotMatch(NOTIF_PAGE, /redirect\(/)
-    assert.ok(BELL.includes('/settings/notifications'))
-    assert.doesNotMatch(BELL, /\/settings#notifications/)
+  test('40-43. the Display card owns no recipient concern (that is R9.4\'s own component)', () => {
+    assert.doesNotMatch(BOTH, /notification-recipients|notificationsRepository/)
+    // The composition still issues exactly one request of its own — the
+    // ingestion-health read. Recipient traffic belongs to the R9.4 component.
     assert.equal((CLIENT_CODE.match(/fetch\(/g) ?? []).length, 1)
+    // The Display card's two selectors remain its only controls.
+    assert.deepEqual(CLIENT_CODE.match(/onChange=\{\w+\}/g), ['onChange={setTheme}', 'onChange={setLang}'])
   })
 
   test('44-46. no profile write, no service-role import, no migration or database-type change', () => {
@@ -783,5 +792,499 @@ describe('R9.3 · accessibility, localization and responsive behavior', () => {
     assert.doesNotMatch(CLIENT_CODE, /min-w-\[\d{3,}px\]/)
     // The primitive keeps its labels on one line inside its own pill.
     assert.match(SEGMENTED, /shrink-0 whitespace-nowrap/)
+  })
+})
+
+// ════════════════════════════════════════════════════════════════════════════
+// R9.4 — Notification Recipients integrated into Settings
+// ════════════════════════════════════════════════════════════════════════════
+
+describe('R9.4 · composition', () => {
+  test('1-3. the section exists, carries id="notifications", and is the full-width third row', () => {
+    assert.ok(existsSync(join(ROOT, 'src/app/settings/NotificationRecipientsCard.tsx')))
+    assert.match(CARD_CODE, /<section id="notifications"/)
+    // Full width: the SECTION itself carries no flex basis/grow (the add-form
+    // fields legitimately do), and it is not inside either two-card row.
+    assert.match(CARD_CODE, /<section id="notifications" className="mt-\[14px\] scroll-mt-6">/)
+    const sectionTag = CARD_CODE.match(/<section id="notifications"[^>]*>/)![0]
+    assert.doesNotMatch(sectionTag, /basis-|grow|shrink|w-\[|max-w-/)
+    // Rendered after both rows, in its own staggered reveal.
+    const idx = CLIENT_CODE.indexOf('<NotificationRecipientsCard />')
+    assert.ok(idx > CLIENT_CODE.indexOf('<Reveal delayMs={130}>'), 'third row comes after the second')
+    assert.match(CLIENT_CODE, /<Reveal delayMs=\{190\}>\s*\n\s*<NotificationRecipientsCard \/>/)
+  })
+
+  test('4. the four existing Settings cards remain', () => {
+    for (const key of ['s.account.title', 's.sources.title', 's.security.title', 's.display.title']) {
+      assert.ok(CLIENT_CODE.includes(`<CardTitle>{${key}}</CardTitle>`), `${key} card must remain`)
+    }
+    assert.equal((CLIENT_CODE.match(/<CardTitle>/g) ?? []).length, 4)
+    assert.equal((CLIENT_CODE.match(/<GlassSurface as="section"/g) ?? []).length, 4)
+  })
+
+  test('5-9. the approved shared components are used — TableCard, ChipButton, Switch, DestructiveConfirm', () => {
+    assert.match(CARD, /import \{ TableCard \} from '@\/components\/fable\/TableCard'/)
+    assert.match(CARD, /import \{ ChipButton \} from '@\/components\/fable\/Chip'/)
+    assert.match(CARD, /import \{ Switch \} from '@\/components\/fable\/Switch'/)
+    assert.match(CARD, /import \{ DestructiveConfirm \} from '@\/components\/fable\/ModalShell'/)
+    assert.match(CARD_CODE, /<TableCard/)
+    assert.match(CARD_CODE, /<Switch\b/)
+    assert.match(CARD_CODE, /<DestructiveConfirm/)
+    // ChipButton for both Add (submit) and Remove.
+    assert.match(CARD_CODE, /<ChipButton type="submit"/)
+    assert.match(CARD_CODE, /<ChipButton\s*\n\s*onClick=\{\(\) => setConfirming\(r\)\}/)
+    // GlassSurface arrives through TableCard — the approved card material.
+    assert.match(TABLE_CARD, /<GlassSurface variant="card"/)
+    assert.match(TABLE_CARD, /<GlassSurface variant="dense">/)
+    // No new shared primitive was introduced for this phase.
+    assert.equal(existsSync(join(ROOT, 'src/components/fable/RecipientTable.tsx')), false)
+  })
+
+  test('10-12. no legacy SectionHeader, no sidebar or tabs, Fable hierarchy intact', () => {
+    assert.doesNotMatch(CARD, /SectionHeader/)
+    assert.doesNotMatch(CARD_CODE, /role="tablist"|role="tab"|<aside|sidebar/i)
+    // The section label is TableCard's own `h2 ui-label` — the same Fable
+    // treatment as every other Settings card, and still subordinate to the
+    // PageHeader's single h1.
+    assert.match(TABLE_CARD, /<h2 className="ui-label text-muted-fg">\{title\}<\/h2>/)
+    assert.doesNotMatch(CARD_CODE, /<h1|<h2|<h3/)
+    // Same 14px vertical rhythm as rows 1 and 2.
+    assert.match(CARD_CODE, /mt-\[14px\]/)
+  })
+})
+
+describe('R9.4 · route compatibility and the notification bell', () => {
+  test('13-15. /settings/notifications is preserved as a one-directional redirect', () => {
+    assert.ok(existsSync(join(ROOT, 'src/app/settings/notifications/page.tsx')))
+    assert.match(NOTIF_PAGE, /import \{ redirect \} from 'next\/navigation'/)
+    assert.match(NOTIF_PAGE, /redirect\('\/settings#notifications'\)/)
+    assert.equal((NOTIF_PAGE.match(/redirect\(/g) ?? []).length, 1, 'exactly one redirect call')
+    // One direction: /settings itself never redirects, so no loop is possible.
+    assert.doesNotMatch(BOTH, /redirect\(/)
+    assert.doesNotMatch(CARD_CODE, /redirect\(/)
+  })
+
+  test('16. the bell links straight to the integrated section, and nothing else about it changed', () => {
+    assert.match(BELL, /<Link href="\/settings#notifications" onClick=\{\(\) => setOpen\(false\)\}/)
+    assert.doesNotMatch(BELL, /href="\/settings\/notifications"/)
+    // Behaviour, fetching, unread state, drawer and icons untouched.
+    for (const marker of [
+      "fetch('/api/notifications', { cache: 'no-store' })",
+      'const POLL_MS = 60_000',
+      'if (!signedIn) return null',
+      'async function markRead(',
+      'async function markAllRead(',
+      'aria-haspopup="dialog"',
+      "backgroundColor: 'var(--critical-fill)'",
+    ]) {
+      assert.ok(BELL.includes(marker), `NotificationBell must still contain ${marker}`)
+    }
+  })
+
+  test('17-20. nav stays /settings; both paths resolve, stay private, and keep their title', () => {
+    assert.equal(navGroups.find((g) => g.key === 'settings')?.href, '/settings')
+    assert.equal(resolveActiveGroup('/settings')?.key, 'settings')
+    assert.equal(resolveActiveGroup('/settings/notifications')?.key, 'settings')
+    for (const p of ['/settings', '/settings/notifications']) {
+      assert.equal(classifyPath(p), 'private_page')
+      assert.ok(requiresApprovedSession(p))
+    }
+    assert.equal(getPageTitle('/settings/notifications', 'en', dict.en), dict.en.nav.settings)
+    assert.equal(getPageTitle('/settings/notifications', 'es', dict.es), dict.es.nav.settings)
+  })
+})
+
+describe('R9.4 · initial load states', () => {
+  test('21-22. loading is explicit, and empty is only reached after a SUCCESSFUL read', () => {
+    assert.match(CARD_CODE, /const \[loadState, setLoadState\] = useState<LoadState>\('loading'\)/)
+    assert.match(CARD_CODE, /type LoadState = 'loading' \| 'ready' \| 'error'/)
+    assert.match(
+      CARD_CODE,
+      /loadState === 'loading' \? 'loading'\s*\n\s*: loadState === 'error' \? 'error'\s*\n\s*: recipients\.length === 0 \? 'empty'/,
+    )
+    // TableCard renders AsyncState — role="status" for loading, "alert" for error.
+    assert.match(TABLE_CARD, /<AsyncState kind=\{state\}/)
+    const async = read('src/components/fable/AsyncState.tsx')
+    assert.match(async, /role=\{kind === 'error' \? 'alert' : 'status'\}/)
+  })
+
+  test('23-26. a failed read is its own state — never empty, never a stale success, never swallowed', () => {
+    assert.match(CARD_CODE, /if \(!res\.ok\) throw new Error\('load_failed'\)/)
+    assert.match(CARD_CODE, /setLoadState\('error'\)/)
+    // `ready` is set ONLY on the success path.
+    assert.equal((CARD_CODE.match(/setLoadState\('ready'\)/g) ?? []).length, 1)
+    const success = CARD_CODE.indexOf("setLoadState('ready')")
+    const failure = CARD_CODE.indexOf("setLoadState('error')")
+    assert.ok(success < failure, 'ready is the try-branch, error the catch-branch')
+    // The legacy `Array.isArray(...) ? ... : []` fallthrough that made a failed
+    // GET indistinguishable from an empty list is gone: the throw precedes it.
+    assert.ok(CARD_CODE.indexOf("throw new Error('load_failed')") < CARD_CODE.indexOf('Array.isArray(json.recipients)'))
+    // No swallowed handler anywhere in the file.
+    assert.doesNotMatch(CARD_CODE, /\.catch\(\(\)\s*=>\s*\{\s*\}\)/)
+    assert.doesNotMatch(CARD_CODE, /catch\s*\{\s*\}/)
+    // Stale requests are aborted on unmount and ignored after the await.
+    assert.match(CARD_CODE, /new AbortController\(\)/)
+    assert.match(CARD_CODE, /return \(\) => controller\.abort\(\)/)
+    assert.match(CARD_CODE, /if \(controller\.signal\.aborted\) return/)
+    assert.match(CARD_CODE, /if \(!controller\.signal\.aborted\) setLoadState\('error'\)/)
+  })
+})
+
+describe('R9.4 · add recipient integrity', () => {
+  test('27-29. the POST contract is byte-identical to the legacy call', () => {
+    assert.match(CARD_CODE, /const ENDPOINT = '\/api\/notification-recipients'/)
+    assert.match(CARD_CODE, /method: 'POST',\s*\n\s*headers: \{ 'Content-Type': 'application\/json' \},/)
+    assert.match(CARD_CODE, /body: JSON\.stringify\(\{ email: trimmedEmail, label: label\.trim\(\) \|\| undefined \}\)/)
+    assert.match(CARD_CODE, /type="email"/)
+    // And the route it talks to is unchanged.
+    assert.match(RECIPIENTS_ROUTE, /export async function GET\(\)/)
+    assert.match(RECIPIENTS_ROUTE, /export async function POST\(request: NextRequest\)/)
+    assert.match(RECIPIENTS_ROUTE, /if \(!isValidEmail\(email\)\) return NextResponse\.json\(\{ error: 'invalid_email' \}, \{ status: 422 \}\)/)
+    assert.match(RECIPIENTS_ROUTE, /body\.label\.trim\(\)\.slice\(0, 80\)/)
+  })
+
+  test('30-33. the non-empty pre-check, the 80-char cap, and the duplicate-submit guard all hold', () => {
+    assert.match(CARD_CODE, /const trimmedEmail = email\.trim\(\)\s*\n\s*if \(!trimmedEmail \|\| adding\) return/)
+    assert.match(CARD_CODE, /maxLength=\{80\}/)
+    // Disabled while pending AND while the field is empty.
+    assert.match(CARD_CODE, /<ChipButton type="submit" disabled=\{adding \|\| !email\.trim\(\)\}/)
+    assert.match(CARD_CODE, /setAdding\(true\)/)
+    assert.match(CARD_CODE, /finally \{\s*\n\s*setAdding\(false\)/)
+  })
+
+  test('34-36. fields clear only after confirmed success, and no unconfirmed row is inserted', () => {
+    const body = CARD_CODE.slice(CARD_CODE.indexOf('async function handleAdd'), CARD_CODE.indexOf('async function toggleActive'))
+    // The failure branch returns BEFORE any clearing or list mutation.
+    const failure = body.indexOf('if (!res.ok) {')
+    const clearEmail = body.indexOf("setEmail('')")
+    assert.ok(failure >= 0 && failure < clearEmail, 'the non-ok branch precedes the clear')
+    assert.match(body, /if \(!res\.ok\) \{[\s\S]*?setFeedback\(\{ tone: 'error'[\s\S]*?return\s*\n\s*\}/)
+    // The confirmed list is re-read from the server; no locally-built row.
+    assert.match(body, /const confirmed = await fetchConfirmed\(\)\s*\n\s*if \(confirmed\) setRecipients\(confirmed\)/)
+    assert.ok(body.indexOf('fetchConfirmed()') < clearEmail, 'the server is consulted before the fields clear')
+    assert.doesNotMatch(body, /setRecipients\(\(prev\) => \[\.\.\.prev,/, 'never appends an unconfirmed row')
+  })
+
+  test('37-39. invalid_email keeps its exact behaviour, duplicates are named, failure is surfaced', () => {
+    assert.match(CARD_CODE, /if \(error === 'invalid_email'\) return n\.invalidEmail/)
+    assert.match(CARD_CODE, /const DUPLICATE_ERROR = \/duplicate key\|unique constraint\|already exists\/i/)
+    assert.match(CARD_CODE, /if \(error && DUPLICATE_ERROR\.test\(error\)\) return n\.duplicateError/)
+    assert.match(CARD_CODE, /return n\.addError/)
+    // The email column really is UNIQUE, so this branch is reachable and honest.
+    const migration = read('supabase/migrations/20260713000000_notifications_foundation.sql')
+    assert.match(migration, /email\s+citext not null unique/)
+    // Success only after res.ok — it is set after the non-ok early return.
+    assert.ok(CARD_CODE.indexOf("message: n.addSuccess") > CARD_CODE.indexOf('if (!res.ok) {'))
+    // The server's own error text is classified, never rendered.
+    assert.doesNotMatch(CARD_CODE, /message: json\.error|\{json\.error\}|\{feedback\.raw/)
+  })
+})
+
+describe('R9.4 · active toggle integrity and concurrency', () => {
+  const body = CARD_CODE.slice(CARD_CODE.indexOf('async function toggleActive'), CARD_CODE.indexOf('async function confirmRemove'))
+
+  test('40-41. the PATCH contract is byte-identical', () => {
+    assert.match(body, /fetch\(`\$\{ENDPOINT\}\/\$\{r\.id\}`, \{\s*\n\s*method: 'PATCH',\s*\n\s*headers: \{ 'Content-Type': 'application\/json' \},\s*\n\s*body: JSON\.stringify\(\{ active: next \}\),/)
+    assert.match(RECIPIENT_ID_ROUTE, /export async function PATCH\(request: NextRequest, ctx: \{ params: Promise<\{ id: string \}> \}\)/)
+    assert.match(RECIPIENT_ID_ROUTE, /if \(typeof body\.active === 'boolean'\) patch\.active = body\.active/)
+  })
+
+  test('42-44. the shared Switch is used, with its ARIA contract and a per-recipient name', () => {
+    assert.match(CARD_CODE, /<Switch\s*\n\s*checked=\{r\.active\}/)
+    assert.match(SWITCH, /role="switch"/)
+    assert.match(SWITCH, /aria-checked=\{checked\}/)
+    // The name is composed from a localized phrase plus THIS recipient's email.
+    assert.match(CARD_CODE, /aria-label=\{`\$\{n\.activeFor\}: \$\{r\.email\}`\}/)
+    // The primitive itself was not modified to make this work.
+    assert.match(SWITCH, /export function Switch\(\{\s*\n\s*checked,\s*\n\s*onCheckedChange,\s*\n\s*disabled = false,/)
+    // Still presentation-only: the scan runs on the comment-stripped body,
+    // because the doc block legitimately NAMES recipient activation as the
+    // intended consumer and that prose must not trip it.
+    assert.doesNotMatch(code(SWITCH), /fetch\(|useState|notification|recipient/i)
+    assert.equal([...SWITCH.matchAll(/from\s+'([^']+)'/g)].length, 0, 'the primitive still needs no import')
+  })
+
+  test('45-48. prior value captured per recipient, pending keyed by id, other rows unaffected', () => {
+    assert.match(body, /const previous = r\.active/)
+    assert.match(body, /const next = !previous/)
+    assert.match(CARD_CODE, /const \[pendingIds, setPendingIds\] = useState<string\[\]>\(\[\]\)/)
+    assert.match(body, /if \(pendingIds\.includes\(r\.id\)\) return/, 'same-row overlap prevented')
+    assert.match(body, /setPendingIds\(\(prev\) => \[\.\.\.prev, r\.id\]\)/)
+    assert.match(body, /setPendingIds\(\(prev\) => prev\.filter\(\(id\) => id !== r\.id\)\)/)
+    // Disabled state is per row, derived from that row's id — never a global flag.
+    assert.match(CARD_CODE, /const busy = pendingIds\.includes\(r\.id\)/)
+    assert.match(CARD_CODE, /disabled=\{busy\}/)
+    assert.doesNotMatch(CARD_CODE, /disabled=\{adding \|\| busy\}|const \[busy, setBusy\]/)
+  })
+
+  test('49-53. only the affected row changes, rollback is row-scoped, nothing is swallowed', () => {
+    // Optimistic update touches exactly the one id.
+    assert.match(body, /setRecipients\(\(prev\) => prev\.map\(\(x\) => \(x\.id === r\.id \? \{ \.\.\.x, active: next \} : x\)\)\)/)
+    // Rollback restores the CAPTURED prior value for the same single id.
+    assert.match(body, /setRecipients\(\(prev\) => prev\.map\(\(x\) => \(x\.id === r\.id \? \{ \.\.\.x, active: previous \} : x\)\)\)/)
+    // Never a whole-list snapshot restore.
+    assert.doesNotMatch(CARD_CODE, /const snapshot = recipients|setRecipients\(snapshot\)|setRecipients\(previousList\)/)
+    assert.doesNotMatch(body, /\.catch\(\(\)\s*=>\s*\{\s*\}\)/)
+    assert.match(body, /if \(!res\.ok\) throw new Error\('update_failed'\)/)
+    // Success strictly after the ok check.
+    assert.ok(body.indexOf('n.updateSuccess') > body.indexOf('if (!res.ok)'))
+    assert.match(body, /message: n\.updateError/)
+  })
+})
+
+describe('R9.4 · confirmed delete', () => {
+  const body = CARD_CODE.slice(CARD_CODE.indexOf('async function confirmRemove'))
+
+  test('54-57. the DELETE contract is unchanged, gated by the shared dialog naming the recipient', () => {
+    assert.match(body, /fetch\(`\$\{ENDPOINT\}\/\$\{target\.id\}`, \{ method: 'DELETE' \}\)/)
+    assert.match(RECIPIENT_ID_ROUTE, /export async function DELETE\(_request: NextRequest, ctx: \{ params: Promise<\{ id: string \}> \}\)/)
+    assert.match(CARD_CODE, /<DestructiveConfirm\s*\n\s*open=\{confirming !== null\}/)
+    // The dialog description is built from THIS recipient's real fields only.
+    assert.match(CARD_CODE, /\[confirming\.email, confirming\.label\]\.filter\(Boolean\)\.join\(' · '\)/)
+    assert.match(CARD_CODE, /title=\{n\.confirmRemoveTitle\}/)
+    assert.match(CARD_CODE, /cancelLabel=\{n\.cancel\}/)
+  })
+
+  test('56 + 58-59. no native dialog; cancel and Escape mutate nothing', () => {
+    assert.doesNotMatch(CARD_CODE, /window\.(confirm|alert|prompt)/)
+    assert.ok(!/[^.\w](confirm|alert|prompt)\(/.test(CARD_CODE.replace(/confirmRemove\(/g, 'x(')))
+    // Cancel only closes — it never calls the mutation.
+    assert.match(CARD_CODE, /onCancel=\{\(\) => setConfirming\(null\)\}/)
+    assert.match(CARD_CODE, /onConfirm=\{\(\) => void confirmRemove\(\)\}/)
+    // Escape and the scrim route through onCancel in the shared shell, and the
+    // shell fires onConfirm at most once per open.
+    assert.match(MODAL, /useEscape\(open && canDismiss, onClose\)/)
+    assert.match(MODAL, /if \(pending \|\| firedRef\.current\) return\s*\n\s*firedRef\.current = true\s*\n\s*onConfirm\(\)/)
+    assert.match(MODAL, /onClick=\{onCancel\} disabled=\{pending\}/)
+  })
+
+  test('60-65. the row survives until a confirmed success, and a failure preserves it', () => {
+    // Pending is set before the request; the row is NOT removed there.
+    const setPending = body.indexOf('setPendingIds((prev) => [...prev, target.id])')
+    const removal = body.indexOf('prev.filter((x) => x.id !== target.id)')
+    const okCheck = body.indexOf("if (!res.ok) throw new Error('delete_failed')")
+    assert.ok(setPending >= 0 && okCheck > setPending, 'pending precedes the request')
+    assert.ok(removal > okCheck, 'the row is removed only AFTER the ok check')
+    // Exactly one DELETE per confirmation, guarded against re-entry.
+    assert.equal((body.match(/method: 'DELETE'/g) ?? []).length, 1)
+    assert.match(body, /if \(!target \|\| pendingIds\.includes\(target\.id\)\) return/)
+    // The catch surfaces a failure and never removes the row.
+    const catchBlock = body.slice(body.indexOf('} catch {'), body.indexOf('} finally {'))
+    assert.match(catchBlock, /message: n\.removeError/)
+    assert.doesNotMatch(catchBlock, /setRecipients/)
+    // Both the row's Switch and its Remove control are disabled while pending.
+    assert.equal((CARD_CODE.match(/disabled=\{busy\}/g) ?? []).length, 2)
+    assert.match(CARD_CODE, /pending=\{confirming \? pendingIds\.includes\(confirming\.id\) : false\}/)
+  })
+
+  test('66. focus, trap, scroll-lock and restoration stay the shared shell\'s contract', () => {
+    assert.doesNotMatch(CARD_CODE, /focus\(\)|role="dialog"|aria-modal|FOCUSABLE/)
+    assert.match(MODAL, /triggerRef\.current = document\.activeElement/)
+    assert.match(MODAL, /if \(wasOpenRef\.current && !open\) \(triggerRef\.current as HTMLElement \| null\)\?\.focus\?\.\(\)/)
+    assert.match(MODAL, /document\.body\.style\.overflow = 'hidden'/)
+    assert.match(MODAL, /if \(e\.key !== 'Tab'\) return/)
+  })
+})
+
+describe('R9.4 · feedback and accessibility', () => {
+  test('67-68. errors are role="alert", success is a separate polite live region', () => {
+    assert.match(CARD_CODE, /<p id=\{errorId\} role="alert"/)
+    assert.match(CARD_CODE, /<p aria-live="polite"/)
+    // Deliberately two elements: role="alert" is implicitly assertive, so an
+    // explicit polite value on the same node would muddle both announcements.
+    assert.doesNotMatch(CARD_CODE, /role="alert"[^>]*aria-live/)
+    // Every message is localized and derived from a confirmed outcome.
+    assert.match(CARD_CODE, /const errorMessage = feedback\?\.tone === 'error' \? feedback\.message : null/)
+    assert.match(CARD_CODE, /const successMessage = feedback\?\.tone === 'success' \? feedback\.message : null/)
+    // A new operation clears the previous message first.
+    assert.equal((CARD_CODE.match(/setFeedback\(null\)/g) ?? []).length, 3)
+  })
+
+  test('69-70. the email field is correctly typed, labelled, described and marked invalid', () => {
+    assert.match(CARD_CODE, /aria-invalid=\{addInvalid \|\| undefined\}/)
+    assert.match(CARD_CODE, /aria-describedby=\{addInvalid \? errorId : noteId\}/)
+    // aria-invalid is scoped to an ADD error — a row failure must not mark it.
+    assert.match(CARD_CODE, /const addInvalid = feedback\?\.tone === 'error' && feedback\.scope === 'add'/)
+    assert.match(CARD_CODE, /autoComplete="email"/)
+    // Visible labels, properly associated.
+    assert.match(CARD_CODE, /<label htmlFor=\{emailId\} className="ui-label text-muted-fg">\{n\.emailLabel\}<\/label>/)
+    assert.match(CARD_CODE, /<label htmlFor=\{labelId\}/)
+    assert.match(CARD_CODE, /\{n\.labelLabel\} <span className="text-muted-fg">\{n\.optional\}<\/span>/)
+    assert.equal((CARD_CODE.match(/id=\{emailId\}|id=\{labelId\}/g) ?? []).length, 2)
+  })
+
+  test('71-73. table headers are scoped, pending is announced, remove is named per recipient', () => {
+    assert.equal((CARD_CODE.match(/<th scope="col"/g) ?? []).length, 4)
+    assert.match(CARD_CODE, /aria-busy=\{busy \|\| undefined\}/)
+    assert.match(CARD_CODE, /aria-busy=\{adding \|\| undefined\}/)
+    // Pending is also visible text, not only a disabled attribute.
+    assert.match(CARD_CODE, /\{adding \? n\.adding : n\.add\}/)
+    assert.match(CARD_CODE, /\{busy \? n\.removing : n\.remove\}/)
+    assert.match(CARD_CODE, /aria-label=\{`\$\{n\.removeFor\}: \$\{r\.email\}`\}/)
+  })
+
+  test('74-76. no colour-only meaning, no nested interactive control, no native dialog', () => {
+    // Feedback carries its own text; the tone class is an addition, not the signal.
+    assert.match(CARD_CODE, /className=\{errorMessage \? 'ui-meta text-negative' : undefined\}/)
+    assert.match(CARD_CODE, /className=\{successMessage \? 'ui-meta text-positive' : undefined\}/)
+    // Active state is exposed by aria-checked and by the thumb position.
+    assert.match(SWITCH, /checked \? 'translate-x-\[12\.5px\]' : 'translate-x-0'/)
+    // One control per cell — nothing is nested inside the Switch or ChipButton.
+    assert.doesNotMatch(CARD_CODE, /<Switch[^/]*>[\s\S]*?<\/Switch>/)
+    assert.doesNotMatch(CARD_CODE, /<ChipButton[^>]*>\s*<(button|a|input)\b/)
+    assert.doesNotMatch(CARD_CODE, /window\.(alert|confirm|prompt)/)
+  })
+})
+
+describe('R9.4 · responsive behaviour', () => {
+  test('77. the add form has no unsafe fixed widths and fills narrow viewports', () => {
+    // The legacy w-64 / w-48 inputs are gone.
+    assert.doesNotMatch(CARD_CODE, /\bw-64\b|\bw-48\b|\bw-36\b|\bw-\[\d+px\]/)
+    assert.match(CARD_CODE, /h-8 w-full rounded-\[var\(--radius-input\)\]/)
+    // Each field grows from a basis and can shrink to nothing.
+    assert.equal((CARD_CODE.match(/grow shrink basis-\[\d+px\] min-w-0/g) ?? []).length, 2)
+    // The form itself wraps and is full-width until lg.
+    assert.match(CARD_CODE, /className="flex flex-wrap items-end gap-2 w-full lg:w-auto"/)
+    assert.match(CARD_CODE, /className="flex flex-col gap-2 w-full lg:w-auto"/)
+  })
+
+  test('78-80. the table has a real min-width floor, scrolling card-locally, and long text wraps', () => {
+    assert.match(CARD_CODE, /minWidth=\{560\}/)
+    assert.match(TABLE_CARD, /className="overflow-x-auto"/)
+    assert.match(TABLE_CARD, /<div style=\{minWidth \? \{ minWidth \} : undefined\}>\{children\}<\/div>/)
+    // No page-level overflow workaround was introduced.
+    assert.doesNotMatch(CARD_CODE, /overflow-x-auto|overflow-x-scroll|min-w-\[/)
+    // Long emails and long Spanish labels wrap instead of widening the page.
+    assert.match(CARD_CODE, /font-mono break-all/)
+    assert.match(CARD_CODE, /text-muted-fg break-words/)
+  })
+
+  test('81-83. the Switch touch inset cannot reach the Remove control', () => {
+    // The primitive's invisible hit area extends 13px past its 30px track…
+    assert.match(SWITCH, /before:-inset-\[13px\]/)
+    // …so both control cells carry px-4 (17px at this app's 17px root), giving
+    // ≥34px between the track edge and the Remove chip.
+    assert.match(CARD_CODE, /<td className="py-3 px-4 text-center">/)
+    assert.match(CARD_CODE, /<td className="py-3 px-4 text-right">/)
+    // Row padding exceeds the 44px hit height, so vertical neighbours cannot
+    // overlap either.
+    assert.equal((CARD_CODE.match(/className="py-3 px-/g) ?? []).length, 4)
+    // The anchor is not hidden behind page chrome after navigation.
+    assert.match(CARD_CODE, /scroll-mt-6/)
+  })
+})
+
+describe('R9.4 · preserved API, RLS and security contracts', () => {
+  test('84-86. no service-role client, no user_profiles, no per-user recipient filtering', () => {
+    assert.doesNotMatch(CARD, /supabase\/admin|getSupabaseAdminClient|SERVICE_ROLE|serviceRole/i)
+    assert.doesNotMatch(CARD, /user_profiles|@\/lib\/db|notificationsRepository|@\/lib\/supabase/)
+    assert.doesNotMatch(CARD_CODE, /process\.env/)
+    // No ownership or user filter was introduced anywhere in the chain.
+    assert.doesNotMatch(CARD_CODE, /user_id|userId|ownerId|\.filter\(\(r\) => r\.user/)
+    assert.doesNotMatch(RECIPIENTS_ROUTE, /user_id|auth\.uid/)
+  })
+
+  test('87-91. the shared-trust RLS, the four endpoints, the types and the schema are untouched', () => {
+    const migration = read('supabase/migrations/20260713000000_notifications_foundation.sql')
+    for (const policy of ['select', 'insert', 'update', 'delete']) {
+      assert.match(
+        migration,
+        new RegExp(`create policy "notification_recipients_${policy}" on notification_recipients for ${policy} (using|with check) \\(auth\\.uid\\(\\) is not null\\)`),
+        `the shared-trust ${policy} policy must be unchanged`,
+      )
+    }
+    // Exactly the pre-existing four handlers, no new route file.
+    assert.equal((RECIPIENTS_ROUTE.match(/export async function (GET|POST|PATCH|DELETE)/g) ?? []).length, 2)
+    assert.equal((RECIPIENT_ID_ROUTE.match(/export async function (GET|POST|PATCH|DELETE)/g) ?? []).length, 2)
+    assert.equal(existsSync(join(ROOT, 'src/app/api/notification-recipients/[id]/[action]')), false)
+    const migrations = readdirSync(join(ROOT, 'supabase/migrations'))
+    assert.equal(migrations.filter((f) => /recipient|notification/i.test(f)).length, 1, 'no new notifications migration')
+    assert.doesNotMatch(CARD_CODE, /database\.types|supabase\/migrations/)
+  })
+
+  test('92. the shared-trust explanatory note is preserved verbatim and still rendered', () => {
+    for (const d of [dict.en, dict.es]) {
+      assert.match(d.notifications.settings.note, /do not need to be registered app users|no necesitan ser usuarios registrados/)
+    }
+    assert.match(CARD_CODE, /<p id=\{noteId\} className="ui-meta text-muted-fg mt-1">\{n\.note\}<\/p>/)
+    assert.doesNotMatch(CARD, /must be a registered/i)
+  })
+})
+
+describe('R9.4 · scope and localization', () => {
+  function leaves(obj: unknown, prefix = ''): [string, string][] {
+    if (typeof obj === 'string') return [[prefix, obj]]
+    if (obj && typeof obj === 'object') {
+      return Object.entries(obj as Record<string, unknown>).flatMap(([k, v]) => leaves(v, prefix ? `${prefix}.${k}` : k))
+    }
+    return []
+  }
+
+  test('93-96. privacy still absent; theme, language, Portfolio and Home untouched', () => {
+    assert.doesNotMatch(`${CARD}\n${CLIENT}`, /usePrivacyMode|PrivacyToggle|PrivacyValue|privacyMasked/)
+    for (const d of [dict.en, dict.es]) {
+      assert.doesNotMatch(JSON.stringify(d.settings), /privacy|privacidad/i)
+    }
+    assert.doesNotMatch(CARD, /useTheme|useLang\(\)\.setLang|SegmentedControl/)
+    assert.match(CARD, /import \{ useLang \} from '@\/components\/providers\/LangProvider'/)
+    // No notification preference types, categories, schedules or test sends.
+    assert.doesNotMatch(CARD_CODE, /categor|schedule|digest|frequency|sendTest|verify|verification/i)
+    // Portfolio and Home carry no recipient concern.
+    for (const f of ['src/app/portfolio/page.tsx', 'src/app/page.tsx']) {
+      assert.doesNotMatch(read(f), /NotificationRecipientsCard|notification-recipients/)
+    }
+  })
+
+  test('97-98. no mock recipient data and no fabricated column', () => {
+    // Every row field comes from the API response — nothing invented. (The
+    // scan targets fabricated FIELDS, not the word "role", which the feedback
+    // region legitimately uses as an ARIA attribute.)
+    assert.doesNotMatch(CARD_CODE, /lastSent|last_sent|deliveryStatus|verificationStatus|createdBy|r\.(owner|role|userName)/i)
+    for (const invented of ['n.lastSent', 'n.owner', 'n.role', 'n.notificationType', 'n.deliveryStatus']) {
+      assert.ok(!CARD_CODE.includes(invented), `must not render an invented ${invented} column`)
+    }
+    assert.doesNotMatch(CARD, /@example\.com|john@|jane@|sample recipient/i)
+    // The only literal address is the input's format placeholder.
+    assert.equal((CARD_CODE.match(/name@company\.com/g) ?? []).length, 1)
+    // The rendered columns are exactly the four real ones.
+    assert.match(CARD_CODE, /\{n\.emailLabel\}<\/th>/)
+    assert.match(CARD_CODE, /\{n\.labelLabel\}<\/th>/)
+    assert.match(CARD_CODE, /\{n\.activeLabel\}<\/th>/)
+    assert.match(CARD_CODE, /\{n\.remove\}<\/th>/)
+  })
+
+  test('99-103. every key exists in both languages, parity holds, and nothing is hardcoded', () => {
+    const required = [
+      'optional', 'adding', 'removing', 'loadError', 'addSuccess', 'duplicateError',
+      'updateSuccess', 'updateError', 'removeSuccess', 'removeError',
+      'confirmRemoveTitle', 'cancel', 'activeFor', 'removeFor',
+    ]
+    for (const d of [dict.en, dict.es]) {
+      for (const k of required) {
+        const v = (d.notifications.settings as unknown as Record<string, string>)[k]
+        assert.equal(typeof v, 'string', `notifications.settings.${k} must exist`)
+        assert.ok(v.trim().length > 0)
+      }
+    }
+    assert.deepEqual(
+      leaves(dict.es.notifications).map(([k]) => k).sort(),
+      leaves(dict.en.notifications).map(([k]) => k).sort(),
+    )
+    // Pre-existing keys survive untouched.
+    assert.equal(dict.en.notifications.settings.add, 'Add')
+    assert.equal(dict.es.notifications.settings.add, 'Agregar')
+    assert.equal(dict.en.notifications.settings.invalidEmail, 'Enter a valid email address')
+    assert.equal(dict.en.notifications.settings.tag, 'Notification Settings')
+    assert.equal(dict.en.notifications.manageRecipients, 'Manage email recipients →')
+    // No hardcoded visible copy in the component.
+    const literals = new Set<string>()
+    for (const m of CARD_CODE.matchAll(/'([^'\\\n]*)'|"([^"\\\n]*)"/g)) literals.add((m[1] ?? m[2]).trim())
+    for (const m of CARD_CODE.matchAll(/>([^<>{}]+)</g)) literals.add(m[1].trim())
+    for (const d of [dict.en, dict.es]) {
+      for (const [path, value] of leaves(d.notifications.settings)) {
+        assert.ok(!literals.has(value), `the card hardcodes notifications.settings.${path} instead of reading it`)
+      }
+    }
+    assert.match(CARD_CODE, /const n = t\.notifications\.settings/)
   })
 })

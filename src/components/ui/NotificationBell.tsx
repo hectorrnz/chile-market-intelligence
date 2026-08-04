@@ -216,7 +216,11 @@ export function NotificationBell() {
             </div>
 
             <div className="px-4 py-3" style={{ borderTop: '1px solid var(--nv-line)' }}>
-              <Link href="/settings/notifications" onClick={() => setOpen(false)} className="text-xs text-muted-fg hover:text-foreground hover:underline">
+              {/* R9.4 — points DIRECTLY at the integrated section rather than
+                  through the preserved /settings/notifications redirect, so the
+                  bell costs one navigation instead of two. Nothing else about
+                  the bell changed. */}
+              <Link href="/settings#notifications" onClick={() => setOpen(false)} className="text-xs text-muted-fg hover:text-foreground hover:underline">
                 {t.notifications.manageRecipients}
               </Link>
             </div>

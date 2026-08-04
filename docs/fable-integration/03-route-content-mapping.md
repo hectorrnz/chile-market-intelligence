@@ -31,7 +31,7 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
 | 10 | `/portfolio` 🔒 | Portfolio | protected | 1 Overview + 2 Portfolio + 4 Risk | No (reused Phase 3 `TableCard`/`KpiCapsule`/`ChangeIndicator`/`SegmentedControl`/`GlassSurface`/`AsyncState`) | **✓ Phase 5H (2026-07-29)** | **✓ Source-scan verified** |
 | 11 | `/structured-notes` 🔒 | Structured Notes | protected | 6 Structured Notes | Yes — barrier gauge, upload/extract panel, dashboard KPIs, bar/donut | Not started | Not verified |
 | 12 | `/structured-notes/[id]` 🔒 | note ISIN/name | protected | 6 SN detail panel | Yes — terms grid, current-levels table, schedule, allocation grid | Not started | Not verified |
-| 13 | `/settings` 🔒 | Settings | protected | 10 Administration | Yes — Account, Data Sources, Security, Display cards | **R9.2 + R9.3 implemented (2026-08-04)** | Automated complete; manual pending |
+| 13 | `/settings` 🔒 | Settings | protected | 10 Administration | Yes — Account, Data Sources, Security, Display, Notification Recipients | **R9.2 + R9.3 + R9.4 implemented (2026-08-04)** | Automated complete; manual pending |
 | 13b | `/settings/notifications` 🔒 | Notification Settings | protected | 10 Administration | Yes — recipients table, add form | Unchanged pending R9.4 | Not verified |
 | 14 | `/login` | Sign in / Create account | public (auth) | 0 Login | Yes — cinematic login shell, glass auth panel | **R1 implemented (2026-07-29)** | Automated complete; manual pending |
 | 15 | `/forgot-password` | Reset your password | public (auth) | 0 Login (variant) | Yes — auth-panel variant | Not started | Not verified |
@@ -723,7 +723,7 @@ no shared Fable component modified; no CSS added (the meter fill reuses the exis
   allocation grid (as a full detail page; Fable offers the language via its SN detail panel).
 - **Impl. status:** Not started · **Verif. status:** Not verified.
 
-## 13. `/settings` 🔒 — Settings (canonical) — **R9.2 + R9.3 as built**
+## 13. `/settings` 🔒 — Settings (canonical) — **R9.2 + R9.3 + R9.4 as built**
 
 - **Canonical destination.** `/settings` is now what the primary Settings nav item points at.
   `/settings/notifications` is **unchanged and still fully functional** — `matchesPrefix` keeps it
@@ -738,8 +738,35 @@ no shared Fable component modified; no CSS added (the meter fill reuses the exis
 - **Content sections:** (1) `PageHeader`; (2) **Account** — display name · email · username ·
   access, as a `<dl>`; (3) **Data sources** — live rows from `GET /api/health/ingestion`;
   (4) **Security** — four factual NMI invariants plus Reset-password → `/forgot-password` and
-  Sign out → `/logout`; (5) **Display** (R9.3) — Theme and Language, the page's only interactive
-  card.
+  Sign out → `/logout`; (5) **Display** (R9.3) — Theme and Language; (6) **Notification Recipients**
+  (R9.4) — the full-width third row, the page's one mutation-heavy surface.
+- **Notification Recipients (R9.4).** The Fable Audit-History slot: one full-width `TableCard`
+  (compact uppercase section label, near-opaque table material, dense rows, card-level horizontal
+  overflow at a 560px floor, bordered footer note), with the add form in the toolbar slot and the
+  R9.1 `Switch` as the Active control. `src/app/settings/NotificationRecipientsCard.tsx` owns it, so
+  three mutations, per-row pending state, a confirmation gate and a feedback region never obscure the
+  read-only composition.
+  - **Server contract completely unchanged** — the same four endpoints
+    (`GET`/`POST /api/notification-recipients`, `PATCH`/`DELETE /api/notification-recipients/[id]`),
+    the same methods, payloads, email validation, 80-char label cap, trimming, shared-trust RLS and
+    delivery consumer. No API, repository, type or migration was touched.
+  - **Three dishonest client behaviours repaired.** A failed `GET` fell through
+    `Array.isArray(...) ? ... : []` and rendered the EMPTY state — now `loading`/`ready`/`error` are
+    three explicit states and a failure is never empty. The Active toggle swallowed every failure
+    behind `.catch(() => {})` — now the optimistic update rolls back, scoped to the one affected
+    recipient (never a whole-list snapshot, which would discard another row's concurrent result).
+    Delete removed the row BEFORE the request, also behind `.catch(() => {})` — now the row is
+    removed only after a confirmed response, behind the shared `DestructiveConfirm` gate.
+  - **Add clears only after confirmed success.** The route returns `{ ok: true }`, not the row, so a
+    success re-reads the confirmed list; a non-ok response preserves both entered values, shows a
+    localized failure and inserts nothing. `invalid_email` keeps its exact prior behaviour; a
+    unique-violation on the `citext UNIQUE` email column is now named specifically instead of
+    falling into the generic message. The server's own error text is classified, never rendered.
+- **Backward compatibility.** `/settings/notifications` is **preserved** as a server `redirect()` to
+  `/settings#notifications`. One direction only — `/settings` redirects nowhere, so no loop is
+  possible. Both paths stay `private_page`, both still resolve to the Settings nav group, and
+  `getPageTitle('/settings/notifications')` is unchanged. The notification bell now points **directly**
+  at `/settings#notifications` (one navigation instead of two); nothing else about the bell changed.
 - **Display preferences (R9.3).** Two `SegmentedControl` selectors, each a synchronized **view** of
   preference state that already existed and still lives elsewhere:
   - **Theme** → the one shared store `@/lib/useTheme` (`useTheme()` / `setTheme`). Key `theme`,
@@ -776,37 +803,34 @@ no shared Fable component modified; no CSS added (the meter fill reuses the exis
 - **Auth:** **protected** — `private_page` under default-deny, same as before.
 - **Fable destination:** **10 Administration**, Fable proportions preserved — row 1 `1.6 1 420px`
   beside `1 1 300px`; row 2 `1.2 1 320px` (Security) beside the Display slot Fable filled with its
-  five inert notification switches; `min-width:min(100%,…)` stacking, 14px gaps, 22px glass,
-  uppercase section labels, primary-over-subline rows, right-aligned trailing element (a status
-  chip on the read-only cards, a compact selector on Display).
+  five inert notification switches; row 3 the full-width Audit-History slot; `min-width:min(100%,…)`
+  stacking, 14px gaps, 22px glass, uppercase section labels, primary-over-subline rows,
+  right-aligned trailing element (a status chip on the read-only cards, a compact selector on
+  Display, a Switch + Remove chip on each recipient row), staggered `Reveal` at 70/130/190ms.
 - **New component required:** **No** — `PageHeader`, `GlassSurface`, `ChipLabel`, `AsyncState`,
-  `Reveal` and (R9.3) `SegmentedControl` all already existed. R9.3 introduced no shared primitive;
-  `SegmentedControl` is consumed unmodified, exactly as Compare / Macro / Chart Builder / Company
-  Detail / Portfolio / Structured Notes already do.
-- **Pending:** Notification Recipients card + the `/settings/notifications` redirect and bell
-  repoint → **R9.4**; Privacy Mode → **R9.6** (deliberately not stubbed — it still has no real
-  consumer, and a disabled or "coming soon" row would be a placeholder control).
-- **Impl. status:** R9.2 + R9.3 implemented · **Verif. status:** automated complete, manual pending.
+  `Reveal`, `SegmentedControl` (R9.3) and `TableCard`/`ChipButton`/`Switch`/`DestructiveConfirm`
+  (R9.4) all already existed. No shared primitive was introduced or modified in either phase; R9.4
+  is the R9.1 `Switch`'s first and only consumer.
+- **Pending:** Privacy Mode → **R9.6** (deliberately not stubbed — it still has no real consumer, and
+  a disabled or "coming soon" row would be a placeholder control).
+- **Impl. status:** R9.2 + R9.3 + R9.4 implemented · **Verif. status:** automated complete, manual
+  pending.
 
-## 13b. `/settings/notifications` 🔒 — Notification Settings (unchanged pending R9.4)
+## 13b. `/settings/notifications` 🔒 — preserved redirect — **R9.4 as built**
 
-- **Page title:** `SectionHeader` `t.notifications.settings.tag`/`title`/`subtitle`; "Back" →
-  `/structured-notes`.
-- **Content sections:** (1) add-recipient form (Email, Label, Add); (2) recipients table
-  (Email·Label·Active toggle·Remove); (3) note line.
-- **Data source / API:** `GET/POST /api/notification-recipients`, `PATCH/DELETE /{id}`.
-- **User interactions:** add-recipient form; active checkbox (optimistic); remove (optimistic);
-  "Back" link.
-- **Loading state:** "…".
-- **Empty state:** `t.notifications.settings.empty` card.
-- **Error state:** `invalid_email`/`addError` box.
-- **Auth:** **protected** (`/settings`).
-- **Fable destination:** **10 Administration** (notification switches + data-sources table lang).
-- **Fable component mapping:** recipients table → glass DataTable; active toggle → **toggle
-  switch** (30×18); add form → glass inputs; note → meta line.
-- **New component required:** **Yes** — recipients table + add form + toggle switch in glass
-  language.
-- **Impl. status:** Not started · **Verif. status:** Not verified.
+- **What it is now:** a server component whose only statement is
+  `redirect('/settings#notifications')`. The route is **preserved, not deleted**, so existing
+  bookmarks, older links and any pre-R9.4 bell target still resolve.
+- **Direction:** one-way by construction. `/settings` redirects nowhere, so a loop is impossible.
+- **Content sections / data source / user interactions:** none — the entire workflow (add form,
+  recipients table, Active toggle, Remove) moved to `/settings#notifications`, section 13 above.
+  The four API endpoints it used are unchanged and are now called from
+  `src/app/settings/NotificationRecipientsCard.tsx`.
+- **Auth:** **protected** — still `private_page` under default-deny, and still resolving to the
+  Settings nav group with an unchanged `getPageTitle`.
+- **Fable destination:** n/a — the destination is section 13's full-width third row.
+- **New component required:** **No.**
+- **Impl. status:** R9.4 implemented · **Verif. status:** automated complete, manual pending.
 
 ## 14. `/login` — Sign in / Create account
 

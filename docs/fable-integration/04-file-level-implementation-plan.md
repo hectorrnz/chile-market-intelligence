@@ -2859,6 +2859,100 @@ horizontal overflow.
 
 ---
 
+## Phase R9.4 — Notification Recipients integrated into Settings ✓ IMPLEMENTED (2026-08-04, automated validation complete, manual browser validation pending)
+
+The recipient workflow moves into the canonical Settings page as the **full-width third Fable row**,
+completing the approved composition. It is the one mutation-heavy surface on the page, so it owns its
+own component — three server operations, per-row pending state, a confirmation gate and a feedback
+region would otherwise obscure the read-only Account / Data Sources / Security / Display cards.
+
+### The server contract did not change — the client's honesty did
+
+Same four endpoints, methods, payload shapes, email validation, 80-character label cap, trimming,
+recipient fields, shared-trust RLS and delivery consumer. **No API, repository, database type,
+migration, auth rule or dependency was touched.** What R9.4 fixed is three places where the legacy
+page told the user something the server had not confirmed:
+
+| Legacy behaviour | Why it was dishonest | R9.4 |
+|---|---|---|
+| A failed `GET` fell through `Array.isArray(json.recipients) ? … : []` | "we could not reach the server" and "you have no recipients" rendered identically | `loading` / `ready` / `error` are three explicit states; the throw precedes the array check, so a failure can never be empty |
+| `toggleActive` ended in `.catch(() => {})` | a rejected PATCH left the row showing a state the server refused, until the next reload | the optimistic update **rolls back**, scoped to the one affected recipient, with a localized failure |
+| `remove` filtered the row out *before* the request, also behind `.catch(() => {})` | a failed DELETE looked exactly like a success | the row survives until a confirmed response, behind a real confirmation dialog |
+
+**Row-scoped rollback, never a whole-list snapshot.** Each toggle captures *that* recipient's prior
+value and restores only that id. Restoring a whole-list snapshot would discard another row's
+concurrently-confirmed result. Pending is keyed by recipient id, so one row's in-flight request never
+disables another, and a second PATCH for the same row is refused.
+
+**Add clears only after confirmed success.** `POST` returns `{ ok: true }`, not the created row, so a
+success re-reads the confirmed list; a non-ok response preserves both entered values and inserts
+nothing. `invalid_email` keeps its exact prior message. A unique-violation on the `citext UNIQUE`
+email column is now named specifically instead of falling into the generic failure — the server's own
+sanitized text is **classified, never rendered**.
+
+**Delete is gated and server-confirmed.** The shared `DestructiveConfirm` names the recipient (email
+plus its real label, no invented field); cancel, Escape, the scrim and ✕ never mutate; the shell
+fires confirm at most once per open and locks while pending. Both that row's Switch and its Remove
+control are disabled during the request, and the dialog closes on either outcome so the feedback
+region is visible and focus returns to the Remove control that opened it.
+
+### Composition
+
+One full-width `TableCard` — which already *is* Fable's Audit-History anatomy (card glass, compact
+uppercase label, near-opaque dense table material, card-level horizontal overflow at a 560px floor,
+bordered footer slot). The add form sits in its toolbar `controls` slot, the R9.1 `Switch` is the
+Active control, and `ChipButton` serves both Add and Remove. **No shared primitive was introduced or
+modified** — R9.4 is the Switch's first and only consumer, and it needed no change to serve it.
+
+Feedback is one coherent region with **two** permanently-mounted live areas: `role="alert"` for
+errors and a separate `aria-live="polite"` for success. They are deliberately separate elements —
+`role="alert"` is implicitly assertive, so an explicit polite value on the same node would muddle
+both announcements. `aria-invalid` and `aria-describedby` on the email field are scoped to an *add*
+error, so an unrelated row failure never marks the form invalid; otherwise the field is described by
+the shared-trust footer note.
+
+### Route compatibility
+
+`/settings/notifications` is **preserved** as a server `redirect()` to `/settings#notifications` — one
+direction only, since `/settings` redirects nowhere. Both paths stay `private_page`, both resolve to
+the Settings nav group, and `getPageTitle('/settings/notifications')` is unchanged. The notification
+bell now points **directly** at the section (one navigation instead of two); its fetching, polling,
+unread state, drawer behaviour, focus trap and icons are untouched.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `src/app/settings/NotificationRecipientsCard.tsx` **(new)** | The integrated workflow: load states, add, row-scoped toggle, confirmed delete, feedback region, Fable table. |
+| `src/app/settings/SettingsClient.tsx` | Renders it as the full-width third row inside a new 190ms `Reveal`. Nothing else changed. |
+| `src/app/settings/notifications/page.tsx` | Legacy implementation replaced by the preserved one-way redirect. |
+| `src/components/ui/NotificationBell.tsx` | Only the Settings destination — `/settings/notifications` → `/settings#notifications`. |
+| `src/lib/i18n.ts` | 14 new `notifications.settings.*` keys, EN + ES. Every pre-existing key preserved. |
+| `tests/fableSettingsPage.test.ts` | +34 cases (99 total) covering all 103 required checks; six R9.2/R9.3 sequencing-hold assertions updated where R9.4 supersedes them. |
+| `tests/notificationsPlatform.test.ts` | Recipient-logic assertions follow the workflow to its canonical component (none weakened, several strengthened); bell href updated; explicit route-existence + redirect assertions added. |
+| `tests/responsiveLayout.test.ts` | New 560px recipients-table floor guard + a form-stacking describe. Every existing entry and threshold preserved. |
+| `tests/fableComponents.test.ts` | R9.1's "the primitive still has no consumer" premise is falsified by R9.4. Rewritten to assert the enduring property: exactly one consumer, and the primitive itself unchanged. |
+
+`src/app/settings/page.tsx`, `Switch.tsx`, the recipient API routes, the notifications repository,
+database types, migrations, auth code, middleware, theme/language architecture, Portfolio and Home
+are untouched — and asserted so. Privacy Mode remains **R9.6**.
+
+**Gates:** full suite 3957 → **3999 · 3996 pass · 3 fail** (only the known `newsModule`
+date-dependent trio); lint 0; build 0 errors.
+
+**Manual browser validation: PENDING** (390 / 1024 / 1728 + 320 stress, EN/ES, light/dark,
+normal/reduced-motion): `/settings#notifications` lands on the section; `/settings/notifications`
+redirects; the bell lands directly; Back/Forward behave predictably; recipients load; empty and
+blocked states are honest; add success clears and failure preserves; duplicate handling correct;
+toggle persists across reload and visibly rolls back on failure; other rows stay usable during a row
+PATCH; cancel and Escape send no DELETE; confirm sends exactly one; the row survives a pending or
+failed delete; messages are announced; the dialog traps and restores focus; the Switch reads
+correctly in both themes and its touch target does not overlap Remove; the form stacks at 390px;
+table scroll stays inside the card; long emails and Spanish labels do not overflow; no Privacy Mode;
+the existing cards remain intact; signed-out access redirects to login.
+
+---
+
 ## Phase 7 — i18n additions & cleanup (`src/lib/i18n.ts`)
 
 Any new visible string (login utility chips "Secure connection", contrast label, privacy-mask

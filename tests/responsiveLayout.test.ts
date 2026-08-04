@@ -210,6 +210,35 @@ describe('dense tables scroll inside their card', () => {
   test('Watchlist keeps its 620px table floor while scrolling inside the card', () => {
     assert.match(read('src/app/watchlist/page.tsx'), /minWidth=\{620\}/)
   })
+
+  // R9.4: the Settings recipients table — Email · Label · Active · Remove.
+  test('Settings recipients keeps its 560px table floor while scrolling inside the card', () => {
+    const src = read('src/app/settings/NotificationRecipientsCard.tsx')
+    assert.match(src, /minWidth=\{560\}/)
+    // The scroll is TableCard's, never a page-level workaround of its own.
+    assert.doesNotMatch(src, /overflow-x-auto|overflow-x-scroll/)
+  })
+})
+
+// R9.4 — the one form added to Settings must stack rather than pin fixed widths.
+describe('the Settings recipient form stacks instead of overflowing', () => {
+  const src = read('src/app/settings/NotificationRecipientsCard.tsx')
+
+  test('inputs are full-width from a flex basis — no fixed w-64/w-48 field', () => {
+    assert.doesNotMatch(src, /\bw-64\b|\bw-48\b|\bw-36\b|\bw-\[\d+px\]/)
+    assert.match(src, /h-8 w-full rounded-\[var\(--radius-input\)\]/)
+    assert.equal((src.match(/grow shrink basis-\[\d+px\] min-w-0/g) ?? []).length, 2)
+  })
+
+  test('the form wraps and is full width until lg, where it becomes a toolbar', () => {
+    assert.match(src, /flex flex-wrap items-end gap-2 w-full lg:w-auto/)
+    assert.match(src, /flex flex-col gap-2 w-full lg:w-auto/)
+  })
+
+  test('long emails and labels wrap inside their cell', () => {
+    assert.match(src, /font-mono break-all/)
+    assert.match(src, /text-muted-fg break-words/)
+  })
 })
 
 describe('shared components wrap instead of overflowing', () => {

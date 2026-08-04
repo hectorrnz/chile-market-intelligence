@@ -22,6 +22,8 @@ const RECIPIENT_ID_ROUTE = read('../src/app/api/notification-recipients/[id]/rou
 const MIDDLEWARE = read('../src/middleware.ts')
 const BELL = read('../src/components/ui/NotificationBell.tsx')
 const SETTINGS_PAGE = read('../src/app/settings/notifications/page.tsx')
+/** R9.4 — the canonical home of the recipient workflow. */
+const RECIPIENTS_CARD = read('../src/app/settings/NotificationRecipientsCard.tsx')
 const ENV_EXAMPLE = read('../.env.example')
 
 describe('migration hygiene', () => {
@@ -180,19 +182,62 @@ describe('NotificationBell UI', () => {
     assert.ok(BELL.includes("backgroundColor: 'var(--critical-fill)'"))
     assert.ok(BELL.includes("color: 'var(--critical-fill-fg)'"))
   })
-  it('links to the recipients settings page', () => {
-    assert.ok(BELL.includes('/settings/notifications'))
+  it('links to the recipients settings section', () => {
+    // R9.4 — the workflow moved into the canonical Settings page, so the bell
+    // points straight at the integrated section instead of through the
+    // preserved /settings/notifications redirect.
+    assert.ok(BELL.includes('/settings#notifications'))
   })
 })
 
-describe('Settings page — recipient management is editable (add/remove/toggle active)', () => {
+describe('Settings — recipient management is editable (add/remove/toggle active)', () => {
+  // R9.4 relocated the workflow: /settings/notifications is now a redirect and
+  // the canonical component is NotificationRecipientsCard. These assertions
+  // follow the logic to where it lives — none of them was weakened.
   it('supports add, remove, and active toggle', () => {
-    assert.ok(SETTINGS_PAGE.includes('handleAdd'))
-    assert.ok(SETTINGS_PAGE.includes('async function remove'))
-    assert.ok(SETTINGS_PAGE.includes('toggleActive'))
+    assert.ok(RECIPIENTS_CARD.includes('handleAdd'))
+    assert.ok(RECIPIENTS_CARD.includes('async function confirmRemove'))
+    assert.ok(RECIPIENTS_CARD.includes('toggleActive'))
   })
+
+  it('still uses exactly the four pre-existing endpoints, methods and payloads', () => {
+    assert.ok(RECIPIENTS_CARD.includes("const ENDPOINT = '/api/notification-recipients'"))
+    assert.ok(RECIPIENTS_CARD.includes("method: 'POST'"))
+    assert.ok(RECIPIENTS_CARD.includes("method: 'PATCH'"))
+    assert.ok(RECIPIENTS_CARD.includes("method: 'DELETE'"))
+    assert.ok(RECIPIENTS_CARD.includes('JSON.stringify({ email: trimmedEmail, label: label.trim() || undefined })'))
+    assert.ok(RECIPIENTS_CARD.includes('JSON.stringify({ active: next })'))
+  })
+
   it('never claims a recipient must be a registered app user', () => {
-    assert.ok(!/must be a registered/i.test(SETTINGS_PAGE))
+    assert.ok(!/must be a registered/i.test(RECIPIENTS_CARD))
+    assert.ok(RECIPIENTS_CARD.includes('{n.note}'), 'the shared-trust note is still rendered')
+  })
+
+  it('mutations are server-confirmed — no swallowed failure, no optimistic delete', () => {
+    // The three dishonest behaviours the legacy page shipped are gone. The
+    // swallowed-catch scan runs comment-stripped: the file's own header
+    // legitimately QUOTES the `.catch(() => {})` it removed.
+    const body = RECIPIENTS_CARD.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    assert.ok(!/\.catch\(\(\)\s*=>\s*\{\s*\}\)/.test(body), 'no swallowed catch')
+    assert.ok(RECIPIENTS_CARD.includes("if (!res.ok) throw new Error('update_failed')"))
+    assert.ok(RECIPIENTS_CARD.includes("if (!res.ok) throw new Error('delete_failed')"))
+    // The delete removes the row only after the ok check.
+    const del = RECIPIENTS_CARD.indexOf('async function confirmRemove')
+    const ok = RECIPIENTS_CARD.indexOf("if (!res.ok) throw new Error('delete_failed')", del)
+    const removal = RECIPIENTS_CARD.indexOf('prev.filter((x) => x.id !== target.id)', del)
+    assert.ok(ok > 0 && removal > ok, 'the row survives until the DELETE is confirmed')
+  })
+})
+
+describe('/settings/notifications remains reachable as a redirect', () => {
+  it('the route still exists and redirects to the integrated section', () => {
+    assert.ok(SETTINGS_PAGE.includes("import { redirect } from 'next/navigation'"))
+    assert.ok(SETTINGS_PAGE.includes("redirect('/settings#notifications')"))
+  })
+  it('the redirect is one-directional — the canonical page redirects nowhere', () => {
+    assert.ok(!/redirect\(/.test(read('../src/app/settings/SettingsClient.tsx')))
+    assert.ok(!/redirect\(/.test(read('../src/app/settings/page.tsx')))
   })
 })
 
