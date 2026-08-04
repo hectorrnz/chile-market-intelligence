@@ -263,6 +263,22 @@ export const dict = {
         resetPassword: 'Send password reset email',
         signOut: 'Sign out',
       },
+      // R9.3 — Display preferences. `english`/`spanish` are deliberately
+      // ENDONYMS and therefore identical in both dictionaries: a language's own
+      // name does not translate, and a user who lands in a language they cannot
+      // read must still be able to find their own.
+      display: {
+        title: 'Display',
+        theme: 'Theme',
+        themeDesc: 'Interface appearance across every page',
+        light: 'Light',
+        dark: 'Dark',
+        language: 'Language',
+        languageDesc: 'Language of labels, headings and status text',
+        english: 'English',
+        spanish: 'Español',
+        note: 'Applied immediately and remembered in this browser.',
+      },
     },
     commandk: {
       recent:      'Recent searches',
@@ -1188,6 +1204,18 @@ export const dict = {
         passwordState: 'Recuperación por correo',
         resetPassword: 'Enviar correo de restablecimiento',
         signOut: 'Cerrar sesión',
+      },
+      display: {
+        title: 'Visualización',
+        theme: 'Tema',
+        themeDesc: 'Apariencia de la interfaz en todas las páginas',
+        light: 'Claro',
+        dark: 'Oscuro',
+        language: 'Idioma',
+        languageDesc: 'Idioma de etiquetas, títulos y textos de estado',
+        english: 'English',
+        spanish: 'Español',
+        note: 'Se aplica de inmediato y se recuerda en este navegador.',
       },
     },
     commandk: {

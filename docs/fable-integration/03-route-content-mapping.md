@@ -31,7 +31,7 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
 | 10 | `/portfolio` 🔒 | Portfolio | protected | 1 Overview + 2 Portfolio + 4 Risk | No (reused Phase 3 `TableCard`/`KpiCapsule`/`ChangeIndicator`/`SegmentedControl`/`GlassSurface`/`AsyncState`) | **✓ Phase 5H (2026-07-29)** | **✓ Source-scan verified** |
 | 11 | `/structured-notes` 🔒 | Structured Notes | protected | 6 Structured Notes | Yes — barrier gauge, upload/extract panel, dashboard KPIs, bar/donut | Not started | Not verified |
 | 12 | `/structured-notes/[id]` 🔒 | note ISIN/name | protected | 6 SN detail panel | Yes — terms grid, current-levels table, schedule, allocation grid | Not started | Not verified |
-| 13 | `/settings` 🔒 | Settings | protected | 10 Administration | Yes — Account, Data Sources, Security cards | **R9.2 implemented (2026-08-03)** | Automated complete; manual pending |
+| 13 | `/settings` 🔒 | Settings | protected | 10 Administration | Yes — Account, Data Sources, Security, Display cards | **R9.2 + R9.3 implemented (2026-08-04)** | Automated complete; manual pending |
 | 13b | `/settings/notifications` 🔒 | Notification Settings | protected | 10 Administration | Yes — recipients table, add form | Unchanged pending R9.4 | Not verified |
 | 14 | `/login` | Sign in / Create account | public (auth) | 0 Login | Yes — cinematic login shell, glass auth panel | **R1 implemented (2026-07-29)** | Automated complete; manual pending |
 | 15 | `/forgot-password` | Reset your password | public (auth) | 0 Login (variant) | Yes — auth-panel variant | Not started | Not verified |
@@ -723,7 +723,7 @@ no shared Fable component modified; no CSS added (the meter fill reuses the exis
   allocation grid (as a full detail page; Fable offers the language via its SN detail panel).
 - **Impl. status:** Not started · **Verif. status:** Not verified.
 
-## 13. `/settings` 🔒 — Settings (canonical) — **R9.2 as built**
+## 13. `/settings` 🔒 — Settings (canonical) — **R9.2 + R9.3 as built**
 
 - **Canonical destination.** `/settings` is now what the primary Settings nav item points at.
   `/settings/notifications` is **unchanged and still fully functional** — `matchesPrefix` keeps it
@@ -738,7 +738,26 @@ no shared Fable component modified; no CSS added (the meter fill reuses the exis
 - **Content sections:** (1) `PageHeader`; (2) **Account** — display name · email · username ·
   access, as a `<dl>`; (3) **Data sources** — live rows from `GET /api/health/ingestion`;
   (4) **Security** — four factual NMI invariants plus Reset-password → `/forgot-password` and
-  Sign out → `/logout`.
+  Sign out → `/logout`; (5) **Display** (R9.3) — Theme and Language, the page's only interactive
+  card.
+- **Display preferences (R9.3).** Two `SegmentedControl` selectors, each a synchronized **view** of
+  preference state that already existed and still lives elsewhere:
+  - **Theme** → the one shared store `@/lib/useTheme` (`useTheme()` / `setTheme`). Key `theme`,
+    RAW `'dark' | 'light'`, default `dark` — all unchanged, and the option values ARE the stored
+    values, so nothing is mapped or re-encoded. The pre-paint script in `layout.tsx` is untouched
+    and still compares the raw string; the single downstream effect is still
+    `documentElement.classList.toggle('dark', …)`.
+  - **Language** → the existing `LangProvider` (`useLang()` / `setLang`). Key `lang`, RAW
+    `'en' | 'es'`, default `en`. Option labels are **endonyms** (English · Español) in both
+    dictionaries, so a user who lands in a language they cannot read can still find their own.
+  - **Synchronization is bidirectional and automatic**, because neither control owns state: Settings
+    ↔ TopBar in the same tab (theme via the store's `cmi-ls:theme` event; language via React
+    context) and across tabs (both via the native `storage` event). No second key, provider,
+    dictionary, default, or storage format was introduced.
+  - **Immediate-save model** — no Save / Apply / Cancel / Reset / unsaved-changes state / toast. The
+    downstream effect (the whole app repainting or retranslating) *is* the confirmation. The card's
+    footer states plainly that the choice applies immediately and is remembered in this browser —
+    a factual statement about per-browser client preferences, not a fabricated "saved" indicator.
 - **Data source / API:** existing `/api/health/ingestion` only (macro + market domains). Fetched
   after mount with an `AbortController`; `AsyncState` `loading` / `unavailable` / `empty` are
   distinct, so a failure is never rendered as healthy or empty. Every subline field is guarded on
@@ -755,14 +774,19 @@ no shared Fable component modified; no CSS added (the meter fill reuses the exis
   inert notification switches, the four reporting policies, and the audit log with its seven-year
   immutability claim. The **visual** composition is reproduced exactly; the content is NMI's.
 - **Auth:** **protected** — `private_page` under default-deny, same as before.
-- **Fable destination:** **10 Administration**, Fable proportions preserved (row 1 `1.6 1 420px`
-  beside `1 1 300px`, `min-width:min(100%,…)` stacking, 14px gaps, 22px glass, uppercase section
-  labels, primary-over-subline rows, right-aligned chips).
+- **Fable destination:** **10 Administration**, Fable proportions preserved — row 1 `1.6 1 420px`
+  beside `1 1 300px`; row 2 `1.2 1 320px` (Security) beside the Display slot Fable filled with its
+  five inert notification switches; `min-width:min(100%,…)` stacking, 14px gaps, 22px glass,
+  uppercase section labels, primary-over-subline rows, right-aligned trailing element (a status
+  chip on the read-only cards, a compact selector on Display).
 - **New component required:** **No** — `PageHeader`, `GlassSurface`, `ChipLabel`, `AsyncState`,
-  `Reveal` all already existed.
-- **Pending:** Display card (theme · language) → **R9.3**; Notification Recipients card + the
-  `/settings/notifications` redirect and bell repoint → **R9.4**; Privacy Mode → **R9.6**.
-- **Impl. status:** R9.2 implemented · **Verif. status:** automated complete, manual pending.
+  `Reveal` and (R9.3) `SegmentedControl` all already existed. R9.3 introduced no shared primitive;
+  `SegmentedControl` is consumed unmodified, exactly as Compare / Macro / Chart Builder / Company
+  Detail / Portfolio / Structured Notes already do.
+- **Pending:** Notification Recipients card + the `/settings/notifications` redirect and bell
+  repoint → **R9.4**; Privacy Mode → **R9.6** (deliberately not stubbed — it still has no real
+  consumer, and a disabled or "coming soon" row would be a placeholder control).
+- **Impl. status:** R9.2 + R9.3 implemented · **Verif. status:** automated complete, manual pending.
 
 ## 13b. `/settings/notifications` 🔒 — Notification Settings (unchanged pending R9.4)
 

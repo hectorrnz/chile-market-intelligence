@@ -16,6 +16,15 @@
 // This component owns no account authority: every account value arrives
 // pre-resolved and sanitized from the server component, which is the only place
 // `supabase.auth.getUser()` and the `user_profiles` row are read.
+//
+// R9.3 — the Display card joins Security in the second Fable row, taking the
+// slot Fable filled with its five inert notification switches. It is the only
+// interactive card on the page. Both of its controls are VIEWS of preference
+// state that already existed and still lives elsewhere: theme in the one shared
+// store (`@/lib/useTheme`), language in `LangProvider`. Nothing here owns,
+// copies, re-defaults, or re-persists either value — which is exactly why the
+// TopBar controls and these stay in step in both directions, in this tab and
+// across tabs, with no new key, provider, or storage format.
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
@@ -24,8 +33,11 @@ import { PageHeader } from '@/components/fable/PageHeader'
 import { GlassSurface } from '@/components/fable/GlassSurface'
 import { ChipLabel } from '@/components/fable/Chip'
 import { AsyncState } from '@/components/fable/AsyncState'
+import { SegmentedControl } from '@/components/fable/SegmentedControl'
 import { Reveal } from '@/components/fable/motion'
 import { formatSourceDate } from '@/lib/formatters'
+import { useTheme, type Theme } from '@/lib/useTheme'
+import type { Lang } from '@/lib/i18n'
 
 /** Sanitized, serializable account facts resolved server-side. Never a token, never a role. */
 export interface SettingsAccount {
@@ -90,8 +102,33 @@ function StatusRow({ name, detail, chip }: { name: string; detail?: string | nul
   )
 }
 
+/**
+ * R9.3 — the same Fable row anatomy as `StatusRow` (identical `ROW` padding,
+ * rule and label-over-subline block), with a compact control pinned right
+ * instead of a status chip.
+ *
+ * The one addition is `flex-wrap` + a real `basis`: at a narrow width the
+ * selector drops to its own right-aligned line rather than squeezing the label
+ * to a sliver. `StatusRow` keeps its own single-line behavior untouched, so the
+ * Account/Data-sources/Security rows are byte-identical to R9.2.
+ */
+function PreferenceRow({ label, detail, control }: { label: string; detail: string; control: React.ReactNode }) {
+  return (
+    <div className={`${ROW} flex-wrap`}>
+      <span className="grow shrink basis-[140px] min-w-0">
+        <span className="block text-xs text-foreground font-medium break-words">{label}</span>
+        <span className="block ui-meta text-muted-fg mt-0.5 break-words">{detail}</span>
+      </span>
+      {control}
+    </div>
+  )
+}
+
 export function SettingsClient({ account }: { account: SettingsAccount }) {
-  const { t } = useLang()
+  // Both preferences are read from the systems that already own them — this
+  // component adds no authoritative state of its own for either one.
+  const { lang, setLang, t } = useLang()
+  const { theme, setTheme } = useTheme()
   const s = t.settings
 
   const [health, setHealth] = useState<IngestionHealth | null>(null)
@@ -214,27 +251,85 @@ export function SettingsClient({ account }: { account: SettingsAccount }) {
         </div>
       </Reveal>
 
-      {/* Row 2 — Security. Full width in R9.2; R9.3 places the Display card beside it. */}
+      {/* Row 2 — Fable's second Administration row: Security beside the card
+          that in the prototype held five inert notification switches. R9.3
+          gives that slot to Display, at the approved 1.2 / 1 proportions. */}
       <Reveal delayMs={130}>
-        <GlassSurface as="section" className={`${CARD} mt-[14px] block`}>
-          <CardTitle>{s.security.title}</CardTitle>
-          <div className="mt-1">
-            <StatusRow name={s.security.access} detail={s.security.accessDesc} chip={<ChipLabel>{s.security.accessState}</ChipLabel>} />
-            <StatusRow name={s.security.signup} detail={s.security.signupDesc} chip={<ChipLabel>{s.security.signupState}</ChipLabel>} />
-            <StatusRow name={s.security.rls} detail={s.security.rlsDesc} chip={<ChipLabel>{s.security.rlsState}</ChipLabel>} />
-            <StatusRow name={s.security.password} detail={s.security.passwordDesc} chip={<ChipLabel>{s.security.passwordState}</ChipLabel>} />
-          </div>
-          {/* Both actions reuse the canonical existing routes — no second auth
-              workflow, and no signed-in password-change flow is invented. */}
-          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
-            <Link href="/forgot-password" className="text-xs text-accent hover:underline nv-transition">
-              {s.security.resetPassword}
-            </Link>
-            <a href="/logout" className="text-xs text-negative hover:underline nv-transition">
-              {s.security.signOut}
-            </a>
-          </div>
-        </GlassSurface>
+        <div className="flex flex-wrap items-stretch gap-[14px] mt-[14px]">
+          <GlassSurface as="section" className={`${CARD} grow-[1.2] shrink basis-[320px] min-w-[min(100%,290px)]`}>
+            <CardTitle>{s.security.title}</CardTitle>
+            <div className="mt-1">
+              <StatusRow name={s.security.access} detail={s.security.accessDesc} chip={<ChipLabel>{s.security.accessState}</ChipLabel>} />
+              <StatusRow name={s.security.signup} detail={s.security.signupDesc} chip={<ChipLabel>{s.security.signupState}</ChipLabel>} />
+              <StatusRow name={s.security.rls} detail={s.security.rlsDesc} chip={<ChipLabel>{s.security.rlsState}</ChipLabel>} />
+              <StatusRow name={s.security.password} detail={s.security.passwordDesc} chip={<ChipLabel>{s.security.passwordState}</ChipLabel>} />
+            </div>
+            {/* Both actions reuse the canonical existing routes — no second auth
+                workflow, and no signed-in password-change flow is invented. */}
+            <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
+              <Link href="/forgot-password" className="text-xs text-accent hover:underline nv-transition">
+                {s.security.resetPassword}
+              </Link>
+              <a href="/logout" className="text-xs text-negative hover:underline nv-transition">
+                {s.security.signOut}
+              </a>
+            </div>
+          </GlassSurface>
+
+          <GlassSurface as="section" className={`${CARD} grow shrink basis-[300px] min-w-[min(100%,280px)]`}>
+            <CardTitle>{s.display.title}</CardTitle>
+            <div className="mt-1">
+              {/* Theme — a VIEW of the shared store. `theme` is the store's own
+                  value and `setTheme` its own writer, so selecting here updates
+                  the document class, storage, the TopBar toggle and every other
+                  tab through exactly one code path. The option values ARE the
+                  stored values, so nothing is mapped or re-encoded.
+                  `remeasureToken` re-measures the sliding indicator when a
+                  language change re-renders these labels at a new width. */}
+              <PreferenceRow
+                label={s.display.theme}
+                detail={s.display.themeDesc}
+                control={
+                  <SegmentedControl<Theme>
+                    options={[
+                      { value: 'light', label: s.display.light },
+                      { value: 'dark', label: s.display.dark },
+                    ]}
+                    value={theme}
+                    onChange={setTheme}
+                    ariaLabel={s.display.theme}
+                    remeasureToken={lang}
+                    className="shrink-0 ml-auto"
+                  />
+                }
+              />
+              {/* Language — a VIEW of LangProvider. Same shape: `lang` is the
+                  provider's value, `setLang` its writer, and the option values
+                  are the stored raw ones. Both labels are endonyms in both
+                  dictionaries, so someone who lands in a language they do not
+                  read can still find their own. */}
+              <PreferenceRow
+                label={s.display.language}
+                detail={s.display.languageDesc}
+                control={
+                  <SegmentedControl<Lang>
+                    options={[
+                      { value: 'en', label: s.display.english },
+                      { value: 'es', label: s.display.spanish },
+                    ]}
+                    value={lang}
+                    onChange={setLang}
+                    ariaLabel={s.display.language}
+                    className="shrink-0 ml-auto"
+                  />
+                }
+              />
+            </div>
+            {/* Factual, not a saved-state indicator: these are per-browser
+                client preferences, not account settings, applied on selection. */}
+            <p className="mt-2.5 ui-meta text-muted-fg">{s.display.note}</p>
+          </GlassSurface>
+        </div>
       </Reveal>
     </div>
   )

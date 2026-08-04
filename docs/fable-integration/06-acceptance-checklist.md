@@ -744,6 +744,67 @@ loading state · empty state · error state · auth status — verified identica
   page-level horizontal scroll; long emails and Spanish strings do not collide; contrast correct in
   both themes.
 
+#### R9.3 · Functional Display preferences (Theme · Language)
+- [x] **Display card added in the second Fable row**, beside Security, taking the slot Fable filled
+  with five inert notification switches. Approved proportions: Security `1.2 1 320px` beside Display
+  `1 1 300px`, `min-width:min(100%,…)` stacking, 14px gap, `flex-wrap`, 22px glass, uppercase
+  section label, primary-over-subline rows, right-aligned compact control. The new card sits inside
+  the **existing** 130ms `Reveal`, so the staggered cadence is unchanged. No sidebar, no tabs, no
+  separate Appearance page, no generic form layout.
+- [x] **Theme uses the shared `useTheme` architecture — one store, one key, one writer.** The card
+  renders `theme` and calls `setTheme`; it owns no theme state. Key `theme`, RAW `'dark' | 'light'`,
+  default `dark` — unchanged. Option values *are* the stored values, so nothing is mapped or
+  re-encoded. No `usePersistentState` (its JSON form could never match the pre-paint comparison), no
+  JSON serialization, no second key, no provider.
+- [x] **Language uses the existing `LangProvider`.** The card renders `lang` and calls `setLang`. No
+  second provider, dictionary, key, default, or authoritative language state.
+- [x] **Settings and the TopBar are synchronized interfaces, both directions.** Neither owns state,
+  so a change in either updates the other immediately — same tab (theme via the store's
+  `cmi-ls:theme` event, language via React context) and across tabs (both via the native `storage`
+  event). Asserted by cross-file checks, not merely by import presence.
+- [x] **Existing raw storage formats and the pre-paint script preserved.** `src/app/layout.tsx` is
+  unmodified and still compares the raw `'light'` string; the single downstream theme effect is
+  still `documentElement.classList.toggle('dark', …)`; `ThemeToggle`'s markup and accessibility
+  contract are unchanged.
+- [x] **Immediate-save model.** No Save, Apply, Cancel, Reset, unsaved-changes state, confirmation
+  dialog, or success toast — asserted absent from the source *and* from both dictionaries. The
+  downstream effect is the confirmation; the footer's "applies immediately, remembered in this
+  browser" is a factual statement about per-browser client preferences, not a fake saved state.
+- [x] **No new shared primitive.** The existing `SegmentedControl` is consumed unmodified (its
+  signature is asserted unchanged). Chosen over embedding `ThemeToggle`/`LangToggle`, whose
+  top-bar-specific `h-7` capsule and icon-only collapse below `sm` are wrong in a settings row.
+- [x] **Accessibility.** The Display card is a subordinate `h2`; each selector is a
+  `role="radiogroup"` with an `aria-label` from the dictionary; each option is a `role="radio"` with
+  `aria-checked`; **no `role="switch"`** for these multi-option selectors; roving tabindex with
+  Arrow/Home/End; selected state also carried by font weight, never colour alone; global
+  focus-visible ring not suppressed; the control is a sibling of the label, never nested in it or in
+  a heading; no native `alert`/`confirm`/`prompt`.
+- [x] **Localization.** Ten `settings.display` keys in both dictionaries, exact parity across the
+  whole namespace; no hardcoded visible copy (asserted against string literals and JSX text nodes);
+  every pre-existing R9.2, notification and `topbar` key intact. `english`/`spanish` are deliberately
+  **endonyms** and identical in EN and ES — a language's own name does not translate, and a user
+  stranded in a language they cannot read must still find their own.
+- [x] **Privacy Mode still deferred to R9.6.** Not rendered, not imported, not stubbed — no
+  `usePrivacyMode`/`PrivacyToggle`/`PrivacyValue`, no mask/hide-balances control, and no
+  disabled or "coming soon" row (a placeholder control is still a placeholder).
+- [x] **Notification Recipients still pending R9.4.** No card, no recipient import, no API call;
+  `/settings/notifications` and `NotificationBell` untouched and asserted unchanged — no redirect,
+  no bell repoint.
+- [x] **No migration, API, provider, dependency, or remote-resource change.** No `user_profiles`
+  write, no service-role import, no server-side preference persistence, no new endpoint.
+- [x] **Automated results.** `tests/fableSettingsPage.test.ts` 65/65 (+27); focused suites 816/816;
+  every `SegmentedControl` phase-boundary guard 860/860 (`/settings` is absent from all of them, so
+  none needed relaxing); full suite 3930 → 3957 (3954 pass, only the known `newsModule` trio
+  failing); lint 0; build 0 errors with `/settings` still `ƒ` and `/settings/notifications` still `○`.
+- [ ] **Manual browser validation — PENDING.** 390/1024/1728 (+320), EN/ES, light/dark,
+  normal/reduced-motion: Settings theme selection changes the whole app; TopBar theme control
+  updates immediately and vice versa; theme survives reload with no wrong-theme flash; another tab
+  receives the theme change; Settings language selection retranslates the whole app; TopBar language
+  control updates immediately and vice versa; language survives reload; another tab receives the
+  language change; Security and Display align at desktop widths and stack cleanly at 390px; Spanish
+  labels do not collide or overflow; controls remain touch-usable; no Privacy Mode; no Save or
+  Cancel; no page-level horizontal overflow.
+
 ### C4 · Engineering gates (run at each phase boundary)
 - [x] `npm run build` → 0 errors, all routes present. *(Phase 1 boundary: compiled in 6.4s, 19/19
   static pages, full route list unchanged. Phase 2 boundary: 0 errors, 19/19 static pages, full

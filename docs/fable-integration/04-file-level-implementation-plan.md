@@ -2744,6 +2744,121 @@ strings do not collide; card contrast correct in both themes; no fabricated Admi
 
 ---
 
+## Phase R9.3 — Functional Display preferences in Settings ✓ IMPLEMENTED (2026-08-04, automated validation complete, manual browser validation pending)
+
+A **Display** card joins Security in the second Fable row, taking the slot Fable filled with its five
+inert notification switches. It is the only interactive card on `/settings`, and it contains exactly
+two rows: **Theme** and **Language**.
+
+### The governing idea — a view, never a second owner
+
+Both preferences already existed and still live exactly where they lived before. The Display card
+adds **no** authoritative state, key, provider, dictionary, default, storage format, or persistence
+path. It renders the current value and calls the existing setter.
+
+| Preference | Owner (unchanged) | Key | Format | Default | Same-tab sync | Cross-tab sync |
+|---|---|---|---|---|---|---|
+| Theme | `src/lib/useTheme.ts` (one `useSyncExternalStore` store) | `theme` | RAW `'dark' \| 'light'` | `dark` | `cmi-ls:theme` event | native `storage` event |
+| Language | `LangProvider` | `lang` | RAW `'en' \| 'es'` | `en` | React context | native `storage` event (R9.0) |
+
+That single fact is what makes synchronization **bidirectional and automatic in both directions**:
+selecting in Settings updates the TopBar control, selecting in the TopBar updates Settings, and
+another tab receives either change — with no new wiring, because there is only ever one value.
+
+**The theme storage contract is untouched.** The option values *are* the stored values, so nothing is
+mapped or re-encoded; `usePersistentState` is still (correctly) not used for theme, since its
+JSON-stringified `"\"light\""` could never match the pre-paint comparison. `src/app/layout.tsx` is
+unmodified and its script still tests the raw string; the one downstream effect is still
+`documentElement.classList.toggle('dark', …)`.
+
+### Control choice
+
+Both selectors are the existing shared **`SegmentedControl`**, consumed unmodified — the same
+primitive Compare, Macro, Chart Builder, Company Detail, Portfolio and Structured Notes already use.
+No new shared primitive was introduced, and no selector was hand-rolled.
+
+It was chosen over embedding `ThemeToggle`/`LangToggle` because those carry top-bar-specific geometry
+(a fixed `h-7` capsule and an icon-only collapse below `sm`) that is wrong inside a settings row, and
+over `Switch` because theme and language are multi-option choices — `role="switch"` would be
+semantically false. `SegmentedControl` is already a `role="radiogroup"` of `role="radio"` buttons
+with `aria-checked`, a roving tabindex and Arrow/Home/End handling.
+
+The theme selector passes `remeasureToken={lang}`, because a language change re-renders its labels
+("Light/Dark" → "Claro/Oscuro") at a different width and the measured sliding indicator must follow.
+The language selector needs none: its labels are endonyms and never change.
+
+### Row anatomy and responsive behaviour
+
+`PreferenceRow` reuses the identical `ROW` constant — same padding, rule, `last:border-0`, same
+primary-label-over-muted-subline block — with a compact control pinned right instead of a status
+chip. `StatusRow` is untouched, so the Account / Data Sources / Security rows render exactly as in
+R9.2.
+
+The one addition is `flex-wrap` plus a real `basis-[140px]` on the label and `shrink-0 ml-auto` on
+the control: at a narrow width the selector drops onto its own right-aligned line rather than
+squeezing the label to a sliver. Row 2 uses the approved Fable proportions — Security
+`1.2 / 320px / min(100%,290px)` beside Display `1 / 300px / min(100%,280px)` — in one
+`flex flex-wrap items-stretch gap-[14px]` row, so the two cards sit side by side at desktop widths
+and stack cleanly below.
+
+### Immediate-save model
+
+No Save, Apply, Cancel, Reset, unsaved-changes state, confirmation dialog, or success toast. The
+downstream effect — the whole app repainting or retranslating — *is* the confirmation. The card's
+footer states that the choice applies immediately and is remembered in this browser: a factual
+statement about per-browser client preferences (as opposed to account-level settings), not a
+fabricated "saved" indicator.
+
+### Privacy Mode restraint
+
+Not rendered, not imported, not stubbed. No `usePrivacyMode`, `PrivacyToggle`, `PrivacyValue`, mask
+or hide-balances control, and no disabled/"coming soon" row — a placeholder control is still a
+placeholder. Privacy Mode remains **R9.6**, because it still has no real consumer.
+
+### Localization
+
+Ten keys under `settings.display` in both dictionaries: `title`, `theme`, `themeDesc`, `light`,
+`dark`, `language`, `languageDesc`, `english`, `spanish`, `note`. `english`/`spanish` are
+deliberately **endonyms** and therefore identical in EN and ES — a language's own name does not
+translate, and a user who lands in a language they cannot read must still be able to find their own.
+`topbar.light`/`topbar.dark` were **not** reused: their values fit, but their namespace is the TopBar
+and Settings copy should not depend on it. Exact EN/ES key parity holds across the whole namespace.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `src/app/settings/SettingsClient.tsx` | Consumes `useTheme()` and `useLang()`; adds `PreferenceRow` and the Display card; row 2 becomes a two-card wrapping flex row. Reveal cadence unchanged (the new card sits inside the existing 130ms reveal). |
+| `src/lib/i18n.ts` | New `settings.display` namespace, EN + ES, 10 keys each. Every pre-existing key untouched. |
+| `tests/fableSettingsPage.test.ts` | +27 cases (65 total) covering all 61 required checks. Four R9.2 restraint assertions updated where R9.3 legitimately supersedes them — card counts 3 → 4, the "no Display controls" clause retired, the blanket `onChange` ban replaced with an exact two-binding allowlist, and the `useTheme` import ban narrowed to what stays forbidden (`usePersistentState` / `localStorage` / privacy). |
+
+Nothing else was modified. `src/app/settings/page.tsx`, `src/lib/useTheme.ts`, `ThemeToggle`,
+`LangProvider`, `LangToggle`, `SegmentedControl`, `layout.tsx`, `/settings/notifications`,
+`NotificationBell`, every API route, every Supabase file and every migration are untouched — and
+asserted so.
+
+**Gates:** focused suites **816/816** (`fableSettingsPage` 65/65, `themeLanguageSync`,
+`topNavigation`, `fableComponents`, `fableFoundation`, `fableR0Primitives`, `responsiveLayout`,
+`accessControl`, `userProfilesRls`, `authWatchlist`, `credentials`, `notificationsPlatform`), plus
+**860/860** across every suite that guards `SegmentedControl` phase boundaries
+(`fableChartBuilderPage`, `fableComparePage`, `fableMacroPage`, `fablePortfolioPage`,
+`fableCompanyDetailPage`, `fableStructuredNotesPage`, `fableEarningsPage`, `fableMacroCalendarPage`,
+`fableMacroChartModalOpacity`) — `/settings` is absent from every "redesigns no page outside its own
+phase" list, so no guard needed relaxing. Full suite 3930 → **3957 · 3954 pass · 3 fail** (only the
+known `newsModule` date-dependent trio); lint 0; build 0 errors, `/settings` still `ƒ`,
+`/settings/notifications` still `○`.
+
+**Manual browser validation: PENDING** (390 / 1024 / 1728 + 320 stress, EN/ES, light/dark,
+normal/reduced-motion): Settings theme selection changes the whole app; the TopBar theme control
+updates immediately and vice versa; theme survives reload with no wrong-theme flash; another tab
+receives the theme change; Settings language selection retranslates the whole app; the TopBar
+language control updates immediately and vice versa; language survives reload; another tab receives
+the language change; Security and Display align at desktop widths and stack cleanly at 390px;
+Spanish labels do not collide; no Privacy Mode appears; no Save or Cancel appears; no page-level
+horizontal overflow.
+
+---
+
 ## Phase 7 — i18n additions & cleanup (`src/lib/i18n.ts`)
 
 Any new visible string (login utility chips "Secure connection", contrast label, privacy-mask
