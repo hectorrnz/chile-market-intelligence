@@ -130,14 +130,19 @@ describe('Manual repair — macro chart popup uses a near-opaque analytical surf
     // (which itself carries nv-glass-overlay), so the compare page no longer
     // holds raw overlay markup — a real phase boundary moving, not a relaxed
     // assertion. The shell delegation is guarded in tests/fableComparePage.test.ts.
+    // R12 migrated the chart-builder settings modal to the shared ModalShell
+    // too (the last hand-rolled dialog), so — exactly like compare above — it
+    // no longer holds raw overlay markup; the shell it delegates to carries
+    // the Tier-5 glass. Same phase-boundary move, not a relaxed assertion.
     const chartBuilder = read('src/app/chart-builder/page.tsx')
     const compare = read('src/app/compare/page.tsx')
     const commandPalette = read('src/components/ui/CommandPalette.tsx')
     const notificationBell = read('src/components/ui/NotificationBell.tsx')
     const detailPanel = read('src/components/fable/DetailPanel.tsx')
     const mobileNavDrawer = read('src/components/layout/MobileNavDrawer.tsx')
+    assert.match(chartBuilder, /<ModalShell/, 'chart-builder settings modal delegates to the shared shell')
+    assert.match(read('src/components/fable/ModalShell.tsx'), /nv-glass-overlay/, 'the shared shell carries the Tier-5 overlay glass')
     for (const [name, contents] of [
-      ['chart-builder settings modal', chartBuilder],
       ['CommandPalette', commandPalette],
       ['NotificationBell', notificationBell],
       ['DetailPanel', detailPanel],

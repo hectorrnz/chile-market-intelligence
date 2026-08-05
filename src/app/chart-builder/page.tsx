@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import { useLang } from '@/components/providers/LangProvider'
 import { usePersistentState } from '@/lib/usePersistentState'
-import { useEscape } from '@/lib/useEscape'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { SourceStateBadge } from '@/components/ui/SourceStateBadge'
@@ -12,6 +11,7 @@ import { TableCard } from '@/components/fable/TableCard'
 import { GlassSurface } from '@/components/fable/GlassSurface'
 import { SegmentedControl } from '@/components/fable/SegmentedControl'
 import { AsyncState } from '@/components/fable/AsyncState'
+import { ModalShell } from '@/components/fable/ModalShell'
 import { Reveal } from '@/components/fable/motion'
 import { getAllCompanies } from '@/lib/data/companies'
 import { getFundamentals, type FundamentalRecord } from '@/lib/data/fundamentals'
@@ -112,7 +112,8 @@ export default function ChartBuilderPage() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [typed, setTyped] = useState(ticker)
   const [typedB, setTypedB] = useState(tickerB)
-  useEscape(settingsOpen, () => setSettingsOpen(false))
+  // (Escape handling moved into the shared ModalShell with the R12 dialog
+  // migration — no page-level useEscape needed.)
 
   // Mirror the persisted ticker into the editable inputs (render-time, not effects).
   const [prevTicker, setPrevTicker] = useState(ticker)
@@ -133,7 +134,7 @@ export default function ChartBuilderPage() {
   // the static fundamentals.json fallback, per ticker. Falls back silently
   // (and is labeled honestly via the source badge) when nothing is imported.
   const [persistedA, setPersistedA] = useState<{ records: FundamentalRecord[]; status: FinancialsSourceStatus; sourceType?: FinancialsSourceType; source: string } | null>(null)
-  const [persistedB, setPersistedB] = useState<{ records: FundamentalRecord[]; status: FinancialsSourceStatus } | null>(null)
+  const [persistedB, setPersistedB] = useState<{ records: FundamentalRecord[]; status: FinancialsSourceStatus; source: string } | null>(null)
   const overlay = !!tickerB && !!compMap[tickerB] && tickerB !== ticker
 
   useEffect(() => {
@@ -153,7 +154,7 @@ export default function ChartBuilderPage() {
       }
       try {
         const res = await fetchFinancialStatements(tickerB)
-        if (mounted) setPersistedB({ records: res.records, status: res.status })
+        if (mounted) setPersistedB({ records: res.records, status: res.status, source: res.source })
       } catch {
         if (mounted) setPersistedB(null)
       }
@@ -178,10 +179,15 @@ export default function ChartBuilderPage() {
             : 'financialsPersisted'
   const baseRecordsA = sourceStatusA === 'persisted' ? persistedA!.records : getFundamentals(ticker)
   const recordsA = baseRecordsA.slice().sort((a, b) => qIdx(a.period) - qIdx(b.period))
+  const sourceStatusB: FinancialsSourceStatus = persistedB?.status === 'persisted' && persistedB.records.length > 0 ? 'persisted' : 'static_fallback'
   const baseRecordsB = overlay
-    ? (persistedB?.status === 'persisted' && persistedB.records.length > 0 ? persistedB.records : getFundamentals(tickerB))
+    ? (sourceStatusB === 'persisted' ? persistedB!.records : getFundamentals(tickerB))
     : []
   const recordsB = overlay ? baseRecordsB.slice().sort((a, b) => qIdx(a.period) - qIdx(b.period)) : []
+  // R12: the comparison ticker's provenance is disclosed on its own caveat
+  // line next to each footer — previously a failed/absent persisted fetch for
+  // B silently drew the static sample series under A's persisted source label.
+  const sourceB = overlay ? (sourceStatusB === 'persisted' ? persistedB!.source : t.common.staticSample) : null
 
   // TTM needs 4+ consecutive quarterly points — an annual-only ticker (CMF/XBRL,
   // one FY row per year) can never build a rolling window, so the toggle is
@@ -397,6 +403,9 @@ export default function ChartBuilderPage() {
               source={sourceStatusA === 'persisted' ? persistedA!.source : t.charting.source}
               className="mt-2"
             />
+            {sourceB && (
+              <p className="text-xs text-muted-fg mt-1">{tickerB}: {sourceB}</p>
+            )}
           </GlassSurface>
         </div>
       </Reveal>
@@ -417,7 +426,12 @@ export default function ChartBuilderPage() {
                 <span aria-hidden>⤓</span>{t.common.exportCsv}
               </button>
             }
-            footer={<TableSourceFooter source={sourceStatusA === 'persisted' ? persistedA!.source : t.charting.source} />}
+            footer={
+              <>
+                <TableSourceFooter source={sourceStatusA === 'persisted' ? persistedA!.source : t.charting.source} />
+                {sourceB && <p className="text-xs text-muted-fg mt-1">{tickerB}: {sourceB}</p>}
+              </>
+            }
           >
             <table className="w-full" style={{ fontSize: 'var(--fs-table-cell)' }}>
               <caption className="sr-only">{t.charting.table}</caption>
@@ -442,44 +456,39 @@ export default function ChartBuilderPage() {
         </Reveal>
       )}
 
-      {/* Settings modal */}
-      {settingsOpen && (
-        <div
-          className="no-print nv-scrim fixed inset-0 z-[90] flex items-start justify-center pt-[8vh] px-4"
-          onClick={() => setSettingsOpen(false)}
-        >
-          <div
-            role="dialog" aria-modal="true" aria-label={t.charting.settings}
-            className="nv-glass-overlay nv-pop w-full max-w-sm"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="px-4 py-3 flex items-center justify-between" style={{ backgroundColor: 'var(--nv-hdrbg)', borderBottom: '1px solid var(--nv-line)' }}>
-              <span className="ui-label text-foreground">{t.charting.settings}</span>
-              <button type="button" onClick={() => setSettingsOpen(false)} aria-label={t.fable.panel.close} className="text-muted-fg hover:text-foreground text-sm px-1">✕</button>
-            </div>
-            <div className="p-4 space-y-3 text-xs">
-              <label className="flex items-center justify-between gap-2">
-                <span className="text-foreground">{t.charting.chartType}</span>
-                <select
-                  value={chartType} onChange={e => setChartType(e.target.value as 'auto' | 'lines' | 'bars')}
-                  aria-label={t.charting.chartType}
-                  className="h-7 rounded-full px-2.5 text-foreground outline-none focus:border-accent nv-transition"
-                  style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' }}
-                >
-                  <option value="auto">{t.charting.auto}</option>
-                  <option value="lines">{t.charting.lines}</option>
-                  <option value="bars">{t.charting.barsType}</option>
-                </select>
-              </label>
-              <label className="flex items-center justify-between"><span className="text-foreground">{t.charting.legend}</span><input type="checkbox" checked={legend} onChange={e => setLegend(e.target.checked)} className="accent-[var(--primary)]" /></label>
-              <label className="flex items-center justify-between"><span className="text-foreground">{t.charting.gridlines}</span><input type="checkbox" checked={grid} onChange={e => setGrid(e.target.checked)} className="accent-[var(--primary)]" /></label>
-            </div>
-            <div className="px-4 py-3 flex justify-end" style={{ backgroundColor: 'var(--nv-hdrbg)', borderTop: '1px solid var(--nv-line)' }}>
-              <button type="button" onClick={() => setSettingsOpen(false)} className="text-xs px-3 py-1.5 rounded-full bg-primary text-primary-fg">{t.charting.done}</button>
-            </div>
-          </div>
+      {/* Settings modal — R12: migrated to the one shared ModalShell (it was
+          the last hand-rolled dialog). The shell supplies what this dialog
+          was missing — initial focus, Tab containment, body-scroll lock, and
+          focus restoration to the ⚙ trigger — plus Escape, scrim, labelled
+          dialog semantics, and the pinned footer. The three controls are
+          byte-identical; only the shell changed. */}
+      <ModalShell
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        title={t.charting.settings}
+        size="sm"
+        footer={
+          <button type="button" onClick={() => setSettingsOpen(false)} className="text-xs px-3 py-1.5 rounded-full bg-primary text-primary-fg">{t.charting.done}</button>
+        }
+      >
+        <div className="space-y-3 text-xs">
+          <label className="flex items-center justify-between gap-2">
+            <span className="text-foreground">{t.charting.chartType}</span>
+            <select
+              value={chartType} onChange={e => setChartType(e.target.value as 'auto' | 'lines' | 'bars')}
+              aria-label={t.charting.chartType}
+              className="h-7 rounded-full px-2.5 text-foreground outline-none focus:border-accent nv-transition"
+              style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' }}
+            >
+              <option value="auto">{t.charting.auto}</option>
+              <option value="lines">{t.charting.lines}</option>
+              <option value="bars">{t.charting.barsType}</option>
+            </select>
+          </label>
+          <label className="flex items-center justify-between"><span className="text-foreground">{t.charting.legend}</span><input type="checkbox" checked={legend} onChange={e => setLegend(e.target.checked)} className="accent-[var(--primary)]" /></label>
+          <label className="flex items-center justify-between"><span className="text-foreground">{t.charting.gridlines}</span><input type="checkbox" checked={grid} onChange={e => setGrid(e.target.checked)} className="accent-[var(--primary)]" /></label>
         </div>
-      )}
+      </ModalShell>
     </div>
   )
 }

@@ -3381,6 +3381,201 @@ restore the vulnerability, are deliberately unchanged — both remain accurate.
 
 ---
 
+### Phase R12 — Final production-readiness audit and blocker repair ✅ (2026-08-05)
+
+Independent final-release audit at baseline `278edf1` (exactly the expected R11 commit; clean tree,
+in sync with origin). Audit-first across security, privacy, financial-calculation, source/freshness,
+mutation, async-state, accessibility, responsive, localization, performance and build/deployment
+domains, followed by repairs of every demonstrated P0/P1 (plus directly-adjacent small P2s only).
+**No database was queried, no migration run, nothing deployed, staged, committed or pushed in R12;
+browser validation was not performed and remains the pending manual gate.**
+
+**P0 repaired (privacy):** the Structured Notes book/notes Nevada notional — a documented private
+amount, masked on Home and in the KPI capsules since R11 — still rendered RAW in the dashboard's
+three exposure cards (shared TOTAL headers, per-issuer/per-custodian bar amounts, donut center
+including a `title` tooltip, donut legend) and in the detail page's "Nevada investment" summary.
+All now route through the shared `PrivacyValue` boundary (percent shares stay visible — proportion,
+not size). Adjacent P1s in the same domain: both delete confirmations embedded the raw notional in
+their descriptions (removed — product/ISIN/issuer/allocation count identify the record); the detail
+page's per-entity allocation inputs showed raw amounts while masked (populated rows now hide behind
+a click-to-edit reveal, the Portfolio editor-exception precedent).
+
+**P1s repaired:**
+1. *Per-instrument live gating* (the R11 deferred shared-contract issue, confirmed real): every
+   market-snapshot consumer except the Company page derived its "Live" badge from the snapshot's
+   mere existence, while `buildIndices`/`buildSectors` pass committed fallback rows through for
+   failed instruments — one successful symbol made every failed symbol's fallback row read as Live
+   with a fresh as-of (the Home Markets badge literally could not show anything else once any
+   snapshot arrived). Repaired via small pure helpers in `liveOverlay.ts`
+   (`stockOverlayCoverage`/`sectorOverlayCoverage`/`indexOverlayCoverage`/`overlayStatus`: full
+   coverage → Live, partial → Hybrid fallback, none → the fallback layer's own word) wired into
+   Stocks, Home (watchlist/sectors/markets/portfolio capsule) and Portfolio; `IndexLive` gained a
+   per-row `source: 'live' | 'base'` flag; as-ofs claim the live timestamp only when coverage is
+   non-zero. Coherent-row policy extended to quotes: a quote missing its day change is FAILED
+   (previously `?? 0` fabricated a live 0.00%), and a price-only index quote keeps its full
+   committed row rather than a fresh-price/stale-return hybrid.
+2. *Fabricated-stale ratios under live labels*: the Stocks table's P/E and Div. Yield columns
+   rendered frozen Phase-2D synthetic values (`stockPrices.json` fields the twice-daily refresh
+   never rewrites) under a "Yahoo Finance" footer with a live as-of — columns removed (live P/E and
+   dividend yield remain on Company/Compare via `resolveValuation`); the Company valuation tiles'
+   "med Xx" sector medians, computed from the same synthetic peer fields, removed likewise. The
+   committed snapshots themselves were not modified (R12 data-integrity constraint).
+3. *Error-as-empty / stuck-loading / render-crash*: SN dashboard `load()` ingested non-ok JSON error
+   bodies as a confirmed-empty book; SN detail set a non-404 error body as page data (render-time
+   TypeError); Portfolio's three detail calls silently skipped failures (confirmed-empty positions);
+   Home's watchlist card showed sign-in/empty on outages (now only 401 → signed-out); Home News
+   loaded forever on a failed fetch; the Company valuation card spun forever on the route's
+   200-with-`data:null` failure shape; both FRED calendar consumers rendered confirmed-empty while
+   loading AND after hard failure (tri-state now); the Macro US FX card showed "unavailable" while
+   loading; Earnings' Update handler could strand both tables in loading (try/finally).
+4. *Unconfirmed destructive mutations*: Portfolio position remove and transaction delete fired
+   DELETE directly with no confirmation, no response check, no catch and no failure message — both
+   now gate through the shared `DestructiveConfirm` (pending lock, at-most-once, localized errors,
+   amount-free descriptions). Adjacent: the SN "Called" toggle gained a pending lock + response
+   check + error line; SN detail allocation/custodian upserts gained catch handlers.
+5. *Dialog contracts* (R11 deferred items 4.2/4.3, both confirmed): CommandPalette had no focus
+   containment or restoration under `aria-modal="true"` (Tab escaped into the background) — the
+   ModalShell trap/restore pattern is now inlined there; the Chart Builder settings dialog (the last
+   hand-rolled one) lacked initial focus, containment, scroll lock and restoration — migrated to the
+   shared `ModalShell` with byte-identical controls.
+6. *Raw backend error text*: the SN extract route interpolated the parser exception message into its
+   response and the import route echoed sanitized Postgres text; the client rendered both verbatim
+   (English-only). Codes now map to localized copy client-side; the server ships codes only.
+7. *Source/freshness*: the Chart Builder comparison ticker (B) silently fell back to the static
+   sample under A's persisted source label — B's provenance is now disclosed on its own caveat line
+   next to both footers; `/macro/calendar`'s footer stamped the furthest FUTURE scheduled release
+   date as the data vintage — now no fabricated as-of (matching the Macro page embed);
+   `UpdateDataButton` had no failed state (an offline Update silently read as success) — failed is
+   now a visible, localized, AT-announced state.
+
+**Adjacent small P2s repaired:** SN status KPI counts excluded archived notes (an autocalled note
+inflated "About to autocall" vs its own click-through filter); SN per-note notional cell rendered
+"USD 0" for a missing metric (now "—"); Portfolio hero rendered null cash/realized-P&L as 0 (now
+"—"); portfolio inline-editor hardcoded `'Error'` fallback localized + `role="alert"`/`aria-invalid`
+wiring; portfolio feedback timers now cleaned up on unmount; sr-only "High impact" marker on news
+rows (Home + Company) so the alert bar is never color-only; `yearStartClose` docstring corrected
+(first close of the CURRENT year).
+
+**R11 deferred-item dispositions:** 4.1 live gating — repaired (above). 4.2 palette containment —
+repaired. 4.3 Chart Builder dialog — repaired (ModalShell). 4.4 checkboxes — no repair: every
+remaining checkbox is a labeled native control (settings dialogs, Compare control bar, SN row
+action) that meets none of the ambiguity conditions; cosmetic Switch migration stays post-launch.
+4.5 SectionHeader routes — no repair: SectionHeader renders the page's single `h1`, none of the four
+routes double-mounts PageHeader, wrapping is responsive; accepted variation. 4.6 dead i18n keys —
+no repair: EN/ES parity is exact (888→898 leaves per dictionary, structurally verified), no visible
+copy depends on a missing key (the dictionaries are typed); ~49 unused keys stay post-launch
+cleanup.
+
+**Accepted constraints (recorded, not repaired):** stock/sector YTD inside a Live overlay remains
+the committed twice-daily baseline (live quotes carry no stock YTD — the documented design);
+providers keep the last-good snapshot after a failed reload (the as-of stays honestly old, and the
+Update button now reports the failure); Compare's `/api/compare` silent-degrade-to-static on fetch
+failure (badge honestly says Static; the cells ARE the static baseline); the Watchlist page's
+conservative "Static sample" label over Yahoo-refreshed committed data (honest-downward);
+`valuation.ts` mixed priced/unpriced totals (structurally unreachable — every covered ticker has a
+static price floor); the FOMC card hiding entirely when unavailable (supplementary derived
+estimate); `npm audit --omit=dev` reports 9 production-dependency advisories (4 moderate, 5 high —
+`next` and transitive `fast-uri`/`sharp`); fixing them requires a Next.js version bump, which is a
+dependency change outside R12's scope — flagged for the release process.
+
+**Post-launch improvements (not release-blocking):** Fable-styled `error.tsx`/`not-found.tsx`;
+skip-to-content link; keyboard alternative for the Chilean-rates drag reorder; macro indicator
+`<tr role="button">` → in-cell button; SegmentedControl roving tabindex when no option is active;
+NotificationBell unread count in the accessible name; small touch targets (Compare ✕/swatches,
+portfolio ×); per-row live markers for partially-live macro bands (Home `pib`); Macro page live
+fetch dropping static-only indicators from the table; Compare per-row source markers; a
+whole-dictionary EN/ES parity test; dead-key cleanup; checkbox→Switch cosmetics; UpdateDataButton
+per-domain failure detail; doc-03 deep-history sections (11/12/15/16 status cells reconciled in
+R12; the full narrative refresh can follow post-launch).
+
+**Documentation reconciled:** doc 03's stale "public" auth labels corrected to the enforced
+default-deny reality (every route private except the three auth pages); doc 06 gained the R12
+entry; this section records the audit. `docs/data_source_status.md` notes the Stocks synthetic-
+column removal. No doc claims a database recheck, deployment, merge, or completed manual
+validation in R12; the data-sync workflow's first real scheduled run remains unobserved.
+
+**Validation:** full suite **4167 tests · 805 suites · 4164 pass · 3 fail** — exactly the three
+authorized date-dependent `newsModule` tests (count unchanged from R11); lint **0 problems**; build
+**exit 0**, 20 page routes + full API table, 18/18 static pages; `git diff --check` clean; bare
+`tsc` shows only the documented pre-existing tests-only nits (the one new nit introduced by the
+`IndexLive.source` shape was fixed in the same change). New: `tests/r12ProductionReadiness.test.ts`
+(52 contracts). Superseded (never deleted) stale pins in: dataSourceAudit, homeWatchlistOverhaul,
+fablePortfolioPage, fableStocksPage, fableCompanyDetailPage, fableChartBuilderPage,
+fableMacroPage, fableMacroCalendarPage, tableSourceFooterConvention, r11ConsistencySweep,
+fableR0Primitives, fableMacroChartModalOpacity, fableStructuredNoteDetailPage,
+mobileShellResponsiveRepair, structuredNotesCustodianExposure, marketSnapshotIngestion.
+
+### Phase R12.1 — Controlled production-dependency security repair ✅ (2026-08-05)
+
+**Scope:** dependency security only, on top of the unstaged R12 working tree at `278edf1`. No
+source file, workflow, data snapshot, migration, or remote resource changed. Nothing staged,
+committed, pushed, deployed, or migrated. Prohibited tools not used: no `npm audit fix`, no
+`npm update`, no `--force`/`--legacy-peer-deps`, no Next 16.3.x or prerelease.
+
+**Before:** `npm audit --omit=dev` reported **9 vulnerabilities (5 high, 4 moderate)** —
+`next` 16.2.9 (nine advisories incl. middleware/proxy bypass GHSA-6gpp-xcg3-4w24, Server Action
+DoS/SSRF, cache confusion, image-optimizer SVG DoS), its nested `postcss` 8.4.31 (≤8.5.22 range:
+XSS via unescaped `</style>`, sourceMappingURL file disclosure), its optional `sharp` 0.34.5
+(inherited libvips CVE-2026-33327/-33328/-35590/-35591), and the `yahoo-finance2` → MCP SDK chain:
+`@hono/node-server` 1.19.14 (serve-static path traversal on Windows, GHSA-frvp-7c67-39w9),
+`hono` 4.12.27 (CORS ReDoS), `fast-uri` 3.1.3 (host confusion via backslash authority), and
+`ip-address` 10.2.0 (three SSRF/trust-boundary-bypass advisories).
+
+**After:** `npm audit --omit=dev` → **found 0 vulnerabilities**. Full-audit residuals are two
+dev-only advisories (`brace-expansion`, `js-yaml` under the ESLint toolchain) — outside the
+production gate and out of R12.1's scope.
+
+**Next.js:** `16.2.9` → **`16.2.12`** (exact pin preserved — the repo's convention). Stayed on the
+stable 16.2 line per the phase constraint; 16.3.0 exists but is out of range, and no
+canary/preview/rc was considered. `eslint-config-next` deliberately left at 16.2.9 (dev-only, no
+advisory, no lint-rule need — smallest-change principle). Verified from registry metadata that
+16.2.12 still declares `sharp: "^0.34.5"` and pins its nested `postcss` at exactly `8.4.31` — the
+Next patch alone clears the nine Next advisories but **neither** the sharp nor the postcss
+advisory, which is why the overrides below exist.
+
+**Overrides introduced** (all exact pins; each verified against registry metadata and the resolved
+tree; npm reported no peer warnings and `npm audit --omit=dev` went to zero):
+
+| Override | Was → now | Advisory / floor | Direct parent path | Compatibility evidence | Removal condition |
+|---|---|---|---|---|---|
+| `sharp` | 0.34.5 → **0.35.3** | libvips CVEs GHSA-f88m-g3jw-g9cj; floor 0.35.0 | `next@16.2.12` optional `^0.34.5` | next@16.3.0 itself pairs `^0.35.3`; the 16.2.12 optimizer's complete sharp surface (`sharp(buffer,{limitInputPixels,sequentialRead})`, `.timeout/.metadata/.resize/.avif/.webp/.jpeg/.png/.toBuffer`, `sharp.concurrency`) intersects 0.35.0's breaking changes at zero points (removed `failOnError` is not passed); native win32-x64 smoke of that exact pipeline passed on libvips 8.18.3; Node ≥20.9 satisfied | When `next`'s own declared range includes ≥0.35.0 (i.e. on the move to 16.3.x+) |
+| `postcss` | 8.4.31 (nested under next) + 8.5.15 (dev, tailwind) → **8.5.23** (one deduped copy) | ≤8.5.22 range GHSA-qx2v-qp2m-jg93 et al.; floor 8.5.23 | `next@16.2.12` pins `8.4.31`; `@tailwindcss/postcss@4.3.1` pins `8.5.15` | 8.5.23 is exactly the version next@16.3.0 pairs upstream; same-major (tailwind path is same-minor); full build passes | When both parents declare ≥8.5.23 naturally |
+| `@modelcontextprotocol/sdk` | 1.29.0 → **1.30.0** | not itself vulnerable — 1.30.0 is the first SDK whose declared range (`^1.19.9 \|\| ^2.0.5`) officially supports the patched `@hono/node-server` 2.x | `yahoo-finance2@3.15.3` declares `^1.26.0` (1.30.0 is in-range — the same version a fresh resolve picks) | same major, inside the parent's declared caret | When the lockfile naturally resolves ≥1.30.0 |
+| `@hono/node-server` | 1.19.14 → **2.0.12** | serve-static path traversal GHSA-frvp-7c67-39w9; floor 2.0.5 (all 1.x vulnerable — no same-major patch exists) | `@modelcontextprotocol/sdk@1.30.0` declares `^1.19.9 \|\| ^2.0.5` — 2.0.12 is **in-range**, so the major transition is upstream-supported, not forced | peer `hono ^4` unchanged; engines node ≥20 satisfied (Node 24) | When the SDK's resolved default lands on 2.x by itself |
+| `hono` | 4.12.27 → **4.12.34** | CORS ReDoS GHSA-8j4g-w8fx-2239; floor 4.12.34 | SDK `^4.11.4` + node-server peer `^4` (both in-range) | same minor, patch-level | When parents resolve ≥4.12.34 naturally |
+| `fast-uri` | 3.1.3 → **3.1.5** | host-confusion GHSA-v2hh-gcrm-f6hx / GHSA-7p8r-x3mc-p8w7; floor 3.1.5 | `ajv@8.20.0` declares `^3.0.1` (in-range; ajv@latest still uses fast-uri 3.x) | same minor, patch-level | When ajv resolves ≥3.1.5 naturally |
+| `ip-address` | 10.2.0 → **10.3.1** | SSRF/trust-boundary advisories GHSA-mwp4-54f8-5fhr et al.; floor 10.3.1 | `express-rate-limit@8.5.2` declares `^10.2.0` (in-range) | same major, minor-level | When express-rate-limit resolves ≥10.3.1 naturally |
+
+**Why `yahoo-finance2` was not downgraded:** npm audit's automatic remediation proposed
+`yahoo-finance2@3.14.3` (a breaking downgrade) solely to escape the MCP SDK chain. Instead the four
+transitive advisories were patched in place through the in-range SDK move + the pins above;
+`yahoo-finance2` stays **3.15.3** and its provider suites pass unchanged.
+
+**Resolved production tree (security-sensitive):** next 16.2.12 · sharp 0.35.3 (single copy;
+next's nested vulnerable postcss node removed — one deduped postcss 8.5.23) · yahoo-finance2 3.15.3
+· @modelcontextprotocol/sdk 1.30.0 · @hono/node-server 2.0.12 · hono 4.12.34 · fast-uri 3.1.5 ·
+ip-address 10.3.1 · react/react-dom 19.2.4 (untouched). Lockfile churn is exactly these nodes plus
+their mechanical satellites (@next/env + swc platform packages, @img platform binaries + libvips
+1.3.2, postcss's nanoid, sharp's nested semver, two new 0.35 platform-variant entries) — zero
+unrelated drift; the SDK's other locked deps did not move. Known cosmetic pre-existing quirk:
+npm 11 installs sharp's cpu-gated wasm32 fallback chain (`@img/sharp-wasm32` + `@emnapi/*`) and
+`npm ls` labels it "extraneous"; those lockfile entries exist at the `278edf1` baseline too, are
+platform-gated optionals, and are never loaded on win32-x64 (the native smoke proved the native
+path) — `npm prune` leaves them by design because they are part of the locked tree.
+
+**Durable guards:** `tests/r12ProductionReadiness.test.ts` gained section 8 (8 tests) — semantic
+(never lexical) version floors for every package above incl. all nested copies, stable-next-only,
+exact-pin/lockfile agreement, the yahoo-finance2 no-downgrade pin, and a check that every override
+in `package.json` has this governance record. No network access in any test.
+
+**Validation:** full suite pass at the authorized baseline (the exact three date-dependent
+`newsModule` failures only); lint 0; build exit 0 on next 16.2.12; `tsc` unchanged (no new
+diagnostics); `git diff --check` clean; `npm audit --omit=dev` **0 vulnerabilities**. Manual
+validation **pending** — no browser run, no deployment, no remote verification, no production
+runtime claim; R12's own manual gate remains pending and R12 is otherwise unchanged.
+
+---
+
 ## Phase 7 — i18n additions & cleanup (`src/lib/i18n.ts`)
 
 Any new visible string (login utility chips "Secure connection", contrast label, privacy-mask

@@ -527,13 +527,18 @@ describe('Phase 5C — valuation preservation', () => {
   })
 
   it('keeps the sector-median calculation and its display alongside every metric', () => {
-    assert.match(src, /const medStr = \(key: keyof StockPriceSnapshot, suffix: string\) => \{/)
-    assert.equal(count(src, 'medStr('), 9, 'every one of the nine metrics computes its own sector median')
-    // R11: the enduring contract is that the median renders next to its metric
-    // in muted numeric type. The literal inline `fontSize: '9px'` is gone —
-    // it sat below the smallest declared rung (--fs-micro-label, 9.5px) and
-    // bypassed the token scale; the value is now consumed by name.
-    assert.match(src, /\{med && <div className="ui-number text-muted-fg" style=\{\{ fontSize: 'var\(--fs-micro-label\)' \}\}>\{med\}<\/div>\}/)
+    // Superseded in R12: the "med Xx" sublabels were computed from the frozen
+    // Phase-2D synthetic ratio fields in stockPrices.json (peFwd/psFwd/roe/…),
+    // which the twice-daily refresh never rewrites — fabricated peer context
+    // rendered beside live Yahoo figures inside a card footed "Yahoo Finance".
+    // Removed under the no-fabrication rule (the same class as the fake
+    // quality pills and the "View Summary" column removed in earlier passes);
+    // no live per-peer valuation source exists to recompute them honestly.
+    // The enduring contract: the valuation tiles render ONLY live-resolved
+    // figures.
+    assert.ok(!src.includes('medStr('), 'the synthetic sector-median helper must not return')
+    assert.ok(!src.includes('getAllSnapshots()'), 'no synthetic peer snapshots feed the valuation card')
+    assert.match(src, /vf && vf\.derivedFields\.includes\(key\)/, 'tiles stay live-only')
   })
 
   it('keeps the measured-height pinning mechanism (ResizeObserver on the Valuation card)', () => {

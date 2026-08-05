@@ -248,9 +248,11 @@ describe('R7.1A §G14-19 — allocation card responsive composition', () => {
     // now that it owns the wider dashboard column; it is still a fixed square
     // that cannot be squeezed out of aspect ratio.
     assert.match(DONUT, /relative w-52 h-52 @lg:w-60 @lg:h-60 shrink-0/)
-    // Center total still present and unclipped by construction.
+    // Center total still present and unclipped by construction. R12: the
+    // title tooltip is suppressed while Privacy Mode masks the total (a raw
+    // amount in `title` would leak straight past the mask).
     assert.match(DONUT, /\{totalLabel\}/)
-    assert.match(DONUT, /max-w-full truncate" title=\{`\$\{currency\} \$\{fmtNum\(total\)\}`\}/)
+    assert.match(DONUT, /max-w-full truncate" title=\{masked \? undefined : `\$\{currency\} \$\{fmtNum\(total\)\}`\}/)
   })
 
   it('19. chart data, percentages and hover linking are unchanged', () => {

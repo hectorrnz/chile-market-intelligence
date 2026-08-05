@@ -10,6 +10,7 @@ import { getAllSnapshots } from '@/lib/data/stocks'
 import { formatCLP, formatPct, formatLargeCLP, changeColor } from '@/lib/formatters'
 import { exportCSV } from '@/lib/export'
 import { useMarketData } from '@/components/providers/MarketDataProvider'
+import { stockOverlayCoverage, overlayStatus } from '@/lib/market/liveOverlay'
 import { useGlobalRefresh } from '@/components/providers/useGlobalRefresh'
 import { fetchStockSnapshots } from '@/lib/data/marketData'
 import type { StockSnapshot } from '@/lib/providers/market/types'
@@ -21,7 +22,7 @@ import { AsyncState } from '@/components/fable/AsyncState'
 import { Reveal } from '@/components/fable/motion'
 import type { DataSourceStatus } from '@/lib/providers/types'
 
-type SortKey = 'ticker' | 'dayChangePct' | 'ytdChangePct' | 'marketCapCLP' | 'pe' | 'dividendYield'
+type SortKey = 'ticker' | 'dayChangePct' | 'ytdChangePct' | 'marketCapCLP'
 
 const companies    = getAllCompanies()
 const snapshots    = getAllSnapshots()
@@ -70,11 +71,6 @@ export default function StocksPage() {
   const sortKey: SortKey = userSort?.key ?? (live ? 'dayChangePct' : 'marketCapCLP')
   const sortDir: 'asc' | 'desc' = userSort?.dir ?? 'desc'
 
-  const priceStatus: DataSourceStatus = live ? 'live' : Object.keys(supaSnapMap).length ? 'persisted' : 'static'
-  // One as-of for the page, always describing the data actually on screen:
-  // the live snapshot when refreshed, otherwise the persisted snapshot's own date.
-  const priceAsOf = live ? live.lastUpdated : (Object.values(supaSnapMap)[0]?.lastUpdated ?? null)
-
   const snapMap = useMemo(
     () => Object.fromEntries(snapshots.map(s => [s.ticker, s])),
     [],
@@ -121,6 +117,20 @@ export default function StocksPage() {
       })
   }, [search, sector, sortKey, sortDir, snapMap, live, supaSnapMap])
 
+  // R12 — per-instrument live gating: the badge describes the rows actually on
+  // screen, never the snapshot's mere existence. Only full coverage of the
+  // displayed tickers may claim Live; a snapshot that missed some of them is
+  // disclosed as a hybrid; zero coverage keeps the fallback layer's own word.
+  // (One successful symbol must never make another failed symbol's fallback
+  // row read as live — see liveOverlay.stockOverlayCoverage.)
+  const fallbackStatus: DataSourceStatus = Object.keys(supaSnapMap).length ? 'persisted' : 'static'
+  const coverage = stockOverlayCoverage(live?.stocks, rows.map(r => r.c.ticker))
+  const priceStatus: DataSourceStatus = live ? overlayStatus(coverage, fallbackStatus) : fallbackStatus
+  // One as-of for the page, always describing the data actually on screen: the
+  // live snapshot's time only when at least one displayed row is actually
+  // overlaid, otherwise the persisted snapshot's own date.
+  const priceAsOf = live && coverage !== 'none' ? live.lastUpdated : (Object.values(supaSnapMap)[0]?.lastUpdated ?? null)
+
   function toggleSort(key: SortKey) {
     setUserSort(
       sortKey === key
@@ -144,11 +154,11 @@ export default function StocksPage() {
       'chilean_stocks',
       [
         t.stocks.cols.ticker, t.stocks.cols.company, t.stocks.cols.sector, t.stocks.cols.price,
-        t.stocks.cols.dayChg, t.stocks.cols.ytd, t.stocks.cols.marketCap, t.stocks.cols.pe, t.stocks.cols.divYield,
+        t.stocks.cols.dayChg, t.stocks.cols.ytd, t.stocks.cols.marketCap,
       ],
       rows.map(({ c, s }) => [
         c.ticker, c.shortName, c.sector, s?.price ?? '',
-        s?.dayChangePct ?? '', s?.ytdChangePct ?? '', c.marketCapCLP ?? '', s?.pe ?? '', s?.dividendYield ?? '',
+        s?.dayChangePct ?? '', s?.ytdChangePct ?? '', c.marketCapCLP ?? '',
       ]),
     )
   }
@@ -164,8 +174,12 @@ export default function StocksPage() {
     { key: 'dayChangePct',  label: t.stocks.cols.dayChg,    numeric: true },
     { key: 'ytdChangePct',  label: t.stocks.cols.ytd,       numeric: true },
     { key: 'marketCapCLP',  label: t.stocks.cols.marketCap, numeric: true },
-    { key: 'pe',            label: t.stocks.cols.pe,        numeric: true },
-    { key: 'dividendYield', label: t.stocks.cols.divYield,  numeric: true },
+    // R12: the P/E and Div. Yield columns are REMOVED, not restyled. Their
+    // values in stockPrices.json are frozen Phase-2D synthetic ratios the
+    // twice-daily refresh never rewrites (it touches only price/day/YTD), so
+    // rendering them under this table's Yahoo Finance footer and live as-of
+    // misattributed fabricated figures. Real, live P/E and dividend yield
+    // remain on the Company page and Compare via resolveValuation.
   ]
 
   const cellPad = 'py-2.5 px-3 first:pl-4 last:pr-4'
@@ -296,12 +310,6 @@ export default function StocksPage() {
                     </td>
                     <td className={`${cellPad} text-right ui-number text-foreground`}>
                       {mktCap ? formatLargeCLP(mktCap) : '—'}
-                    </td>
-                    <td className={`${cellPad} text-right ui-number text-foreground`}>
-                      {s?.pe != null ? `${s.pe}x` : '—'}
-                    </td>
-                    <td className={`${cellPad} text-right ui-number text-foreground`}>
-                      {s?.dividendYield != null ? `${s.dividendYield}%` : '—'}
                     </td>
                   </tr>
                 )

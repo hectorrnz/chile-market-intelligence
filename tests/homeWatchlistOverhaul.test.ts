@@ -113,8 +113,14 @@ describe('Home page — regression: badges still computed from already-fetched s
   const src = readFileSync(HOME_PAGE, 'utf8')
 
   it('watchlistStatus is derived from the existing live/supaStockMap state, not a new fetch', () => {
+    // Superseded in R12: the pre-R12 form (`live?.stocks && Object.keys(...)
+    // .length ? 'live'`) gated on ANY of the 25 universe stocks succeeding —
+    // a watchlist row whose own quote failed still sat under "Live". The
+    // enduring contract is unchanged (derived from already-fetched state, no
+    // new fetch) but now covers the user's own watchlist tickers.
     assert.ok(src.includes('const watchlistStatus: DataSourceStatus ='))
-    assert.ok(/watchlistStatus:\s*DataSourceStatus\s*=\s*live\?\.stocks/.test(src))
+    assert.ok(/stockOverlayCoverage\(live\?\.stocks,\s*watchlistTickers\)/.test(src))
+    assert.ok(/watchlistStatus:\s*DataSourceStatus\s*=\s*live \? overlayStatus\(watchlistCoverage/.test(src))
   })
 
   it('sector/index asOf dates are derived from already-fetched snapshot state', () => {

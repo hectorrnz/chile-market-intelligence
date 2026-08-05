@@ -48,7 +48,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     sourceFileHash: body.sourceFileHash ?? null,
   })
   if (!result.ok) {
-    return NextResponse.json({ error: 'import_failed', detail: result.error }, { status: 500 })
+    // R12: `result.error` is sanitized backend (Postgres) text — it stays on
+    // the server. The client renders its own localized message for this code.
+    return NextResponse.json({ error: 'import_failed' }, { status: 500 })
   }
   return NextResponse.json({ noteId: result.noteId }, { status: 201 })
 }

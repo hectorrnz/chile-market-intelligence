@@ -338,9 +338,14 @@ describe('UpdateDataButton — the platform-wide update contract (D-1)', () => {
   })
 
   test('loading/success/failure semantics are byte-preserved (idle→loading→done→2s→idle; failure→idle)', () => {
-    assert.match(UPDATE, /'idle' \| 'loading' \| 'done'/)
+    // Superseded in R12: `failure→idle` WAS the defect — a failed platform
+    // refresh snapped back to idle, visually and semantically identical to
+    // never having clicked, so an offline Update silently read as success.
+    // The enduring contract keeps idle→loading→done→2s→idle and the
+    // reentrancy guard, and failure now has its own transient labeled state.
+    assert.match(UPDATE, /'idle' \| 'loading' \| 'done' \| 'failed'/)
     assert.match(UPDATE, /setTimeout\(\(\) => setState\('idle'\), 2000\)/)
-    assert.match(UPDATE, /catch \{\s*setState\('idle'\)\s*\}/)
+    assert.match(UPDATE, /setState\('failed'\)\s*\n\s*setTimeout\(\(\) => setState\('idle'\), 4000\)/)
     assert.match(UPDATE, /if \(state === 'loading'\) return/)
   })
 

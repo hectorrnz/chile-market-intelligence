@@ -23,6 +23,9 @@ export interface IndexLive {
   value: number
   dayChangePct: number
   ytdChangePct: number
+  /** Mirrors liveOverlay.IndexLive.source — 'live' = overlaid from a complete
+   *  quote; 'base' = the committed row passed through as one coherent unit. */
+  source: 'live' | 'base'
 }
 
 export interface LiveSnapshot {

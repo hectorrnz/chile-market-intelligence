@@ -67,6 +67,7 @@ import { getChileanRates } from '@/lib/data/chileanRates'
 import { getSeriesByStaticId } from '@/config/macroSeries'
 import { fetchEarningsCalendar, upcomingWithinDays, recentlyReported, type EarningsCalendarResult } from '@/lib/data/earningsCalendar'
 import { fetchLiveNews, type NewsFetchResponse } from '@/lib/data/newsLive'
+import { stockOverlayCoverage, sectorOverlayCoverage, indexOverlayCoverage, overlayStatus } from '@/lib/market/liveOverlay'
 import { getNewsSourceCode, getNewsSourceColor } from '@/lib/news/sourceCodes'
 import { getSectorPerformance } from '@/lib/data/sectorPerformance'
 import { getIndexPerformance } from '@/lib/data/indexPerformance'
@@ -360,6 +361,14 @@ export default function HomePage() {
   // Source-backed News module (never a static fallback — an unavailable live
   // fetch shows an honest empty state, not fabricated headlines).
   const [newsResult, setNewsResult] = useState<NewsFetchResponse | null>(null)
+  // R12: a failed news fetch must reach an explicit unavailable state — the
+  // card previously showed "Loading" forever when fetchLiveNews returned null
+  // (the Company page got this split in R11; Home now matches it).
+  const [newsFailed, setNewsFailed] = useState(false)
+  // R12: a thrown/failed CMF calendar fetch (null result) must still surface
+  // the per-source disclosure line — previously only a wrapped
+  // `status: 'unavailable'` payload did.
+  const [calFailed, setCalFailed] = useState(false)
   // Live CMF earnings calendar (report/EEFF-sending dates). Never fabricated —
   // an unavailable fetch leaves the events honest about that source.
   const [earningsCal, setEarningsCal] = useState<EarningsCalendarResult | null>(null)
@@ -381,8 +390,8 @@ export default function HomePage() {
       if (stRes?.data.length) setSupaStockMap(Object.fromEntries(stRes.data.map(s => [s.ticker, s])))
       if (secRes?.data.length) setSupaSectors(secRes.data)
       if (idxRes?.data.length) setSupaIdxMap(Object.fromEntries(idxRes.data.map(i => [i.id, i])))
-      if (newsRes) setNewsResult(newsRes)
-      if (calRes) setEarningsCal(calRes)
+      if (newsRes) { setNewsResult(newsRes); setNewsFailed(false) } else setNewsFailed(true)
+      if (calRes) { setEarningsCal(calRes); setCalFailed(false) } else setCalFailed(true)
       setFredCal(fredRes && fredRes.ok && fredRes.configured ? fredRes : 'unavailable')
     })
     return () => { mounted = false }
@@ -435,7 +444,7 @@ export default function HomePage() {
     const [, newsRes, bookRes, healthRes] = await Promise.all([
       refreshAll(), fetchLiveNews(), fetchBookSnapshot(), fetchIngestionHealth(),
     ])
-    if (newsRes) setNewsResult(newsRes)
+    if (newsRes) { setNewsResult(newsRes); setNewsFailed(false) } else setNewsFailed(true)
     // The book carries live underlying prices and health is a live check —
     // both re-pull on Update. Portfolio totals re-value automatically from
     // the refreshed market overlay (same helpers, no second fetch).
@@ -443,18 +452,31 @@ export default function HomePage() {
     if (healthRes) { setHealth(healthRes); setHealthState('ready') } else { setHealthState('error') }
   }, [refreshAll])
 
-  // Merge: static base → Supabase layer → live overlay (live always wins when present)
-  const sectors = live?.sectors ?? supaSectors ?? staticSectors
-  const sectorStatus: DataSourceStatus = live?.sectors ? 'live' : supaSectors ? 'persisted' : 'static'
+  // Merge: static base → Supabase layer → live overlay (live always wins when present).
+  // R12 — per-instrument live gating: `live.sectors`/`live.indices` always
+  // contain one row per instrument even when the underlying quotes failed
+  // (uncovered rows pass the committed values through as coherent units), so
+  // the badges derive from actual per-instrument coverage, never from the
+  // arrays' mere existence. Full coverage → Live; partial → Hybrid fallback;
+  // none → the fallback layer's own word, and the fallback layer's own data.
+  const sectorFallback: DataSourceStatus = supaSectors ? 'persisted' : 'static'
+  const sectorCoverage = sectorOverlayCoverage(live?.stocks, staticSectors)
+  const sectors = live?.sectors && sectorCoverage !== 'none' ? live.sectors : (supaSectors ?? staticSectors)
+  const sectorStatus: DataSourceStatus = live?.sectors ? overlayStatus(sectorCoverage, sectorFallback) : sectorFallback
+  const indexCoverage = indexOverlayCoverage(live?.indices)
   const indices = staticIndices.map(idx => {
     const lv = live?.indices.find(l => l.id === idx.id)
-    if (lv) return { ...idx, value: lv.value, dayChangePct: lv.dayChangePct, ytdChangePct: lv.ytdChangePct }
+    // Only a genuinely overlaid row (source 'live') may shadow the persisted
+    // layer — a passed-through base row must not hide a fresher Supabase
+    // snapshot under live styling.
+    if (lv && lv.source === 'live') return { ...idx, value: lv.value, dayChangePct: lv.dayChangePct, ytdChangePct: lv.ytdChangePct }
     const si = supaIdxMap[idx.id]
     return si ? { ...idx, value: si.value, dayChangePct: si.dayChangePct, ytdChangePct: si.ytdChangePct } : idx
   })
-  const indexStatus: DataSourceStatus = live?.indices.length ? 'live' : Object.keys(supaIdxMap).length ? 'persisted' : 'static'
-  const sectorAsOf = live?.sectors ? live.lastUpdated : (supaSectors?.[0]?.lastUpdated ?? null)
-  const indexAsOf = live?.indices.length ? live.lastUpdated : (Object.values(supaIdxMap)[0]?.lastUpdated ?? null)
+  const indexFallback: DataSourceStatus = Object.keys(supaIdxMap).length ? 'persisted' : 'static'
+  const indexStatus: DataSourceStatus = live ? overlayStatus(indexCoverage, indexFallback) : indexFallback
+  const sectorAsOf = live?.sectors && sectorCoverage !== 'none' ? live.lastUpdated : (supaSectors?.[0]?.lastUpdated ?? null)
+  const indexAsOf = live && indexCoverage !== 'none' ? live.lastUpdated : (Object.values(supaIdxMap)[0]?.lastUpdated ?? null)
   const maxSectorAbs = Math.max(...sectors.map(s => Math.abs(s.dayChangePct)))
 
   const snapshotMap = Object.fromEntries(snapshots.map(s => [s.ticker, s]))
@@ -475,28 +497,43 @@ export default function HomePage() {
   // middleware — a 401 here means the session lapsed, never a data error.
   const [watchlistAuthed, setWatchlistAuthed] = useState<boolean | null>(null)
   const [watchlistTickers, setWatchlistTickers] = useState<string[]>([])
+  // R12: only a 401 means "signed out" — any other failure renders an honest
+  // error row, never the sign-in prompt and never a confirmed-empty watchlist.
+  const [watchlistError, setWatchlistError] = useState(false)
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
         const res = await fetch('/api/watchlists', { cache: 'no-store' })
-        if (!res.ok) { if (!cancelled) setWatchlistAuthed(false); return }
+        if (!res.ok) {
+          if (!cancelled) { if (res.status === 401) setWatchlistAuthed(false); else setWatchlistError(true) }
+          return
+        }
         const json = await res.json()
         const wl = json.watchlists?.[0]
         if (!wl) { if (!cancelled) { setWatchlistAuthed(true); setWatchlistTickers([]) }; return }
         const itemsRes = await fetch(`/api/watchlists/${wl.id}/items`, { cache: 'no-store' })
-        if (!itemsRes.ok) { if (!cancelled) { setWatchlistAuthed(true); setWatchlistTickers([]) }; return }
+        if (!itemsRes.ok) {
+          if (!cancelled) { if (itemsRes.status === 401) setWatchlistAuthed(false); else setWatchlistError(true) }
+          return
+        }
         const itemsJson = await itemsRes.json()
         const items: WatchlistItemRow[] = itemsJson.items ?? []
         if (!cancelled) { setWatchlistAuthed(true); setWatchlistTickers(items.map(i => i.ticker)) }
       } catch {
-        if (!cancelled) setWatchlistAuthed(false)
+        if (!cancelled) setWatchlistError(true)
       }
     })()
     return () => { cancelled = true }
   }, [])
-  const watchlistStatus: DataSourceStatus = live?.stocks && Object.keys(live.stocks).length ? 'live' : Object.keys(supaStockMap).length ? 'persisted' : 'static'
-  const watchlistAsOf = live ? live.lastUpdated : (Object.values(supaStockMap)[0]?.lastUpdated ?? null)
+  // R12 — per-instrument live gating: the badge describes the user's own
+  // watchlist tickers, not the 25-stock universe. A watchlist row whose quote
+  // failed must not sit under a page-wide "Live"; partial coverage is
+  // disclosed as a hybrid.
+  const watchlistFallback: DataSourceStatus = Object.keys(supaStockMap).length ? 'persisted' : 'static'
+  const watchlistCoverage = stockOverlayCoverage(live?.stocks, watchlistTickers)
+  const watchlistStatus: DataSourceStatus = live ? overlayStatus(watchlistCoverage, watchlistFallback) : watchlistFallback
+  const watchlistAsOf = live && watchlistCoverage !== 'none' ? live.lastUpdated : (Object.values(supaStockMap)[0]?.lastUpdated ?? null)
 
   // Watchlist rows, sortable by Day Chg. or YTD % (click the column header to
   // toggle asc/desc; default is the natural watchlist order).
@@ -585,7 +622,10 @@ export default function HomePage() {
     return calculatePortfolioTotals(valued)
   }, [pfDetail, live])
 
-  const pfPriceStatus: DataSourceStatus = live ? 'live' : 'persisted'
+  // R12 — per-instrument live gating over the portfolio's own position tickers.
+  const pfPriceStatus: DataSourceStatus = live
+    ? overlayStatus(stockOverlayCoverage(live.stocks, (pfDetail?.positions ?? []).map(p => p.ticker)), 'persisted')
+    : 'persisted'
 
   // ── Structured Notes derived snapshot values (same client-side derivations
   // the /structured-notes page makes over the same payload) ──────────────────
@@ -964,8 +1004,9 @@ export default function HomePage() {
                     </ul>
                   )}
                   {/* Per-source honesty: a failed source is disclosed, never
-                      silently collapsed into "no events". */}
-                  {earningsCal !== null && earningsCal.status !== 'live' && (
+                      silently collapsed into "no events" — including a thrown
+                      fetch that never produced a payload at all (R12). */}
+                  {(calFailed || (earningsCal !== null && earningsCal.status !== 'live')) && (
                     <p className="ui-meta text-muted-fg py-1">{t.home.evCmfUnavailable}</p>
                   )}
                   {fredCal === 'unavailable' && (
@@ -1044,7 +1085,9 @@ export default function HomePage() {
                 </tr>
               </thead>
               <tbody>
-                {watchlistAuthed === false ? (
+                {watchlistError ? (
+                  <tr><td colSpan={5} className="p-0"><AsyncState kind="error" /></td></tr>
+                ) : watchlistAuthed === false ? (
                   <tr><td colSpan={5} className="px-4 py-4 text-center text-muted-fg">
                     <Link href="/login" className="text-primary hover:underline">{t.home.watchlistSignIn}</Link>
                   </td></tr>
@@ -1207,18 +1250,22 @@ export default function HomePage() {
                   backgroundColor:
                     newsResult?.status === 'success' ? 'var(--positive)'
                     : newsResult?.status === 'partial_success' ? 'var(--warning)'
-                    : newsResult ? 'var(--negative)' : 'var(--muted-fg)',
+                    : (newsResult || newsFailed) ? 'var(--negative)' : 'var(--muted-fg)',
                 }}
                 aria-hidden
               />
               {newsResult?.status === 'success' ? t.home.newsLive
                 : newsResult?.status === 'partial_success' ? t.home.newsPartial
                 : newsResult?.status === 'unavailable' ? t.home.newsUnavailable
+                : newsFailed ? t.home.newsUnavailable
                 : t.home.newsLoading}
             </span>
           }
         >
           <GlassSurface variant="dense" className="overflow-y-auto divide-y divide-border" style={{ maxHeight: '440px' }}>
+            {/* R12: a failed fetch reaches an explicit error state — never an
+                eternal blank "Loading" body. */}
+            {!newsResult && newsFailed && <AsyncState kind="error" />}
             {newsResult && newsResult.data.length === 0 && (
               <div className="px-4 py-5 text-center text-xs text-muted-fg">{t.home.newsEmpty}</div>
             )}
@@ -1232,7 +1279,12 @@ export default function HomePage() {
                     style={isHigh ? { backgroundColor: 'var(--negative)' } : undefined}
                   >
                     <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="hover:underline min-w-0">
-                      <p className="text-xs leading-snug font-medium" style={isHigh ? { color: '#fff' } : undefined}>{item.headline}</p>
+                      <p className="text-xs leading-snug font-medium" style={isHigh ? { color: '#fff' } : undefined}>
+                        {/* High impact is signalled by the solid bar visually;
+                            this sr-only word keeps it non-color-only (R12). */}
+                        {isHigh && <span className="sr-only">{t.home.newsHighImpact} — </span>}
+                        {item.headline}
+                      </p>
                     </a>
                     <span className="flex items-center gap-1.5 shrink-0 whitespace-nowrap pt-px">
                       <span className="ui-number text-[10px] font-mono font-semibold" title={sourceTitle} style={isHigh ? { color: '#fff' } : { color: getNewsSourceColor(item.source) }}>{getNewsSourceCode(item.source)}</span>

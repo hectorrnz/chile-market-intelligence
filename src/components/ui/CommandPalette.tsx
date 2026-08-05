@@ -23,6 +23,9 @@ export function CommandPalette() {
   const [active, setActive] = useState(0)
   const [recent, setRecent] = usePersistentState<{ ticker: string; ts: number }[]>('cmi.recentSearches', [])
   const inputRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<Element | null>(null)
+  const wasOpenRef = useRef(false)
 
   const companies = useMemo<Item[]>(
     () => getAllCompanies().map(c => ({ ticker: c.ticker, label: `${c.ticker} · ${c.shortName}`, sub: c.sector })),
@@ -67,10 +70,49 @@ export function CommandPalette() {
   if (open !== prevOpen) { setPrevOpen(open); if (open) { setQuery(''); setActive(0) } }
 
   // Focus the input when opened — a DOM side-effect, so it stays in an effect.
+  // R12: the invoking control is captured here so focus can be restored to it
+  // on close (the ModalShell/DetailPanel/MobileNavDrawer contract, previously
+  // missing from this one overlay).
   useEffect(() => {
     if (!open) return
+    triggerRef.current = document.activeElement
     const id = setTimeout(() => inputRef.current?.focus(), 0)
     return () => clearTimeout(id)
+  }, [open])
+
+  // R12: Tab/Shift+Tab focus containment inside the open palette — the same
+  // wrap logic as ModalShell. Without it, tabbing past the last result button
+  // escaped into the background page while aria-modal claimed modality.
+  useEffect(() => {
+    if (!open) return
+    const container = dialogRef.current
+    if (!container) return
+    function onKeydown(e: KeyboardEvent) {
+      if (e.key !== 'Tab' || !container) return
+      const focusable = Array.from(container.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      ))
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+    container.addEventListener('keydown', onKeydown)
+    return () => container.removeEventListener('keydown', onKeydown)
+  }, [open])
+
+  // R12: restore focus to the invoking control when the palette closes.
+  // (After a result navigates away the restored element may unmount — the
+  // optional call is harmless then.)
+  useEffect(() => {
+    if (wasOpenRef.current && !open) (triggerRef.current as HTMLElement | null)?.focus?.()
+    wasOpenRef.current = open
   }, [open])
 
   // Body-scroll lock while open, matching every other Fable overlay.
@@ -103,6 +145,7 @@ export function CommandPalette() {
   return (
     <div className="no-print nv-scrim fixed inset-0 z-[100] flex items-start justify-center pt-[13vh] px-4" onClick={() => setOpen(false)}>
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={t.common.search}

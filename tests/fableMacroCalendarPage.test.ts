@@ -136,8 +136,15 @@ describe('Phase 5F — dates-only disclosure and real FRED calendar wiring prese
   })
 
   it('the "not configured" state is honestly distinct from "configured but empty"', () => {
-    assert.match(src, /state=\{fred && !fred\.configured \? 'unavailable' : undefined\}/)
-    assert.match(src, /stateMessage=\{t\.cal\.fredUnavailable\}/)
+    // Superseded in R12: the pre-R12 gate handled only `configured: false` —
+    // a fetch still in flight AND a hard fetch failure (null helper result)
+    // both rendered the confirmed-empty "no releases" copy. The enduring
+    // contract grew to a full tri-state: loading → error → unavailable →
+    // table (whose own empty message then genuinely means zero events).
+    assert.match(src, /fredState === 'loading' \? 'loading'/)
+    assert.match(src, /: fredState === 'error' \? 'error'/)
+    assert.match(src, /: fred && !fred\.configured \? 'unavailable'/)
+    assert.match(src, /stateMessage=\{fredState === 'ready' && fred && !fred\.configured \? t\.cal\.fredUnavailable : undefined\}/)
     assert.match(src, /emptyMessage=\{t\.cal\.fredEmpty\}/)
   })
 })
@@ -214,7 +221,13 @@ describe('Phase 5F — source footers preserved', () => {
   })
 
   it('the FRED footer as-of derives from the latest fetched event date, unchanged', () => {
-    assert.match(src, /const latestAsOf = events\.reduce\(\(max, e\) => \(e\.date > max \? e\.date : max\), ''\)/)
+    // Superseded in R12: that reduce() stamped the furthest FUTURE scheduled
+    // release date as the data vintage (e.g. "as of 04-10" two months ahead —
+    // not a timestamp of anything shown). Scheduled dates are content, not
+    // freshness: the footer now carries no fabricated as-of, matching the
+    // Macro page's own calendar embed.
+    assert.ok(!src.includes('events.reduce((max, e)'), 'the future-date reduce must not return')
+    assert.match(src, /<TableSourceFooter source="FRED \(Federal Reserve Bank of St\. Louis\)" asOf=\{null\}/)
   })
 
   it('the FOMC footer names the real resolved provider source and observation date, unchanged', () => {

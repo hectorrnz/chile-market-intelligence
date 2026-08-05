@@ -142,14 +142,19 @@ export default function EarningsPage() {
   // data past the resolver's 6h cache.
   const refreshEarnings = useCallback(async () => {
     setLoading(true)
-    await refreshAll()
-    const [c, r] = await Promise.all([
-      fetchEarningsCalendar().catch(() => null),
-      fetchEarningsResults(true).catch(() => null),
-    ])
-    if (c) setCal(c)
-    if (r) setResults(r)
-    setLoading(false)
+    // R12: try/finally — if refreshAll rejects (both refresh domains down),
+    // the tables must not sit at 'loading' forever.
+    try {
+      await refreshAll()
+      const [c, r] = await Promise.all([
+        fetchEarningsCalendar().catch(() => null),
+        fetchEarningsResults(true).catch(() => null),
+      ])
+      if (c) setCal(c)
+      if (r) setResults(r)
+    } finally {
+      setLoading(false)
+    }
   }, [refreshAll])
 
   // Upcoming = real CMF EEFF-sending dates, replacing the old static sample.

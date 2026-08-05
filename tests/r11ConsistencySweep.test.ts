@@ -47,8 +47,12 @@ describe('R11 · the Nevada notional is masked on its own pages, not only on Hom
 
   test('every notional render routes through the shared PrivacyValue boundary', () => {
     // Book total (list), per-note column (list), and the detail capsule.
+    // R12: the per-note cell renders '—' when its metric is missing (never a
+    // fabricated "USD 0") — the amount expression moved inside a template
+    // literal, still inside the same PrivacyValue boundary.
     assert.match(SN_LIST, /label=\{t\.sn\.dashNotional\}[^\n]*masked=\{masked\}/)
-    assert.match(SN_LIST, /<PrivacyValue masked=\{masked\}[^>]*>\s*\n\s*<span className="block truncate">\{n\.currency\}/)
+    assert.match(SN_LIST, /<PrivacyValue masked=\{masked\} className="block">/)
+    assert.match(SN_LIST, /\{m \? `\$\{n\.currency\} \$\{fmtNum\(m\.currentNotional\)\}` : '—'\}/)
     assert.match(SN_DETAIL, /label=\{t\.sn\.colNotional\}[^\n]*masked=\{masked\}/)
     assert.match(SN_LIST, /import \{ PrivacyValue \}/)
   })

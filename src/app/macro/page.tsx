@@ -180,10 +180,17 @@ export default function MacroPage() {
   // no live/persisted backing) — Chile's verified live BCCh FX pairs (USD/CLP,
   // EUR/CLP) remain visible in the indicators table above (FX category).
   const [usForex, setUsForex] = useState<UsForexTableResult | null>(null)
+  // R12: a fetch still in flight is LOADING, not "unavailable" — the card
+  // previously showed the unavailable warning during every initial load.
+  const [usForexSettled, setUsForexSettled] = useState(false)
   useEffect(() => {
     if (region !== 'US') return
     const ac = new AbortController()
-    fetchUsForexTable(ac.signal, macroRefreshSeq > 0).then(res => { if (res) setUsForex(res) })
+    fetchUsForexTable(ac.signal, macroRefreshSeq > 0).then(res => {
+      if (ac.signal.aborted) return
+      if (res) setUsForex(res)
+      setUsForexSettled(true)
+    })
     return () => ac.abort()
   }, [region, macroRefreshSeq])
 
@@ -191,11 +198,19 @@ export default function MacroPage() {
   // verified release-date source, see /macro/calendar's own deferred block).
   // Other months are one click away via "View full calendar".
   const [calendar, setCalendar] = useState<FredCalendarFetchResult | null>(null)
+  // R12: a null helper result means the fetch FAILED — the embed previously
+  // rendered the confirmed-empty "no releases" copy both while loading and
+  // after a hard failure. Three-way state, same as /macro/calendar.
+  const [calendarState, setCalendarState] = useState<'loading' | 'error' | 'ready'>('loading')
   useEffect(() => {
     if (region !== 'US') return
     const ac = new AbortController()
     const { start, end } = currentMonthRangeIso()
-    fetchFredReleaseCalendarRange(start, end, ac.signal).then(res => setCalendar(res))
+    fetchFredReleaseCalendarRange(start, end, ac.signal).then(res => {
+      if (ac.signal.aborted) return
+      setCalendar(res)
+      setCalendarState(res && res.ok ? 'ready' : 'error')
+    })
     return () => ac.abort()
   }, [region, macroRefreshSeq])
 
@@ -307,8 +322,13 @@ export default function MacroPage() {
             title={t.macro.calToday}
             controls={<Link href="/macro/calendar" className="text-xs text-primary hover:underline">{t.macro.viewFull}</Link>}
             minWidth={720}
-            state={calendar && !calendar.configured ? 'unavailable' : undefined}
-            stateMessage={t.cal.fredUnavailable}
+            state={
+              calendarState === 'loading' ? 'loading'
+                : calendarState === 'error' ? 'error'
+                : calendar && !calendar.configured ? 'unavailable'
+                : undefined
+            }
+            stateMessage={calendarState === 'ready' && calendar && !calendar.configured ? t.cal.fredUnavailable : undefined}
             footer={<TableSourceFooter source="FRED (Federal Reserve Bank of St. Louis)" asOf={null} />}
           >
             <EconomicCalendarTable events={calendar?.events ?? []} emptyMessage={t.cal.fredEmpty} />
@@ -407,10 +427,14 @@ export default function MacroPage() {
           {region === 'US' && (
             <TableCard
               title={t.macro.fxDepth}
-              controls={<SourceStateBadge sourceKey={usForex && usForex.ok ? 'frankfurterLive' : 'frankfurterUnavailable'} />}
+              controls={usForexSettled || usForex ? <SourceStateBadge sourceKey={usForex && usForex.ok ? 'frankfurterLive' : 'frankfurterUnavailable'} /> : undefined}
               minWidth={420}
-              state={!(usForex && usForex.ok) || usForex.rows.length === 0 ? 'unavailable' : undefined}
-              stateMessage={t.macro.fxUnavailable}
+              state={
+                !usForexSettled && usForex === null ? 'loading'
+                  : !(usForex && usForex.ok) || usForex.rows.length === 0 ? 'unavailable'
+                  : undefined
+              }
+              stateMessage={usForexSettled || usForex ? t.macro.fxUnavailable : undefined}
               footer={usForex && usForex.ok && usForex.rows.length > 0 ? (
                 <>
                   <TableSourceFooter source="Frankfurter" asOf={usForex.currentDate} />

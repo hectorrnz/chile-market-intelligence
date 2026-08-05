@@ -40,7 +40,9 @@ function makeSector(name: string, overrides: Partial<SectorLive> = {}): SectorLi
 }
 
 function makeIndex(id: string, overrides: Partial<IndexLive> = {}): IndexLive {
-  return { id, value: 1000, dayChangePct: 0.3, ytdChangePct: 5.0, ...overrides }
+  // R12: IndexLive rows carry a per-instrument `source` flag (coherent-row
+  // policy); ingestion fixtures model a genuinely overlaid row.
+  return { id, value: 1000, dayChangePct: 0.3, ytdChangePct: 5.0, source: 'live', ...overrides }
 }
 
 // ─── sanitizeError ───────────────────────────────────────────────────────────

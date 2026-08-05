@@ -71,7 +71,6 @@ import { useRouter } from 'next/navigation'
 import { useLang } from '@/components/providers/LangProvider'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { ARCHIVED_STATUSES } from '@/lib/structuredNotes/types'
-import { calculateNevadaInvestmentNotional } from '@/lib/structuredNotes/calculations'
 import type { StructuredNote } from '@/lib/structuredNotes/types'
 import type { NoteDashboardMetrics, BookSummary } from '@/lib/structuredNotes/dashboard'
 import { PageHeader } from '@/components/fable/PageHeader'
@@ -214,9 +213,20 @@ export default function StructuredNotesPage() {
   }, [])
 
   const load = useCallback(async () => {
-    const res = await fetch('/api/structured-notes', { cache: 'no-store' })
-    const json = await res.json().catch(() => ({}))
-    ingest(json)
+    // R12: a non-ok response (503 not-configured, middleware 401) still
+    // carries a JSON body — ingesting it would render a live book as
+    // confirmed-empty ("no structured notes yet"). Any failure now reaches
+    // the honest error state instead.
+    try {
+      const res = await fetch('/api/structured-notes', { cache: 'no-store' })
+      if (!res.ok) { setLoadFailed(true); return }
+      const json = await res.json().catch(() => null)
+      if (!json) { setLoadFailed(true); return }
+      ingest(json)
+      setLoadFailed(false)
+    } catch {
+      setLoadFailed(true)
+    }
     await loadMonitoring()
   }, [ingest, loadMonitoring])
 
@@ -225,13 +235,17 @@ export default function StructuredNotesPage() {
     void (async () => {
       try {
         const res = await fetch('/api/structured-notes', { cache: 'no-store' })
-        const json = await res.json().catch(() => ({}))
         if (cancelled.value) return
+        // R3/R12 — a failed initial load (thrown OR non-ok OR unparseable)
+        // renders the honest error state, never the "no structured notes yet"
+        // empty copy (the book may well be non-empty).
+        if (!res.ok) { setNotes([]); setLoadFailed(true); return }
+        const json = await res.json().catch(() => null)
+        if (cancelled.value) return
+        if (!json) { setNotes([]); setLoadFailed(true); return }
         ingest(json)
         setLoadFailed(false)
       } catch {
-        // R3 — a failed initial load renders the honest error state, never the
-        // "no structured notes yet" empty copy (the book may well be non-empty).
         if (!cancelled.value) { setNotes([]); setLoadFailed(true) }
       } finally {
         if (!cancelled.value) setLoading(false)
@@ -250,12 +264,27 @@ export default function StructuredNotesPage() {
   // NotificationBell in TopBar) — the scheduled monitoring cron creates a
   // shared notification + emails the configured recipient list directly, so
   // this page no longer needs its own per-browser banner/seen-list.
+  // R12: the Called toggle is a real status mutation — it now carries a
+  // pending lock (no concurrent PATCH races), checks the response, and
+  // surfaces a localized failure instead of silently reverting on reload.
+  const [calledBusy, setCalledBusy] = useState(false)
+  const [calledError, setCalledError] = useState(false)
   async function setCalled(noteId: string, called: boolean) {
-    await fetch(`/api/structured-notes/${noteId}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: called ? 'autocalled' : 'active' }),
-    })
-    await load()
+    if (calledBusy) return
+    setCalledBusy(true)
+    setCalledError(false)
+    try {
+      const res = await fetch(`/api/structured-notes/${noteId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: called ? 'autocalled' : 'active' }),
+      })
+      if (!res.ok) { setCalledError(true); return }
+      await load()
+    } catch {
+      setCalledError(true)
+    } finally {
+      setCalledBusy(false)
+    }
   }
 
   /**
@@ -289,7 +318,19 @@ export default function StructuredNotesPage() {
       const form = new FormData(); form.append('file', file)
       const res = await fetch('/api/structured-notes/extract', { method: 'POST', body: form })
       const json = await res.json()
-      if (!res.ok) { setError(json.detail || json.error || t.sn.extractError); return }
+      if (!res.ok) {
+        // R12: server error CODES map to localized copy — the response's
+        // `detail` (hardcoded English, and formerly a raw parser exception)
+        // is never rendered. Unknown codes fall back to the generic message.
+        const codeMsg: Record<string, string> = {
+          unsupported_type: t.sn.onlyPdf,
+          file_too_large: t.sn.fileTooLarge,
+          pdf_parse_failed: t.sn.pdfUnreadable,
+          no_text_layer: t.sn.scannedPdf,
+        }
+        setError(codeMsg[json.error] ?? t.sn.extractError)
+        return
+      }
       setPreview(json as ExtractResponse)
     } catch {
       setError(t.sn.extractError)
@@ -307,7 +348,10 @@ export default function StructuredNotesPage() {
         body: JSON.stringify({ note: preview.note, extractionRunId: preview.extractionRunId, sourceFileHash: preview.fileHash }),
       })
       const json = await res.json()
-      if (!res.ok) { setError((json.errors && json.errors.join(', ')) || json.detail || t.sn.importError); return }
+      // R12: validation `errors` (app-authored field messages from the review
+      // workflow) still render; the backend `detail` (sanitized Postgres text)
+      // never does.
+      if (!res.ok) { setError((json.errors && json.errors.join(', ')) || t.sn.importError); return }
       setPreview(null); await load()
     } catch {
       setError(t.sn.importError)
@@ -505,8 +549,9 @@ export default function StructuredNotesPage() {
                     totalLabel={t.sn.totalLabel}
                     currency={summary.currency}
                     total={summary.issuerExposure.reduce((s, e) => s + (Number.isFinite(e.notional) ? e.notional : 0), 0)}
+                    masked={masked}
                   />
-                  <BarChart data={summary.issuerExposure.map((e) => ({ label: e.issuer, value: e.notional }))} currency={summary.currency} ofTotal={t.sn.ofTotal} />
+                  <BarChart data={summary.issuerExposure.map((e) => ({ label: e.issuer, value: e.notional }))} currency={summary.currency} ofTotal={t.sn.ofTotal} masked={masked} />
                 </GlassSurface>
               )}
               {/* R7.1B — Exposure by Custodian, directly below Exposure by
@@ -523,11 +568,13 @@ export default function StructuredNotesPage() {
                     totalLabel={t.sn.totalLabel}
                     currency={summary.currency}
                     total={summary.custodianExposure.reduce((s, e) => s + (Number.isFinite(e.notional) ? e.notional : 0), 0)}
+                    masked={masked}
                   />
                   <BarChart
                     data={summary.custodianExposure.map((e) => ({ label: e.custodian ?? t.sn.custodianUnavailable, value: e.notional }))}
                     currency={summary.currency}
                     ofTotal={t.sn.ofTotal}
+                    masked={masked}
                   />
                 </GlassSurface>
               )}
@@ -539,8 +586,9 @@ export default function StructuredNotesPage() {
                   totalLabel={t.sn.totalLabel}
                   currency={summary.currency}
                   total={summary.entityExposure.reduce((s, e) => s + (Number.isFinite(e.notional) && e.notional > 0 ? e.notional : 0), 0)}
+                  masked={masked}
                 />
-                <Donut data={summary.entityExposure.map((e) => ({ label: e.entityName, value: e.notional }))} currency={summary.currency} ofTotal={t.sn.ofTotal} totalLabel={t.sn.totalLabel} />
+                <Donut data={summary.entityExposure.map((e) => ({ label: e.entityName, value: e.notional }))} currency={summary.currency} ofTotal={t.sn.ofTotal} totalLabel={t.sn.totalLabel} masked={masked} />
               </GlassSurface>
             )}
           </div>
@@ -565,6 +613,7 @@ export default function StructuredNotesPage() {
       )}
 
       {error && <div className="mb-4 text-sm text-negative" role="alert">{error}</div>}
+      {calledError && <div className="mb-4 text-xs text-negative" role="alert">{t.sn.saveError}</div>}
 
       {/* Extraction preview — Fable glass card + confidence pill */}
       {preview && (
@@ -742,11 +791,13 @@ export default function StructuredNotesPage() {
                           the book total — masked, and the `title` duplicate
                           removed (a tooltip would leak the raw value). */}
                       <PrivacyValue masked={masked} className="block">
-                        <span className="block truncate">{n.currency} {fmtNum(m?.currentNotional ?? 0)}</span>
+                        {/* R12: a missing metric renders '—', never a
+                            fabricated "USD 0". */}
+                        <span className="block truncate">{m ? `${n.currency} ${fmtNum(m.currentNotional)}` : '—'}</span>
                       </PrivacyValue>
                     </td>
                     <td className={`${cellPad} text-center no-print`}>
-                      <input type="checkbox" checked={isArchived(n)} onChange={(e) => n.id && setCalled(n.id, e.target.checked)} title={t.sn.dashCalled} aria-label={`${t.sn.colCalled}: ${n.productName}`} />
+                      <input type="checkbox" checked={isArchived(n)} disabled={calledBusy} onChange={(e) => n.id && setCalled(n.id, e.target.checked)} title={t.sn.dashCalled} aria-label={`${t.sn.colCalled}: ${n.productName}`} />
                     </td>
                     {/* R7.1B — icon-only delete trigger. It is a real <button>,
                         so the row's own click handler skips it (interactive
@@ -781,9 +832,13 @@ export default function StructuredNotesPage() {
           page uses (ModalShell alertdialog: focus trap, Escape cancels unless
           pending, scroll lock, focus restored to the trash trigger,
           confirm-at-most-once). The description names the real record —
-          product, ISIN, issuer, Nevada investment, allocation count — built
-          only from values already on this payload. Deletion is permanent
-          (hard delete), which is what the confirmation says. */}
+          product, ISIN, issuer, allocation count — built only from values
+          already on this payload. R12: the Nevada notional was REMOVED from
+          the description — it is a documented private amount and the dialog
+          rendered it raw regardless of Privacy Mode; the remaining fields
+          identify the record unambiguously without disclosing an amount.
+          Deletion is permanent (hard delete), which is what the confirmation
+          says. */}
       <DestructiveConfirm
         open={pendingDelete !== null}
         title={t.sn.delete}
@@ -791,7 +846,6 @@ export default function StructuredNotesPage() {
           pendingDelete.productName,
           pendingDelete.isin,
           pendingDelete.issuerDisplayName,
-          `${t.sn.nevadaInvestment}: ${pendingDelete.currency} ${fmtNum(calculateNevadaInvestmentNotional(pendingDelete.allocations))}`,
           `${pendingDelete.allocations.filter((a) => a.active).length} ${t.sn.accountAllocations}`,
         ].filter(Boolean).join(' · ') : undefined}
         confirmLabel={deleting ? t.sn.deleting : t.sn.delete}
@@ -890,13 +944,19 @@ function SortableHeader({ label, sortTitle, active, arrow, onClick, dir, align =
  * left, the card's TOTAL anchored right (mirroring the capsule label/value
  * pattern so both cards read as the same family).
  */
-function ExposureHeader({ title, totalLabel, currency, total }: { title: string; totalLabel: string; currency: string; total: number }) {
+function ExposureHeader({ title, totalLabel, currency, total, masked }: { title: string; totalLabel: string; currency: string; total: number; masked: boolean }) {
+  // R12: this total IS the book's Nevada notional (the issuer/custodian/entity
+  // exposures are decompositions of it) — one of the six documented private
+  // amounts, so it routes through the same PrivacyValue boundary as the KPI
+  // capsule above it. Percent shares stay visible (proportion, not size).
   return (
     <div className="flex items-baseline justify-between gap-3 mb-3">
       <h2 className="ui-label text-muted-fg">{title}</h2>
       <span className="whitespace-nowrap">
         <span className="ui-micro-label text-muted-fg mr-1.5">{totalLabel}</span>
-        <span className="text-xs ui-number font-medium text-foreground">{currency} {fmtNum(total)}</span>
+        <span className="text-xs ui-number font-medium text-foreground">
+          <PrivacyValue masked={masked}>{`${currency} ${fmtNum(total)}`}</PrivacyValue>
+        </span>
       </span>
     </div>
   )
@@ -910,7 +970,7 @@ function ExposureHeader({ title, totalLabel, currency, total }: { title: string;
  * the exact notional and % of total stay printed on every row, so hover
  * emphasis (nv-row-hover) is optional, never load-bearing. No chart library.
  */
-function BarChart({ data, currency, ofTotal }: { data: { label: string; value: number }[]; currency: string; ofTotal: string }) {
+function BarChart({ data, currency, ofTotal, masked }: { data: { label: string; value: number }[]; currency: string; ofTotal: string; masked: boolean }) {
   const rows = [...data].sort((a, b) => b.value - a.value)
   const total = rows.reduce((s, d) => s + (Number.isFinite(d.value) ? d.value : 0), 0)
   const max = Math.max(1, ...rows.map((d) => d.value))
@@ -923,8 +983,10 @@ function BarChart({ data, currency, ofTotal }: { data: { label: string; value: n
             <div className="flex items-baseline justify-between gap-3 mb-1">
               <span className="text-foreground font-medium truncate" title={d.label}>{d.label}</span>
               <span className="whitespace-nowrap ui-number">
+                {/* Percent share stays visible (proportion, not size); the
+                    amount is a slice of the masked book notional (R12). */}
                 <span className="text-foreground font-medium">{pct.toFixed(1)}%</span>
-                <span className="text-muted-fg"> {ofTotal} · {currency} {fmtNum(d.value)}</span>
+                <span className="text-muted-fg"> {ofTotal} · <PrivacyValue masked={masked}>{`${currency} ${fmtNum(d.value)}`}</PrivacyValue></span>
               </span>
             </div>
             <div className="h-1 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--nv-chip)' }}>
@@ -945,7 +1007,7 @@ function BarChart({ data, currency, ofTotal }: { data: { label: string; value: n
  * optional, never load-bearing; the truncated center total repeats the exact
  * figure already shown in the card header. No chart library (SVG only).
  */
-function Donut({ data, currency, ofTotal, totalLabel }: { data: { label: string; value: number }[]; currency: string; ofTotal: string; totalLabel: string }) {
+function Donut({ data, currency, ofTotal, totalLabel, masked }: { data: { label: string; value: number }[]; currency: string; ofTotal: string; totalLabel: string; masked: boolean }) {
   const [hi, setHi] = useState<string | null>(null)
   const total = data.reduce((s, d) => s + (Number.isFinite(d.value) && d.value > 0 ? d.value : 0), 0)
   const r = 42
@@ -990,7 +1052,11 @@ function Donut({ data, currency, ofTotal, totalLabel }: { data: { label: string;
         {total > 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none px-7">
             <span className="ui-micro-label text-muted-fg">{totalLabel}</span>
-            <span className="text-sm font-semibold ui-number text-foreground max-w-full truncate" title={`${currency} ${fmtNum(total)}`}>{fmtNum(total)}</span>
+            {/* R12: the center total is the masked book notional — no raw
+                value in text OR in a title tooltip while masked. */}
+            <span className="text-sm font-semibold ui-number text-foreground max-w-full truncate" title={masked ? undefined : `${currency} ${fmtNum(total)}`}>
+              <PrivacyValue masked={masked}>{fmtNum(total)}</PrivacyValue>
+            </span>
             <span className="ui-meta text-muted-fg">{currency}</span>
           </div>
         )}
@@ -1016,7 +1082,8 @@ function Donut({ data, currency, ofTotal, totalLabel }: { data: { label: string;
               <span className="text-foreground font-medium whitespace-nowrap">
                 {(s.frac * 100).toFixed(1)}%<span className="text-muted-fg font-normal"> {ofTotal}</span>
               </span>
-              <span className="text-muted-fg whitespace-nowrap">· {currency} {fmtNum(s.value)}</span>
+              {/* Amount masked (R12); the share stays — proportion, not size. */}
+              <span className="text-muted-fg whitespace-nowrap">· <PrivacyValue masked={masked}>{`${currency} ${fmtNum(s.value)}`}</PrivacyValue></span>
             </span>
           </div>
         ))}

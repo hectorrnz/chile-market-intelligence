@@ -1106,8 +1106,49 @@ documentation defect** were demonstrated and repaired; everything else audited c
   `tests/r11ConsistencySweep.test.ts` (18); four stale phase-boundary assertions superseded with
   their enduring contracts, none deleted. Suite **4117 · 4114 · 3** (authorized trio; failure count
   unchanged); lint 0; build 0 errors. Full record + the R12 deferral list in doc 04 § Phase R11.
+- [x] **R12 — final production-readiness audit and blocker repair (2026-08-05).** Independent
+  audit at baseline `278edf1` across all prescribed domains; every demonstrated P0/P1 repaired
+  (plus directly-adjacent small P2s only). **P0:** the masked Nevada notional rendered raw in the
+  SN exposure cards (headers, bars, donut center incl. a `title`, legend) and the detail
+  allocation summary — all now behind `PrivacyValue`; both delete dialogs and the always-visible
+  allocation inputs likewise closed. **P1s:** per-instrument live gating for every market-snapshot
+  consumer (coverage-based Live/Hybrid/fallback badges + coherent-row policy — the R11 deferred
+  shared-contract issue, confirmed real); the Stocks P/E + Div. Yield columns and the company
+  "med" sublabels removed (frozen Phase-2D synthetics under a live Yahoo label); a sweep of
+  error-as-empty / stuck-loading / render-crash paths (SN book + detail, Portfolio detail calls,
+  Home watchlist card + News, company valuation 200-null, both FRED calendar consumers);
+  Portfolio's unconfirmed position-remove and transaction-delete now gate through
+  `DestructiveConfirm`; CommandPalette focus containment/restoration; the Chart Builder settings
+  dialog migrated to `ModalShell`; SN extract/import raw backend text replaced by localized
+  code-mapping; Chart Builder ticker-B provenance disclosed; the `/macro/calendar` future-dated
+  as-of removed; `UpdateDataButton` gained a visible, announced failed state. R11 deferrals 4.4
+  (checkboxes), 4.5 (SectionHeader routes) and 4.6 (dead keys) evaluated and accepted with
+  rationale — no repair. New `tests/r12ProductionReadiness.test.ts` (52); 16 suites' stale pins
+  superseded with enduring contracts, none deleted. Suite **4167 · 4164 · 3** (authorized trio;
+  failure count unchanged); lint 0; build 0 errors (20 page routes); `git diff --check` clean.
+  `npm audit --omit=dev`: 9 production advisories (4 moderate, 5 high — `next` + transitive)
+  requiring a Next version bump, out of R12 scope, flagged to the release process. No database
+  queried, no migration run, nothing deployed/staged/committed/pushed in R12. Full record in
+  doc 04 § Phase R12.
+- [x] **R12.1 — controlled production-dependency security repair (2026-08-05).** The 9 production
+  advisories R12 flagged are now **0** (`npm audit --omit=dev`: found 0 vulnerabilities). Smallest
+  supported updates only: `next` 16.2.9 → 16.2.12 (stable 16.2 line, exact pin preserved; no
+  16.3.x, no prerelease) + seven documented exact-pin overrides — `sharp` 0.35.3 (libvips CVE
+  floor 0.35.0; compatibility evidenced by next@16.3.0's own `^0.35.3` pairing, a zero-overlap
+  audit of the 16.2.12 optimizer's sharp surface against 0.35.0's breaking changes, and a native
+  win32-x64 smoke of that exact pipeline), `postcss` 8.5.23 (clears next's nested vulnerable
+  8.4.31 — now one deduped copy), `@modelcontextprotocol/sdk` 1.30.0 (in-range for
+  yahoo-finance2's `^1.26.0`; first SDK officially supporting node-server 2.x),
+  `@hono/node-server` 2.0.12 (in-range of the SDK's declared `^1.19.9 || ^2.0.5` — no same-major
+  patch exists), `hono` 4.12.34, `fast-uri` 3.1.5, `ip-address` 10.3.1. `yahoo-finance2` stays
+  3.15.3 — npm audit's proposed 3.14.3 downgrade rejected. No source file, workflow, data
+  snapshot, migration, or remote resource changed; no `npm audit fix`/`npm update`/`--force`/
+  `--legacy-peer-deps`. Durable semantic-version floor tests added to
+  `tests/r12ProductionReadiness.test.ts` (section 8). Remaining full-audit findings are two
+  dev-only advisories (ESLint toolchain), outside the production gate. Full record incl. per-
+  override removal conditions in doc 04 § Phase R12.1.
 - [ ] **Manual browser validation — PENDING (the R10 gate, now covering the R10.1 + R10.2 +
-  R10.3 composition and the R11 repairs).** At 320/390/768/1024/1280/1440/1728 ×
+  R10.3 composition and the R11 + R12 + R12.1 repairs).** At 320/390/768/1024/1280/1440/1728 ×
   EN/ES × light/dark × privacy OFF/ON (+ stored-ON reload + cross-tab) × data states
   (normal/empty/partial/failed/slow): Home reads as a materially different Fable command center;
   hierarchy immediately understandable; portfolio figures agree with `/portfolio` and notes with

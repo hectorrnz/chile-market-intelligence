@@ -118,7 +118,12 @@ export function buildBookDashboard(
   let totalNotional = 0
   for (const n of active) totalNotional += calculateCurrentNotional(n, n.allocations)
 
-  const count = (s: RiskStatus) => metrics.filter((m) => m.riskStatus === s).length
+  // R12: status KPI counts describe the LIVE book — an archived (called/
+  // matured/cancelled/defaulted) note must not inflate 'autocallable' or
+  // 'unavailable', which made the KPI disagree with its own click-through
+  // (the Live view excludes archived notes; 'Called' has its own KPI).
+  const liveMetrics = metrics.filter((_, i) => !ARCHIVED_STATUSES.includes(notes[i].status))
+  const count = (s: RiskStatus) => liveMetrics.filter((m) => m.riskStatus === s).length
 
   const summary: BookSummary = {
     totalNotes: notes.length,

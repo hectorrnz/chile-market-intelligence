@@ -105,6 +105,13 @@ export const dict = {
       custodianUnavailable: 'Custodian unavailable',
       saveError: 'Could not save the change',
       exposureByCustodian: 'Exposure by Custodian',
+      // R12 — extract-error codes mapped client-side (the server no longer
+      // ships renderable English `detail` text), + the Privacy-Mode editor hint.
+      onlyPdf: 'Only PDF term sheets are supported',
+      fileTooLarge: 'The file exceeds the 10 MB limit',
+      pdfUnreadable: 'Could not read the PDF text layer',
+      scannedPdf: 'This PDF appears to be scanned (no extractable text) — OCR is not supported; manual entry required',
+      revealToEdit: 'Hidden by Privacy Mode — click to edit',
       allocationMismatch: 'Nevada investment exceeds the recorded issue size — review the issue-size source.',
       worstPerformer: 'Worst performer',
       riskStatus: 'Risk status',
@@ -458,6 +465,8 @@ export const dict = {
       updateData:   'Update Data',
       updating:     'Updating…',
       dataUpdated:  'Data updated',
+      // R12: a failed platform refresh is stated, never silently identical to idle.
+      updateFailed: 'Update failed',
       // R11: Home's rates drag handle carried a hardcoded English tooltip.
       dragToReorder: 'Drag to reorder',
     },
@@ -512,6 +521,8 @@ export const dict = {
       newsLive:         'Live',
       newsPartial:      'Partial',
       newsUnavailable:  'Unavailable',
+      // R12: sr-only marker so High impact is never conveyed by color alone.
+      newsHighImpact:   'High impact',
       newsLoading:      'Loading…',
       newsEmpty:        'No news items available right now.',
       newsOfficialSource: 'Official source (CMF/BCCh)',
@@ -810,6 +821,10 @@ export const dict = {
       // anti-pattern Watchlist documents having fixed.
       addError:      'Could not save — please try again',
       networkError:  'Network error — please try again',
+      // R12: inline-edit fallback + confirmed-removal failures, localized
+      // (the editor previously fell back to a hardcoded 'Error').
+      saveError:     'Could not save — please try again',
+      removeError:   'Could not remove — please try again',
       source:       'Yahoo Finance',
       defaultName:  'Default',
       signInCta:    'Sign in to manage your portfolio',
@@ -849,6 +864,8 @@ export const dict = {
       },
       tx: {
         addTransaction: 'Add transaction',
+        // R12: the transaction delete goes through the shared confirmation.
+        deleteTransaction: 'Delete transaction',
         type:         'Type',
         buy:          'Buy',
         sell:         'Sell',
@@ -1098,6 +1115,12 @@ export const dict = {
       custodianHelp: 'Institución que mantiene esta nota en custodia. Todas las cuentas de la nota se operan a través de ella.',
       custodianUnavailable: 'Custodio no disponible',
       saveError: 'No se pudo guardar el cambio',
+      // R12 — códigos de error de extracción mapeados en el cliente.
+      onlyPdf: 'Solo se admiten term sheets en PDF',
+      fileTooLarge: 'El archivo supera el límite de 10 MB',
+      pdfUnreadable: 'No se pudo leer la capa de texto del PDF',
+      scannedPdf: 'Este PDF parece escaneado (sin texto extraíble) — no se admite OCR; se requiere entrada manual',
+      revealToEdit: 'Oculto por el modo privacidad — haz clic para editar',
       exposureByCustodian: 'Exposición por custodio',
       allocationMismatch: 'La inversión de Nevada supera el tamaño de emisión registrado — revisa la fuente del tamaño de emisión.',
       worstPerformer: 'Peor subyacente',
@@ -1439,6 +1462,7 @@ export const dict = {
       updateData:   'Actualizar Datos',
       updating:     'Actualizando…',
       dataUpdated:  'Datos actualizados',
+      updateFailed: 'Error al actualizar',
       dragToReorder: 'Arrastra para reordenar',
     },
     dataSource: {
@@ -1492,6 +1516,7 @@ export const dict = {
       newsLive:         'En vivo',
       newsPartial:      'Parcial',
       newsUnavailable:  'No disponible',
+      newsHighImpact:   'Alto impacto',
       newsLoading:      'Cargando…',
       newsEmpty:        'No hay noticias disponibles en este momento.',
       newsOfficialSource: 'Fuente oficial (CMF/BCCh)',
@@ -1782,6 +1807,8 @@ export const dict = {
       emptyPortfolio: 'Tu portafolio está vacío. Agrega una posición arriba.',
       addError:      'No se pudo guardar — intenta nuevamente',
       networkError:  'Error de red — intenta nuevamente',
+      saveError:     'No se pudo guardar — intenta nuevamente',
+      removeError:   'No se pudo eliminar — intenta nuevamente',
       source:       'Yahoo Finance',
       defaultName:  'Principal',
       signInCta:    'Ingresa para gestionar tu portafolio',
@@ -1821,6 +1848,7 @@ export const dict = {
       },
       tx: {
         addTransaction: 'Agregar transacción',
+        deleteTransaction: 'Eliminar transacción',
         type:         'Tipo',
         buy:          'Compra',
         sell:         'Venta',

@@ -105,8 +105,11 @@ describe('one as-of per surface — the standalone "Updated … SCL" chip is gon
   }
 
   it('Stocks derives one as-of from the data actually displayed (live, else persisted)', () => {
+    // Superseded in R12: still exactly one as-of describing the data on
+    // screen — but the live snapshot's time is claimed only when at least
+    // one displayed row is actually overlaid (per-instrument coverage).
     const src = read('src/app/stocks/page.tsx')
-    assert.ok(src.includes('const priceAsOf = live ? live.lastUpdated'))
+    assert.ok(src.includes("const priceAsOf = live && coverage !== 'none' ? live.lastUpdated"))
     assert.ok(src.includes('asOf={priceAsOf}'))
   })
 })

@@ -20,20 +20,20 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
 | # | Route | Page title | Auth | Fable destination | New component(s) required? | Impl. status | Verif. status |
 |---|---|---|---|---|---|---|---|
 | 1 | `/` | Overview (command center) | protected (R1.5 default-deny) | 1 Overview | Home-local: command strip, portfolio/notes snapshots, events timeline, macro pulse (all in `page.tsx`) | **✓ R10 (2026-08-04)** | Automated ✓ · manual pending |
-| 2 | `/stocks` | Stocks | public | 2 Portfolio (DataTable) | No (reused Phase 3 `TableCard`) | **✓ Phase 5A (2026-07-28)** | **✓ Source + rendered-markup verified** |
-| 3 | `/compare` | Compare | public | 3 Performance (chart+table) | No (reused Phase 3 `TableCard`/`GlassSurface`/`SegmentedControl`) | **✓ Phase 5D (2026-07-28)** | **✓ Source + rendered-markup verified** |
-| 4 | `/chart-builder` | Charting | public | 3 Performance (chart) | No (reused Phase 3 `TableCard`/`GlassSurface`/`SegmentedControl`) | **✓ Phase 5E (2026-07-28)** | **✓ Source-scan verified** |
-| 5 | `/macro` | Macroeconomic Indicators | public | 7 Macro | No (reused Phase 3 `TableCard`/`GlassSurface`/`SegmentedControl`) | **✓ Phase 5F (2026-07-28)** | **✓ Source-scan verified** |
-| 6 | `/macro/calendar` | Economic Calendar | public | 7 Macro / 9 Documents table | No (reused Phase 3 `TableCard`) | **✓ Phase 5F (2026-07-28)** | **✓ Source-scan verified** |
+| 2 | `/stocks` | Stocks | protected (R1.5 default-deny) | 2 Portfolio (DataTable) | No (reused Phase 3 `TableCard`) | **✓ Phase 5A (2026-07-28)** | **✓ Source + rendered-markup verified** |
+| 3 | `/compare` | Compare | protected (R1.5 default-deny) | 3 Performance (chart+table) | No (reused Phase 3 `TableCard`/`GlassSurface`/`SegmentedControl`) | **✓ Phase 5D (2026-07-28)** | **✓ Source + rendered-markup verified** |
+| 4 | `/chart-builder` | Charting | protected (R1.5 default-deny) | 3 Performance (chart) | No (reused Phase 3 `TableCard`/`GlassSurface`/`SegmentedControl`) | **✓ Phase 5E (2026-07-28)** | **✓ Source-scan verified** |
+| 5 | `/macro` | Macroeconomic Indicators | protected (R1.5 default-deny) | 7 Macro | No (reused Phase 3 `TableCard`/`GlassSurface`/`SegmentedControl`) | **✓ Phase 5F (2026-07-28)** | **✓ Source-scan verified** |
+| 6 | `/macro/calendar` | Economic Calendar | protected (R1.5 default-deny) | 7 Macro / 9 Documents table | No (reused Phase 3 `TableCard`) | **✓ Phase 5F (2026-07-28)** | **✓ Source-scan verified** |
 | 7 | `/earnings` | Earnings | private_page | 8 Research (upcoming earnings) / DataTable | No (reused Phase 3 `TableCard`/`AsyncState`) | **✓ Phase 5G (2026-07-29)** · **✓ R8 (2026-08-03)** | **✓ Source-scan verified** |
-| 8 | `/companies/[ticker]` | Stocks · TICKER | public | 2 Portfolio detail panel + 3 Performance | Yes — company detail (KPI capsules, chart, valuation grid, results, news) | Done | Verified |
+| 8 | `/companies/[ticker]` | Stocks · TICKER | protected (R1.5 default-deny) | 2 Portfolio detail panel + 3 Performance | Yes — company detail (KPI capsules, chart, valuation grid, results, news) | Done | Verified |
 | 9 | `/watchlist` 🔒 | Watchlist | protected | 2 Portfolio (DataTable) | No (reused Phase 3 `TableCard` + `AsyncState`) | **✓ Phase 5B (2026-07-28)** | **✓ Source + protected-route verified** |
 | 10 | `/portfolio` 🔒 | Portfolio | protected | 1 Overview + 2 Portfolio + 4 Risk | No (reused Phase 3 `TableCard`/`KpiCapsule`/`ChangeIndicator`/`SegmentedControl`/`GlassSurface`/`AsyncState`) | **✓ Phase 5H (2026-07-29)** | **✓ Source-scan verified** |
 | 11 | `/structured-notes` 🔒 | Structured Notes | protected | 6 Structured Notes | Yes — barrier gauge, upload/extract panel, dashboard KPIs, bar/donut | **✓ R7 (2026-07-31)** · privacy masking added R11 | **✓ Source-scan verified** |
 | 12 | `/structured-notes/[id]` 🔒 | note ISIN/name | protected | 6 SN detail panel | Yes — terms grid, current-levels table, schedule, allocation grid | **✓ R7.1 (2026-07-31)** · privacy masking added R11 | **✓ Source-scan verified** |
 | 13 | `/settings` 🔒 | Settings | protected | 10 Administration | Yes — Account, Data Sources, Security, Display, Notification Recipients | **R9.2 + R9.3 + R9.4 implemented (2026-08-04)** | Automated complete; manual pending |
-| 13b | `/settings/notifications` 🔒 | Notification Settings | protected | 10 Administration | Yes — recipients table, add form | Unchanged pending R9.4 | Not verified |
-| 14 | `/login` | Sign in / Create account | public (auth) | 0 Login | Yes — cinematic login shell, glass auth panel | **R1 implemented (2026-07-29)** | Automated complete; manual pending |
+| 13b | `/settings/notifications` 🔒 | Notification Settings | protected | 10 Administration | server `redirect('/settings#notifications')` — R9.4 folded the surface into `/settings` | **✓ R9.4 (2026-08-04)** | Automated complete; manual pending |
+| 14 | `/login` | Sign in | public (auth) | 0 Login | Yes — cinematic login shell, glass auth panel | **R1 implemented (2026-07-29)** · create-account mode + register endpoint removed R1.5 | Automated complete; manual pending |
 | 15 | `/forgot-password` | Reset your password | public (auth) | 0 Login (variant) | Yes — auth-panel variant | **✓ R1.6 (2026-07-30)** | **✓ Source-scan verified** |
 | 16 | `/auth/reset-password` | Set a new password | public (auth) | 0 Login (variant) | Yes — auth-panel variant | **✓ R1.6 (2026-07-30)** | **✓ Source-scan verified** |
 
@@ -68,7 +68,8 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
 - **Empty state:** watchlist sign-in/empty prompts; `t.home.noUpcoming`; `t.home.newsEmpty`.
 - **Error state:** all mount fetches `.catch(()=>null)` → static fallback; watchlist 401 →
   sign-in prompt.
-- **Auth:** public (watchlist section degrades to a sign-in prompt when unauthenticated).
+- **Auth:** protected — R1.5 default-deny (corrected R12; this line predated the access-control
+  rework). The watchlist section additionally degrades to a sign-in prompt on a lapsed session.
 - **Fable destination:** **1 Overview** (visual language only — Fable Overview's
   portfolio-centric modules are NOT NMI Home content).
 - **Fable component mapping:** Macro card → glass card + macro snapshot rows (sparklines);
@@ -808,7 +809,8 @@ no shared Fable component modified; no CSS added (the meter fill reuses the exis
   disclaimer.
 - **New component required:** **Yes** — barrier gauge, upload/extraction review panel, dashboard
   KPI cards. (Fable's SN screen supplies most of the language directly.)
-- **Impl. status:** Not started · **Verif. status:** Not verified.
+- **Impl. status:** **✓ R7 (2026-07-31)** · **Verif. status:** source-scan verified (cell
+  reconciled R12 — the master table row was updated at R7 but this planning section was not).
 
 ## 12. `/structured-notes/[id]` 🔒 — Structured Note detail
 
@@ -834,7 +836,8 @@ no shared Fable component modified; no CSS added (the meter fill reuses the exis
   `TableSourceFooter` + disclaimer.
 - **New component required:** **Yes** — terms grid, current-levels table, schedule, entity
   allocation grid (as a full detail page; Fable offers the language via its SN detail panel).
-- **Impl. status:** Not started · **Verif. status:** Not verified.
+- **Impl. status:** **✓ R7.1 (2026-07-31)** · **Verif. status:** source-scan verified (cell
+  reconciled R12).
 
 ## 13. `/settings` 🔒 — Settings (canonical) — **R9.2 + R9.3 + R9.4 as built**
 
@@ -1029,7 +1032,8 @@ no shared Fable component modified; no CSS added (the meter fill reuses the exis
 - **Fable component mapping:** glass auth-panel variant on the same cinematic shell; success
   state = glass confirmation panel. Preserve the no-enumeration behavior.
 - **New component required:** **Yes** — auth-panel variant (shares the login shell).
-- **Impl. status:** Not started · **Verif. status:** Not verified.
+- **Impl. status:** **✓ R1.6 (2026-07-30)** · **Verif. status:** source-scan verified (cell
+  reconciled R12).
 
 ## 16. `/auth/reset-password` — Set a new password
 
@@ -1048,7 +1052,8 @@ no shared Fable component modified; no CSS added (the meter fill reuses the exis
 - **Fable component mapping:** glass auth-panel variant on the login shell; success = glass
   confirmation. Preserve the recovery-session dependency and validation.
 - **New component required:** **Yes** — auth-panel variant (shares the login shell).
-- **Impl. status:** Not started · **Verif. status:** Not verified.
+- **Impl. status:** **✓ R1.6 (2026-07-30)** · **Verif. status:** source-scan verified (cell
+  reconciled R12).
 
 ---
 

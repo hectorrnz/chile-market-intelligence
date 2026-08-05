@@ -304,14 +304,17 @@ describe('R4.5b — R4.1 shared-dialog contract (locked in the shared component,
   })
 
   it('the dialog description names the REAL record from existing fields only', () => {
-    // R7.1B — the description was widened (product · ISIN · issuer · Nevada
-    // investment notional · active allocation count) so the user can identify
-    // what they are destroying. Every part is still read from fields already
-    // on the loaded payload — nothing estimated, nothing fabricated.
+    // R7.1B widened the description; R12 REMOVED the Nevada investment
+    // notional from it — it is one of the six documented private amounts and
+    // the dialog printed it raw regardless of Privacy Mode. Product, ISIN,
+    // issuer and allocation count identify the record unambiguously without
+    // disclosing an amount; every part is still read from fields already on
+    // the loaded payload — nothing estimated, nothing fabricated.
     const desc = DETAIL.slice(DETAIL.indexOf('description={['), DETAIL.indexOf("].filter(Boolean).join(' · ')"))
-    for (const field of ['n.productName', 'n.isin', 'n.issuerDisplayName', 't.sn.nevadaInvestment', 'activeAllocations.length']) {
+    for (const field of ['n.productName', 'n.isin', 'n.issuerDisplayName', 'activeAllocations.length']) {
       assert.ok(desc.includes(field), `${field} must identify the record`)
     }
+    assert.ok(!desc.includes('nevadaInvestment'), 'the private amount must not appear in the dialog (R12)')
     assert.doesNotMatch(desc, /Math\.|estimate|approx/i, 'no derived or estimated value in the identification')
   })
 

@@ -311,13 +311,22 @@ describe('Phase 5F — async and data-quality states stay distinct', () => {
   })
 
   it('the calendar embed "not configured" state routes through TableCard/AsyncState with the original message', () => {
-    assert.match(src, /state=\{calendar && !calendar\.configured \? 'unavailable' : undefined\}/)
-    assert.match(src, /stateMessage=\{t\.cal\.fredUnavailable\}/)
+    // Superseded in R12: the single 'unavailable' gate collapsed loading and
+    // hard fetch failure into the confirmed-empty copy. Tri-state now —
+    // loading → error → unavailable — same as /macro/calendar.
+    assert.match(src, /calendarState === 'loading' \? 'loading'/)
+    assert.match(src, /: calendarState === 'error' \? 'error'/)
+    assert.match(src, /: calendar && !calendar\.configured \? 'unavailable'/)
+    assert.match(src, /stateMessage=\{calendarState === 'ready' && calendar && !calendar\.configured \? t\.cal\.fredUnavailable : undefined\}/)
   })
 
   it('the FX depth "unavailable" state (not ok, or zero rows) routes through TableCard/AsyncState with the original message', () => {
-    assert.match(src, /state=\{!\(usForex && usForex\.ok\) \|\| usForex\.rows\.length === 0 \? 'unavailable' : undefined\}/)
-    assert.match(src, /stateMessage=\{t\.macro\.fxUnavailable\}/)
+    // Superseded in R12: a fetch still in flight is LOADING, not
+    // "unavailable" — the warning state now appears only once the fetch has
+    // settled (or older data exists to judge).
+    assert.match(src, /!usForexSettled && usForex === null \? 'loading'/)
+    assert.match(src, /: !\(usForex && usForex\.ok\) \|\| usForex\.rows\.length === 0 \? 'unavailable'/)
+    assert.match(src, /stateMessage=\{usForexSettled \|\| usForex \? t\.macro\.fxUnavailable : undefined\}/)
   })
 
   it('the popup chart "no history" state routes through AsyncState with the original message', () => {

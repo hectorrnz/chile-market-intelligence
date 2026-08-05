@@ -1,5 +1,8 @@
 // Pure aggregation helpers for the Yahoo Finance live market overlay.
 // No Next.js imports — safe to use in both server routes and unit tests.
+// (The one import below is type-only — erased at compile time.)
+
+import type { DataSourceStatus } from '../providers/types'
 
 export const TICKER_YF: Record<string, string> = {
   'BSANTANDER': 'BSANTANDER.SN',
@@ -94,6 +97,9 @@ export interface IndexLive {
   value: number
   dayChangePct: number
   ytdChangePct: number
+  /** 'live' = overlaid from a complete Yahoo quote; 'base' = the committed
+   *  snapshot row passed through unchanged as one coherent fallback unit. */
+  source: 'live' | 'base'
 }
 
 export interface LiveSnapshot {
@@ -115,10 +121,11 @@ export type StaticIndex = {
   id: string; name?: string; country?: string; currency?: string
   value: number; dayChangePct: number; ytdChangePct: number
   /**
-   * Prior-year-end close — the YTD baseline, written by the twice-daily GitHub
-   * refresh (refreshMarketData.py). Lets YTD be recomputed from the live price
-   * on every snapshot even for symbols whose history Yahoo won't serve at
-   * request time (notably ^IPSA). Optional: absent → static YTD is used.
+   * First close of the current year — the YTD baseline, written by the
+   * twice-daily GitHub refresh (refreshMarketData.py `_year_start()`). Lets
+   * YTD be recomputed from the live price on every snapshot even for symbols
+   * whose history Yahoo won't serve at request time (notably ^IPSA).
+   * Optional: absent → static YTD is used.
    */
   yearStartClose?: number
 }
@@ -134,8 +141,13 @@ export function buildStocks(
 
   for (const [yf, internal] of Object.entries(YF_TO_INTERNAL)) {
     const q = bySymbol[yf]
-    if (!q?.regularMarketPrice) { failed++; continue }
-    const dayPct = q.regularMarketChangePercent ?? 0
+    // Coherent-row policy (R12): a usable live row needs BOTH a price and a
+    // day change. A quote missing its change% must not fabricate a live
+    // "0.00%" — the ticker counts as failed and its row keeps the coherent
+    // persisted/static values instead. (A genuinely flat day arrives as an
+    // explicit 0, which passes the `!= null` check.)
+    if (!q?.regularMarketPrice || q.regularMarketChangePercent == null) { failed++; continue }
+    const dayPct = q.regularMarketChangePercent
     stocks[internal] = {
       price:        Math.round(q.regularMarketPrice * 100) / 100,
       dayChangePct: Math.round(dayPct * 100) / 100,
@@ -185,18 +197,73 @@ export function buildIndices(
   return base.map(idx => {
     const yf = INDEX_YF[idx.id]
     const q  = yf ? bySymbol[yf] : undefined
-    const value = q?.regularMarketPrice ?? idx.value
+    const price = q?.regularMarketPrice
+    const day   = q?.regularMarketChangePercent
+    // Coherent-row policy (R12, same as buildStocks): overlay only when the
+    // quote carries BOTH a usable price and a day change — a price-only quote
+    // would render a fresh-price/stale-return hybrid row. A non-overlaid row
+    // passes every committed value through as one coherent unit and says so
+    // via `source: 'base'`, so consumers can gate their badge per instrument.
+    if (price == null || price <= 0 || day == null) {
+      return { id: idx.id, value: idx.value, dayChangePct: idx.dayChangePct, ytdChangePct: idx.ytdChangePct, source: 'base' as const }
+    }
     const baseline = yearStartByIndex?.[idx.id]
-    const liveYtd = baseline != null && baseline > 0 && q?.regularMarketPrice != null
-      ? Math.round(((value / baseline - 1) * 100) * 100) / 100
+    const liveYtd = baseline != null && baseline > 0
+      ? Math.round(((price / baseline - 1) * 100) * 100) / 100
       : null
     return {
       id:           idx.id,
-      value,
-      dayChangePct: q?.regularMarketChangePercent != null
-        ? Math.round(q.regularMarketChangePercent * 100) / 100
-        : idx.dayChangePct,
+      value:        price,
+      dayChangePct: Math.round(day * 100) / 100,
       ytdChangePct: liveYtd ?? idx.ytdChangePct,
+      source:       'live' as const,
     }
   })
+}
+
+// ── Per-instrument overlay coverage (R12) ────────────────────────────────────
+// A module-level "Live" badge must describe the instruments actually on
+// screen, never the snapshot's mere existence: one successful symbol must not
+// make another failed symbol's fallback row read as live. Consumers derive
+// their badge from the coverage of the rows they display — full coverage is
+// the only state allowed to claim `live`; partial coverage discloses the
+// mixture as `hybrid-fallback`; zero coverage keeps the fallback layer's own
+// word (`persisted`/`static`).
+
+export type OverlayCoverage = 'full' | 'partial' | 'none'
+
+/** Coverage of `displayedTickers` by the snapshot's per-symbol successes. */
+export function stockOverlayCoverage(
+  liveStocks: Record<string, StockLive> | null | undefined,
+  displayedTickers: string[],
+): OverlayCoverage {
+  if (!liveStocks || displayedTickers.length === 0) return 'none'
+  const covered = displayedTickers.filter(t => liveStocks[t] != null).length
+  if (covered === 0) return 'none'
+  return covered === displayedTickers.length ? 'full' : 'partial'
+}
+
+/** Coverage of the displayed sectors' full member lists (a sector tile built
+ *  from only some of its members is itself partial). */
+export function sectorOverlayCoverage(
+  liveStocks: Record<string, StockLive> | null | undefined,
+  sectors: Array<{ sector: string }>,
+): OverlayCoverage {
+  return stockOverlayCoverage(liveStocks, sectors.flatMap(s => SECTOR_MAP[s.sector] ?? []))
+}
+
+/** Coverage of the index rows via their own `source` flags. */
+export function indexOverlayCoverage(indices: Array<{ source: 'live' | 'base' }> | null | undefined): OverlayCoverage {
+  if (!indices || indices.length === 0) return 'none'
+  const covered = indices.filter(i => i.source === 'live').length
+  if (covered === 0) return 'none'
+  return covered === indices.length ? 'full' : 'partial'
+}
+
+/** Module badge word from coverage: full → live, partial → hybrid-fallback,
+ *  none → the fallback layer's own word. */
+export function overlayStatus(coverage: OverlayCoverage, fallback: DataSourceStatus): DataSourceStatus {
+  if (coverage === 'full') return 'live'
+  if (coverage === 'partial') return 'hybrid-fallback'
+  return fallback
 }

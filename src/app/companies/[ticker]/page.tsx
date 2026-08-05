@@ -9,15 +9,14 @@ import { SectionHeader } from '@/components/ui/SectionHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { LineChart, type ChartMarker } from '@/components/charts/LineChart'
-import { getCompanyByTicker, getAllCompanies } from '@/lib/data/companies'
-import { getSnapshotByTicker, getAllSnapshots } from '@/lib/data/stocks'
+import { getCompanyByTicker } from '@/lib/data/companies'
+import { getSnapshotByTicker } from '@/lib/data/stocks'
 import { fetchEarningsResults, type EarningsResultsPayload } from '@/lib/data/earningsResults'
 import { fetchEarningsCalendar, type EarningsCalendarResult } from '@/lib/data/earningsCalendar'
 import { fetchLiveNews, type NewsFetchResponse } from '@/lib/data/newsLive'
 import { getNewsSourceCode, getNewsSourceColor } from '@/lib/news/sourceCodes'
 import { getStockHistoryForTimeframe } from '@/lib/data/stockHistory'
 import { formatCLP, formatPct, formatFx, formatMarketCapMM, changeColor, formatNewsTimestamp } from '@/lib/formatters'
-import type { StockPriceSnapshot } from '@/types'
 import { useMarketData } from '@/components/providers/MarketDataProvider'
 import { useGlobalRefresh } from '@/components/providers/useGlobalRefresh'
 import { fetchStockSnapshot, fetchStockHistory } from '@/lib/data/marketData'
@@ -34,13 +33,6 @@ import { ChangeIndicator } from '@/components/fable/ChangeIndicator'
 import { AsyncState } from '@/components/fable/AsyncState'
 import { SegmentedControl } from '@/components/fable/SegmentedControl'
 import { Reveal } from '@/components/fable/motion'
-
-const median = (xs: number[]): number | null => {
-  const v = xs.filter(n => n != null).sort((a, b) => a - b)
-  if (!v.length) return null
-  const m = Math.floor(v.length / 2)
-  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2
-}
 
 type StockTimeframe = '1D' | '5D' | '1M' | 'MTD' | 'YTD' | '1Y' | '3Y' | '5Y'
 
@@ -139,7 +131,15 @@ export default function CompanyDetailPage() {
     if (!sym) return
     let mounted = true
     fetchValuation(sym)
-      .then(res => { if (mounted) { setValuation(res); setValuationFailed(false) } })
+      .then(res => {
+        if (!mounted) return
+        // R12: the valuation route reports a resolver failure as 200 with
+        // `data: null` — so a resolved null IS a failure, not still-loading.
+        // Without this branch the card's spinner ran forever on it, defeating
+        // the R11 error split (which only covered non-200/thrown paths).
+        if (res) { setValuation(res); setValuationFailed(false) }
+        else setValuationFailed(true)
+      })
       .catch(() => { if (mounted) setValuationFailed(true) })
     return () => { mounted = false }
   }, [sym, live?.lastUpdated])
@@ -234,13 +234,12 @@ export default function CompanyDetailPage() {
         .map(e => ({ date: e.reportDate, label: `${e.period} EEFF` }))
     : []
 
-  // Valuation context: sector medians
-  const sectorOf = Object.fromEntries(getAllCompanies().map(c => [c.ticker, c.sector]))
-  const peers = getAllSnapshots().filter(s => sectorOf[s.ticker] === company?.sector)
-  const medStr = (key: keyof StockPriceSnapshot, suffix: string) => {
-    const m = median(peers.map(p => p[key]).filter((n): n is number => typeof n === 'number'))
-    return m != null ? `med ${Math.round(m * 10) / 10}${suffix}` : ''
-  }
+  // R12: the "med Xx" sector-median sublabels are REMOVED, not restyled. They
+  // were computed from the frozen Phase-2D synthetic ratio fields in
+  // stockPrices.json (peFwd/psFwd/roe/…), which the twice-daily refresh never
+  // rewrites — fabricated context sitting beside live Yahoo figures inside a
+  // card footed "Yahoo Finance". No live per-peer valuation source exists to
+  // recompute them honestly, so the tiles show the live figure alone.
 
   const r1 = (n: number | null | undefined) => (n == null ? null : Math.round(n * 10) / 10)
   const xMult = (n: number | null | undefined) => { const v = r1(n); return v != null ? `${v}x` : '—' }
@@ -254,15 +253,15 @@ export default function CompanyDetailPage() {
   const lf = (key: CompareFundamentalKey): number | null =>
     vf && vf.derivedFields.includes(key) ? (vf[key] ?? null) : null
   const valMetrics = [
-    { label: t.company.val.peFwd,         val: xMult(lf('pe')),            med: medStr('peFwd', 'x') },
-    { label: t.company.val.psFwd,         val: xMult(lf('psFwd')),         med: medStr('psFwd', 'x') },
-    { label: t.company.val.evEbitda,      val: xMult(lf('evEbitda')),      med: medStr('evEbitda', 'x') },
-    { label: t.company.val.opMargin,      val: pctVal(lf('opMargin')),     med: medStr('opMargin', '%') },
-    { label: t.company.val.grossMargin,   val: pctVal(lf('grossMargin')),  med: medStr('grossMargin', '%') },
-    { label: t.company.val.roe,           val: pctVal(lf('roe')),          med: medStr('roe', '%') },
-    { label: t.company.val.fcfYield,      val: pctVal(lf('fcfYield')),     med: medStr('fcfYield', '%') },
-    { label: t.company.val.pb,            val: xMult(lf('pb')),            med: medStr('pb', 'x') },
-    { label: t.company.val.netDebtEbitda, val: xMult(lf('netDebtEbitda')), med: medStr('netDebtEbitda', 'x') },
+    { label: t.company.val.peFwd,         val: xMult(lf('pe')) },
+    { label: t.company.val.psFwd,         val: xMult(lf('psFwd')) },
+    { label: t.company.val.evEbitda,      val: xMult(lf('evEbitda')) },
+    { label: t.company.val.opMargin,      val: pctVal(lf('opMargin')) },
+    { label: t.company.val.grossMargin,   val: pctVal(lf('grossMargin')) },
+    { label: t.company.val.roe,           val: pctVal(lf('roe')) },
+    { label: t.company.val.fcfYield,      val: pctVal(lf('fcfYield')) },
+    { label: t.company.val.pb,            val: xMult(lf('pb')) },
+    { label: t.company.val.netDebtEbitda, val: xMult(lf('netDebtEbitda')) },
   ]
 
   if (!company) {
@@ -543,7 +542,7 @@ export default function CompanyDetailPage() {
                   <AsyncState kind="loading" message={t.common.loading} />
                 ) : (
                   <div className="grid grid-cols-3 gap-2">
-                    {valMetrics.map(({ label, val, med }) => (
+                    {valMetrics.map(({ label, val }) => (
                       <div
                         key={label}
                         className="flex flex-col items-center justify-center text-center px-1 py-1.5"
@@ -553,7 +552,6 @@ export default function CompanyDetailPage() {
                             inline 9px override below every declared token. */}
                         <div className="ui-micro-label text-muted-fg mb-0.5">{label}</div>
                         <div className="text-sm ui-number text-foreground">{val}</div>
-                        {med && <div className="ui-number text-muted-fg" style={{ fontSize: 'var(--fs-micro-label)' }}>{med}</div>}
                       </div>
                     ))}
                   </div>
@@ -600,7 +598,12 @@ export default function CompanyDetailPage() {
                       style={isHigh ? { backgroundColor: 'var(--negative)' } : undefined}
                     >
                       <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="hover:underline min-w-0">
-                        <p className="text-xs leading-snug font-medium" style={isHigh ? { color: '#fff' } : undefined}>{item.headline}</p>
+                        <p className="text-xs leading-snug font-medium" style={isHigh ? { color: '#fff' } : undefined}>
+                          {/* High impact is signalled by the solid bar visually;
+                              this sr-only word keeps it non-color-only (R12). */}
+                          {isHigh && <span className="sr-only">{t.home.newsHighImpact} — </span>}
+                          {item.headline}
+                        </p>
                       </a>
                       <span className="flex items-center gap-1.5 shrink-0 whitespace-nowrap pt-px">
                         <span className="ui-number text-[10px] font-mono font-semibold" title={item.source} style={isHigh ? { color: '#fff' } : { color: getNewsSourceColor(item.source) }}>{getNewsSourceCode(item.source)}</span>

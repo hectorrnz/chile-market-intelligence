@@ -76,6 +76,7 @@ import { BarrierGauge, type BarrierMark } from '@/components/fable/BarrierGauge'
 import { AsyncState } from '@/components/fable/AsyncState'
 import { DestructiveConfirm } from '@/components/fable/ModalShell'
 import { usePrivacyMode } from '@/components/fable/usePrivacyMode'
+import { PrivacyValue } from '@/components/fable/PrivacyValue'
 import { Reveal } from '@/components/fable/motion'
 
 interface Distance {
@@ -123,8 +124,12 @@ export default function StructuredNoteDetailPage() {
     try {
       const res = await fetch(`/api/structured-notes/${id}`)
       if (res.status === 404) { setNotFound(true); return }
+      // R12: a non-404 error response carries a JSON error body — setting it
+      // as page data crashed the render (`data.note` undefined). A failed
+      // background refresh keeps the already-loaded data on screen instead.
+      if (!res.ok) return
       const json = await res.json().catch(() => null)
-      if (json) setData(json)
+      if (json?.note) setData(json)
     } catch {
       // A failed background refresh keeps the already-loaded data on screen.
     }
@@ -137,8 +142,12 @@ export default function StructuredNoteDetailPage() {
         const res = await fetch(`/api/structured-notes/${id}`, { cache: 'no-store' })
         if (cancelled.value) return
         if (res.status === 404) { setNotFound(true); return }
+        // R12: any other non-ok (503 not-configured, middleware 401) is a
+        // LOAD FAILURE — its JSON error body must never become page data
+        // (that crashed the render at `data.note`).
+        if (!res.ok) { setLoadFailed(true); return }
         const json = await res.json().catch(() => null)
-        if (!cancelled.value && json) { setData(json); setLoadFailed(false) }
+        if (!cancelled.value && json?.note) { setData(json); setLoadFailed(false) }
         else if (!cancelled.value) setLoadFailed(true)
       } catch {
         // R4 — a failed load renders the honest error state, never the
@@ -172,12 +181,18 @@ export default function StructuredNoteDetailPage() {
   // an allocation — see `setCustodian`.
   async function setEntityAllocation(entityName: string, notional: number) {
     setAllocError(null)
-    const res = await fetch(`/api/structured-notes/${id}/allocations`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ entityName, notionalAmount: notional }),
-    })
-    if (!res.ok) { setAllocError(t.sn.saveError); return }
-    await load()
+    // R12: a thrown network failure surfaces the same localized error the
+    // non-ok path already did (previously it was an unhandled rejection).
+    try {
+      const res = await fetch(`/api/structured-notes/${id}/allocations`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entityName, notionalAmount: notional }),
+      })
+      if (!res.ok) { setAllocError(t.sn.saveError); return }
+      await load()
+    } catch {
+      setAllocError(t.sn.saveError)
+    }
   }
 
   // R7.1B.1 — custody is recorded ONCE per note: every account allocation of a
@@ -185,12 +200,16 @@ export default function StructuredNoteDetailPage() {
   // empty value clears it (the note returns to "Custodian unavailable").
   async function setCustodian(value: string) {
     setAllocError(null)
-    const res = await fetch(`/api/structured-notes/${id}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ custodian: value.trim() || null }),
-    })
-    if (!res.ok) { setAllocError(t.sn.saveError); return }
-    await load()
+    try {
+      const res = await fetch(`/api/structured-notes/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ custodian: value.trim() || null }),
+      })
+      if (!res.ok) { setAllocError(t.sn.saveError); return }
+      await load()
+    } catch {
+      setAllocError(t.sn.saveError)
+    }
   }
   // R4.1 — the confirmation gate is the shared Fable DestructiveConfirm
   // dialog, never the browser-native window.confirm. The mutation itself is
@@ -576,6 +595,7 @@ export default function StructuredNoteDetailPage() {
               currency={n.currency}
               onSet={setEntityAllocation}
               onAddCustom={(name) => setEntityAllocation(name, 0)}
+              masked={masked}
             />
             {allocError && <p className="mt-2 text-xs text-negative" role="alert">{allocError}</p>}
             {/* R7.1B — the two quantities are stated SEPARATELY, each with its
@@ -584,7 +604,11 @@ export default function StructuredNoteDetailPage() {
             <dl className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs">
               <div>
                 <dt className="ui-micro-label text-muted-fg" title={t.sn.nevadaInvestmentHelp}>{t.sn.nevadaInvestment}</dt>
-                <dd className="ui-number text-foreground">{nevadaInvestmentCurrency(n.allocations) ?? n.currency} {fmtNum(nevadaInvestment)}</dd>
+                <dd className="ui-number text-foreground">
+                  {/* R12: this IS the note's Nevada notional — the same private
+                      amount the capsule above masks. Same boundary here. */}
+                  <PrivacyValue masked={masked}>{`${nevadaInvestmentCurrency(n.allocations) ?? n.currency} ${fmtNum(nevadaInvestment)}`}</PrivacyValue>
+                </dd>
                 <dd className="ui-meta text-muted-fg">{t.sn.nevadaInvestmentHelp}</dd>
               </div>
               <div>
@@ -622,7 +646,10 @@ export default function StructuredNoteDetailPage() {
       {/* R4.1 — shared Fable destructive-confirmation dialog (ModalShell
           contract: role=alertdialog, focus trap, Escape-cancels unless the
           mutation is pending, scroll lock, focus restored to the trigger,
-          at-most-once confirm). The description names the REAL record. */}
+          at-most-once confirm). The description names the REAL record.
+          R12: the Nevada notional was REMOVED from the description — it is a
+          documented private amount and rendered raw regardless of Privacy
+          Mode; product/ISIN/issuer/allocation count identify the record. */}
       <DestructiveConfirm
         open={confirmingDelete}
         title={t.sn.delete}
@@ -630,7 +657,6 @@ export default function StructuredNoteDetailPage() {
           n.productName,
           n.isin,
           n.issuerDisplayName,
-          `${t.sn.nevadaInvestment}: ${nevadaInvestmentCurrency(n.allocations) ?? n.currency} ${fmtNum(nevadaInvestment)}`,
           `${activeAllocations.length} ${t.sn.accountAllocations}`,
         ].filter(Boolean).join(' · ')}
         confirmLabel={deleting ? t.sn.deleting : t.sn.delete}
@@ -692,12 +718,13 @@ function FeatureChip({ label }: { label: string }) {
  * entity. "Add entity" appends a custom row. Every change upserts by entity.
  */
 function EntityAllocationGrid({
-  allocations, currency, onSet, onAddCustom,
+  allocations, currency, onSet, onAddCustom, masked,
 }: {
   allocations: { entityName: string; notionalAmount: number }[]
   currency: string
   onSet: (entity: string, notional: number) => void
   onAddCustom: (entity: string) => void
+  masked: boolean
 }) {
   const { t } = useLang()
   const [custom, setCustom] = useState('')
@@ -710,7 +737,7 @@ function EntityAllocationGrid({
     <div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
         {rows.map((name) => (
-          <EntityRow key={name} name={name} currency={currency} value={byName.get(name) ?? 0} onCommit={(v) => onSet(name, v)} removable={extras.includes(name)} onRemove={() => onSet(name, 0)} />
+          <EntityRow key={name} name={name} currency={currency} value={byName.get(name) ?? 0} onCommit={(v) => onSet(name, v)} removable={extras.includes(name)} onRemove={() => onSet(name, 0)} masked={masked} />
         ))}
       </div>
       <form className="flex gap-2 mt-3 no-print" onSubmit={(e) => { e.preventDefault(); const n = custom.trim(); if (n) { onAddCustom(n); setCustom('') } }}>
@@ -778,26 +805,48 @@ function CustodianField({ value, knownCustodians, onCommit }: {
   )
 }
 
-function EntityRow({ name, currency, value, onCommit, removable, onRemove }: { name: string; currency: string; value: number; onCommit: (v: number) => void; removable: boolean; onRemove: () => void }) {
+function EntityRow({ name, currency, value, onCommit, removable, onRemove, masked }: { name: string; currency: string; value: number; onCommit: (v: number) => void; removable: boolean; onRemove: () => void; masked: boolean }) {
   const { t } = useLang()
   const [draft, setDraft] = useState(value ? formatWithThousands(String(value)) : '')
   // Keep the input in sync when the persisted value changes (render-time prev pattern).
   const [prev, setPrev] = useState(value)
   if (value !== prev) { setPrev(value); setDraft(value ? formatWithThousands(String(value)) : '') }
+  // R12 · Privacy Mode — the per-entity amounts sum to the masked note
+  // notional, so a populated row must not sit raw in an always-visible input.
+  // The Portfolio editor exception (raw values only after an explicit user
+  // action) applies per row: while masked, a populated row shows the shared
+  // placeholder until the user chooses to edit it. Empty rows stay editable —
+  // a zero row discloses nothing. Re-enabling Privacy Mode re-hides all rows.
+  const [revealed, setRevealed] = useState(false)
+  const [prevMasked, setPrevMasked] = useState(masked)
+  if (masked !== prevMasked) { setPrevMasked(masked); setRevealed(false) }
+  const hidden = masked && !revealed && value > 0
   return (
     <div className="flex items-center gap-2 text-sm">
       <span className="flex-1 truncate" title={name}>{name}</span>
       <span className="text-xs text-muted-fg">{currency}</span>
-      <input
-        value={draft}
-        onChange={(e) => setDraft(formatWithThousands(e.target.value))}
-        onBlur={() => { const v = parseFormattedNumber(draft); if (v !== value) onCommit(v > 0 ? v : 0) }}
-        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-        inputMode="decimal" placeholder="0"
-        aria-label={`${t.sn.accountNotional}: ${name} — ${currency}`}
-        title={t.sn.accountNotionalHelp}
-        className="w-32 px-2.5 py-1 text-sm text-right border border-border rounded-lg bg-surface ui-number no-print"
-      />
+      {hidden ? (
+        <button
+          type="button"
+          onClick={() => setRevealed(true)}
+          title={t.sn.revealToEdit}
+          aria-label={`${t.sn.accountNotional}: ${name} — ${t.fable.privacy.masked}`}
+          className="w-32 px-2.5 py-1 text-sm text-right border border-border rounded-lg bg-surface ui-number tracking-wide no-print cursor-pointer"
+        >
+          •••••
+        </button>
+      ) : (
+        <input
+          value={draft}
+          onChange={(e) => setDraft(formatWithThousands(e.target.value))}
+          onBlur={() => { const v = parseFormattedNumber(draft); if (v !== value) onCommit(v > 0 ? v : 0) }}
+          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+          inputMode="decimal" placeholder="0"
+          aria-label={`${t.sn.accountNotional}: ${name} — ${currency}`}
+          title={t.sn.accountNotionalHelp}
+          className="w-32 px-2.5 py-1 text-sm text-right border border-border rounded-lg bg-surface ui-number no-print"
+        />
+      )}
       {removable && <button onClick={onRemove} className="text-xs text-negative no-print cursor-pointer" title={t.sn.removeEntity} aria-label={`${t.sn.removeEntity}: ${name}`}>✕</button>}
     </div>
   )

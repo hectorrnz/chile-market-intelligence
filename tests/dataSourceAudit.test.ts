@@ -143,8 +143,20 @@ describe('Phase 8A — Home page macro card badge split', () => {
   })
 
   it('computes sector/index status from already-fetched state (no new provider calls)', () => {
-    assert.ok(/const sectorStatus[^=]*=\s*live\?\.sectors/.test(src))
-    assert.ok(/const indexStatus[^=]*=\s*live\?\.indices\.length/.test(src))
+    // Superseded in R12: the byte-exact pre-R12 derivations
+    // (`live?.sectors ? 'live'` / `live?.indices.length ? 'live'`) claimed
+    // Live from the snapshot's mere existence — `buildIndices`/`buildSectors`
+    // pass committed fallback rows through for failed instruments, so the
+    // arrays are non-empty even when every quote failed. The enduring
+    // contract is unchanged (status derives from ALREADY-FETCHED state, no
+    // new provider calls) but now per instrument, via the pure coverage
+    // helpers over the same fetched snapshot.
+    assert.ok(/const sectorStatus[^=]*=\s*live\?\.sectors \? overlayStatus\(sectorCoverage/.test(src))
+    assert.ok(/sectorOverlayCoverage\(live\?\.stocks/.test(src), 'sector coverage comes from the fetched snapshot itself')
+    assert.ok(/const indexStatus[^=]*=\s*live \? overlayStatus\(indexCoverage/.test(src))
+    assert.ok(/indexOverlayCoverage\(live\?\.indices\)/.test(src), 'index coverage comes from the fetched snapshot itself')
+    assert.ok(!/const sectorStatus[^=]*=\s*live\?\.sectors \? 'live'/.test(src), 'snapshot-presence gating must not return')
+    assert.ok(!/const indexStatus[^=]*=\s*live\?\.indices\.length \? 'live'/.test(src), 'snapshot-presence gating must not return')
   })
 })
 

@@ -27,16 +27,24 @@ export default function CalendarPage() {
   const { t } = useLang()
 
   const [fred, setFred] = useState<FredCalendarFetchResult | null>(null)
+  // R12: null-from-the-helper means the fetch FAILED, not "zero releases" —
+  // the card previously rendered the confirmed-empty copy both while loading
+  // and after a hard failure. Three-way state: loading → error/unavailable →
+  // table (whose own empty message then genuinely means zero events).
+  const [fredState, setFredState] = useState<'loading' | 'error' | 'ready'>('loading')
   const [fomc, setFomc] = useState<FomcExpectationsResult | null>(null)
   useEffect(() => {
     const ac = new AbortController()
-    fetchFredReleaseCalendar(60, ac.signal).then(setFred)
+    fetchFredReleaseCalendar(60, ac.signal).then(res => {
+      if (ac.signal.aborted) return
+      setFred(res)
+      setFredState(res && res.ok ? 'ready' : 'error')
+    })
     fetchFomcExpectations().then(setFomc)
     return () => ac.abort()
   }, [])
 
   const events = fred?.events ?? []
-  const latestAsOf = events.reduce((max, e) => (e.date > max ? e.date : max), '')
   const pct = (v: number | null) => (v == null ? '—' : `${v.toFixed(1)}%`)
 
   return (
@@ -64,12 +72,21 @@ export default function CalendarPage() {
           title={t.cal.fredTitle}
           controls={<ChipLabel>{t.cal.noConsensus}</ChipLabel>}
           minWidth={720}
-          state={fred && !fred.configured ? 'unavailable' : undefined}
-          stateMessage={t.cal.fredUnavailable}
+          state={
+            fredState === 'loading' ? 'loading'
+              : fredState === 'error' ? 'error'
+              : fred && !fred.configured ? 'unavailable'
+              : undefined
+          }
+          stateMessage={fredState === 'ready' && fred && !fred.configured ? t.cal.fredUnavailable : undefined}
           footer={
             <>
               <p className="text-xs text-muted-fg">{t.cal.enrichedNote}</p>
-              <TableSourceFooter source="FRED (Federal Reserve Bank of St. Louis)" asOf={latestAsOf || null} className="mt-0.5" />
+              {/* R12: no fabricated as-of — the previous reduce() stamped the
+                  furthest FUTURE scheduled release date as the data vintage.
+                  Scheduled dates are content, not freshness; the Macro page's
+                  own calendar embed already passes null for the same reason. */}
+              <TableSourceFooter source="FRED (Federal Reserve Bank of St. Louis)" asOf={null} className="mt-0.5" />
             </>
           }
         >

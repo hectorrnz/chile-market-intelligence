@@ -70,6 +70,13 @@ describe('Phase 5A — every Stocks section survives the re-skin', () => {
 // ─── Columns ─────────────────────────────────────────────────────────────────
 
 describe('Phase 5A — all nine table columns preserved, in order', () => {
+  // Superseded in R12: the P/E and Div. Yield columns were REMOVED, not
+  // restyled — their stockPrices.json values are frozen Phase-2D synthetic
+  // ratios the twice-daily refresh never rewrites (it touches only
+  // price/day/YTD), so the table showed fabricated figures under its Yahoo
+  // Finance footer and live as-of. Real, live P/E and dividend yield remain
+  // on the Company page and Compare via resolveValuation. The seven columns
+  // backed by genuinely refreshed data keep their order.
   const COLUMNS = [
     't.stocks.cols.ticker',
     't.stocks.cols.company',
@@ -78,8 +85,6 @@ describe('Phase 5A — all nine table columns preserved, in order', () => {
     't.stocks.cols.dayChg',
     't.stocks.cols.ytd',
     't.stocks.cols.marketCap',
-    't.stocks.cols.pe',
-    't.stocks.cols.divYield',
   ]
 
   for (const col of COLUMNS) {
@@ -96,9 +101,12 @@ describe('Phase 5A — all nine table columns preserved, in order', () => {
   })
 
   it('exports the same nine columns to CSV, unchanged', () => {
+    // Superseded in R12: the CSV mirrors the table — seven columns after the
+    // synthetic P/E and Div. Yield removal ("values are exported as shown").
     const start = src.indexOf("exportCSV(")
     const block = src.slice(start, start + 700)
     for (const col of COLUMNS) assert.ok(block.includes(col), `${col} missing from the CSV header row`)
+    assert.ok(!block.includes('t.stocks.cols.pe') && !block.includes('t.stocks.cols.divYield'), 'the synthetic columns must not be exported either')
     assert.ok(block.includes("'chilean_stocks'"), 'CSV filename changed')
     assert.ok(block.includes('c.ticker, c.shortName, c.sector, s?.price'), 'CSV row shape changed')
   })
@@ -126,12 +134,14 @@ describe('Phase 5A — data resolution is untouched', () => {
   })
 
   it('renders unavailable values as an em dash — never as zero', () => {
-    assert.equal(count(src, "'—'"), 6, 'all six nullable numeric columns keep their "—" fallback')
+    // R12: four nullable numeric columns remain after the synthetic P/E and
+    // Div. Yield columns were removed (see the columns supersession above).
+    assert.equal(count(src, "'—'"), 4, 'all four nullable numeric columns keep their "—" fallback')
     assert.ok(!/\?\?\s*0\b/.test(src), 'a missing value must never be coerced to 0')
   })
 
   it('keeps tabular numerals on every numeric cell', () => {
-    assert.equal(count(src, 'ui-number'), 7, '6 numeric columns + the row-count meta line')
+    assert.equal(count(src, 'ui-number'), 5, '4 numeric columns + the row-count meta line')
   })
 })
 
@@ -163,9 +173,12 @@ describe('Phase 5A — filters and sorting behave exactly as before', () => {
   })
 
   it('keeps all six sortable keys and the three non-sortable columns', () => {
-    for (const key of ["'ticker'", "'dayChangePct'", "'ytdChangePct'", "'marketCapCLP'", "'pe'", "'dividendYield'"]) {
+    // Superseded in R12: four sortable keys remain after the synthetic P/E
+    // and Div. Yield columns were removed (see the columns supersession).
+    for (const key of ["'ticker'", "'dayChangePct'", "'ytdChangePct'", "'marketCapCLP'"]) {
       assert.ok(src.includes(`key: ${key}`), `sortable column ${key} lost its sort key`)
     }
+    assert.ok(!src.includes("key: 'pe'") && !src.includes("key: 'dividendYield'"), 'the synthetic-ratio sort keys must not return')
     assert.equal(count(src, 'key: null'), 3, 'Company, Sector and Price stay non-sortable')
   })
 
@@ -205,14 +218,23 @@ describe('Phase 5A — source and data-quality disclosures stay visible', () => 
   })
 
   it('keeps the single derived as-of, and no second timestamp chip', () => {
-    assert.ok(src.includes('const priceAsOf = live ? live.lastUpdated'))
+    // Superseded in R12: the as-of claims the live snapshot's time only when
+    // at least one DISPLAYED row is actually overlaid (per-instrument
+    // coverage) — still one as-of, still no second chip.
+    assert.ok(src.includes("const priceAsOf = live && coverage !== 'none' ? live.lastUpdated"))
     assert.ok(src.includes('asOf={priceAsOf}'))
     assert.ok(!src.includes('formatLiveTimestamp'))
     assert.ok(!src.includes('t.common.marketUpdated'))
   })
 
   it('keeps the live/persisted/static status derivation and its badge', () => {
-    assert.ok(src.includes("live ? 'live' : Object.keys(supaSnapMap).length ? 'persisted' : 'static'"))
+    // Superseded in R12: the pre-R12 derivation claimed Live from the
+    // snapshot's mere existence; the badge now derives from per-instrument
+    // coverage of the rows actually displayed (full → live, partial →
+    // hybrid-fallback, none → persisted/static fallback).
+    assert.ok(src.includes("const fallbackStatus: DataSourceStatus = Object.keys(supaSnapMap).length ? 'persisted' : 'static'"))
+    assert.ok(src.includes('stockOverlayCoverage(live?.stocks, rows.map(r => r.c.ticker))'))
+    assert.ok(src.includes('live ? overlayStatus(coverage, fallbackStatus) : fallbackStatus'))
     assert.equal(count(src, '<MarketDataSourceBadge'), 1)
   })
 

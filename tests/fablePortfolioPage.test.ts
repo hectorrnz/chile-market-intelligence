@@ -329,8 +329,15 @@ describe('Phase 5H — every Portfolio section survives the recomposition', () =
   })
 
   it('keeps the MarketDataSourceBadge with the original live/persisted ternary', () => {
+    // Superseded in R12: the pre-R12 ternary (`live ? 'live' : 'persisted'`)
+    // claimed Live from the snapshot's mere existence — a position whose own
+    // quote failed still priced from the persisted baseline under a "Live"
+    // badge. The badge now derives from per-instrument coverage of THIS
+    // portfolio's position tickers (full → live, partial → hybrid-fallback,
+    // none → persisted).
     assert.match(src, /<MarketDataSourceBadge status=\{priceStatus\}/)
-    assert.match(src, /const priceStatus: DataSourceStatus = live \? 'live' : 'persisted'/)
+    assert.match(src, /stockOverlayCoverage\(live\.stocks, \(detail\?\.positions \?\? \[\]\)\.map\(p => p\.ticker\)\)/)
+    assert.match(src, /const priceStatus: DataSourceStatus = live\s*\n?\s*\? overlayStatus\(/)
   })
 
   it('keeps exactly 3 tabs — Positions, Transactions, Cash — in the original order and default', () => {
@@ -393,9 +400,14 @@ describe('Phase 5H — Positions table: all 12 columns, edit/remove, badges', ()
   })
 
   it('keeps transaction-derived positions locked (no edit/remove), manual positions editable', () => {
+    // Superseded in R12: `onClick={handleRemove}` fired the DELETE directly
+    // from the row button with no confirmation, no response check, and no
+    // failure message. The trigger now opens the shared DestructiveConfirm
+    // gate, whose onConfirm is the (response-checked) handleRemove.
     assert.match(src, /title=\{t\.portfolio\.manualLocked\}>—<\/span>/)
     assert.match(src, /onClick=\{\(\) => setEditing\(true\)\}/)
-    assert.match(src, /onClick=\{handleRemove\}/)
+    assert.match(src, /onClick=\{\(\) => \{ setRemoveError\(false\); setConfirmRemove\(true\) \}\}/)
+    assert.match(src, /onConfirm=\{handleRemove\}/)
   })
 
   it('keeps the exact PATCH/DELETE endpoints and payload shape for position edit/remove', () => {
@@ -476,7 +488,10 @@ describe('Phase 5H — Transactions tab: 10 columns, add form, conflict handling
   })
 
   it('keeps the transaction remove DELETE call and the today-default trade date', () => {
-    assert.match(src, /fetch\(`\/api\/portfolios\/\$\{portfolioId\}\/transactions\/\$\{id\}`, \{ method: 'DELETE' \}\)/)
+    // Superseded in R12: the DELETE is unchanged but now targets the record
+    // held by the shared confirmation gate (`pendingDelete.id`) and checks
+    // the response — a ledger-rewriting delete no longer fires unconfirmed.
+    assert.match(src, /fetch\(`\/api\/portfolios\/\$\{portfolioId\}\/transactions\/\$\{pendingDelete\.id\}`, \{ method: 'DELETE' \}\)/)
     assert.match(src, /useState\(\(\) => new Date\(\)\.toISOString\(\)\.slice\(0, 10\)\)/)
   })
 })
@@ -779,7 +794,10 @@ describe('Phase 5H — accessibility', () => {
   })
 
   it('the transaction remove button carries a descriptive aria-label (not a bare "×")', () => {
-    assert.match(src, /aria-label=\{`\$\{t\.portfolio\.removePosition\} \$\{tx\.ticker\} \$\{tx\.tradeDate\}`\}/)
+    // Superseded in R12: the label now names the actual action ("Delete
+    // transaction", its own key) rather than borrowing the position-row's
+    // "Remove" label; still ticker + trade date for context.
+    assert.match(src, /aria-label=\{`\$\{t\.portfolio\.tx\.deleteTransaction\}: \$\{tx\.ticker\} \$\{tx\.tradeDate\}`\}/)
   })
 
   it('the segmented tab control carries an accessible group name', () => {

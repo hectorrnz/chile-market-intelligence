@@ -448,9 +448,12 @@ describe('R7.1B §38-60 — note deletion from both surfaces', () => {
       assert.match(src, /method: 'DELETE'/, `${name} calls the same contract`)
       assert.match(src, /\/api\/structured-notes\/\$\{[^}]+\}`, \{ method: 'DELETE' \}/, `${name} hits the same endpoint`)
     }
-    // The confirmation identifies the real record on both surfaces.
+    // The confirmation identifies the real record on both surfaces. R12: the
+    // Nevada notional was removed from both descriptions — a documented
+    // private amount must not print raw in a dialog regardless of Privacy
+    // Mode; product/ISIN/issuer/allocation count identify the record.
     for (const src of [DASH, DETAIL]) {
-      assert.match(src, /t\.sn\.nevadaInvestment\}: /)
+      assert.ok(!/description=\{[^)]*t\.sn\.nevadaInvestment/s.test(src), 'no amount in the delete description (R12)')
       assert.match(src, /\.filter\(Boolean\)\.join\(' · '\)/)
     }
   })

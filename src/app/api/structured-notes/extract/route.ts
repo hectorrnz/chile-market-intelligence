@@ -71,10 +71,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   let result: ReturnType<typeof extractStructuredNoteTerms>
   try {
     result = extractStructuredNoteTerms(pages, { fileName })
-  } catch (e) {
-    const message = e instanceof Error ? e.message.slice(0, 200) : 'unknown parser error'
+  } catch {
+    // R12: the exception message is BACKEND detail — it never leaves the
+    // server. The client maps the code to localized copy.
     return NextResponse.json(
-      { error: 'extraction_failed', detail: `Term extraction failed unexpectedly: ${message}. Manual entry required.`, reviewState: 'unsupported' },
+      { error: 'extraction_failed', reviewState: 'unsupported' },
       { status: 422 },
     )
   }

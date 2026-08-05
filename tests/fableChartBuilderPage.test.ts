@@ -70,8 +70,18 @@ describe('Phase 5E — every Chart Builder section survives the re-skin', () => 
   })
 
   it('keeps the Settings modal, dialog-rooted and Esc-closable', () => {
-    assert.match(src, /useEscape\(settingsOpen, \(\) => setSettingsOpen\(false\)\)/)
-    assert.match(src, /role="dialog" aria-modal="true" aria-label=\{t\.charting\.settings\}/)
+    // Superseded in R12: the hand-rolled dialog (page-local role/aria +
+    // page-level useEscape) migrated to the one shared ModalShell, which
+    // carries the FULL dialog contract this page was missing — labelled
+    // role="dialog", Escape, initial focus, Tab containment, scroll lock,
+    // and focus restoration. The enduring contract: the Settings modal is a
+    // real, Esc-closable dialog.
+    assert.match(src, /from '@\/components\/fable\/ModalShell'/)
+    assert.match(src, /<ModalShell\s*\n?\s*open=\{settingsOpen\}/)
+    assert.match(src, /title=\{t\.charting\.settings\}/)
+    const shell = read('src/components/fable/ModalShell.tsx')
+    assert.match(shell, /useEscape\(open && canDismiss, onClose\)/)
+    assert.match(shell, /aria-modal="true"/)
   })
 
   it('adds no invented KPI, hero, or summary metric to this route', () => {
@@ -420,8 +430,13 @@ describe('Phase 5E — Fable visual language applied via shared primitives', () 
   })
 
   it('restyles the Settings modal to the established glass-overlay + scrim pattern', () => {
-    assert.match(src, /nv-scrim fixed inset-0/)
-    assert.match(src, /nv-glass-overlay nv-pop/)
+    // Superseded in R12: the glass-overlay + scrim recipe now arrives via the
+    // shared ModalShell rather than page-local markup — same visual pattern,
+    // one implementation.
+    assert.match(src, /<ModalShell/)
+    const shell = read('src/components/fable/ModalShell.tsx')
+    assert.match(shell, /nv-scrim absolute inset-0/)
+    assert.match(shell, /nv-glass-overlay/)
   })
 
   it('uses Fable chip controls (nv-chip/nv-chipbd) for ticker inputs, settings select, and pill buttons', () => {
@@ -475,7 +490,9 @@ describe('Phase 5E — motion is restrained and reduced-motion safe', () => {
   })
 
   it('the settings modal uses the established nv-pop overlay entrance, not a bespoke transition', () => {
-    assert.match(src, /nv-pop/)
+    // Superseded in R12: the entrance lives in the shared ModalShell now.
+    assert.match(src, /<ModalShell/)
+    assert.match(read('src/components/fable/ModalShell.tsx'), /nv-pop/)
   })
 
   it('the reveal primitive collapses to its final state under reduced motion (shared global rule, unchanged)', () => {
@@ -512,8 +529,13 @@ describe('Phase 5E — accessibility', () => {
   })
 
   it('the settings dialog has an accessible name and a labelled close control', () => {
-    assert.match(src, /role="dialog" aria-modal="true" aria-label=\{t\.charting\.settings\}/)
-    assert.match(src, /aria-label=\{t\.fable\.panel\.close\}/)
+    // Superseded in R12: ModalShell labels the dialog via aria-labelledby on
+    // the title this page passes, and its ✕ carries the localized close label.
+    assert.match(src, /<ModalShell\s*\n?\s*open=\{settingsOpen\}/)
+    assert.match(src, /title=\{t\.charting\.settings\}/)
+    const shell = read('src/components/fable/ModalShell.tsx')
+    assert.match(shell, /aria-labelledby=\{titleId\}/)
+    assert.match(shell, /aria-label=\{t\.fable\.panel\.close\}/)
   })
 
   it('marks decorative glyphs aria-hidden', () => {

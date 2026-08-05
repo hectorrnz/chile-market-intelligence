@@ -33,7 +33,7 @@
 // filter row and sortable headers (no filter/sort state exists on this route),
 // and the row-click position detail panel (no position-detail payload exists).
 
-import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, useId, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useLang } from '@/components/providers/LangProvider'
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
@@ -53,6 +53,8 @@ import { SegmentedControl } from '@/components/fable/SegmentedControl'
 import { Reveal } from '@/components/fable/motion'
 import { PrivacyValue } from '@/components/fable/PrivacyValue'
 import { usePrivacyMode } from '@/components/fable/usePrivacyMode'
+import { DestructiveConfirm } from '@/components/fable/ModalShell'
+import { stockOverlayCoverage, overlayStatus } from '@/lib/market/liveOverlay'
 
 const ALL_COMPANIES = getAllCompanies()
 const VALID_TICKERS = new Set(ALL_COMPANIES.map(c => c.ticker.toUpperCase()))
@@ -249,6 +251,10 @@ function AddPositionForm({
   const [notes, setNotes]       = useState('')
   const [loading, setLoading]   = useState(false)
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
+  // R12: the success message auto-clears on a timer — held in a ref and
+  // cleared on unmount so it can never fire setState on an unmounted form.
+  const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (feedbackTimer.current) clearTimeout(feedbackTimer.current) }, [])
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
@@ -290,7 +296,7 @@ function AddPositionForm({
         setTicker(''); setQuantity(''); setAvgCost(''); setNotes('')
         setFeedback({ type: 'ok', msg: t.portfolio.added })
         onAdded()
-        setTimeout(() => setFeedback(null), 2500)
+        feedbackTimer.current = setTimeout(() => setFeedback(null), 2500)
       }
     } catch {
       setFeedback({ type: 'err', msg: t.portfolio.networkError })
@@ -378,8 +384,9 @@ function PortfolioHero({
   cashBalance,
 }: {
   totals: Totals
-  realizedPnl: number
-  cashBalance: number
+  /** null = the API could not compute it — rendered '—', never a fabricated 0. */
+  realizedPnl: number | null
+  cashBalance: number | null
 }) {
   const { t } = useLang()
   const [masked] = usePrivacyMode()
@@ -426,15 +433,23 @@ function PortfolioHero({
         <div>
           <div className="ui-micro-label text-muted-fg">{t.portfolio.realizedPnL}</div>
           <div className="mt-1">
-            <PrivacyValue masked={masked}>
-              <ChangeIndicator value={realizedPnl} label={formatCLP(realizedPnl)} />
-            </PrivacyValue>
+            {realizedPnl !== null ? (
+              <PrivacyValue masked={masked}>
+                <ChangeIndicator value={realizedPnl} label={formatCLP(realizedPnl)} />
+              </PrivacyValue>
+            ) : (
+              <span className="ui-card-value ui-number text-muted-fg">—</span>
+            )}
           </div>
         </div>
         <div>
           <div className="ui-micro-label text-muted-fg">{t.portfolio.cashBalance}</div>
           <div className="ui-card-value ui-number text-foreground mt-1">
-            <PrivacyValue masked={masked}>{formatCLP(cashBalance)}</PrivacyValue>
+            {cashBalance !== null ? (
+              <PrivacyValue masked={masked}>{formatCLP(cashBalance)}</PrivacyValue>
+            ) : (
+              <span className="text-muted-fg">—</span>
+            )}
           </div>
         </div>
         <div>
@@ -512,6 +527,12 @@ function PositionRow({
   const [notes, setNotes] = useState(position.notes ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const errId = useId()
+  // R12: removal is a destructive action — it goes through the shared
+  // DestructiveConfirm gate (confirm-at-most-once, pending lock), checks the
+  // response, and surfaces a localized failure instead of silently refetching.
+  const [confirmRemove, setConfirmRemove] = useState(false)
+  const [removeError, setRemoveError] = useState(false)
 
   async function handleSave() {
     const qty = Number(quantity)
@@ -534,11 +555,13 @@ function PositionRow({
       })
       if (!res.ok) {
         const json = await res.json().catch(() => ({}))
-        setError(json.error === 'invalid_quantity' ? t.portfolio.invalidQuantity : json.error === 'invalid_average_cost' ? t.portfolio.invalidAverageCost : 'Error')
+        setError(json.error === 'invalid_quantity' ? t.portfolio.invalidQuantity : json.error === 'invalid_average_cost' ? t.portfolio.invalidAverageCost : t.portfolio.saveError)
         return
       }
       setEditing(false)
       onChanged()
+    } catch {
+      setError(t.portfolio.networkError)
     } finally {
       setBusy(false)
     }
@@ -546,9 +569,14 @@ function PositionRow({
 
   async function handleRemove() {
     setBusy(true)
+    setRemoveError(false)
     try {
-      await fetch(`/api/portfolios/${portfolioId}/positions/${encodeURIComponent(position.ticker)}`, { method: 'DELETE' })
+      const res = await fetch(`/api/portfolios/${portfolioId}/positions/${encodeURIComponent(position.ticker)}`, { method: 'DELETE' })
+      if (!res.ok) { setRemoveError(true); return }
+      setConfirmRemove(false)
       onChanged()
+    } catch {
+      setRemoveError(true)
     } finally {
       setBusy(false)
     }
@@ -569,6 +597,8 @@ function PositionRow({
             type="number" min="0" step="any" value={quantity}
             onChange={e => setQuantity(e.target.value)}
             aria-label={t.portfolio.quantityLabel}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? errId : undefined}
             className="h-7 w-20 px-2 rounded-full ui-number text-right text-foreground outline-none focus:border-accent nv-transition"
             style={CHIP_STYLE}
           />
@@ -578,6 +608,8 @@ function PositionRow({
             type="number" min="0" step="any" value={avgCost}
             onChange={e => setAvgCost(e.target.value)}
             aria-label={t.portfolio.averageCostLabel}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? errId : undefined}
             className="h-7 w-24 px-2 rounded-full ui-number text-right text-foreground outline-none focus:border-accent nv-transition"
             style={CHIP_STYLE}
           />
@@ -593,7 +625,10 @@ function PositionRow({
             style={CHIP_STYLE}
           />
         </td>
-        <td className="py-2 px-3 text-right ui-number text-negative" colSpan={2}>{error}</td>
+        <td className="py-2 px-3 text-right ui-number text-negative" colSpan={2}>
+          {/* R12: announced to AT, and referenced by the invalid inputs. */}
+          {error && <span id={errId} role="alert">{error}</span>}
+        </td>
         <td className="py-2 px-3 pr-4 text-right whitespace-nowrap">
           <button onClick={handleSave} disabled={busy} className="text-primary hover:underline text-xs mr-2 disabled:opacity-40">{t.portfolio.saveEdit}</button>
           <button onClick={() => setEditing(false)} disabled={busy} className="text-muted-fg hover:text-foreground text-xs disabled:opacity-40">{t.portfolio.cancelEdit}</button>
@@ -650,7 +685,29 @@ function PositionRow({
         ) : (
           <>
             <button onClick={() => setEditing(true)} disabled={busy} className="text-muted-fg hover:text-foreground text-xs mr-2 disabled:opacity-40">{t.portfolio.editPosition}</button>
-            <button onClick={handleRemove} disabled={busy} className="text-muted-fg hover:text-negative text-xs disabled:opacity-40" title={t.portfolio.removePosition}>×</button>
+            <button
+              onClick={() => { setRemoveError(false); setConfirmRemove(true) }}
+              disabled={busy}
+              className="text-muted-fg hover:text-negative text-xs disabled:opacity-40"
+              aria-label={`${t.portfolio.removePosition}: ${position.ticker}`}
+              title={t.portfolio.removePosition}
+            >
+              ×
+            </button>
+            <DestructiveConfirm
+              open={confirmRemove}
+              title={t.portfolio.removePosition}
+              // Honest record identification from existing fields only — and
+              // never an amount (amounts stay behind the Privacy boundary).
+              description={`${position.ticker} — ${position.companyName}`}
+              confirmLabel={t.portfolio.removePosition}
+              cancelLabel={t.portfolio.cancelEdit}
+              pending={busy}
+              onCancel={() => setConfirmRemove(false)}
+              onConfirm={handleRemove}
+            >
+              {removeError && <p role="alert" className="text-xs text-negative">{t.portfolio.removeError}</p>}
+            </DestructiveConfirm>
           </>
         )}
       </td>
@@ -728,6 +785,10 @@ function AddTransactionForm({
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
+  // R12: the success message auto-clears on a timer — held in a ref and
+  // cleared on unmount so it can never fire setState on an unmounted form.
+  const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (feedbackTimer.current) clearTimeout(feedbackTimer.current) }, [])
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
@@ -777,7 +838,7 @@ function AddTransactionForm({
         setTicker(''); setQuantity(''); setPrice(''); setFees(''); setTaxes(''); setNotes('')
         setFeedback({ type: 'ok', msg: t.portfolio.tx.added })
         onAdded()
-        setTimeout(() => setFeedback(null), 2500)
+        feedbackTimer.current = setTimeout(() => setFeedback(null), 2500)
       }
     } catch {
       setFeedback({ type: 'err', msg: t.portfolio.networkError })
@@ -890,12 +951,24 @@ function TransactionsTable({
   const { t } = useLang()
   const [masked] = usePrivacyMode()
   const [busyId, setBusyId] = useState<string | null>(null)
+  // R12: deleting a transaction replays the ledger and rewrites realized P&L —
+  // the most consequential destructive action on this page. It now goes
+  // through the shared DestructiveConfirm gate, checks the response, and
+  // surfaces a localized failure instead of silently refetching.
+  const [pendingDelete, setPendingDelete] = useState<TransactionOut | null>(null)
+  const [deleteError, setDeleteError] = useState(false)
 
-  async function handleRemove(id: string) {
-    setBusyId(id)
+  async function handleRemove() {
+    if (!pendingDelete) return
+    setBusyId(pendingDelete.id)
+    setDeleteError(false)
     try {
-      await fetch(`/api/portfolios/${portfolioId}/transactions/${id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/portfolios/${portfolioId}/transactions/${pendingDelete.id}`, { method: 'DELETE' })
+      if (!res.ok) { setDeleteError(true); return }
+      setPendingDelete(null)
       onChanged()
+    } catch {
+      setDeleteError(true)
     } finally {
       setBusyId(null)
     }
@@ -957,10 +1030,10 @@ function TransactionsTable({
               </td>
               <td className="py-2.5 px-3 pr-4 text-right whitespace-nowrap">
                 <button
-                  onClick={() => handleRemove(tx.id)}
+                  onClick={() => { setDeleteError(false); setPendingDelete(tx) }}
                   disabled={busyId === tx.id}
                   className="text-muted-fg hover:text-negative text-xs disabled:opacity-40"
-                  aria-label={`${t.portfolio.removePosition} ${tx.ticker} ${tx.tradeDate}`}
+                  aria-label={`${t.portfolio.tx.deleteTransaction}: ${tx.ticker} ${tx.tradeDate}`}
                 >
                   ×
                 </button>
@@ -969,6 +1042,23 @@ function TransactionsTable({
           ))}
         </tbody>
       </table>
+      <DestructiveConfirm
+        open={pendingDelete !== null}
+        title={t.portfolio.tx.deleteTransaction}
+        // Honest record identification from existing fields only — type,
+        // ticker and trade date, never an amount (amounts stay behind the
+        // Privacy boundary, including in this dialog).
+        description={pendingDelete
+          ? `${pendingDelete.transactionType === 'buy' ? t.portfolio.tx.buy : t.portfolio.tx.sell} · ${pendingDelete.ticker} · ${pendingDelete.tradeDate}`
+          : undefined}
+        confirmLabel={t.portfolio.tx.deleteTransaction}
+        cancelLabel={t.portfolio.cancelEdit}
+        pending={busyId !== null}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={handleRemove}
+      >
+        {deleteError && <p role="alert" className="text-xs text-negative">{t.portfolio.removeError}</p>}
+      </DestructiveConfirm>
     </TableCard>
   )
 }
@@ -989,6 +1079,10 @@ function AddCashForm({
   const [description, setDescription] = useState('')
   const [loading, setLoading] = useState(false)
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
+  // R12: the success message auto-clears on a timer — held in a ref and
+  // cleared on unmount so it can never fire setState on an unmounted form.
+  const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (feedbackTimer.current) clearTimeout(feedbackTimer.current) }, [])
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
@@ -1012,7 +1106,7 @@ function AddCashForm({
         setAmount(''); setDescription('')
         setFeedback({ type: 'ok', msg: t.portfolio.cash.added })
         onAdded()
-        setTimeout(() => setFeedback(null), 2500)
+        feedbackTimer.current = setTimeout(() => setFeedback(null), 2500)
       }
     } catch {
       setFeedback({ type: 'err', msg: t.portfolio.networkError })
@@ -1182,7 +1276,12 @@ export default function PortfolioPage() {
     await refreshLive()
   }, [refreshLive])
 
-  const priceStatus: DataSourceStatus = live ? 'live' : 'persisted'
+  // R12 — per-instrument live gating over this portfolio's own position
+  // tickers: only full overlay coverage may claim Live; a snapshot that missed
+  // some positions is disclosed as a hybrid; zero coverage keeps 'persisted'.
+  const priceStatus: DataSourceStatus = live
+    ? overlayStatus(stockOverlayCoverage(live.stocks, (detail?.positions ?? []).map(p => p.ticker)), 'persisted')
+    : 'persisted'
 
   const displayed = useMemo(() => {
     if (!detail) return null
@@ -1229,29 +1328,40 @@ export default function PortfolioPage() {
   }, [displayed])
 
   async function loadDetail(id: string, cancelled: { value: boolean }) {
-    const [detailRes, txRes, cashRes] = await Promise.all([
-      fetch(`/api/portfolios/${id}`, { cache: 'no-store' }),
-      fetch(`/api/portfolios/${id}/transactions`, { cache: 'no-store' }),
-      fetch(`/api/portfolios/${id}/cash`, { cache: 'no-store' }),
-    ])
-    if (cancelled.value) return
-    if (detailRes.ok) {
-      const json = await detailRes.json()
-      setDetail({
-        positions: json.positions ?? [],
-        totals: json.totals,
-        sectorExposure: json.sectorExposure ?? [],
-        cashSummary: json.cashSummary,
-        realizedPnl: json.realizedPnl,
-      })
-    }
-    if (txRes.ok) {
-      const json = await txRes.json()
-      setTransactions(json.transactions ?? [])
-    }
-    if (cashRes.ok) {
-      const json = await cashRes.json()
-      setCashEntries(json.entries ?? [])
+    // R12: this function never rejects (its own catch sets loadError), so the
+    // `void loadDetail(...)` refresh path can't leave an unhandled rejection —
+    // and a non-ok on ANY of the three calls is an ERROR, never silently
+    // skipped (previously a failed detail call rendered the confirmed-empty
+    // positions table, the exact class the R11 list-call fix closed).
+    try {
+      const [detailRes, txRes, cashRes] = await Promise.all([
+        fetch(`/api/portfolios/${id}`, { cache: 'no-store' }),
+        fetch(`/api/portfolios/${id}/transactions`, { cache: 'no-store' }),
+        fetch(`/api/portfolios/${id}/cash`, { cache: 'no-store' }),
+      ])
+      if (cancelled.value) return
+      let anyFailed = false
+      if (detailRes.ok) {
+        const json = await detailRes.json()
+        setDetail({
+          positions: json.positions ?? [],
+          totals: json.totals,
+          sectorExposure: json.sectorExposure ?? [],
+          cashSummary: json.cashSummary,
+          realizedPnl: json.realizedPnl,
+        })
+      } else anyFailed = true
+      if (txRes.ok) {
+        const json = await txRes.json()
+        setTransactions(json.transactions ?? [])
+      } else anyFailed = true
+      if (cashRes.ok) {
+        const json = await cashRes.json()
+        setCashEntries(json.entries ?? [])
+      } else anyFailed = true
+      if (anyFailed && !cancelled.value) setLoadError(true)
+    } catch {
+      if (!cancelled.value) setLoadError(true)
     }
   }
 
@@ -1344,8 +1454,9 @@ export default function PortfolioPage() {
               <div className="flex flex-wrap items-stretch gap-3.5">
                 <PortfolioHero
                   totals={displayed.totals}
-                  realizedPnl={detail?.realizedPnl?.totalRealizedPnl ?? 0}
-                  cashBalance={detail?.cashSummary?.netCashBalance ?? 0}
+                  // R12: an unavailable summary renders '—', never a fabricated 0.
+                  realizedPnl={detail?.realizedPnl?.totalRealizedPnl ?? null}
+                  cashBalance={detail?.cashSummary?.netCashBalance ?? null}
                 />
                 <SectorExposurePanel sectors={displayed.sectorExposure} />
               </div>
