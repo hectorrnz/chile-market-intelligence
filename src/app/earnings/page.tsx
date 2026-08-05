@@ -230,11 +230,12 @@ export default function EarningsPage() {
         />
       </Reveal>
 
-      {/* Upcoming — real CMF report dates */}
+      {/* Upcoming — real CMF report dates. R11: the badge names CMF, not the
+          component's Yahoo default — its tooltip must agree with the footer. */}
       <Reveal delayMs={70}>
         <TableCard
           title={t.earnings.upcomingLabel}
-          controls={<MarketDataSourceBadge status={calLive ? 'live' : 'live-unavailable'} />}
+          controls={<MarketDataSourceBadge status={calLive ? 'live' : 'live-unavailable'} provider="CMF" />}
           minWidth={360}
           footer={
             <div className="space-y-0.5">

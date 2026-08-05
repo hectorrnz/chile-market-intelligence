@@ -81,6 +81,8 @@ import { BarrierGauge, type BarrierMark } from '@/components/fable/BarrierGauge'
 import { SegmentedControl } from '@/components/fable/SegmentedControl'
 import { ChipButton, ChipSelect } from '@/components/fable/Chip'
 import { DestructiveConfirm } from '@/components/fable/ModalShell'
+import { PrivacyValue } from '@/components/fable/PrivacyValue'
+import { usePrivacyMode } from '@/components/fable/usePrivacyMode'
 import { Reveal, Pop } from '@/components/fable/motion'
 
 interface MonitoringStatus {
@@ -167,6 +169,9 @@ const PILL_PRIMARY =
 
 export default function StructuredNotesPage() {
   const { t, lang } = useLang()
+  // R11: the Nevada notional is one of the six documented private amounts.
+  // Home already masked it; its own canonical pages did not.
+  const [masked] = usePrivacyMode()
   const router = useRouter()
   const [notes, setNotes] = useState<StructuredNote[]>([])
   const [metrics, setMetrics] = useState<Record<string, NoteDashboardMetrics>>({})
@@ -470,7 +475,7 @@ export default function StructuredNotesPage() {
             <StatCapsule label={t.sn.dashAutocallable} value={String(summary.autocallableNotes)} tone="var(--accent)" title={t.sn.legendAutocallable} onClick={() => focusStatus('autocallable')} />
             <StatCapsule label={t.sn.dashBreached} value={String(summary.breachedNotes)} tone={summary.breachedNotes > 0 ? 'var(--negative)' : undefined} title={t.sn.legendBreached} onClick={() => focusStatus('breached')} />
             <StatCapsule label={t.sn.dashCalled} value={String(summary.calledNotes)} onClick={() => setView('archived')} />
-            <StatCapsule label={t.sn.dashNotional} value={`${summary.currency} ${fmtNum(summary.totalCurrentNotional)}`} />
+            <StatCapsule label={t.sn.dashNotional} value={`${summary.currency} ${fmtNum(summary.totalCurrentNotional)}`} masked={masked} />
             <StatCapsule
               label={t.sn.dashNextObs}
               value={nextObs ? `${nextObs.date}${nextObs.days != null ? ` (${nextObs.days}d)` : ''}` : '—'}
@@ -733,7 +738,12 @@ export default function StructuredNotesPage() {
                     <td className={`${cellPad} text-center ui-number text-foreground`}>{fmtPct(n.knockInBarrierPct)}</td>
                     <td className={`${cellPad} text-center ui-number text-foreground`}>{n.issueDate ?? n.tradeDate ?? '—'}</td>
                     <td className={`${cellPad} text-center ui-number text-foreground`}>
-                      <span className="block truncate" title={`${n.currency} ${fmtNum(m?.currentNotional ?? 0)}`}>{n.currency} {fmtNum(m?.currentNotional ?? 0)}</span>
+                      {/* R11: per-note notional is the same private amount as
+                          the book total — masked, and the `title` duplicate
+                          removed (a tooltip would leak the raw value). */}
+                      <PrivacyValue masked={masked} className="block">
+                        <span className="block truncate">{n.currency} {fmtNum(m?.currentNotional ?? 0)}</span>
+                      </PrivacyValue>
                     </td>
                     <td className={`${cellPad} text-center no-print`}>
                       <input type="checkbox" checked={isArchived(n)} onChange={(e) => n.id && setCalled(n.id, e.target.checked)} title={t.sn.dashCalled} aria-label={`${t.sn.colCalled}: ${n.productName}`} />
@@ -816,13 +826,22 @@ function Field({ label, value, mono = false }: { label: string; value: string | 
  * Status tone colors the value only — the label text always names the status,
  * so meaning is never carried by color alone.
  */
-function StatCapsule({ label, value, sub, tone, title, onClick }: {
+function StatCapsule({ label, value, sub, tone, title, onClick, masked }: {
   label: string; value: string; sub?: string; tone?: string; title?: string; onClick?: () => void
+  /** R11: private amounts (the Nevada notional) route through the shared
+   *  PrivacyValue boundary, exactly as Home already does for this same figure. */
+  masked?: boolean
 }) {
   const inner = (
     <>
       <span className="ui-label text-muted-fg">{label}</span>
-      <span className="ui-capsule-value ui-number" style={{ color: tone ?? 'var(--foreground)' }}>{value}</span>
+      {masked === undefined ? (
+        <span className="ui-capsule-value ui-number" style={{ color: tone ?? 'var(--foreground)' }}>{value}</span>
+      ) : (
+        <PrivacyValue masked={masked} className="ui-capsule-value">
+          <span className="ui-capsule-value ui-number" style={{ color: tone ?? 'var(--foreground)' }}>{value}</span>
+        </PrivacyValue>
+      )}
       {sub && <span className="ui-meta text-muted-fg truncate max-w-full" title={sub}>{sub}</span>}
     </>
   )

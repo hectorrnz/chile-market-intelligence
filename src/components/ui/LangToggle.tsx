@@ -26,12 +26,17 @@ export function LangToggle() {
     >
       {(['en', 'es'] as Lang[]).map((code) => {
         const active = lang === code
+        // R11: each option carries its own accessible name, matching
+        // ThemeToggle — "en"/"es" alone is not a usable screen-reader label.
+        const name = code === 'en' ? t.topbar.switchToEnglish : t.topbar.switchToSpanish
         return (
           <button
             key={code}
             type="button"
             onClick={() => switchTo(code)}
             aria-pressed={active}
+            aria-label={name}
+            title={name}
             className="inline-flex items-center h-full px-1.5 sm:px-2.5 rounded-full text-xs uppercase nv-transition"
             style={
               active

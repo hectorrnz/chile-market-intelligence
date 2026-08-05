@@ -226,13 +226,23 @@ describe('Phase 5C — header and actions preserved', () => {
     assert.match(src, /\{t\.company\.watchlistPill\}/)
   })
 
-  it('keeps exactly one MarketDataSourceBadge, driven by the same priceStatus derivation', () => {
+  // R11 supersedes the byte-exact form of these two derivations. The enduring
+  // contract is what they must GUARANTEE, not the literal expression: the badge
+  // and the as-of describe the price actually on screen. Both previously keyed
+  // off `live` (the page-wide snapshot) while the price itself already fell
+  // back per-ticker via `lv`, so a symbol missing from an otherwise-successful
+  // snapshot rendered a persisted/static number under a "Live, as of <now>"
+  // claim. They now gate on `lv` — this ticker's own quote.
+  it('the badge is gated on THIS ticker’s own live quote, never the page-wide fetch', () => {
     assert.equal(count(src, '<MarketDataSourceBadge'), 1)
-    assert.match(src, /const priceStatus: DataSourceStatus = live \? 'live' : \(valuation\?\.marketDataStatus \?\? \(supaSnap \? 'persisted' : 'static'\)\)/)
+    assert.match(src, /const priceStatus: DataSourceStatus = lv \? 'live' : \(valuation\?\.marketDataStatus \?\? \(supaSnap \? 'persisted' : 'static'\)\)/)
+    // The same variable that drives the displayed price drives the claim.
+    assert.match(src, /const livePrice\s+= lv\?\.price/)
+    assert.doesNotMatch(src, /priceStatus: DataSourceStatus = live \?/)
   })
 
-  it('keeps as-of information next to the KPI strip', () => {
-    assert.match(src, /const priceAsOf = live \? live\.lastUpdated : \(supaSnap\?\.lastUpdated \?\? null\)/)
+  it('the as-of is gated the same way, so badge and timestamp can never disagree', () => {
+    assert.match(src, /const priceAsOf = lv && live \? live\.lastUpdated : \(supaSnap\?\.lastUpdated \?\? null\)/)
     assert.match(src, /asOf=\{priceAsOf\}/)
   })
 
@@ -519,7 +529,11 @@ describe('Phase 5C — valuation preservation', () => {
   it('keeps the sector-median calculation and its display alongside every metric', () => {
     assert.match(src, /const medStr = \(key: keyof StockPriceSnapshot, suffix: string\) => \{/)
     assert.equal(count(src, 'medStr('), 9, 'every one of the nine metrics computes its own sector median')
-    assert.match(src, /\{med && <div className="ui-number text-muted-fg" style=\{\{ fontSize: '9px' \}\}>\{med\}<\/div>\}/)
+    // R11: the enduring contract is that the median renders next to its metric
+    // in muted numeric type. The literal inline `fontSize: '9px'` is gone —
+    // it sat below the smallest declared rung (--fs-micro-label, 9.5px) and
+    // bypassed the token scale; the value is now consumed by name.
+    assert.match(src, /\{med && <div className="ui-number text-muted-fg" style=\{\{ fontSize: 'var\(--fs-micro-label\)' \}\}>\{med\}<\/div>\}/)
   })
 
   it('keeps the measured-height pinning mechanism (ResizeObserver on the Valuation card)', () => {
@@ -586,7 +600,11 @@ describe('Phase 5C repair — News section is never omitted', () => {
     const end = src.indexOf('{newsState ?', start)
     assert.ok(start > 0 && end > start)
     const header = src.slice(start, end)
-    assert.match(header, /<GlassSurface variant="card" className="overflow-hidden">/)
+    // R11: `dense`, not `card` — the rule is that dense content (these are
+    // 12px news rows) never sits on low-opacity glass, and Home's identical
+    // news module already used the dense tier. The contract this test exists
+    // for — the card and heading render unconditionally — is unchanged.
+    assert.match(header, /<GlassSurface variant="dense" className="overflow-hidden">/)
     assert.match(header, /<span className="ui-label text-muted-fg">\{t\.company\.recentNews\}<\/span>/)
     assert.doesNotMatch(header, /news\.length/, 'the heading/card must not be gated on article count')
   })
@@ -658,8 +676,12 @@ describe('Phase 5C — source integrity', () => {
   })
 
   it('keeps the Recent Results honest empty/loading distinction (no data never silently becomes "0 results" with no explanation)', () => {
-    assert.match(src, /kind=\{earningsResults === null \? 'loading' : 'empty'\}/)
-    assert.match(src, /message=\{earningsResults === null \? t\.common\.loading : t\.company\.noData\}/)
+    // R11 strengthens this: the loading/empty split stays, and a THIRD state —
+    // error — is now distinguished. Previously a failed fetch left the module
+    // at "loading" forever, so a real failure was indistinguishable from a
+    // request still in flight.
+    assert.match(src, /kind=\{resultsFailed \? 'error' : earningsResults === null \? 'loading' : 'empty'\}/)
+    assert.match(src, /message=\{resultsFailed \? undefined : earningsResults === null \? t\.common\.loading : t\.company\.noData\}/)
   })
 
   it('the source badge is rendered visibly in the header actions, never hidden solely behind a tooltip', () => {
@@ -697,9 +719,9 @@ describe('Phase 5C repair — KPI source/as-of line no longer overlaps the KPI g
     assert.ok(start > 0 && gridEnd > start && footerPos > gridEnd, 'the footer must render after the KPI grid closes, not overlapping it')
   })
 
-  it('preserves the exact provider label and as-of value/derivation — only spacing changed', () => {
+  it('preserves the exact provider label and as-of derivation (R11: now per-ticker)', () => {
     assert.match(src, /source=\{t\.stocks\.footer\}/)
-    assert.match(src, /const priceAsOf = live \? live\.lastUpdated : \(supaSnap\?\.lastUpdated \?\? null\)/)
+    assert.match(src, /const priceAsOf = lv && live \? live\.lastUpdated : \(supaSnap\?\.lastUpdated \?\? null\)/)
   })
 
   it('preserves tabular numerals on every KPI value (KpiCapsule/ChangeIndicator already carry ui-number/ui-capsule-value styling)', () => {

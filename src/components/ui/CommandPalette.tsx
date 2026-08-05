@@ -111,14 +111,17 @@ export function CommandPalette() {
       >
         <div className="flex items-center gap-2 px-4" style={{ borderBottom: '1px solid var(--nv-line)' }}>
           <span className="text-muted-fg text-sm" aria-hidden="true">⌕</span>
+          {/* R11: the app-wide :focus-visible ring (globals.css — "Never
+              removed") was suppressed here four ways, so Shift+Tabbing back
+              from the result buttons gave no visual confirmation of focus.
+              Suppression removed; the shared ring applies. */}
           <input
             ref={inputRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={onListKey}
             placeholder={t.common.search}
-            className="flex-1 bg-transparent outline-none focus:outline-none focus-visible:outline-none py-3.5 text-sm text-foreground placeholder:text-muted-fg"
-            style={{ outline: 'none', boxShadow: 'none' }}
+            className="flex-1 bg-transparent py-3.5 text-sm text-foreground placeholder:text-muted-fg"
           />
           <kbd className="ui-meta rounded px-1.5 py-0.5" style={{ border: '1px solid var(--nv-chipbd)' }}>Esc</kbd>
         </div>

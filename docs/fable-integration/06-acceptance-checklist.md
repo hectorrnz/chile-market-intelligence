@@ -56,12 +56,16 @@ unapproved identity, 401 for an invalid session). Canonical reference:
 `docs/security_access_control.md`. Guarded by `tests/accessControl.test.ts` +
 `tests/userProfilesRls.test.ts`.
 
-**Two controls sit outside the application code.** Public Supabase signup was enabled and has been
-**disabled by the administrator (verified 2026-07-30)**. The `user_profiles` self-approval RLS
-repair is written as `supabase/migrations/20260730000000_user_profiles_admin_controlled_approval.sql`
-but is **NOT YET APPLIED** — until it is, the database still lets any session-holder grant itself
-approval. Not manually accepted until that migration is applied and the browser/API checks in the
-security document run.
+**Two controls sit outside the application code, and both are now closed.** Public Supabase signup
+was enabled and has been **disabled by the administrator (verified 2026-07-30)**. The `user_profiles`
+self-approval RLS repair
+(`supabase/migrations/20260730000000_user_profiles_admin_controlled_approval.sql`) was **applied
+during R1.5**, with local/remote migration parity, approved-user access enforcement and an existing
+approved test user's continued access all confirmed in that execution record; R1.5 end-to-end
+validation passed. Approval is therefore administrator-controlled at the database level, not only in
+the application. *(Status corrected in R11.1, 2026-08-05 — this reconciles stale wording that still
+read "NOT YET APPLIED" with the completed R1.5 record; no database was re-queried and no migration
+was run in that turn.)*
 
 **Phase R2 (Fable password-recovery variants) ✓ IMPLEMENTED 2026-07-30, automated validation
 complete, manual browser validation pending** — `/forgot-password` and `/auth/reset-password`
@@ -85,9 +89,12 @@ at its own URL. Guarded by `tests/fableAuthRecovery.test.ts` (47) plus the updat
 `tests/fableAuthShell.test.ts`. Not manually accepted until the side-by-side viewport checks
 (1728/1024/390, reduced motion, EN+ES) and the end-to-end recovery round-trip run.
 
-Phase 5's remaining 3 pages and later R-phases not started. Items below are ticked only where
-completed phases genuinely satisfy them; everything that still depends on the remaining page work
-stays `[ ]` or `[~]`.
+*(Superseded — R11 doc reconciliation, 2026-08-05.)* This paragraph read "Phase 5's remaining 3
+pages and later R-phases not started" long after those pages shipped. Every user-facing route has
+now been migrated (see doc 03's table): Phase 5A–5H covered the eight research/portfolio routes,
+R1/R1.6 the auth screens, R7/R7.1 Structured Notes, R9.x Settings, and R10/R10.3 Home. Items below
+are ticked only where completed phases genuinely satisfy them; anything still open stays `[ ]` or
+`[~]`, and **R12 remains the final production-readiness audit**.
 
 ---
 
@@ -1085,8 +1092,22 @@ documentation defect** were demonstrated and repaired; everything else audited c
   peer-grid + tiles, `fableHomePage` +7-test R10.3 describe and hero-weights update,
   `fableFoundation`/`fableR0Primitives` token 1680). Full suite + lint + build results
   recorded in doc 04 § Phase R10.3.
+- [x] **R11 — repository-wide consistency & minor-repair sweep (2026-08-05).** Audit-first pass
+  over all 17 routes / ~53 components across the 16 prescribed domains; only demonstrated
+  category-2 defects repaired, each proven against ≥2 correct sibling implementations. 12 repairs:
+  a CMF table whose badge tooltip claimed Yahoo Finance; the company badge/as-of claiming "Live"
+  for a ticker whose own quote was absent; a swallowed Portfolio load failure rendering as an empty
+  account; company results/valuation stuck at "loading" on failure; **the Nevada notional (a
+  documented masked amount) rendering unmasked on both Structured Notes pages, including a raw
+  `title` tooltip**; the command-palette input suppressing the app-wide focus ring; `LangToggle`
+  options with no accessible name; six untranslated Portfolio error literals leaking raw server
+  strings; two hardcoded Home tooltips; company news on `card` instead of `dense` glass; three
+  sub-floor type overrides. Docs 03/06 route-status rows reconciled against shipping commits. New
+  `tests/r11ConsistencySweep.test.ts` (18); four stale phase-boundary assertions superseded with
+  their enduring contracts, none deleted. Suite **4117 · 4114 · 3** (authorized trio; failure count
+  unchanged); lint 0; build 0 errors. Full record + the R12 deferral list in doc 04 § Phase R11.
 - [ ] **Manual browser validation — PENDING (the R10 gate, now covering the R10.1 + R10.2 +
-  R10.3 composition).** At 320/390/768/1024/1280/1440/1728 ×
+  R10.3 composition and the R11 repairs).** At 320/390/768/1024/1280/1440/1728 ×
   EN/ES × light/dark × privacy OFF/ON (+ stored-ON reload + cross-tab) × data states
   (normal/empty/partial/failed/slow): Home reads as a materially different Fable command center;
   hierarchy immediately understandable; portfolio figures agree with `/portfolio` and notes with
@@ -1100,8 +1121,15 @@ documentation defect** were demonstrated and repaired; everything else audited c
   Macro/Events/Watchlist and Row B is Rates/Heat/Markets with similar visual weight per row at
   wide desktop; Macro and Events no longer dominate; the lg (1024–1439) two-column
   recomposition leaves no isolated narrow card; heat tiles readable at one-third width; all
-  tables scroll inside their cards at 320/390. **Do not mark R10 complete until this gate
-  passes.**
+  tables scroll inside their cards at 320/390. R11 additions: the Earnings Upcoming badge tooltip
+  reads CMF; a company whose live quote is missing shows Persisted/Static rather than Live;
+  Privacy ON masks the notional on `/structured-notes` and `/structured-notes/[id]` (book total,
+  per-note column, detail capsule) with no raw value in any tooltip and no flash on a stored-ON
+  reload; keyboard focus is visible in the command palette when Shift+Tabbing back to the input;
+  both language options expose a name to a screen reader; Portfolio form errors appear in the
+  active language; the company news card and valuation micro-labels read correctly in both themes.
+  **Do not mark R10/R11 complete until this gate passes; R12 remains the final
+  production-readiness audit.**
 
 ### C4 · Engineering gates (run at each phase boundary)
 - [x] `npm run build` → 0 errors, all routes present. *(Phase 1 boundary: compiled in 6.4s, 19/19
@@ -1193,11 +1221,16 @@ documentation defect** were demonstrated and repaired; everything else audited c
 - [ ] `docs/design_principles.md` + CLAUDE.md design sections rewritten to the Fable language
   (Phase 0) — the app no longer contradicts its own design authority.
 - [ ] `docs/data_source_status.md` current (no module static as terminal state).
-- [~] `docs/fable-integration/03` implementation/verification columns updated per route.
+- [x] `docs/fable-integration/03` implementation/verification columns updated per route.
   *(Phase 5A: `/stocks`. Phase 5B: `/watchlist`. Phase 5C: `/companies/[ticker]`. Phase 5D:
   `/compare`. Phase 5E: `/chart-builder`. Phase 5F: `/macro` + `/macro/calendar`. Phase 5G:
   `/earnings`. Phase 5H: `/portfolio` — each marked ✓ Complete / ✓ Verified with a full
-  "as built" record in its section. The other 6 routes remain Not started / Not verified.)*
+  "as built" record in its section. **R11 (2026-08-05) closed the last stale rows**: rows 11/12
+  (`/structured-notes`, `/structured-notes/[id]`) and 15/16 (`/forgot-password`,
+  `/auth/reset-password`) still read "Not started / Not verified" although all four shipped on
+  2026-07-30/31 — corrected against the shipping commits. Per-route content-preservation
+  checkboxes in §B were NOT re-swept row-by-row for those four routes; that sweep is deferred to
+  R12.)*
 - [x] No new runtime dependency added without an explicit, documented decision (D6).
   *(Phases 1, 3, 4, and 5A all added none; `package.json`/`package-lock.json` unchanged every
   time — no chart library was added, per the brief's explicit instruction to keep the existing

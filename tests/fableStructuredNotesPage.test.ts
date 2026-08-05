@@ -404,7 +404,15 @@ describe('R3.R3 — table-density repair: compact desktop column system', () => 
     // issuer, worst-performer name and notional carry truncate + title reveals
     assert.match(PAGE, /title=\{n\.issuerDisplayName \?\? undefined\}/)
     assert.match(PAGE, /title=\{m\.worstPerformer\.underlyingName\}/)
-    assert.match(PAGE, /title=\{`\$\{n\.currency\} \$\{fmtNum\(m\?\.currentNotional \?\? 0\)\}`\}/)
+    // R11 supersedes the notional half of this assertion. The notional is one
+    // of the six documented PRIVATE amounts, and a `title` tooltip repeating it
+    // verbatim would hand the raw value straight past Privacy Mode's mask — the
+    // exact leak shape `tests/r11ConsistencySweep.test.ts` now bans. The cell
+    // still truncates safely; it just reveals through the privacy boundary
+    // rather than a raw tooltip. Issuer and worst-performer (both public
+    // identifiers, asserted above) keep their title reveals unchanged.
+    assert.doesNotMatch(PAGE, /title=\{`\$\{n\.currency\} \$\{fmtNum\(m\?\.currentNotional \?\? 0\)\}`\}/)
+    assert.match(PAGE, /<PrivacyValue masked=\{masked\} className="block">/)
     // the worst-performer % is shrink-proof next to its truncating name
     assert.match(PAGE, /ui-number shrink-0/)
   })

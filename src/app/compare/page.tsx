@@ -693,7 +693,7 @@ export default function ComparePage() {
                       ))}
                       <label className="w-5 h-5 rounded-full border border-border overflow-hidden relative cursor-pointer" title={t.compare.customColor}>
                         <input type="color" value={c6[i].startsWith('#') ? c6[i] : PRESET[0]} onChange={e => setColor(i, e.target.value)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                        <span className="absolute inset-0 flex items-center justify-center text-[9px] text-muted-fg">+</span>
+                        <span className="absolute inset-0 flex items-center justify-center text-[10px] text-muted-fg">+</span>
                       </label>
                     </div>
                   </div>

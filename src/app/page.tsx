@@ -1091,10 +1091,10 @@ export default function HomePage() {
                     onDrop={() => onDrop(i)}
                     className="px-4 py-2 border-b border-border last:border-0 flex items-center gap-2.5 cursor-grab active:cursor-grabbing nv-row-hover"
                   >
-                    <span className="text-muted-fg select-none shrink-0" title="Drag to reorder" style={{ fontSize: '11px' }}>⠿</span>
+                    <span className="text-muted-fg select-none shrink-0" title={t.common.dragToReorder} style={{ fontSize: '11px' }}>⠿</span>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-medium text-foreground flex items-center gap-1.5">
-                        {r._liveAsOf && <span className="inline-block rounded-full shrink-0" style={{ width: 6, height: 6, background: 'var(--positive)' }} title="Live" />}
+                        {r._liveAsOf && <span className="inline-block rounded-full shrink-0" style={{ width: 6, height: 6, background: 'var(--positive)' }} title={t.dataSource.live} />}
                         <span className="truncate">{r.name}</span>
                       </div>
                       <div className="ui-meta text-muted-fg truncate">{r.fullName}</div>

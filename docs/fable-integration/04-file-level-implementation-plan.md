@@ -1265,7 +1265,9 @@ first pass left open:
    `sb-*` cookies; API denials are **403** (401 stays for an invalid session).
 3. **Database integrity.** Migration `20260730000000_user_profiles_admin_controlled_approval.sql`
    removes the Phase-6A self-approval policies and every authenticated write privilege, leaving one
-   own-row `SELECT`. **Authored, not applied.** Also found and fixed: the provisioning command
+   own-row `SELECT`. **Applied during R1.5**, local/remote migration parity confirmed in that
+   execution record. *(This line read "Authored, not applied" until R11.1 reconciled it — see
+   `docs/security_access_control.md` §2a.)* Also found and fixed: the provisioning command
    documented `npx tsx`, but `tsx` is not a dependency — it would have fetched an unpinned package
    before a command holding the service-role key. Now plain `node`, matching every other script.
 
@@ -3266,6 +3268,116 @@ describe: token 1680, Row A/Row B order, News below, span consumers, shared heig
 tile recomposition, no hidden duplicate trees, fetch-surface pin), `fableFoundation` +
 `fableR0Primitives` (token 1680; the numeric-width ban now covers 1680 too). **Manual browser
 validation: PENDING** — the R10 gate, now covering R10.1 + R10.2 + R10.3 (see doc 06).
+
+### Phase R11 — repository-wide consistency & minor-repair sweep ✅ (2026-08-05)
+
+Audit-first pass over all 17 user-facing routes and ~53 components as ONE product, across the 16
+prescribed domains. Findings were classified PASS / repair / intentional variation / accepted
+constraint / defer-to-R12 / out-of-scope; **only demonstrated category-2 defects were repaired**,
+each proven against ≥2 sibling files already honouring the convention. No redesign, no new feature,
+no API/schema/migration/RLS/auth/source-precedence/dependency/remote change.
+
+**Repaired (12), grouped by the rule each violated:**
+
+*Data honesty.* (1) `MarketDataSourceBadge` hardcoded "— Yahoo Finance" into its tooltip, so the
+Earnings tab's **CMF** report-date table read "Live — Yahoo Finance" directly above a CMF footer;
+`provider` is now a prop defaulting to Yahoo Finance (every existing call site unchanged), and the
+CMF table passes `provider="CMF"`. (2) The company page's badge and as-of keyed off `live` (the
+page-wide snapshot) while the price already fell back per-ticker via `lv` — a symbol missing from an
+otherwise-successful snapshot rendered a persisted/static number under "Live, as of «now»". Both now
+gate on `lv`. (3) A failed Portfolio load was swallowed (`// leave loading state, show empty`) and
+rendered every table's confirmed-empty state, indistinguishable from a genuinely empty account — now
+a distinct `loadError` → `AsyncState kind="error"`; "no portfolio yet" stays honestly empty.
+(4) Company results and (5) valuation sat at "loading" forever on a failed fetch — both now reach an
+error state, mirroring the `newsFailed` shape the same effect already used.
+
+*Privacy.* (6) **The Nevada notional — one of the six documented masked amounts — rendered in the
+clear on both Structured Notes pages.** Home masked it; its own canonical pages never wired Privacy
+Mode at all, and additionally exposed a per-note breakdown Home does not show. Both pages now consume
+the one shared store; the book total, the per-note column and the detail capsule route through
+`PrivacyValue`. The per-note cell's `title` tooltip, which duplicated the raw amount and would have
+leaked it straight past the mask, was removed. Public counts stay visible (asserted).
+
+*Accessibility.* (7) The command-palette input suppressed the app-wide `:focus-visible` ring four
+ways (`outline-none`, `focus:outline-none`, `focus-visible:outline-none`, inline `outline`/
+`boxShadow`), so Shift+Tabbing back from the result buttons gave no focus confirmation — globals.css
+states this ring is "Never removed". Suppression deleted. (8) `LangToggle`'s per-option buttons had
+no accessible name (only "en"/"es" text), violating the standing Theme/Lang Toggle Rule that
+`ThemeToggle` already satisfies; new `topbar.switchToEnglish`/`switchToSpanish` (EN+ES) are applied
+as `aria-label` + `title`.
+
+*Localization.* (9) Portfolio's three forms showed untranslated `'Network error'` / `'Error'`
+literals and leaked raw server error strings — the exact anti-pattern Watchlist documents having
+fixed; new `portfolio.networkError`/`portfolio.addError` (EN+ES) at all six sites. (10) Home's rates
+drag handle and live dot carried hardcoded `title="Drag to reorder"` / `title="Live"`; now
+`t.common.dragToReorder` (new, EN+ES) and the existing `t.dataSource.live`.
+
+*Surfaces.* (11) The company page's news module sat on `card` glass while rendering 12px rows —
+"dense content is never on low-opacity glass"; Home's identical module already used `dense`.
+(12) Type below the smallest declared rung: two inline `fontSize: '9px'` overrides on the company
+valuation grid (now `ui-micro-label` / `var(--fs-micro-label)`) and one `text-[9px]` on Compare
+(now 10px, the codebase floor).
+
+**Docs reconciled.** Doc 03 rows 11/12/15/16 still read "Not started / Not verified" although
+`/structured-notes`, `/structured-notes/[id]`, `/forgot-password` and `/auth/reset-password` all
+shipped 2026-07-30/31 — corrected against the shipping commits. Doc 06's "Phase 5's remaining 3
+pages and later R-phases not started" paragraph and its matching `[~]` checklist item were likewise
+stale; both superseded.
+
+**Tests.** New `tests/r11ConsistencySweep.test.ts` (18) locks every repair as an enduring contract.
+Four stale phase-boundary assertions were **superseded, not deleted**, each with its rationale in
+place: the company page's byte-exact `priceStatus`/`priceAsOf` forms and its 9px/`card`-glass/
+AsyncState literals (`fableCompanyDetailPage`), the Structured Notes notional `title` reveal
+(`fableStructuredNotesPage` — now asserts the tooltip's ABSENCE, since it was a privacy leak), and
+Phase 5G's cross-file company-page scope guard (`fableEarningsPage`).
+
+**Gates:** full suite **4117 · 4114 pass · 3 fail** (only the authorized `newsModule` date-dependent
+trio — failure count unchanged from the 4099/4096/3 baseline); lint **0 problems**; build **0 errors,
+18/18 routes**; `git diff --check` clean; `npx tsc --noEmit` **0 `src/` errors** (39 pre-existing
+tests-only nits, untouched, invisible to the project gates). **Manual browser validation: PENDING.**
+
+**Deferred to R12** (each demonstrated but exceeding R11's minimal-repair scope): per-instrument
+live-success gating in `liveOverlay.ts` (shared typed contract + several consumers — Home
+sector/index, Stocks, Portfolio, Compare card-level badges can still read "Live" when an individual
+instrument fell back); command-palette focus trap + focus restoration and `<ul>/<li>` result
+semantics; chart-builder's hand-rolled settings dialog → `ModalShell`; native `<input
+type="checkbox">` → `Switch` (chart-builder ×2, compare ×4, structured-notes ×1); `SectionHeader` →
+`PageHeader` on the four remaining routes (test-locked, explicitly phased); structured-notes list
+header eyebrow + Portfolio subtitle type scale; hand-rolled `ChipButton`/`ChipSelect` recipes
+(chart-builder, stocks — visually identical, reuse only); structured-notes detail inputs on
+`rounded-lg`/`bg-surface` rather than the chip convention; macro/calendar loading briefly rendering
+as empty/unavailable; structured-notes' filtered-to-nothing showing the onboarding "upload a PDF"
+copy; Portfolio Positions footer missing an `asOf`; keyboard reordering for the drag-only rates
+list; `aria-invalid` on the shared `AuthField`; ~50 dead i18n keys; doc 06 §B per-route
+content-preservation re-sweep for the four corrected routes.
+
+**Escalated for operator verification — RESOLVED as a documentation defect in R11.1 (2026-08-05).**
+R11 flagged that `docs/security_access_control.md` and doc 06 both stated the R1.5 self-approval RLS
+migration (`20260730000000_user_profiles_admin_controlled_approval.sql`) was "NOT YET APPLIED" to
+production, which — if true — would have left an authenticated session-holder able to self-grant
+approval. R11 correctly declined to act: a live-database state cannot be established by static
+inspection, and applying a migration is out of scope. The operator confirmed from the R1.5 execution
+record that the migration **was** applied, with local/remote parity, approved-user access
+enforcement, public signup disabled, an existing approved test user's access retained, and R1.5
+end-to-end validation passed. R11.1 therefore corrected the stale wording in three documents
+(security §2a/§2b/§2c-adjacent, doc 06's outside-the-code paragraph, and the R1.5 record above).
+**The correction reconciles documentation with an already-completed execution record — R11.1 did not
+re-query the database, run a migration, or deploy anything.**
+
+### Phase R11.1 — R1.5 migration-status documentation reconciliation ✅ (2026-08-05)
+
+Documentation-only follow-up to the R11 escalation above. Corrected every statement claiming or
+implying the R1.5 approval migration was unapplied or that production remained exposed to
+authenticated self-approval: `docs/security_access_control.md` (the §2a findings table and its
+follow-on paragraph, the §2b "Not applied to any environment" line, the §2b signup paragraph's
+"does not close BLOCKING 1" claim, and an "Already applied" note atop the apply procedure — which
+is retained as the reference for a fresh environment and as the standing CLI-not-SQL-Editor rule),
+`docs/fable-integration/06-acceptance-checklist.md`, and `docs/fable-integration/04`'s R1.5 record.
+A provenance note in §2a states plainly what was and was not done, so the corrected status is never
+mistaken for a fresh production verification. **No source file, test, migration, Supabase config,
+auth code, middleware, RLS policy, database type, workflow or environment file was touched.**
+Historical descriptions of the pre-repair policies, and the rollback warning that reverting would
+restore the vulnerability, are deliberately unchanged — both remain accurate.
 
 ---
 

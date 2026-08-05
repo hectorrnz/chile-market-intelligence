@@ -24,17 +24,26 @@ const DOT_COLOR: Record<DataSourceStatus, string> = {
  * Visible text is always the bare status word (e.g. "Live", never "Live —
  * Yahoo Finance") — the source name belongs in the table's "Source: X as of
  * ..." footer, not the badge; it still surfaces via the hover tooltip.
+ *
+ * R11: `provider` used to be hardcoded to Yahoo Finance, which made the tooltip
+ * lie on the one consumer whose data is not Yahoo's (the Earnings tab's CMF
+ * report-date calendar read "Live — Yahoo Finance" above a CMF footer). It is
+ * now a prop defaulting to Yahoo Finance, exactly as DataSourceBadge already
+ * models the same idea — every existing call site is unaffected.
  */
 export function MarketDataSourceBadge({
   status,
+  provider = 'Yahoo Finance',
   className = '',
 }: {
   status: DataSourceStatus
+  /** Which source actually backs this data — shown only in the hover tooltip. */
+  provider?: 'Yahoo Finance' | 'CMF'
   className?: string
 }) {
   const { t } = useLang()
   const label = t.marketData[STATUS_KEY[status]]
-  const title = (status === 'live' || status === 'persisted') ? `${label} — Yahoo Finance` : label
+  const title = (status === 'live' || status === 'persisted') ? `${label} — ${provider}` : label
   return (
     <span
       className={`inline-flex items-center gap-1 text-xs text-muted-fg whitespace-nowrap ${className}`}

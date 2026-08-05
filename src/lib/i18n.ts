@@ -424,6 +424,10 @@ export const dict = {
       language:      'Language',
       switchToDark:  'Switch to dark mode',
       switchToLight: 'Switch to light mode',
+      // R11: the LangToggle's own options had no accessible name — the Theme
+      // Toggle Rule requires a title/aria-label on each option of BOTH toggles.
+      switchToEnglish: 'Switch to English',
+      switchToSpanish: 'Switch to Spanish',
     },
     common: {
       search:       'Search company or ticker...',
@@ -454,6 +458,8 @@ export const dict = {
       updateData:   'Update Data',
       updating:     'Updating…',
       dataUpdated:  'Data updated',
+      // R11: Home's rates drag handle carried a hardcoded English tooltip.
+      dragToReorder: 'Drag to reorder',
     },
     dataSource: {
       static:          'Static',
@@ -799,6 +805,11 @@ export const dict = {
       invalidAverageCost: 'Average cost must be zero or greater',
       duplicate:    'This ticker is already in your portfolio',
       emptyPortfolio: 'Your portfolio is empty. Add a position above.',
+      // R11: Portfolio's three forms showed untranslated 'Network error' /
+      // 'Error' literals and leaked raw server error strings — the same
+      // anti-pattern Watchlist documents having fixed.
+      addError:      'Could not save — please try again',
+      networkError:  'Network error — please try again',
       source:       'Yahoo Finance',
       defaultName:  'Default',
       signInCta:    'Sign in to manage your portfolio',
@@ -1396,6 +1407,8 @@ export const dict = {
       language:      'Idioma',
       switchToDark:  'Cambiar a modo oscuro',
       switchToLight: 'Cambiar a modo claro',
+      switchToEnglish: 'Cambiar a inglés',
+      switchToSpanish: 'Cambiar a español',
     },
     common: {
       search:       'Buscar empresa o ticker...',
@@ -1426,6 +1439,7 @@ export const dict = {
       updateData:   'Actualizar Datos',
       updating:     'Actualizando…',
       dataUpdated:  'Datos actualizados',
+      dragToReorder: 'Arrastra para reordenar',
     },
     dataSource: {
       static:          'Estático',
@@ -1766,6 +1780,8 @@ export const dict = {
       invalidAverageCost: 'El costo promedio debe ser cero o mayor',
       duplicate:    'Este ticker ya está en tu portafolio',
       emptyPortfolio: 'Tu portafolio está vacío. Agrega una posición arriba.',
+      addError:      'No se pudo guardar — intenta nuevamente',
+      networkError:  'Error de red — intenta nuevamente',
       source:       'Yahoo Finance',
       defaultName:  'Principal',
       signInCta:    'Ingresa para gestionar tu portafolio',

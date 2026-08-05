@@ -992,11 +992,22 @@ describe('D · the approval marker must be administrator-controlled', () => {
     assert.deepEqual(created, ['users_own_profile_select:select'])
   })
 
-  test('the repair is documented, including that it is not yet applied', () => {
+  // R11.1 supersedes the "not yet applied" half of this assertion. The enduring
+  // contract is that the security document states the repair's APPLICATION
+  // STATUS unambiguously — never that the status is one particular value. The
+  // migration was applied during R1.5 (local/remote parity confirmed in that
+  // execution record); the docs said otherwise until R11.1 reconciled them, and
+  // this test was the last thing still asserting the stale claim. It now pins
+  // the corrected status plus the provenance note, so a future turn cannot
+  // silently re-open the finding or quietly overstate a fresh verification.
+  test('the repair is documented, including its application status and provenance', () => {
     assert.match(DOC, /self-approval/i)
     assert.match(DOC, /users_own_profile_insert/, 'the exact policy must be named')
     assert.match(DOC, /20260730000000_user_profiles_admin_controlled_approval\.sql/)
-    assert.match(DOC, /NOT YET APPLIED|Not applied to any\s*\n?environment/i)
+    assert.match(DOC, /applied during\s*\n?R1\.5/i, 'the applied status must be stated')
+    assert.doesNotMatch(DOC, /\*\*NOT YET APPLIED\.\*\*|Not applied to any\s*\n?environment/i)
+    // The correction must never read as a fresh production check.
+    assert.match(DOC, /no database was re-queried, no migration was run/i)
     assert.match(DOC, /Rollback/i, 'and its rollback')
   })
 

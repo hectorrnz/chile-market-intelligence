@@ -79,6 +79,11 @@ export default function CompanyDetailPage() {
   // same resolver Compare uses, so the two agree. Drives the Valuation table +
   // the P/E / Div Yield / Market Cap / YTD KPIs for EVERY ticker.
   const [valuation, setValuation] = useState<ValuationResult | null>(null)
+  // R11: same failure/loading split as `newsFailed` below — without it a failed
+  // valuation or results fetch left its card at "loading" permanently, which
+  // reads as a hung request rather than the honest failure it is.
+  const [valuationFailed, setValuationFailed] = useState(false)
+  const [resultsFailed, setResultsFailed] = useState(false)
   const [newsResult, setNewsResult] = useState<NewsFetchResponse | null>(null)
   // True only when the fetch itself never returned a payload (network/HTTP
   // failure) — distinct from "still loading" (newsResult still null, fetch
@@ -116,9 +121,12 @@ export default function CompanyDetailPage() {
       if (res) setNewsResult(res)
       else setNewsFailed(true)
     }).catch(() => { if (mounted) setNewsFailed(true) })
+    // R11: a failed fetch must reach an error state, never sit at "loading"
+    // forever — the same `newsFailed` shape this effect already uses above.
     fetchEarningsResults(false).then(res => {
-      if (mounted && res) setEarningsResults(res)
-    }).catch(() => {})
+      if (!mounted) return
+      if (res) setEarningsResults(res); else setResultsFailed(true)
+    }).catch(() => { if (mounted) setResultsFailed(true) })
     fetchEarningsCalendar().then(res => {
       if (mounted && res) setEarningsCal(res)
     }).catch(() => {})
@@ -130,7 +138,9 @@ export default function CompanyDetailPage() {
   useEffect(() => {
     if (!sym) return
     let mounted = true
-    fetchValuation(sym).then(res => { if (mounted) setValuation(res) }).catch(() => {})
+    fetchValuation(sym)
+      .then(res => { if (mounted) { setValuation(res); setValuationFailed(false) } })
+      .catch(() => { if (mounted) setValuationFailed(true) })
     return () => { mounted = false }
   }, [sym, live?.lastUpdated])
 
@@ -273,8 +283,13 @@ export default function CompanyDetailPage() {
   const lv = live?.stocks[sym]
   const livePrice  = lv?.price        ?? valuation?.latestPrice ?? supaSnap?.price        ?? snap?.price
   const liveDayPct = lv?.dayChangePct ?? supaSnap?.dayChangePct ?? snap?.dayChangePct
-  const priceStatus: DataSourceStatus = live ? 'live' : (valuation?.marketDataStatus ?? (supaSnap ? 'persisted' : 'static'))
-  const priceAsOf = live ? live.lastUpdated : (supaSnap?.lastUpdated ?? null)
+  // R11: gate on THIS ticker's own live quote (`lv`), not on the page-wide
+  // fetch (`live`). A snapshot can resolve while one symbol's quote is absent —
+  // the price above already falls back per-ticker, so keying the badge and the
+  // as-of off `live` could claim "Live, as of <now>" over a persisted or static
+  // number. Same success-gated derivation Home's watchlist badge uses.
+  const priceStatus: DataSourceStatus = lv ? 'live' : (valuation?.marketDataStatus ?? (supaSnap ? 'persisted' : 'static'))
+  const priceAsOf = lv && live ? live.lastUpdated : (supaSnap?.lastUpdated ?? null)
 
   // Live valuation drives the YTD / Market Cap / P/E / Div Yield KPIs — live
   // only (no static snapshot), so nothing here is frozen sample data. They show
@@ -504,8 +519,8 @@ export default function CompanyDetailPage() {
                 </div>
               ) : (
                 <AsyncState
-                  kind={earningsResults === null ? 'loading' : 'empty'}
-                  message={earningsResults === null ? t.common.loading : t.company.noData}
+                  kind={resultsFailed ? 'error' : earningsResults === null ? 'loading' : 'empty'}
+                  message={resultsFailed ? undefined : earningsResults === null ? t.common.loading : t.company.noData}
                 />
               )}
             </GlassSurface>
@@ -522,7 +537,9 @@ export default function CompanyDetailPage() {
                 <span className="ui-label text-muted-fg">{t.company.valuation}</span>
               </div>
               <GlassSurface variant="dense" className="p-2">
-                {valuation === null ? (
+                {valuationFailed ? (
+                  <AsyncState kind="error" />
+                ) : valuation === null ? (
                   <AsyncState kind="loading" message={t.common.loading} />
                 ) : (
                   <div className="grid grid-cols-3 gap-2">
@@ -532,9 +549,11 @@ export default function CompanyDetailPage() {
                         className="flex flex-col items-center justify-center text-center px-1 py-1.5"
                         style={{ border: '1px solid var(--nv-line)', borderRadius: 'var(--radius-cell)' }}
                       >
-                        <div className="ui-label text-muted-fg mb-0.5" style={{ fontSize: '9px' }}>{label}</div>
+                        {/* R11: the shared micro-label rung (9.5px), not an
+                            inline 9px override below every declared token. */}
+                        <div className="ui-micro-label text-muted-fg mb-0.5">{label}</div>
                         <div className="text-sm ui-number text-foreground">{val}</div>
-                        {med && <div className="ui-number text-muted-fg" style={{ fontSize: '9px' }}>{med}</div>}
+                        {med && <div className="ui-number text-muted-fg" style={{ fontSize: 'var(--fs-micro-label)' }}>{med}</div>}
                       </div>
                     ))}
                   </div>
@@ -553,7 +572,10 @@ export default function CompanyDetailPage() {
           loading/empty/unavailable/error state. Zero articles is never an
           omitted section. */}
       <Reveal delayMs={290}>
-        <GlassSurface variant="card" className="overflow-hidden">
+        {/* R11: `dense`, not `card` — these are 12px news rows, and the design
+            rule is that dense content never sits on low-opacity glass. Home's
+            identical news module already uses the dense tier. */}
+        <GlassSurface variant="dense" className="overflow-hidden">
           <div className="px-4 py-2.5" style={{ borderBottom: '1px solid var(--nv-line)' }}>
             <span className="ui-label text-muted-fg">{t.company.recentNews}</span>
           </div>

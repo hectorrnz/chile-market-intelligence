@@ -285,7 +285,7 @@ function AddPositionForm({
       } else if (res.status === 422) {
         setFeedback({ type: 'err', msg: json.error === 'invalid_quantity' ? t.portfolio.invalidQuantity : t.portfolio.invalidAverageCost })
       } else if (!res.ok) {
-        setFeedback({ type: 'err', msg: json.error ?? 'Error' })
+        setFeedback({ type: 'err', msg: t.portfolio.addError })
       } else {
         setTicker(''); setQuantity(''); setAvgCost(''); setNotes('')
         setFeedback({ type: 'ok', msg: t.portfolio.added })
@@ -293,7 +293,7 @@ function AddPositionForm({
         setTimeout(() => setFeedback(null), 2500)
       }
     } catch {
-      setFeedback({ type: 'err', msg: 'Network error' })
+      setFeedback({ type: 'err', msg: t.portfolio.networkError })
     } finally {
       setLoading(false)
     }
@@ -772,7 +772,7 @@ function AddTransactionForm({
       } else if (res.status === 409 && json.error === 'insufficient_quantity') {
         setFeedback({ type: 'err', msg: t.portfolio.tx.insufficientQuantity })
       } else if (!res.ok) {
-        setFeedback({ type: 'err', msg: json.error ?? 'Error' })
+        setFeedback({ type: 'err', msg: t.portfolio.addError })
       } else {
         setTicker(''); setQuantity(''); setPrice(''); setFees(''); setTaxes(''); setNotes('')
         setFeedback({ type: 'ok', msg: t.portfolio.tx.added })
@@ -780,7 +780,7 @@ function AddTransactionForm({
         setTimeout(() => setFeedback(null), 2500)
       }
     } catch {
-      setFeedback({ type: 'err', msg: 'Network error' })
+      setFeedback({ type: 'err', msg: t.portfolio.networkError })
     } finally {
       setLoading(false)
     }
@@ -1006,9 +1006,8 @@ function AddCashForm({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ entryType, amount: amt, ledgerDate, description: description.trim() || undefined }),
       })
-      const json = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setFeedback({ type: 'err', msg: json.error ?? 'Error' })
+        setFeedback({ type: 'err', msg: t.portfolio.addError })
       } else {
         setAmount(''); setDescription('')
         setFeedback({ type: 'ok', msg: t.portfolio.cash.added })
@@ -1016,7 +1015,7 @@ function AddCashForm({
         setTimeout(() => setFeedback(null), 2500)
       }
     } catch {
-      setFeedback({ type: 'err', msg: 'Network error' })
+      setFeedback({ type: 'err', msg: t.portfolio.networkError })
     } finally {
       setLoading(false)
     }
@@ -1168,6 +1167,8 @@ export default function PortfolioPage() {
   const [transactions, setTransactions] = useState<TransactionOut[]>([])
   const [cashEntries, setCashEntries] = useState<CashEntryOut[]>([])
   const [loading, setLoading] = useState(true)
+  /** R11: a failed load must be distinguishable from an empty portfolio. */
+  const [loadError, setLoadError] = useState(false)
   const [tab, setTab] = useState<Tab>('positions')
   // Live market snapshot is shared platform-wide (see MarketDataProvider) — Update
   // on any tab refreshes it, and it survives navigating away from this page.
@@ -1259,14 +1260,20 @@ export default function PortfolioPage() {
     void (async () => {
       try {
         const res = await fetch('/api/portfolios', { cache: 'no-store' })
-        if (!res.ok || cancelled.value) { setLoading(false); return }
+        // R11: an HTTP failure is an ERROR, not an empty portfolio. Previously
+        // both this branch and the catch below fell through to loading=false
+        // with no detail, so every table rendered its confirmed-empty state —
+        // a failed load was indistinguishable from a genuinely empty account.
+        // `!pf` stays non-error: no portfolio yet is a real, honest empty.
+        if (!res.ok) { if (!cancelled.value) setLoadError(true); setLoading(false); return }
+        if (cancelled.value) { setLoading(false); return }
         const json = await res.json()
         const pf = json.portfolios?.[0]
         if (!pf || cancelled.value) { setLoading(false); return }
         setPortfolioId(pf.id)
         await loadDetail(pf.id, cancelled)
       } catch {
-        // network error — leave loading state, show empty
+        if (!cancelled.value) setLoadError(true)
       } finally {
         if (!cancelled.value) setLoading(false)
       }
@@ -1327,6 +1334,8 @@ export default function PortfolioPage() {
 
       {loading ? (
         <AsyncState kind="loading" message={t.common.loading} />
+      ) : loadError ? (
+        <AsyncState kind="error" />
       ) : (
         <>
           {/* Region A — asymmetric hero row (Fable Overview §1: no equal-card grid) */}

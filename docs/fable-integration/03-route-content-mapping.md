@@ -29,13 +29,13 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
 | 8 | `/companies/[ticker]` | Stocks · TICKER | public | 2 Portfolio detail panel + 3 Performance | Yes — company detail (KPI capsules, chart, valuation grid, results, news) | Done | Verified |
 | 9 | `/watchlist` 🔒 | Watchlist | protected | 2 Portfolio (DataTable) | No (reused Phase 3 `TableCard` + `AsyncState`) | **✓ Phase 5B (2026-07-28)** | **✓ Source + protected-route verified** |
 | 10 | `/portfolio` 🔒 | Portfolio | protected | 1 Overview + 2 Portfolio + 4 Risk | No (reused Phase 3 `TableCard`/`KpiCapsule`/`ChangeIndicator`/`SegmentedControl`/`GlassSurface`/`AsyncState`) | **✓ Phase 5H (2026-07-29)** | **✓ Source-scan verified** |
-| 11 | `/structured-notes` 🔒 | Structured Notes | protected | 6 Structured Notes | Yes — barrier gauge, upload/extract panel, dashboard KPIs, bar/donut | Not started | Not verified |
-| 12 | `/structured-notes/[id]` 🔒 | note ISIN/name | protected | 6 SN detail panel | Yes — terms grid, current-levels table, schedule, allocation grid | Not started | Not verified |
+| 11 | `/structured-notes` 🔒 | Structured Notes | protected | 6 Structured Notes | Yes — barrier gauge, upload/extract panel, dashboard KPIs, bar/donut | **✓ R7 (2026-07-31)** · privacy masking added R11 | **✓ Source-scan verified** |
+| 12 | `/structured-notes/[id]` 🔒 | note ISIN/name | protected | 6 SN detail panel | Yes — terms grid, current-levels table, schedule, allocation grid | **✓ R7.1 (2026-07-31)** · privacy masking added R11 | **✓ Source-scan verified** |
 | 13 | `/settings` 🔒 | Settings | protected | 10 Administration | Yes — Account, Data Sources, Security, Display, Notification Recipients | **R9.2 + R9.3 + R9.4 implemented (2026-08-04)** | Automated complete; manual pending |
 | 13b | `/settings/notifications` 🔒 | Notification Settings | protected | 10 Administration | Yes — recipients table, add form | Unchanged pending R9.4 | Not verified |
 | 14 | `/login` | Sign in / Create account | public (auth) | 0 Login | Yes — cinematic login shell, glass auth panel | **R1 implemented (2026-07-29)** | Automated complete; manual pending |
-| 15 | `/forgot-password` | Reset your password | public (auth) | 0 Login (variant) | Yes — auth-panel variant | Not started | Not verified |
-| 16 | `/auth/reset-password` | Set a new password | public (auth) | 0 Login (variant) | Yes — auth-panel variant | Not started | Not verified |
+| 15 | `/forgot-password` | Reset your password | public (auth) | 0 Login (variant) | Yes — auth-panel variant | **✓ R1.6 (2026-07-30)** | **✓ Source-scan verified** |
+| 16 | `/auth/reset-password` | Set a new password | public (auth) | 0 Login (variant) | Yes — auth-panel variant | **✓ R1.6 (2026-07-30)** | **✓ Source-scan verified** |
 
 > Every route needs at least some new/adapted components because NMI's data footprint is
 > **richer** than the Fable sample on most screens (merge-contract point 3). Only `/stocks`,

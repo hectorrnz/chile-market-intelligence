@@ -129,12 +129,22 @@ Both were verified against the connected project on **2026-07-30**.
 
 | # | Finding | Status |
 |---|---|---|
-| 1 | `user_profiles` RLS permitted self-approval | **Migration written — NOT YET APPLIED.** See §2b |
+| 1 | `user_profiles` RLS permitted self-approval | **RESOLVED** — the §2b migration was applied during R1.5; local/remote migration parity confirmed in that execution record |
 | 2 | Public Supabase signup enabled | **RESOLVED 2026-07-30** by the administrator; re-verified `disable_signup: true` |
 
-Until the §2b migration is applied to production, the approval boundary is
-enforced by the application but not by the database: a user holding any session
-can still grant it to themselves.
+Both findings are closed. The approval boundary is now enforced by the database
+as well as the application: `user_profiles` is administrator-controlled, so a
+session-holder can no longer grant approval to itself.
+
+> **Provenance of this status (R11.1, 2026-08-05).** These lines previously read
+> "NOT YET APPLIED". That was stale: the R1.5 execution record confirms the
+> migration was applied, local and remote migration histories agree, approved-user
+> access enforcement was exercised, public signup is disabled, an existing
+> approved test user retained access, and R1.5 end-to-end validation passed. This
+> correction reconciles the documentation with that previously completed record —
+> **no database was re-queried, no migration was run, and nothing was deployed in
+> the R11.1 turn.** Re-verify independently with the read-only procedure in §4a
+> after any Supabase project change.
 
 ### Finding 1 — the former unsafe policies
 
@@ -191,12 +201,15 @@ mailer_autoconfirm : false
 external providers : email
 ```
 
-This closes the outsider's route to an `auth.users` identity. **It does not
-close BLOCKING 1**: an identity that already exists — or any existing approved
-user — can still write its own `user_profiles` row with the anon key, so the
-self-approval and self-restoration paths remain open until the RLS repair above
-is applied. The specific bypass this control removed was: direct `signUp` →
-confirm the address you control → `INSERT` your own profile row → full access.
+This closes the outsider's route to an `auth.users` identity. The specific bypass
+it removed was: direct `signUp` → confirm the address you control → `INSERT` your
+own profile row → full access.
+
+On its own it would **not** have closed Finding 1 — an identity that already
+existed could still have written its own `user_profiles` row with the anon key.
+That remaining path was closed separately by the §2b migration, which was applied
+during R1.5 (see the provenance note in §2a). The two controls are independent:
+this one is a deployment setting, that one is schema-level.
 
 This is a **deployment setting, not code** — it can be switched back at any time
 and is not enforced by anything in this repository. Re-verify with the procedure
@@ -207,8 +220,10 @@ in §4a after any Supabase project change, and keep the log there current.
 ## 2b · The repair — `user_profiles` becomes administrator-controlled
 
 Migration: **`supabase/migrations/20260730000000_user_profiles_admin_controlled_approval.sql`**
-— forward-only, re-runnable, privileges and policies only. **Not applied to any
-environment.**
+— forward-only, re-runnable, privileges and policies only. **Applied during
+R1.5; local and remote migration histories confirmed in parity in that execution
+record.** (Status reconciled in R11.1 — see the provenance note in §2a. The
+database was not re-queried in that turn.)
 
 ### What it does
 
@@ -327,6 +342,10 @@ their row and their `username`, so sign-in, the per-request approval lookup and
 password recovery all continue to work unchanged.
 
 ### Applying this migration
+
+**Already applied (R1.5).** The procedure below is retained as the reference for
+re-applying it to a fresh environment, and as the standing rule for every future
+migration in this repository.
 
 Database changes in this repository are managed as files under
 `supabase/migrations/` and applied with the Supabase CLI. Do **not** paste this

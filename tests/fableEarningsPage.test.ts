@@ -448,10 +448,16 @@ describe('Phase 5G — scope held', () => {
     assert.ok(!macroCal.includes('earningsCalSource') && !macroCal.includes('recentResults'))
   })
 
-  it('company-detail earnings integrity remains unmodified (still its own AsyncState loading/empty mapping)', () => {
+  it('company-detail earnings integrity remains its own independent AsyncState mapping', () => {
+    // The point of this Phase-5G guard is that the Earnings route never took
+    // over the company page's own state handling. That still holds. R11
+    // deliberately STRENGTHENED the company page's mapping — adding a distinct
+    // error state, because a failed fetch previously sat at "loading" forever —
+    // so the assertion follows the enduring contract (its own loading/empty
+    // distinction, driven by its own local state) rather than the old literal.
     const company = read('src/app/companies/[ticker]/page.tsx')
-    assert.match(company, /kind=\{earningsResults === null \? 'loading' : 'empty'\}/)
-    assert.match(company, /message=\{earningsResults === null \? t\.common\.loading : t\.company\.noData\}/)
+    assert.match(company, /kind=\{resultsFailed \? 'error' : earningsResults === null \? 'loading' : 'empty'\}/)
+    assert.match(company, /message=\{resultsFailed \? undefined : earningsResults === null \? t\.common\.loading : t\.company\.noData\}/)
   })
 
   it('leaves access control to the shared policy (Earnings is now private)', async () => {

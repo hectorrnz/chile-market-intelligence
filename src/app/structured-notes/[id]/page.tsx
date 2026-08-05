@@ -75,6 +75,7 @@ import { TableCard } from '@/components/fable/TableCard'
 import { BarrierGauge, type BarrierMark } from '@/components/fable/BarrierGauge'
 import { AsyncState } from '@/components/fable/AsyncState'
 import { DestructiveConfirm } from '@/components/fable/ModalShell'
+import { usePrivacyMode } from '@/components/fable/usePrivacyMode'
 import { Reveal } from '@/components/fable/motion'
 
 interface Distance {
@@ -104,6 +105,7 @@ interface DetailResponse {
 
 export default function StructuredNoteDetailPage() {
   const { t } = useLang()
+  const [masked] = usePrivacyMode()
   const params = useParams<{ id: string }>()
   const router = useRouter()
   const id = params.id
@@ -314,7 +316,8 @@ export default function StructuredNoteDetailPage() {
             tone={nearObs ? 'var(--negative)' : undefined}
           />
           <StatCapsule label={t.sn.colCoupon} value={fmtPct(n.couponRateAnnualized)} />
-          <StatCapsule label={t.sn.colNotional} value={`${n.currency} ${fmtNum(data.metrics.currentNotional)}`} />
+          {/* R11: private amount — same masking boundary as the book total. */}
+          <StatCapsule label={t.sn.colNotional} value={`${n.currency} ${fmtNum(data.metrics.currentNotional)}`} masked={masked} />
           <StatCapsule label={t.sn.colMaturity} value={n.maturityDate ?? '—'} />
         </div>
       </Reveal>
