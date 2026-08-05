@@ -1,0 +1,100 @@
+name: Sync Data to Feature Branches
+
+# WHY THIS EXISTS
+# ---------------
+# `refresh-market-data.yml` and `refresh-earnings-calendar.yml` both check out
+# the default branch, commit the refreshed src/data/*.json snapshot, and push —
+# to `master` only. A long-lived feature branch therefore keeps whatever data
+# baseline it forked with, and that baseline is what every YTD column and every
+# pre-live-overlay render falls back to. On 2026-08-05 that surfaced as a
+# feature branch showing "21-July" dates everywhere while the refresh pipelines
+# were running green: not an ingestion failure at all, just branch drift.
+#
+# This workflow closes that gap: whenever a data refresh lands on master, the
+# same commit is merged into every `feat/**` branch.
+#
+# SAFETY RULES (deliberately conservative — an Action must not make integration
+# decisions on a human's behalf):
+#   * It merges ONLY when everything master would bring in lives under
+#     src/data/. The moment master carries a source change the branch lacks,
+#     that branch is skipped with a warning — merging code is a human call.
+#   * A merge that conflicts is aborted and the branch is left exactly as it
+#     was. Nothing is ever force-pushed and no branch is ever rewritten.
+#   * It cannot loop: it triggers only on pushes to master, and it only ever
+#     pushes to feature branches.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'src/data/**'
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout (full history — merges need every branch)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge refreshed data into each feature branch
+        run: |
+          set -euo pipefail
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin --prune
+
+          BRANCHES=$(git for-each-ref --format='%(refname:strip=3)' 'refs/remotes/origin/feat/**')
+
+          if [ -z "$BRANCHES" ]; then
+            echo "No feat/** branches — nothing to sync."
+            echo "No \`feat/**\` branches to sync." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "## Data sync" >> "$GITHUB_STEP_SUMMARY"
+
+          for BRANCH in $BRANCHES; do
+            echo "::group::$BRANCH"
+
+            if git merge-base --is-ancestor origin/master "origin/$BRANCH"; then
+              echo "Already contains master — nothing to do."
+              echo "- \`$BRANCH\` — already up to date" >> "$GITHUB_STEP_SUMMARY"
+              echo "::endgroup::"
+              continue
+            fi
+
+            BASE=$(git merge-base origin/master "origin/$BRANCH")
+            INCOMING=$(git diff --name-only "$BASE" origin/master)
+
+            # Anything outside src/data/ means master carries source changes this
+            # branch has not integrated. Skip loudly rather than merge code.
+            if echo "$INCOMING" | grep -qv '^src/data/'; then
+              echo "master carries non-data changes — skipping (needs a human merge):"
+              echo "$INCOMING" | grep -v '^src/data/' | head -20
+              echo "- \`$BRANCH\` — **skipped**: master has source changes; merge it yourself" >> "$GITHUB_STEP_SUMMARY"
+              echo "::endgroup::"
+              continue
+            fi
+
+            git checkout -B "$BRANCH" "origin/$BRANCH"
+
+            if git merge origin/master --no-ff -m "chore(data): sync refreshed market data from master"; then
+              git push origin "$BRANCH"
+              echo "Merged and pushed."
+              echo "- \`$BRANCH\` — synced" >> "$GITHUB_STEP_SUMMARY"
+            else
+              git merge --abort || true
+              echo "::warning title=Data sync conflict::$BRANCH conflicts with master's data refresh; left untouched."
+              echo "- \`$BRANCH\` — **conflict**, left untouched" >> "$GITHUB_STEP_SUMMARY"
+            fi
+
+            echo "::endgroup::"
+          done
