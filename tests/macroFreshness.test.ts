@@ -106,6 +106,20 @@ describe('index YTD baseline (IPSA)', () => {
     assert.match(py, /def _year_start/)
   })
 
+  test('the refresh script never half-updates an index row (2026-08-05 COLCAP guard)', () => {
+    // Real bug caught by the test above once master's refreshed data was
+    // merged in: `_last` needs only 1 bar while `_day_pct`/`_ytd_pct`/
+    // `_year_start` need 2, and Yahoo serves exactly one bar for the thin
+    // proxies (^IPSA, and ^SPCOSLCP behind COLCAP). So every refresh wrote a
+    // fresh `value` beside a frozen day change and a frozen YTD — COLCAP
+    // drifted to an implied -2.69% while still publishing -4.1%. A row is now
+    // written only when one fetch can supply every field.
+    const py = readFileSync(join(ROOT, 'scripts/refresh/refreshMarketData.py'), 'utf8')
+    assert.match(py, /MIN_INDEX_BARS = 2/)
+    assert.match(py, /if p is not None and len\(s\) >= MIN_INDEX_BARS:/)
+    assert.match(py, /cannot derive day\/YTD/)
+  })
+
   test('the live-snapshot route seeds baselines from the committed file (covers ^IPSA)', () => {
     const src = readFileSync(join(ROOT, 'src/app/api/market/live-snapshot/route.ts'), 'utf8')
     assert.match(src, /committedYearStarts/)

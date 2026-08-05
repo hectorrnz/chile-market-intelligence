@@ -305,11 +305,32 @@ The script uses `yfinance` to download YTD close prices for all 25 tickers and 1
 writes updated JSON to `src/data/`, and commits only if data changed. Vercel auto-redeploys
 on each commit.
 
+An index row is rewritten **only when a single fetch supplies every field** (`MIN_INDEX_BARS`,
+2 daily bars). Yahoo serves exactly one bar for the thin proxies — `^IPSA` and `^SPCOSLCP`
+(behind COLCAP) — and a one-bar series can yield a price but no day change, YTD or year-start
+baseline. Writing the price alone used to leave a fresh value beside a frozen day change and a
+frozen YTD that no longer reconciled with it (found 2026-08-05: COLCAP had drifted to an implied
+−2.69% YTD while still publishing −4.1%). Those two rows now keep their last internally
+consistent snapshot, and the live-snapshot route below supplies their current price and day
+change at request time from `quote()` plus the committed `yearStartClose`. Guarded by
+`tests/macroFreshness.test.ts`.
+
 **2. Next.js live-snapshot API route (on-demand)**
 
 `GET /api/market/live-snapshot` uses `yahoo-finance2` (npm) to batch-quote all symbols
 server-side. The UI refresh button (↻) calls this route and overlays live data on top
 of the static baseline in client state. No redeploy needed.
+
+**3. Branch sync (`sync-data-to-branches.yml`)**
+
+Both refresh workflows check out the default branch and push to `master` only, so a long-lived
+feature branch keeps whatever data baseline it forked with — and that baseline is what every YTD
+column and every pre-live-overlay render falls back to. On 2026-08-05 a branch 36 commits behind
+master showed "21-July" dates throughout while both pipelines were running green, which read as
+an ingestion failure. This workflow closes the gap: when a data refresh lands on `master`, it
+merges that commit into every `feat/**` branch. It merges **only** when everything master would
+bring in lives under `src/data/` (source changes stay a human decision), aborts and warns on
+conflict, and never force-pushes. Guarded by `tests/dataBranchSync.test.ts`.
 
 ### Running the refresh script locally
 

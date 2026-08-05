@@ -97,6 +97,11 @@ INDICES: dict[str, str] = {
 
 SOURCE = 'yfinance / Yahoo Finance'
 
+# Minimum daily bars before an index row may be rewritten. Below this a day
+# change, a YTD and a year-start baseline are all underivable, so the row must
+# be left alone rather than half-updated (see refresh_indices).
+MIN_INDEX_BARS = 2
+
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -270,7 +275,18 @@ def refresh_indices(today: str) -> int:
         yp = _ytd_pct(s)
         ys = _year_start(s)
 
-        if p is not None:
+        # A row is written only when the SAME fetch can supply every field.
+        # `_last` needs 1 bar but `_day_pct`/`_ytd_pct`/`_year_start` all need
+        # 2, and Yahoo serves exactly one bar for the thin proxies (^IPSA, and
+        # ^SPCOSLCP behind COLCAP). Updating `value` alone therefore left a
+        # fresh price beside a frozen day change and a frozen YTD that no
+        # longer reconciled with it — COLCAP drifted to an implied -2.69% YTD
+        # while still publishing -4.1%. Skip the whole row instead and keep the
+        # last internally-consistent one; the app's live-snapshot route already
+        # derives these at request time from quote() plus the committed
+        # yearStartClose (see MIN_YEAR_BARS there), which is the documented
+        # path for exactly these two indices.
+        if p is not None and len(s) >= MIN_INDEX_BARS:
             entry = {
                 **entry,
                 'value':         p,
@@ -288,7 +304,8 @@ def refresh_indices(today: str) -> int:
             print(f'  ✓ {idx_id} ({yf_sym}): {p}  day={dp_str}', flush=True)
             ok += 1
         else:
-            print(f'  – {idx_id} ({yf_sym}): no data, keeping static', flush=True)
+            why = 'no data' if p is None else f'only {len(s)} bar(s), cannot derive day/YTD'
+            print(f'  – {idx_id} ({yf_sym}): {why}, keeping static', flush=True)
 
         updated.append(entry)
 
