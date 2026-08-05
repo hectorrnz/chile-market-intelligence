@@ -369,7 +369,10 @@
   --space-hero-x: 22px;
   --space-grid-gap: 14px;
   --space-row-y: 9px;
-  --content-max-w: 1560px;
+  /* R10.3 (user-directed width rebalance): widened from the Fable export's
+     1560px so the desktop canvas keeps only the refined 24px gutter at 1728.
+     One token — TopBar, SecondaryNav and <main> all read it. */
+  --content-max-w: 1680px;
 
   /* ── Motion (design_principles §12.1) ─────────────────────────────────── */
   --ease-primary:   cubic-bezier(.22, .61, .36, 1);

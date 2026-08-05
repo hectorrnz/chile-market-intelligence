@@ -90,7 +90,7 @@ describe('primary navigation: desktop pill rail + accessible mobile drawer', () 
     assert.doesNotMatch(src, /<Sidebar/)
   })
 
-  test('the shell centers content at the 1560px Fable max-width', () => {
+  test('the shell centers content at the tokenised Fable max-width', () => {
     const src = read('src/components/layout/AppShell.tsx')
     assert.match(src, /max-w-\(--content-max-w\)/)
     assert.match(src, /mx-auto/)
@@ -109,15 +109,29 @@ describe('topbar compresses instead of overflowing', () => {
 })
 
 describe('dashboard grids collapse', () => {
-  test('Home regions are 1-col below lg', () => {
+  // Phase R10 rebuilt Home onto the Fable composition; R10.3 (the
+  // user-directed width/density rebalance) put the analytical modules into
+  // two responsive PEER grids — 1 col below lg, 2 cols at lg with the third
+  // card spanning both (never an isolated narrow card), 3 similar-weight cols
+  // from xl. The hero row keeps its asymmetric wrapping-flex composition.
+  // Updated deliberately — the guarantee is unchanged: every region collapses
+  // to one column on phones, and no fixed unprefixed multi-col grid exists.
+  test('Home analytical rows are responsive peer grids; the hero row still wraps', () => {
     const src = read('src/app/page.tsx')
-    const m = src.match(/grid grid-cols-1 lg:grid-cols-3 gap-4 items-start/g) ?? []
-    assert.equal(m.length, 2, 'both Home regions collapse')
+    assert.match(src, /ANALYTIC_ROW = 'grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 items-stretch'/)
+    assert.equal((src.match(/className=\{ANALYTIC_ROW\}/g) ?? []).length, 2, 'Row A and Row B share the one responsive grid recipe')
+    assert.match(src, /ANALYTIC_SPAN = 'lg:col-span-2 xl:col-span-1'/)
     assert.doesNotMatch(src, /"grid grid-cols-3 gap-4 items-start"/)
+    // Hero columns still carry a `min(100%, …)` basis so each wraps to full
+    // width below its threshold — none can force horizontal overflow.
+    assert.ok((src.match(/minWidth: 'min\(100%,/g) ?? []).length >= 3, 'every hero flex column collapses')
+    assert.ok((src.match(/flex flex-wrap items-stretch gap-4/g) ?? []).length >= 1, 'the hero row wraps')
   })
 
-  test('Home heat-map tiles drop to 2-wide on phones', () => {
-    assert.match(read('src/app/page.tsx'), /grid grid-cols-2 sm:grid-cols-3 gap-2/)
+  test('Home heat-map tiles are 2-across — sized for the one-third-width Row B card (R10.3)', () => {
+    const src = read('src/app/page.tsx')
+    assert.match(src, /grid grid-cols-2 gap-2/)
+    assert.doesNotMatch(src, /sm:grid-cols-3/)
   })
 
   test('Company page KPI strip, business panels and results row collapse', () => {
@@ -154,12 +168,18 @@ describe('dashboard grids collapse', () => {
 })
 
 describe('measured-height pinning only binds at lg+', () => {
-  test('Home applies macroH/heatH via the --pin-h CSS variable', () => {
+  // Phase R10 removed Home's measured-height pinning entirely: cards take
+  // natural height and dense lists scroll inside their card via a maxHeight
+  // cap instead — so stacked mobile cards can never be locked to an unrelated
+  // driver card's height. The old guarantee (no inline height lock) endures.
+  test('Home no longer pins card heights — natural height + in-card scroll', () => {
     const src = read('src/app/page.tsx')
-    // ≥4: the four pinned columns (comments may mention the class too).
-    assert.ok((src.match(/lg:h-\(--pin-h\)/g) ?? []).length >= 4, 'four pinned columns')
+    assert.equal((src.match(/lg:h-\(--pin-h\)/g) ?? []).length, 0, 'no pinned columns remain')
     assert.doesNotMatch(src, /style=\{\{ height: macroH/)
     assert.doesNotMatch(src, /style=\{\{ height: heatH/)
+    assert.doesNotMatch(src, /ResizeObserver/)
+    // Vertical containment moved to card-level scroll caps.
+    assert.ok((src.match(/maxHeight/g) ?? []).length >= 3, 'dense Home lists cap and scroll in-card')
   })
 
   test('Company page applies valH the same way', () => {

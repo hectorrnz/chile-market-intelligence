@@ -399,7 +399,10 @@ Every pixel carries information. Whitespace separates data groups; it does not f
 
 - **Intrinsic-first.** Prefer `flex: <grow> 1 <basis>px` wrapping rows, `grid auto-fit
   minmax()`, `clamp()` type, and `min-width: 0` on flex children over hard media queries.
-- **Design targets:** 1440+, 1280, 1024, 768, 390. Content max-width `1560px`, centered.
+- **Design targets:** 1440+, 1280, 1024, 768, 390. Content max-width `1680px`, centered
+  (`--content-max-w`; widened from the Fable export's 1560px in R10.3, user-directed, so
+  desktop keeps only the refined 24px gutter at 1728 — TopBar, SecondaryNav and `<main>`
+  all read the one token).
 - **Zero page-level horizontal overflow at every breakpoint.** This is absolute. Never
   reintroduce a root `min-width`.
 - **Dense tables scroll inside their own card** (`overflow-x-auto` + a `min-w` on the table) —

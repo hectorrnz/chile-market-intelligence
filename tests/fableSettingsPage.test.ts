@@ -1609,13 +1609,24 @@ describe('R9.6 · the Settings control', () => {
 })
 
 describe('R9.6 · Home and Portfolio consumers', () => {
-  test('23, 25-29. Home renders no user-specific AMOUNT, so no consumer was fabricated', () => {
-    // Home's only user-specific element is WHICH tickers are on the watchlist;
-    // every value it prints beside them is public market data. It reads no
-    // portfolio endpoint at all, so there is nothing here to mask.
-    assert.doesNotMatch(HOME, /\/api\/portfolios|portfolioValue|totalMarketValue|costBasis|netCashBalance|unrealizedPnL/)
-    assert.doesNotMatch(HOME, /PrivacyValue|usePrivacyMode/)
-    // And its watchlist columns are exactly the public ones.
+  test('23, 25-29. Home consumes the shared boundary for every portfolio-derived amount (R10)', () => {
+    // R9.6 found no user-specific amount on Home and fabricated no consumer.
+    // Phase R10 SUPERSEDED that finding by design: Home now renders a real
+    // portfolio snapshot from the same endpoints /portfolio reads — so the
+    // enduring property is no longer "Home has nothing to mask" but "every
+    // portfolio-derived amount on Home masks through the ONE shared boundary".
+    // Guarded in depth by tests/fableHomePage.test.ts; pinned here so this
+    // suite's consumer inventory stays truthful.
+    assert.match(HOME, /import \{ PrivacyValue \} from '@\/components\/fable\/PrivacyValue'/)
+    assert.match(HOME, /import \{ usePrivacyMode \} from '@\/components\/fable\/usePrivacyMode'/)
+    assert.match(HOME, /\/api\/portfolios/)
+    // The hero amount renders inside the boundary, fed by the SAME valuation
+    // helpers the Portfolio page uses — never a second derivation.
+    const at = HOME.indexOf('formatCLP(pfTotals.totalMarketValue)')
+    assert.ok(at > -1, 'the portfolio hero value must render')
+    assert.ok(HOME.slice(Math.max(0, at - 200), at).includes('<PrivacyValue masked={masked}>'))
+    assert.match(HOME, /valuePositions, calculatePortfolioTotals/)
+    // Public watchlist columns stay exactly the public ones, unmasked.
     assert.match(HOME, /formatCLP\(price\)/)
     assert.match(HOME, /\/api\/watchlists/)
   })
@@ -1728,15 +1739,19 @@ describe('R9.6 · hydration, accessibility and honesty', () => {
     assert.ok(requiresApprovedSession('/portfolio'))
   })
 
-  test('79-86. scope — no redesign, no new primitive, no dependency, R10 still pending', () => {
+  test('79-86. scope — no new primitive, no dependency; Home consumes the same boundary (R10)', () => {
     // Portfolio keeps its Fable composition ratios and every region.
     for (const c of ['FABLE_HERO', 'FABLE_ASIDE', 'FABLE_MAIN', 'FABLE_RAIL']) {
       assert.ok(PORTFOLIO.includes(c), `${c} composition preserved`)
     }
     assert.match(PORTFOLIO, /<SegmentedControl/)
     assert.equal((PORTFOLIO.match(/<TableCard/g) ?? []).length, 3)
-    // Home was not touched at all by this phase.
-    assert.doesNotMatch(HOME, /R9\.6|PrivacyValue|usePrivacyMode/)
+    // The R9.6-era "Home was not touched" hold was superseded by Phase R10,
+    // which redesigned Home under its own brief (tests/fableHomePage.test.ts).
+    // The ENDURING properties: Home masks through the one shared boundary and
+    // never re-implements it or names the storage key (see test 1-4 above).
+    assert.match(HOME, /usePrivacyMode/)
+    assert.doesNotMatch(code(HOME), /role="img"|•/)
     // No new shared primitive file appeared.
     assert.ok(existsSync(join(ROOT, 'src/components/fable/PrivacyValue.tsx')))
     assert.ok(!existsSync(join(ROOT, 'src/components/fable/PrivacyProvider.tsx')))

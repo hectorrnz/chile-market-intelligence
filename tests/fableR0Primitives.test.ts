@@ -421,9 +421,10 @@ describe('shell width — header rows and main share the one --content-max-w cap
   test('AppShell main still carries the same cap — no duplicated numeric width anywhere', () => {
     assert.match(APPSHELL, /max-w-\(--content-max-w\)/)
     for (const src of [TOPBAR, SECONDARY, APPSHELL]) {
-      assert.doesNotMatch(src, /1560/)
+      assert.doesNotMatch(src, /1560|1680/)
     }
-    assert.match(CSS, /--content-max-w:\s*1560px/)
+    // R10.3 (user-directed width rebalance): the one token moved 1560 → 1680.
+    assert.match(CSS, /--content-max-w:\s*1680px/)
   })
 })
 

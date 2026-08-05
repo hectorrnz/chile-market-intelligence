@@ -459,14 +459,12 @@ describe('Phase 5A — scope held', () => {
     // brief — real phase boundaries moving, not a relaxed assertion. They are
     // guarded by `tests/fableWatchlistPage.test.ts` /
     // `tests/fableComparePage.test.ts` / `tests/fableMacroPage.test.ts` /
-    // `tests/fableEarningsPage.test.ts` / `tests/fablePortfolioPage.test.ts`,
-    // and the pages below still hold the line.
-    for (const other of [
-      'src/app/page.tsx',
-    ]) {
-      assert.ok(existsSync(join(ROOT, other)), `${other} must still exist`)
-      assert.ok(!read(other).includes('@/components/fable/TableCard'), `${other} has had no re-skin phase yet`)
-    }
+    // `tests/fableEarningsPage.test.ts` / `tests/fablePortfolioPage.test.ts`.
+    // `/` (Home) was removed from this list in Phase R10 — the last remaining
+    // pre-Fable route, migrated to `TableCard` under its own brief; a real
+    // phase boundary moving, not a relaxed assertion. It is guarded by
+    // `tests/fableHomePage.test.ts`. The canonical route itself must remain.
+    assert.ok(existsSync(join(ROOT, 'src/app/page.tsx')), 'src/app/page.tsx must still exist')
   })
 
   it('SearchInput is consumed only by /stocks', () => {

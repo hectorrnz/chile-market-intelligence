@@ -998,13 +998,110 @@ documentation defect** were demonstrated and repaired; everything else audited c
 - [x] **Automated results.** `fableSettingsPage` 113 → **126**; `fableComponents` +2 and 3 updated;
   `fablePortfolioPage` 2 updated; `responsiveLayout` +3. Focused **1141/1141**. Full suite 4014 →
   **4035 · 4032 pass · 3 fail** (only the known `newsModule` trio); lint 0; build 0 errors.
-- [x] **R10 — the Fable Home redesign — remains PENDING.**
+- [x] **R10 — the Fable Home redesign — remains PENDING.** *(Superseded: implemented in R10 below;
+  its own manual gate is pending.)*
 - [ ] **Manual browser validation — PENDING.** 320/390/1024/1728, EN/ES, light/dark, privacy OFF/ON,
   reload with each stored state, cross-tab both directions, across Settings, Home and Portfolio. See
   the R9.6 gate: control placement and accuracy, immediate save, truthful copy, Spanish wrapping,
   keyboard and focus; only private amounts masked on Portfolio with public prices and percentages
   intact; sorting and filtering still working; tables still aligned; **no raw-value flash on a
   stored-ON reload**; Home unchanged; and no page-level overflow anywhere.
+
+#### R10 · Home — the institutional command center
+
+- [x] **Starting state.** Clean tree at `3996221` (`feat(privacy): wire portfolio masking and
+  Settings control`), synced with origin.
+- [x] **Audit first.** Full data-contract inventory (portfolio, structured notes, macro/calendar,
+  earnings, news, watchlist, health, stock history) and a full test-constraint inventory (~60 Home
+  assertions across 13 suites) produced BEFORE any edit; every module classified
+  include / include-with-limitation / exclude / defer. Recorded in doc 03 §1 + doc 04 R10.
+- [x] **Composition.** Command strip → portfolio snapshot · notes snapshot · Current Actions →
+  macro pulse · events timeline → banded macro · watchlist+FX · rates → heat map · markets → news.
+  Deliberate asymmetry (1.7/1/1.15 hero row), no equal-card grid, Fable primitives only
+  (`PageHeader`, `GlassSurface`, `TableCard`, `AsyncState`, `ChangeIndicator`, `Sparkline`,
+  `CurrentActions` — its first consumer — `PrivacyValue`, `Reveal`).
+- [x] **Substance preserved.** Every pre-R10 Home module, control, state, badge, footer and
+  interaction remains (watchlist sort/sign-in/empty, rates drag-order, band markup, NH news rows,
+  per-band macro badges/footers) — verified by the unchanged `homeWatchlistOverhaul`,
+  `dataSourceAudit`, `macroSeriesDualProvider`, `thirdRoundFixes`, `marketDataProvider`,
+  `passwordResetAndUpdateButton` and `tableSourceFooterConvention` suites.
+- [x] **Data honesty.** No fabricated value, timestamp, source or health claim; per-module
+  loading/error/unavailable/empty states; zero events ≠ failed source (three per-source
+  disclosure lines); macro-pulse sparklines only from live/persisted history; no portfolio daily
+  P&L (no series exists); no watchlist sparklines (static bundle stale/partial — excluded, not
+  faked).
+- [x] **Portfolio agreement.** Same endpoints, same `valuePositions` + `calculatePortfolioTotals`,
+  same live overlay as `/portfolio` — asserted by `fableHomePage` (no second derivation, no inline
+  arithmetic).
+- [x] **Privacy.** Six private amounts masked through the shared boundary; percentages/counts/
+  public data visible; one `usePrivacyMode()` read; key never named; no CSS trick; fetches never
+  see privacy state. R9.6's "Home has no private values" holds superseded explicitly.
+- [x] **Structured-notes semantics.** Allocation-based Nevada notional only (`issueSize` and
+  `custodian` never referenced on Home); mixed currency disclosed; valid deep links.
+- [x] **Accessibility.** One `h1`; h2/h3 hierarchy; section landmarks; labeled launcher nav;
+  `caption` + `scope="col"`; list semantics; `aria-sort` + button sortable headers; sparkline
+  summaries; no color-only meaning; motion via shared reduced-motion-gated utilities only.
+- [x] **Localization.** 22 new `home.*` keys in exact EN/ES parity (asserted); title
+  "Overview"/"Resumen"; dates via the active locale; identifiers/source names untranslated.
+- [x] **Performance.** Every endpoint fetched once; independent requests parallel
+  (`Promise.all` ×3+); `AbortController` on every module fetch; no polling; no chart library; no
+  hidden duplicate trees; no full-page blocking loader — modules load progressively.
+- [x] **Security.** No service-role/admin/`process.env`/console in Home; `/` still `private_page`
+  under the unchanged default-deny policy; read-only API usage.
+- [x] **Automated results.** NEW `tests/fableHomePage.test.ts` (45). Superseded deliberately:
+  2 R9.6 Home holds in `fableSettingsPage`; Home's grid/pinning tests in `responsiveLayout`;
+  the no-`TableCard` boundary holds in `fableStocksPage`/`fableWatchlistPage`/
+  `fableMacroCalendarPage`/`fablePortfolioPage` (standard boundary-moved comments). Full suite
+  4035 → **4080 · 4077 pass · 3 fail** (only the known `newsModule` trio); lint 0; build 0 errors
+  (18/18); tsc 0 `src/` errors; `git diff --check` clean.
+- [x] **R10.1 — one design, one macro surface (2026-08-05, user-directed).** The pulse strip,
+  banded Chile/US macro card and FX band merged into ONE Fable Macro card (every indicator
+  exactly once — US 10Y was on two surfaces, USD/CLP on three; per-band BCCh/FRED badges and
+  footers kept); Watchlist rebuilt as a pure Fable table (badge in controls, sticky
+  `--surface-table` headers); rates/Markets rebuilt as Fable list rows with `ChangeIndicator`;
+  heat tiles on a dense surface with `rounded-md`; the last fixed 3-col grid became a wrapping
+  flex row. News keeps its NH anatomy by product rule. Tests updated deliberately
+  (`homeWatchlistOverhaul` consolidation contract, `responsiveLayout` 0-grid, `fableHomePage`
+  +1 dedup test); dead keys `home.pulseTitle`/`home.fxTitle` removed. Full suite **4081 · 4078 ·
+  3** (authorized trio); lint 0; build 0.
+- [x] **R10.2 — seven user-feedback refinements (2026-08-05).** No charts on Home (macro
+  sparklines + history fetch removed); workspace launcher removed (duplicated the top nav
+  rail); header subtitle removed; macro row labels wrap (readable at all widths); autocallable
+  notes reach Current Actions only when the observation is ≤7 days out; `AppShell` scrolls
+  full-width so the vertical scrollbar sits at the window edge at 1728+; the "21-July" data
+  traced to the branch never merging master's healthy twice-daily refresh commits (pipeline
+  verified green — remedy is a master merge, deliberately not performed with uncommitted work
+  in the tree). Full suite **4081 · 4078 · 3** (authorized trio); lint 0; build 0.
+- [x] **R10.3 — Home width & density rebalance (2026-08-05, user brief "R10.1").** Desktop
+  canvas widened via the ONE shell token (`--content-max-w` 1560 → 1680px; ~24px gutters at
+  1728, TopBar/SecondaryNav/main aligned; `design_principles.md` §19 updated). Analytical
+  modules rebalanced into two responsive peer rows — **Row A: Macro · Upcoming Events ·
+  Watchlist**, **Row B: Chilean Rates · Sector Heat Map · Markets** — 1 col below lg, 2 cols
+  at lg with the third card spanning (never isolated), 3 similar-weight cols from xl; News
+  full-width below, unchanged in substance. Shared 420px CSS cap on each card's dense area
+  (card-local scroll, no measured-height JS, no data removed); heat tiles 2-across (5×2, odd
+  count spans); hero row/command strip/PageHeader untouched; no endpoint/calculation/privacy/
+  i18n/schema/auth/dependency/remote change. Tests updated deliberately (`responsiveLayout`
+  peer-grid + tiles, `fableHomePage` +7-test R10.3 describe and hero-weights update,
+  `fableFoundation`/`fableR0Primitives` token 1680). Full suite + lint + build results
+  recorded in doc 04 § Phase R10.3.
+- [ ] **Manual browser validation — PENDING (the R10 gate, now covering the R10.1 + R10.2 +
+  R10.3 composition).** At 320/390/768/1024/1280/1440/1728 ×
+  EN/ES × light/dark × privacy OFF/ON (+ stored-ON reload + cross-tab) × data states
+  (normal/empty/partial/failed/slow): Home reads as a materially different Fable command center;
+  hierarchy immediately understandable; portfolio figures agree with `/portfolio` and notes with
+  `/structured-notes`; watchlist/macro/calendar agree with their pages; timestamps and sources
+  honest; all six private amounts mask (no flash on stored-ON reload); public data stays visible;
+  one failed module never collapses the page; no page-level horizontal scroll (tables scroll
+  in-card); every link lands on its route; keyboard flow logical with visible focus; reduced
+  motion respected; Spanish never breaks the composition; mobile order preserves priority;
+  desktop uses the canvas intentionally. R10.3 additions: side whitespace materially reduced
+  (~24px gutters at 1728, nearly full width at 1440); hero row unchanged; Row A is
+  Macro/Events/Watchlist and Row B is Rates/Heat/Markets with similar visual weight per row at
+  wide desktop; Macro and Events no longer dominate; the lg (1024–1439) two-column
+  recomposition leaves no isolated narrow card; heat tiles readable at one-third width; all
+  tables scroll inside their cards at 320/390. **Do not mark R10 complete until this gate
+  passes.**
 
 ### C4 · Engineering gates (run at each phase boundary)
 - [x] `npm run build` → 0 errors, all routes present. *(Phase 1 boundary: compiled in 6.4s, 19/19

@@ -19,7 +19,7 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
 
 | # | Route | Page title | Auth | Fable destination | New component(s) required? | Impl. status | Verif. status |
 |---|---|---|---|---|---|---|---|
-| 1 | `/` | Market Overview | public | 1 Overview (visual lang.) | Yes — News feed, Sector heat map, Chilean-rates DnD, band-macro card | Not started | Not verified |
+| 1 | `/` | Overview (command center) | protected (R1.5 default-deny) | 1 Overview | Home-local: command strip, portfolio/notes snapshots, events timeline, macro pulse (all in `page.tsx`) | **✓ R10 (2026-08-04)** | Automated ✓ · manual pending |
 | 2 | `/stocks` | Stocks | public | 2 Portfolio (DataTable) | No (reused Phase 3 `TableCard`) | **✓ Phase 5A (2026-07-28)** | **✓ Source + rendered-markup verified** |
 | 3 | `/compare` | Compare | public | 3 Performance (chart+table) | No (reused Phase 3 `TableCard`/`GlassSurface`/`SegmentedControl`) | **✓ Phase 5D (2026-07-28)** | **✓ Source + rendered-markup verified** |
 | 4 | `/chart-builder` | Charting | public | 3 Performance (chart) | No (reused Phase 3 `TableCard`/`GlassSurface`/`SegmentedControl`) | **✓ Phase 5E (2026-07-28)** | **✓ Source-scan verified** |
@@ -78,7 +78,120 @@ Legend — Fable screens (see doc 02 §3): `0 Login · 1 Overview · 2 Portfolio
   card list w/ severity dots (like notification drawer rows).
 - **New component required:** **Yes** — News feed card, Sector heat-map tile grid,
   Chilean-rates drag list, banded dual-region Macro card. All in Fable glass language.
-- **Impl. status:** Not started · **Verif. status:** Not verified.
+- **Impl. status:** **✓ COMPLETE — R10 (2026-08-04)** · **Verif. status:** automated complete
+  (`tests/fableHomePage.test.ts`, 45 tests), **manual pending**.
+
+**R10 — as built (2026-08-04).** Home was the last pre-Fable route; R10 rebuilt it as the
+institutional command center on the Fable Overview language, keeping EVERY pre-R10 module and
+adding only modules the platform already served real data for. Composition, top→bottom (each in a
+staggered `Reveal`; mobile order = DOM order = priority):
+
+1. **`PageHeader`** (`t.home.tag` / `t.home.title` "Overview"/"Resumen" / subtitle) + the ONE
+   platform `UpdateDataButton` (fed by `useGlobalRefresh()`; also re-pulls news, the notes book and
+   ingestion health — portfolio totals re-value automatically from the refreshed market overlay).
+2. **Executive command strip** (`GlassSurface kpi`): localized session date · **data health** from
+   `GET /api/health/ingestion` (the same sanitized shape Settings reads; failed check renders
+   "Unavailable", never healthy) · **attention count** (the length of the Current Actions list —
+   one derivation, two surfaces) · **workspace launcher** (labeled `<nav>`, chip links to
+   `/portfolio` + `/structured-notes` (primary weight), `/macro`, `/macro/calendar`, `/compare`,
+   `/chart-builder`; labels from `t.nav.*`). Deliberately NO market-freshness chip — each surface
+   below carries its own footer as-of (one as-of per surface).
+3. **Hero row** (Fable Overview Row A asymmetry — flex 1.7 / 1 / 1.15, `min(100%,…)` bases):
+   - **Portfolio snapshot** — `GET /api/portfolios` → `GET /api/portfolios/[id]` (the exact
+     sequence `/portfolio` runs), re-valued through the SAME `valuePositions` +
+     `calculatePortfolioTotals` helpers with the shared live overlay, so Home and `/portfolio` can
+     never disagree. Hero total market value (**masked**), unrealized P&L % (`ChangeIndicator`,
+     public), minis: unrealized P&L amount / cost basis / cash balance / realized P&L (**all
+     masked** via `PrivacyValue`), positions count (public). `MarketDataSourceBadge`
+     (live/persisted) + Yahoo footer with the live as-of. Loading/error via `AsyncState`; empty =
+     honest zero-positions prompt. **No daily P&L exists anywhere — the repository has no
+     portfolio value time series, so none was invented.**
+   - **Structured Notes snapshot** — `GET /api/structured-notes` (the same dashboard payload the
+     `/structured-notes` page reads; 503 → honest `unavailable`). Active-note count, the four
+     risk-status counts (dot + word + legend tooltip, from `summary.safeNotes/watchNotes/
+     autocallableNotes/breachedNotes`), total **Nevada** notional (**masked**; allocation-based
+     `totalCurrentNotional` — `issueSize` is never referenced; mixed-currency books disclosed via
+     `t.home.notesMixedCcy`), next observation (date · days · note, linked), Yahoo
+     monitoring-estimate footer with `pricesAsOf`.
+   - **`CurrentActions`** (first consumer of the Fable deep-teal card) — real items only: one per
+     active note whose dominant reason is breached (high) > autocallable > watch (medium) > an
+     observation due ≤7 days (low, dated), plus one ingestion-health item when the run is
+     warning/stale/failed (links to `/settings`). No fabricated unified score — severity comes from
+     the existing risk model and health states; empty state is the primitive's own honest copy.
+4. **Macro + events row** (flex 1 / 1.4) *(R10.1 — see the amendment below)*:
+   - **Macro card (merged)** — ONE surface for every Home indicator, in the pulse row style
+     (label · sparkline · value · `ChangeIndicator`), organized in the two provider bands.
+     **Chile band** (BCCh badge + footer): TPM, USD/CLP, copper (`cobre-lme`), IPC 12m, IMACEC,
+     PIB, unemployment, EUR/CLP (the FX extra via `liveIndicatorMap[fx.id]`). **US band** (FRED
+     badge + footer): US 10Y, Fed Funds, US CPI y/y, US GDP, US unemployment, DXY. **1Y sparkline
+     drawn ONLY when `/api/macro/history` resolved live/persisted/hybrid-fallback** (the 4
+     `PULSE_IDS`); every other row carries an aligned spacer — a static-bundle series is never
+     decorated as a live trend.
+   - **Upcoming events** — ONE date-sorted timeline over the next 14 days (window disclosed in the
+     header): CMF report dates (`upcomingWithinDays(events, 14)`), scheduled **High**-importance
+     FRED releases (`fetchFredReleaseCalendar`; unconfigured/failed → honest per-source line), and
+     active-note observation dates from the book payload. Each row: DD/MM chip · kind dot+word ·
+     deep link (`/companies/{t}` / `/macro/calendar` / `/structured-notes/{id}`). Zero events
+     (`t.home.eventsEmpty`) is rendered distinctly from any failed source
+     (`evCmfUnavailable`/`evFredUnavailable`/`evNotesUnavailable`). **Recently Reported** (5 most
+     recent past CMF dates) kept as a sub-section. Three per-source footers (CMF · FRED · notes
+     book).
+5. **Detail row** (flex 1.7 / 1, R10.1): the **Watchlist table** — pure watchlist in the Fable
+   table idiom (`TableCard`, `minWidth={430}` + `maxHeight` scroll, sticky `--surface-table`
+   header cells, badge in the card controls; sortable headers with `aria-sort` + real `<button>`s,
+   sign-in/empty states, `/companies/{t}` links and the live→persisted→static merge preserved) ·
+   **Chilean Rates** (drag-to-reorder `⠿` Fable list rows, `cmi.ratesOrder`, live BCCh dot
+   overlay + `ChangeIndicator`, exact badge+footer preserved).
+6. **Market breadth row** (flex 1.7 / 1): **sector heat map** (dense surface, `rounded-md` tiles,
+   best/worst constituent, diverging legend — shading math preserved) · **Markets** index list
+   (country/index Fable rows with `ChangeIndicator` + muted YTD).
+7. **News** — the NH-style feed preserved byte-for-byte at row level (status dot, solid
+   `--negative` High bar, source codes, timestamps, ticker chips, 7-day window) inside a glass
+   card with dense body.
+
+**Removed by design:** measured-height pinning (`pinH`/`macroH`/`heatH`/`ResizeObserver`) — cards
+take natural height and dense lists scroll in-card via `maxHeight`; the old custom `<h1>` header.
+**Privacy:** Home is now a real privacy consumer (supersedes the R9.6 finding, tests updated
+explicitly): the five portfolio amounts + the Nevada notional mask through the shared
+`PrivacyValue` (fails closed during hydration; both routes' private values arrive only after
+hydration via fetch, so a stored-ON reload cannot flash). Percentages, counts, dates, tickers,
+note names and all public market data stay visible. **Endpoints consumed** (each fetched once):
+`/api/watchlists`(+items), `/api/portfolios`(+detail), `/api/structured-notes`,
+`/api/health/ingestion`, `/api/news`, `/api/earnings/calendar`,
+`/api/macro/fred-release-calendar`, `/api/macro/history/{id}` ×4, plus the shared
+market/macro providers. Guarded by `tests/fableHomePage.test.ts` (45) + the updated
+`homeWatchlistOverhaul`/`responsiveLayout`/`fableSettingsPage` suites.
+
+**R10.1 amendment (2026-08-05, user-directed).** The R10 build had preserved the legacy tables
+byte-for-byte, which read as a second design and duplicated macro information (US 10Y on two
+surfaces, USD/CLP on three). R10.1 merged the pulse strip + banded macro card + FX band into the
+ONE Macro card described in item 4 (each indicator exactly once; per-band BCCh/FRED badges and
+footers kept), rebuilt Watchlist/rates/heat/Markets in the Fable idiom (items 5–6), and replaced
+the last fixed 3-col grid with a wrapping flex row. News keeps its NH terminal anatomy by product
+rule. `home.pulseTitle`/`home.fxTitle` removed (dead keys); full record in
+`04-file-level-implementation-plan.md` § Phase R10.1.
+
+**R10.2 amendment (2026-08-05, user-directed).** Macro rows carry NO sparklines (the 1Y history
+fetch is gone — Home fetches no `/api/macro/history` series and renders no chart); the command
+strip has NO workspace launcher (it duplicated the top nav rail) and the header has NO subtitle;
+macro row labels wrap instead of truncating; Current Actions surfaces an autocallable note only
+when its observation is ≤7 days away; `AppShell`'s scroll container now spans the full window
+(the `--content-max-w` cap moved to an inner wrapper) so the vertical scrollbar sits at the
+screen edge at every viewport. Removed keys: `home.subtitle`, `home.launcher`,
+`home.pulseWindow`. Full record in `04-file-level-implementation-plan.md` § Phase R10.2.
+
+**R10.3 amendment (2026-08-05, user-directed width/density rebalance).** Supersedes the layout
+halves of items 4–6 (all substance unchanged): the analytical modules now sit in two responsive
+PEER rows — **Row A: Macro · Upcoming Events · Watchlist**, **Row B: Chilean Rates · Sector
+Heat Map · Markets** (`grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3`; at lg the third card
+spans both columns so none sits isolated; News stays full-width below). Each card's dense area
+caps at a shared 420px and scrolls in-card (CSS only), so the three cards in a row keep similar
+practical heights; heat tiles are 2-across (a clean 5×2 for the 10 sectors) sized for the
+one-third-width card. The desktop canvas widened via the ONE shell token
+(`--content-max-w` 1560 → 1680px — ~24px gutters at 1728; TopBar/SecondaryNav/main stay
+aligned). Hero row, command strip, PageHeader and News substance untouched; no endpoint,
+calculation, privacy or i18n change. Full record in `04-file-level-implementation-plan.md`
+§ Phase R10.3.
 
 ## 2. `/stocks` — Stocks
 
@@ -832,9 +945,10 @@ no shared Fable component modified; no CSS added (the meter fill reuses the exis
   disclose no amount, and the meter bars encode weight graphically, so masking only their printed
   number would be theatre); holdings count; transaction date/type; ledger description; and the
   inline editor and add-forms, which are the user's own explicit input.
-  **Home has NO user-specific amount** — its watchlist prints only public market data and it reads no
-  portfolio endpoint, so no consumer was fabricated there.
-- **Pending:** the Fable **Home redesign → R10**.
+  **Home had NO user-specific amount at R9.6** — superseded by design in R10, which added real
+  portfolio/notes consumers to Home; every such amount masks through the same shared boundary
+  (see §1's R10 record).
+- **Pending:** none — **R10 (the Fable Home redesign) is implemented; manual validation pending.**
 - **Impl. status:** R9.2 + R9.3 + R9.4 + R9.6 implemented, R9.5 audited · **Verif. status:** automated
   complete, manual pending.
 

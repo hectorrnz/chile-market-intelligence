@@ -363,11 +363,14 @@ describe('shadow hierarchy', () => {
 })
 
 describe('spacing scale', () => {
-  test('Fable spacing and the 1560px content width are tokenised', () => {
+  test('Fable spacing and the content width are tokenised', () => {
     for (const t of ['--space-card-y', '--space-card-x', '--space-hero-y', '--space-hero-x', '--space-grid-gap', '--space-row-y', '--content-max-w']) {
       assert.match(LIGHT, new RegExp(`${t}\\s*:`), `missing ${t}`)
     }
-    assert.match(LIGHT, /--content-max-w:\s*1560px/)
+    // R10.3 (user-directed width rebalance): the Fable export's 1560px widened
+    // to 1680px so desktop keeps only the refined 24px gutter at 1728. Still
+    // ONE token, consumed by name everywhere.
+    assert.match(LIGHT, /--content-max-w:\s*1680px/)
   })
 })
 

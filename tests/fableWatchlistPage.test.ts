@@ -499,13 +499,11 @@ describe('Phase 5B — scope held', () => {
     // are guarded by `tests/fableComparePage.test.ts` /
     // `tests/fableMacroPage.test.ts` / `tests/fableEarningsPage.test.ts` /
     // `tests/fablePortfolioPage.test.ts` /
-    // `tests/fableStructuredNotesPage.test.ts`, and the page below still
-    // holds the line.
-    for (const other of [
-      'src/app/page.tsx',
-    ]) {
-      assert.ok(!read(other).includes('@/components/fable/TableCard'), `${other} is not part of Phase 5B`)
-    }
+    // `tests/fableStructuredNotesPage.test.ts`.
+    // `/` (Home) was removed from this list in Phase R10 — migrated to
+    // `TableCard` under its own brief; a real phase boundary moving, not a
+    // relaxed assertion. It is guarded by `tests/fableHomePage.test.ts`.
+    assert.ok(read('src/app/page.tsx').length > 0, 'src/app/page.tsx must still exist')
   })
 
   it('leaves the Phase 5A Stocks page untouched by this phase', () => {

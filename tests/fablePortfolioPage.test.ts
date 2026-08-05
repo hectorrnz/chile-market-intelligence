@@ -885,7 +885,10 @@ describe('Phase 5H — scope held', () => {
     ]) {
       assert.ok(existsSync(join(ROOT, other)), `${other} must still exist`)
     }
-    assert.ok(!read('src/app/page.tsx').includes('@/components/fable/TableCard'), 'Home has had no re-skin phase yet')
+    // Home's own no-TableCard hold was removed in Phase R10 — the last
+    // pre-Fable route, migrated to `TableCard` under its own brief; a real
+    // phase boundary moving, not a relaxed assertion. It is guarded by
+    // `tests/fableHomePage.test.ts`.
   })
 
   it('Earnings, Macro, Macro Calendar, Chart Builder, Compare and Company Detail are untouched', () => {

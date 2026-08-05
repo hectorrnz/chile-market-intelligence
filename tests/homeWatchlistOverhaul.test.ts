@@ -38,24 +38,32 @@ describe('Home page — Watchlist replaces the hardcoded Tracked Stocks list', (
   })
 })
 
-describe('Home page — Watchlist and FX merged into one band-separated table', () => {
+describe('Home page — FX consolidated into the Macro card; Watchlist is one table (R10.1)', () => {
   const src = readFileSync(HOME_PAGE, 'utf8')
 
-  it('renders exactly one <table> for the combined Watchlist+FX card (not two separate cards)', () => {
-    // The old layout had two sibling bg-surface cards (stocks + FX); the new
-    // layout is one table with two <tr> band-divider rows, mirroring the
-    // Macro card's Chile/US band pattern.
-    // Tolerates extra utility classes (e.g. the responsive min-w added 2026-07-21).
-    const tableMatches = src.match(/<table className="w-full text-xs[^"]*">/g) ?? []
-    // The macro indicators table on /macro is a separate page; on Home there
-    // should be exactly one table for this merged Watchlist+FX card.
+  // The 2026-07-15 merged Watchlist+FX table was superseded in Phase R10.1:
+  // USD/CLP rendered on three Home surfaces (pulse strip, macro band, FX
+  // band), so the FX rows were consolidated into the Macro card's Chile band
+  // and the Watchlist card became a pure watchlist table. A real phase
+  // boundary moving, not a relaxed assertion — the merged Macro card is
+  // guarded by tests/fableHomePage.test.ts.
+  it('renders exactly one <table> for the Watchlist card; FX rows live in the Macro card', () => {
+    // Tolerates extra utility classes and the Fable font-size style attribute
+    // (R10.1 adopted `style={{ fontSize: 'var(--fs-table-cell)' }}`, the same
+    // form the restyled Portfolio table uses).
+    const tableMatches = src.match(/<table className="w-full text-xs[^"]*"[^>]*>/g) ?? []
     assert.ok(tableMatches.length >= 1)
-    assert.ok(src.includes("t.home.watchlistTitle") && src.includes('t.home.fxTitle'))
+    assert.ok(src.includes("t.home.watchlistTitle"))
+    // FX stays live-overlaid per id and renders exactly once: EUR/CLP joins
+    // the Chile band; USD/CLP is already a curated Chile row.
+    assert.ok(src.includes('liveIndicatorMap[fx.id]'))
+    assert.ok(src.includes('fxExtra = fxRows.filter(fx => !CHILE_MACRO_IDS.includes(fx.id))'))
+    assert.ok(!src.includes('t.home.fxTitle'), 'the separate FX band is gone (R10.1)')
   })
 
-  it('both band rows use the same highlighted-band pattern as the Macro card (bg-surface-2 + border accent)', () => {
+  it('both provider bands use the same highlighted-band pattern (bg-surface-2 + border accent)', () => {
     const bandMatches = src.match(/bg-surface-2 px-4 py-1\.5"\s*style=\{\{\s*borderLeft:/g) ?? []
-    assert.ok(bandMatches.length >= 2, 'expected at least 2 band-divider rows (Watchlist, FX) in the merged table')
+    assert.ok(bandMatches.length >= 2, 'expected at least 2 band-divider rows (Chile, US) in the Macro card')
   })
 })
 
