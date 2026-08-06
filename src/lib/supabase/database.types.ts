@@ -545,13 +545,28 @@ export interface Database {
           metadata?: Json
         }
       }
+      // R13.1 — reconciled against the verified migration chain:
+      //   20260701000000_auth_watchlist_foundation.sql  → id, email, display_name,
+      //                                                    role, preferences, created_at, updated_at
+      //   20260701120000_username_password_auth.sql     → username (citext)
+      //   20260806000000_family_portfolio_entitlements.sql → portfolio_principal
+      // `avatar_url` was removed: no migration in the chain creates it and no
+      // source file outside this declaration referenced it. `role` and
+      // `preferences` were missing and are restored.
+      // `role` and `portfolio_principal` are intentionally ABSENT from Insert
+      // and Update: 20260730000000 revokes every write privilege on this table
+      // from `authenticated`, and both columns are written only by the
+      // service-role paths (scripts/admin/provisionUser.ts,
+      // src/lib/portfolioAccess/assignPrincipal.ts), which cast their payloads.
       user_profiles: {
         Row: {
           id: string
           username: string | null
           email: string | null
           display_name: string | null
-          avatar_url: string | null
+          role: string
+          preferences: Json
+          portfolio_principal: string | null
           created_at: string
           updated_at: string
         }
@@ -560,13 +575,38 @@ export interface Database {
           username?: string | null
           email?: string | null
           display_name?: string | null
-          avatar_url?: string | null
+          preferences?: Json
         }
         Update: {
           username?: string | null
           email?: string | null
           display_name?: string | null
-          avatar_url?: string | null
+          preferences?: Json
+        }
+      }
+      // R13.1 — immutable audit of administrative Family Portfolio access
+      // changes. Service-role writes only (no insert/update/delete policy
+      // exists); administrators may read.
+      family_portfolio_access_audit: {
+        Row: {
+          id: string
+          target_user_id: string
+          actor_user_id: string
+          field_changed: string
+          previous_value: string | null
+          new_value: string | null
+          changed_at: string
+        }
+        Insert: {
+          target_user_id: string
+          actor_user_id: string
+          field_changed: string
+          previous_value?: string | null
+          new_value?: string | null
+        }
+        Update: {
+          previous_value?: string | null
+          new_value?: string | null
         }
       }
       watchlists: {
@@ -1273,6 +1313,8 @@ export type CmfFilingRow = Database['public']['Tables']['cmf_filings']['Row']
 export type DocumentRow = Database['public']['Tables']['documents']['Row']
 export type IngestionRunRow = Database['public']['Tables']['ingestion_runs']['Row']
 export type UserProfileRow = Database['public']['Tables']['user_profiles']['Row']
+export type FamilyPortfolioAccessAuditRow =
+  Database['public']['Tables']['family_portfolio_access_audit']['Row']
 export type WatchlistRow = Database['public']['Tables']['watchlists']['Row']
 export type WatchlistItemRow = Database['public']['Tables']['watchlist_items']['Row']
 export type PortfolioRow = Database['public']['Tables']['portfolios']['Row']

@@ -44,6 +44,21 @@
 //   · reports partial creation explicitly (Auth user created / profile written)
 //     so a failed run can be finished or cleaned up deliberately
 //   · --revoke clears the approval marker; it does NOT delete data
+//
+// R13.1 — PROVISIONING IS STEP ONE OF TWO FOR A FAMILY MEMBER.
+// This script establishes platform access (the approval marker). It deliberately
+// does NOT grant Family Portfolio access: a newly provisioned account has
+// `portfolio_principal = null` and therefore sees no family portfolio at all —
+// the intended fail-closed default. Entitlement is a separate, separately-audited
+// administrative step:
+//
+//   node scripts/admin/assignPortfolioPrincipal.ts \
+//        --actor <admin-username> --target <username> --principal <jaime|andres|pablo> --write
+//
+// Administrative capability itself (`user_profiles.role = 'administrator'`) is
+// granted by neither script — it is set deliberately through the service-role
+// path, so no command here can elevate anyone. See
+// docs/portfolio-r13/05-authorization-and-data-architecture.md § 2.2a.
 
 import { randomBytes } from 'node:crypto'
 // @next/env is CJS — import via default (the pattern every other script uses).

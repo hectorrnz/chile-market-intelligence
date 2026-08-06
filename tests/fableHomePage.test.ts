@@ -56,8 +56,24 @@ describe('R10 · route and platform scope', () => {
 
   test('5-6. no database migration and no auth change', () => {
     // The newest pre-R10 migration is 20260803000000_structured_notes_custodian.
-    const migrations = readdirSync(join(ROOT, 'supabase/migrations'))
-    assert.ok(migrations.every((f) => f < '20260804'), 'R10 adds no migration')
+    //
+    // This asserts a property of R10, not a permanent freeze on the migrations
+    // directory: R10 introduced nothing into its own window. Later authorised
+    // phases legitimately add migrations ABOVE the boundary (R13.1 adds
+    // 20260806000000_family_portfolio_entitlements.sql), and the original
+    // `every(f => f < '20260804')` form could not tell the two apart — it failed
+    // for any subsequent phase regardless of whether R10 had changed.
+    // The replacement is STRICTER inside R10's window: an exact set, not a
+    // comparison, so inserting a migration below the boundary still fails.
+    const R10_BOUNDARY = '20260804'
+    const migrations = readdirSync(join(ROOT, 'supabase/migrations')).filter((f) => f.endsWith('.sql')).sort()
+    const preR10 = migrations.filter((f) => f < R10_BOUNDARY)
+    assert.equal(preR10.length, 20, 'a migration was inserted into R10\'s window')
+    assert.equal(
+      preR10[preR10.length - 1],
+      '20260803000000_structured_notes_custodian.sql',
+      'R10 adds no migration',
+    )
     assert.deepEqual([...PUBLIC_PAGE_PATHS], ['/login', '/forgot-password', '/auth/reset-password'])
     assert.equal(classifyPath('/'), 'private_page')
     assert.ok(requiresApprovedSession('/'))

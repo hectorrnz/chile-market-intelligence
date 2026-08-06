@@ -76,12 +76,60 @@ Why the separation matters: conflating them would make "an administrator who is 
 "a read-only auditor with no personal portfolio" unrepresentable without a migration, and it would
 put administrative capability behind a value whose whole purpose is *narrowing* visibility.
 
-**Naming caveat.** `role` and `preferences` exist in the applied schema but are absent from
-`database.types.ts`, and `avatar_url` is present in the types but absent from the migration
-(audit § 3.3). The exact physical shape of the role dimension — whether R13 activates the existing
-`role` column, introduces a dedicated administrative flag, or adds a separate table — **is not
-finalized here**; the repository audit does not settle it. What *is* binding is that the two
-dimensions stay separate and that the drift is corrected in the same change that touches the table.
+### 2.2a Administrator-role authority — RESOLVED IN R13.1 (verified decision)
+
+> R13.0 left the physical shape of the role dimension open. **R13.1 resolved it by repository
+> inspection.** This section records the decision and its evidence. Migration:
+> `supabase/migrations/20260806000000_family_portfolio_entitlements.sql`.
+
+**Decision: `user_profiles.role` is the selected application-role authority for R13.**
+
+| # | Verified statement | Evidence |
+|---|---|---|
+| 1 | `user_profiles.role` is the application-role authority | activated by the R13.1 migration; constrained `check (role in ('user','administrator'))` |
+| 2 | The field was **created for application authorization but was dormant at runtime** | `role text not null default 'user'` since `20260701000000`; a repository-wide search found **zero** runtime reads — `src/lib/auth/approval.ts` states this explicitly and defers activation to "the future Users & Access phase" |
+| 3 | **`service_role` is infrastructure authorization, not an application administrator identity** | the only administrator today is possession of the service-role key plus shell access (`scripts/admin/provisionUser.ts`). It bypasses RLS entirely; it is an operator capability. R13.1 neither replaces nor weakens it, and never treats it as a user role |
+| 4 | Application role and portfolio principal are **orthogonal dimensions** | separate columns, separate CHECK sets; `nmi_portfolio_scopes(is_approved, is_admin, principal)` takes both independently |
+| 5 | `portfolio_principal` supports **`jaime`, `andres`, `pablo`, `null`** | `check (portfolio_principal is null or portfolio_principal in ('jaime','andres','pablo'))` |
+| 6 | **`administrator` is not a portfolio-principal value** | deliberately excluded from the CHECK; a migration postcondition reads `pg_get_constraintdef` and fails if the constraint ever admits it |
+| 7 | **Existing users remain `role='user'` and `portfolio_principal=null` unless changed by an authorized administrator** | `role` keeps its `'user'` default and is never rewritten; `portfolio_principal` is added nullable with no default |
+| 8 | The migration **must not infer, create, promote, or normalize an administrator** from usernames, emails, or production guesses | no `insert`, no `update` of `user_profiles`, and no username/email predicate exists anywhere in the migration |
+| 9 | **Unexpected existing `role` values cause migration failure rather than silent rewriting** | a pre-flight `do $$` block aggregates any value outside `('user','administrator')` and `raise exception`s naming them: *"this migration will not guess a normalization for an authorization column"* |
+
+**Why activating `role` preserves every current administrator.** Because no runtime code reads it,
+activation grants nothing to anyone and removes nothing from anyone. Every approved user keeps
+exactly the access they had, and there is no production role data to preserve — therefore nothing to
+guess. The first administrator is created deliberately, later, through the service-role provisioning
+path, never by a migration.
+
+**Mutation is already locked.** `20260730000000` revoked every privilege on `user_profiles` from
+`public`/`anon`/`authenticated` and granted back only `SELECT`. New columns inherit that posture, so
+a user can read their own role and principal but cannot write either — self-assignment and
+self-elevation are prevented by the database, not by convention. R13.1 adds no write policy and no
+write grant, and asserts both in-migration.
+
+**Schema drift corrected in the same change** (audit § 3.3): `role` and `preferences` restored to
+`database.types.ts`; `avatar_url` removed after verifying **no migration in the chain creates it**
+and no source file referenced it; `portfolio_principal` added. `role` and `portfolio_principal` are
+deliberately absent from the generated `Insert`/`Update` types.
+
+> ### ⚠ Validation status — PostgreSQL execution NOT performed
+>
+> **PostgreSQL migration execution and RLS runtime behaviour remain UNVERIFIED** until the migration
+> is applied in a real PostgreSQL environment. This environment has no local Supabase instance:
+> Docker is absent (`supabase start` cannot run), `psql` is absent, there is no
+> `supabase/config.toml`, and no service-role key is present.
+>
+> What R13.1 *did* verify: the TypeScript authorization rule, the assignment decision rules, and the
+> full negative-authorization surface are **executed for real** in
+> `tests/familyPortfolioEntitlements.test.ts`; the migration's embedded truth table is asserted
+> row-for-row identical to the TypeScript truth table. What it did **not** verify: that PostgreSQL
+> returns those results, that the policies behave as written, or that the privilege postconditions
+> hold. The migration carries its own `do $$` postcondition blocks — including an in-database
+> execution of the parity truth table — which raise on any mismatch **when the migration is pushed**.
+> That push is the real verification event.
+>
+> **R13.2 must not depend on these policies until R13.1.1 execution validation passes.**
 
 ### 2.3 Scope resolution
 
@@ -474,6 +522,11 @@ added to any allowlist.
 
 - [x] Existing auth/approval architecture re-stated and built upon, not bypassed
 - [x] Application role and portfolio principal defined as **two separate dimensions**; `administrator` is not a principal value
+- [x] **Administrator-role authority RESOLVED (R13.1)** — `user_profiles.role`, with evidence, in § 2.2a
+- [x] `service_role` recorded as infrastructure authorization, never an application administrator identity
+- [x] Migration proven not to infer, create, promote, or normalize an administrator; unexpected role values fail loudly
+- [ ] **PostgreSQL migration execution — NOT PERFORMED** (no local Postgres; deferred to R13.1.1)
+- [ ] **RLS runtime validation — NOT PERFORMED** (deferred to R13.1.1)
 - [x] Principal assignment defined as administrator-controlled data, never hardcoded identities
 - [x] Required access matrix expressed for all three principals, `null`, and administrators
 - [x] Route architecture fixed: `Family Portfolio` module under `/family-portfolio`, five routes, Admin administrator-only
