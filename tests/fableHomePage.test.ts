@@ -226,6 +226,9 @@ describe('R10.3 · wider canvas, two analytical peer rows, News below', () => {
     assert.match(HOME, /CARD_LIST_MAX_H = 420/)
     assert.equal((HOME.match(/maxHeight: CARD_LIST_MAX_H/g) ?? []).length, 5,
       'macro, events, rates, heat and markets all cap and scroll in-card')
+    assert.match(HOME, /NEWS_SCROLL_BLOCK_SIZE = 'min\(440px, 60vh\)' as const/)
+    assert.match(HOME, /blockSize: NEWS_SCROLL_BLOCK_SIZE, contain: 'strict'/,
+      'the terminal News feed has an explicit strictly-contained scrollport')
     assert.match(HOME, /maxHeight=\{420\}/) // the Watchlist TableCard's own cap
     assert.doesNotMatch(HOME_CODE, /ResizeObserver|useLayoutEffect/)
     // The Macro card stays a compact Home summary with the deep link — it

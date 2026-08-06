@@ -34,8 +34,10 @@ describe('global blockers stay removed', () => {
     assert.doesNotMatch(css, /html\s*{[^}]*min-width/s)
   })
 
-  test('AppShell main uses responsive padding', () => {
-    assert.match(read('src/components/layout/AppShell.tsx'), /px-3 py-4 sm:px-6 sm:py-5/)
+  test('AppShell main uses responsive padding and may shrink inside the shell flex column', () => {
+    const src = read('src/components/layout/AppShell.tsx')
+    assert.match(src, /flex-1 min-h-0 overflow-y-auto/)
+    assert.match(src, /px-3 py-4 sm:px-6 sm:py-5/)
   })
 })
 
@@ -178,8 +180,12 @@ describe('measured-height pinning only binds at lg+', () => {
     assert.doesNotMatch(src, /style=\{\{ height: macroH/)
     assert.doesNotMatch(src, /style=\{\{ height: heatH/)
     assert.doesNotMatch(src, /ResizeObserver/)
-    // Vertical containment moved to card-level scroll caps.
+    // Vertical containment moved to card-level scroll caps. News is the
+    // terminal region, so it also owns an explicit size-contained scrollport;
+    // clipped descendants cannot inflate AppShell's page scroll range.
     assert.ok((src.match(/maxHeight/g) ?? []).length >= 3, 'dense Home lists cap and scroll in-card')
+    assert.match(src, /NEWS_SCROLL_BLOCK_SIZE = 'min\(440px, 60vh\)' as const/)
+    assert.match(src, /blockSize: NEWS_SCROLL_BLOCK_SIZE, contain: 'strict'/)
   })
 
   test('Company page applies valH the same way', () => {

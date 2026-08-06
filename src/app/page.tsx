@@ -118,6 +118,10 @@ const ANALYTIC_SPAN = 'lg:col-span-2 xl:col-span-1'
 /** One shared cap for every dense in-card list on Home — cards in a row keep
  *  similar practical heights and excess content scrolls inside its card. */
 const CARD_LIST_MAX_H = 420
+/** News is the terminal Home region and can contain many variable-height rows.
+ *  Give it a real scrollport size and strict size containment so descendants
+ *  beyond the clip cannot enlarge AppShell's outer page scroll range. */
+const NEWS_SCROLL_BLOCK_SIZE = 'min(440px, 60vh)' as const
 
 // ── Shared local shells ──────────────────────────────────────────────────────
 
@@ -1262,7 +1266,11 @@ export default function HomePage() {
             </span>
           }
         >
-          <GlassSurface variant="dense" className="overflow-y-auto divide-y divide-border" style={{ maxHeight: '440px' }}>
+          <GlassSurface
+            variant="dense"
+            className="overflow-y-auto divide-y divide-border"
+            style={{ blockSize: NEWS_SCROLL_BLOCK_SIZE, contain: 'strict' }}
+          >
             {/* R12: a failed fetch reaches an explicit error state — never an
                 eternal blank "Loading" body. */}
             {!newsResult && newsFailed && <AsyncState kind="error" />}
