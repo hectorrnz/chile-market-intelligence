@@ -308,14 +308,34 @@ grant execute on function public.nmi_can_access_scope(text)                   to
 -- or personal information beyond the two user identifiers already present in
 -- `auth.users`.
 
+-- ACTOR SEMANTICS (R13.1.1A).
+-- Two genuinely different kinds of authorized change must be distinguishable,
+-- and the record must never lie about who acted:
+--
+--   'administrator'      — an approved application administrator made the change.
+--                          `actor_user_id` names them.
+--   'service_bootstrap'  — the FIRST administrator was created before any
+--                          application administrator existed, by an operator
+--                          holding the service-role key. There is no application
+--                          identity to name, so `actor_user_id` is NULL.
+--
+-- Recording the target as the actor merely because bootstrap has no administrator
+-- yet would be a false record. `actor_user_id` is therefore nullable, and a CHECK
+-- binds the two columns so neither kind can be misrepresented.
 create table if not exists public.family_portfolio_access_audit (
   id              uuid primary key default gen_random_uuid(),
   target_user_id  uuid        not null references auth.users(id) on delete cascade,
-  actor_user_id   uuid        not null references auth.users(id) on delete restrict,
+  actor_user_id   uuid        references auth.users(id) on delete restrict,
+  actor_kind      text        not null default 'administrator'
+                              check (actor_kind in ('administrator', 'service_bootstrap')),
   field_changed   text        not null check (field_changed in ('portfolio_principal', 'role')),
   previous_value  text,
   new_value       text,
-  changed_at      timestamptz not null default now()
+  changed_at      timestamptz not null default now(),
+  constraint family_portfolio_access_audit_actor_check check (
+    (actor_kind = 'administrator'     and actor_user_id is not null) or
+    (actor_kind = 'service_bootstrap' and actor_user_id is null)
+  )
 );
 
 create index if not exists family_portfolio_access_audit_target_idx
@@ -354,7 +374,9 @@ grant all privileges on table public.family_portfolio_access_audit to service_ro
 comment on table public.family_portfolio_access_audit is
   'Immutable audit of administrative Family Portfolio access changes (role, portfolio_principal). '
   'Service-role writes only — no insert/update/delete policy exists. Administrators may read. '
-  'Contains no secret, credential, or financial data. R13.1.';
+  'actor_kind distinguishes an administrator action from the one-time service-authorized first-'
+  'administrator bootstrap, which has no application actor and therefore a NULL actor_user_id. '
+  'Contains no secret, credential, or financial data. R13.1 / R13.1.1A.';
 
 
 -- ══════════════════════════════════════════════════════════════════════════════
@@ -462,6 +484,27 @@ begin
 
   if bad is null or bad not like '%administrator%' or bad not like '%user%' then
     raise exception 'user_profiles_role_check is not the expected two-value constraint: %', coalesce(bad, '(null)');
+  end if;
+
+  -- The audit actor constraint must make both kinds representable and neither
+  -- misrepresentable (R13.1.1A).
+  select pg_catalog.pg_get_constraintdef(oid) into bad
+  from pg_catalog.pg_constraint where conname = 'family_portfolio_access_audit_actor_check';
+
+  if bad is null then
+    raise exception 'family_portfolio_access_audit_actor_check is missing — bootstrap could be recorded dishonestly';
+  end if;
+  if bad not like '%service_bootstrap%' or bad not like '%administrator%' then
+    raise exception 'the audit actor constraint does not cover both actor kinds: %', bad;
+  end if;
+  if exists (
+    select 1 from pg_catalog.pg_attribute a
+    join pg_catalog.pg_class c on c.oid = a.attrelid
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'family_portfolio_access_audit'
+      and a.attname = 'actor_user_id' and a.attnotnull
+  ) then
+    raise exception 'actor_user_id must be nullable so a service-authorized bootstrap is recorded honestly';
   end if;
 
   -- RLS is on for the audit table and it carries exactly one (SELECT) policy.

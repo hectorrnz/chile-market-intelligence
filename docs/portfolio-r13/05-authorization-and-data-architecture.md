@@ -113,6 +113,81 @@ write grant, and asserts both in-migration.
 and no source file referenced it; `portfolio_principal` added. `role` and `portfolio_principal` are
 deliberately absent from the generated `Insert`/`Update` types.
 
+### 2.2b First-administrator bootstrap and role management — R13.1.1A
+
+**The gap R13.1 shipped with.** R13.1 made `user_profiles.role` the authority but shipped **no
+writer for it**, producing a hard deadlock: every row defaults to `'user'`, nothing wrote `role`, and
+assigning a portfolio principal requires an administrator actor — so no administrator could ever
+exist, and the module was unreachable. R13.1.1A closes it.
+
+**Bootstrap contract** — `node scripts/admin/setUserRole.ts --bootstrap --target <username> --write`
+
+A service-authorized bootstrap may create the first administrator **only** when all of the
+following hold:
+
+- **no approved application administrator currently exists** (counted from real rows, never a flag);
+- the target exists and is **approved** under the existing approval model;
+- the operator explicitly passed `--bootstrap`;
+- the operator explicitly passed `--write` (dry-run is the default);
+- the change touches **only** `role` plus one audit row.
+
+It closes permanently the moment one administrator exists (`bootstrap_not_available`). It **never**
+infers the administrator from a username convention, email domain, account age, production
+ownership, the machine user, git identity, or environment-variable content — the target is always
+explicit.
+
+**Normal role-management contract** — `--actor <admin> --target <user> --role <user|administrator> --write`
+
+- Requires an **explicitly identified approved administrator** actor; a non-administrator is
+  rejected (`actor_not_administrator`), and the actor is authorized *before* the request is examined
+  so an unauthorized caller learns nothing about the target.
+- An administrator **cannot change their own role in either direction**
+  (`self_role_change_forbidden`) — no self-elevation, no self-demotion.
+- Only `'user'` and `'administrator'` are accepted; an unapproved target is refused.
+- Every successful change writes an audit row; **no denial ever writes one.**
+
+**Last-administrator protection.** Demoting the final approved administrator is refused
+(`last_administrator_protected`). Together with bootstrap being illegal above zero administrators,
+the count can never reach zero through this workflow — the deadlock cannot recur.
+
+**Honest bootstrap audit semantics.** `family_portfolio_access_audit.actor_user_id` was made
+**nullable** and `actor_kind` added (`'administrator' | 'service_bootstrap'`), bound by a CHECK:
+an administrator row must name its actor; a bootstrap row must have `actor_user_id IS NULL`.
+Recording the *target* as the actor merely because bootstrap has no administrator yet would be a
+false record, so the schema makes it impossible. This was a **narrow amendment to the R13.1
+migration itself**, which is legitimate because that migration is unpushed, unapplied and
+unreleased — verified before amending (`git branch -r --contains` empty; absent from
+`origin/master`). No second migration was created.
+
+**No browser-reachable path.** Role and principal mutation live only in `scripts/admin/*.ts`,
+outside the Next.js router. `tests/accessControl.test.ts` enforces that **no file under `src/`
+writes `user_profiles`**, and R13.1.1A re-asserts it.
+
+### 2.2c Isolated database validation — R13.1.1A
+
+The local Windows environment has no Docker, no `psql`, and no local Supabase stack, so R13.1's
+constraints, SECURITY DEFINER functions, privileges and RLS could only be inspected statically.
+R13.1.1A adds an **executable** environment:
+
+| Component | Path | Purpose |
+|---|---|---|
+| Local-only Supabase config | `supabase/config.toml` | lets `supabase start` / `db reset` / `test db` run an isolated stack. **No project ref, no production URL, no credential.** Auth stays enabled (the helpers resolve `auth.uid()`); storage/studio/realtime/analytics/edge disabled — none affects entitlement validation |
+| Executable pgTAP suite | `supabase/tests/database/family_portfolio_entitlements_test.sql` | migration constraints, function security, the full access matrix through real `auth.uid()`, profile-mutation security under real RLS, and audit security — all against real PostgreSQL, in a transaction that rolls back |
+| CI workflow | `.github/workflows/r13-family-portfolio-db-validation.yml` | disposable GitHub-hosted runner, **pinned** Supabase CLI (`2.108.0`, matching the devDependency, verified at runtime), `npm ci`, full migration chain from clean, pgTAP, advisory `db lint`, and the TypeScript half of the parity contract. Teardown always runs |
+
+**Production credentials are never used.** The workflow consumes **no repository secret**, has
+`permissions: contents: read`, never runs `supabase link`, uploads no artifact, and dumps no
+database. The local stack mints throwaway credentials inside the runner.
+
+**The boundary between static and executed validation:**
+
+| Executed locally today | Executed only in the workflow | Not executed anywhere yet |
+|---|---|---|
+| TypeScript authorization rule; role/principal decision rules; every denial path; structural assertions over the migration, config, SQL suite and workflow | Migration application from clean; migration postconditions incl. the in-database parity truth table; CHECK enforcement; SECURITY DEFINER behaviour; function privileges; `auth.uid()` resolution; RLS; audit protection | — (once the workflow passes) |
+
+> **Creating this workflow is not validation.** R13.1.1 remains **incomplete** until the workflow has
+> actually **run and passed** on the committed branch. **R13.2 remains blocked** until then.
+
 > ### ⚠ Validation status — PostgreSQL execution NOT performed
 >
 > **PostgreSQL migration execution and RLS runtime behaviour remain UNVERIFIED** until the migration
@@ -525,8 +600,13 @@ added to any allowlist.
 - [x] **Administrator-role authority RESOLVED (R13.1)** — `user_profiles.role`, with evidence, in § 2.2a
 - [x] `service_role` recorded as infrastructure authorization, never an application administrator identity
 - [x] Migration proven not to infer, create, promote, or normalize an administrator; unexpected role values fail loudly
-- [ ] **PostgreSQL migration execution — NOT PERFORMED** (no local Postgres; deferred to R13.1.1)
-- [ ] **RLS runtime validation — NOT PERFORMED** (deferred to R13.1.1)
+- [x] **First-administrator bootstrap contract defined and tested** (R13.1.1A, § 2.2b)
+- [x] **Last-administrator protection** — the deadlock cannot recur
+- [x] **Honest bootstrap audit semantics** — `actor_kind` + nullable `actor_user_id`, CHECK-bound
+- [x] **Isolated database validation harness committed** (config, pgTAP suite, pinned-CLI workflow; § 2.2c)
+- [ ] **PostgreSQL migration execution — NOT PERFORMED.** Harness exists; the workflow has not run
+- [ ] **RLS runtime validation — NOT PERFORMED.** Same
+- [ ] **R13.1.1 complete** — blocked until the workflow runs and passes on the committed branch
 - [x] Principal assignment defined as administrator-controlled data, never hardcoded identities
 - [x] Required access matrix expressed for all three principals, `null`, and administrators
 - [x] Route architecture fixed: `Family Portfolio` module under `/family-portfolio`, five routes, Admin administrator-only
