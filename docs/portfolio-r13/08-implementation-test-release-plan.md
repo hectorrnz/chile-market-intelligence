@@ -86,6 +86,35 @@ policy and privilege posture are re-asserted, not modified.
 
 ---
 
+## Stage 1a — Administrator bootstrap continuity + executable DB validation (R13.1.1A) ✅ committed
+
+Added because Stage 1 as shipped had **no writer for `role`**, deadlocking the module (no
+administrator could ever exist ⇒ no principal could ever be assigned).
+
+- `scripts/admin/setUserRole.ts` — `--bootstrap` (legal only at zero approved administrators) and
+  ordinary `--actor`-authorized changes; dry-run default; last-administrator protection;
+  no self-role-change; writes only `role`; audits every applied change.
+- `src/lib/portfolioAccess/roleAssignment.ts` — pure decision rules, executed directly in tests.
+- **Narrow amendment to the unpushed R13.1 migration**: `actor_user_id` made nullable and
+  `actor_kind` (`administrator | service_bootstrap`) added, CHECK-bound, so a bootstrap is recorded
+  honestly instead of naming the target as its own actor. No second migration.
+- `supabase/config.toml` — local/CI only; no project ref, no production URL, no credential.
+- `supabase/tests/database/family_portfolio_entitlements_test.sql` — executable pgTAP.
+- `.github/workflows/r13-family-portfolio-db-validation.yml` — hermetic, pinned CLI, no secrets.
+
+**Validation boundary — binding.** Stage 1's guarantees are proven in two places, and only one of
+them has run:
+
+| Proven locally (executed) | Proven only by the workflow (NOT yet run) |
+|---|---|
+| TypeScript rule, role/principal decisions, all denial paths, structural assertions | migration application from clean, postconditions + in-database parity truth table, CHECK enforcement, SECURITY DEFINER behaviour, function privileges, `auth.uid()`, RLS, audit protection |
+
+> **Creating the harness is not validation.** **R13.2 must not begin until
+> `R13 Family Portfolio DB Validation` has actually run and passed on the committed branch.**
+> Production credentials are never used by it.
+
+---
+
 ## Stage 2 — Upload and storage foundation
 
 **Goal.** Accept, validate, hash, and privately store a workbook. Parse nothing yet.

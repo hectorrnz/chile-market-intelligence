@@ -1,0 +1,86 @@
+# R13.1.1A — LOCAL-DEVELOPMENT / CI configuration ONLY.
+#
+# This file exists so `supabase start` + `supabase db reset` + `supabase test db`
+# can run an ISOLATED, DISPOSABLE PostgreSQL stack on a GitHub-hosted runner, and
+# nothing else. It is what makes the R13.1 migration, its postconditions, its
+# SECURITY DEFINER functions and its RLS policies executable instead of merely
+# inspected.
+#
+# WHAT THIS FILE DELIBERATELY DOES NOT CONTAIN
+#   · no `project_id` pointing at a real Supabase project
+#   · no production URL, host, or region
+#   · no API key, JWT secret, database password, or any other credential
+#   · no `supabase link` output — this repository is never linked from CI
+#
+# The local stack generates its own throwaway keys at `supabase start`. They are
+# well-known development values, valid only for the ephemeral container, and are
+# never printed by the workflow.
+#
+# `project_id` below is a LOCAL CONTAINER NAME PREFIX, not a Supabase project
+# reference. The CLI requires it; it identifies the docker compose stack.
+
+project_id = "chile-market-intelligence-local"
+
+[db]
+# 54322 is the CLI default for the local Postgres port. Kept at the default so a
+# GitHub-hosted runner needs no port bookkeeping.
+port = 54322
+# Match Supabase's current hosted major version so a migration that applies in CI
+# also applies in production. A mismatch here would make CI a false signal.
+major_version = 17
+
+[db.pooler]
+# Not needed to apply migrations or run pgTAP; disabled to cut runner startup
+# time and surface area.
+enabled = false
+
+[api]
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[auth]
+# REQUIRED — must stay enabled. The R13.1 helpers resolve identity through
+# `auth.uid()`, and `family_portfolio_access_audit` has foreign keys into
+# `auth.users`. Disabling auth would make the entitlement tests unrunnable.
+enabled = true
+site_url = "http://127.0.0.1:3000"
+additional_redirect_urls = ["http://127.0.0.1:3000"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+# Mirrors the production posture documented in docs/security_access_control.md:
+# public self-registration is off. Test users are inserted directly by the SQL
+# tests, so nothing here depends on signup being available.
+enable_signup = false
+
+[auth.email]
+enable_signup = false
+enable_confirmations = false
+
+# ── Services not required by R13.1.1A validation ──────────────────────────────
+# Each is disabled ONLY because the entitlement tests do not exercise it, which
+# keeps runner startup fast and the attack surface small. None of them affects
+# migration application, constraint enforcement, function security, or RLS.
+
+[studio]
+enabled = false
+
+[storage]
+# R13.1 creates no bucket and no storage policy — storage belongs to a later
+# upload stage. Re-enable when that stage adds storage tests.
+enabled = false
+
+[realtime]
+enabled = false
+
+[inbucket]
+# Local mail catcher. No test sends email.
+enabled = false
+
+[analytics]
+enabled = false
+
+[edge_runtime]
+enabled = false
