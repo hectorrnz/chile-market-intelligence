@@ -570,5 +570,230 @@ select ok(pg_temp.bucket_is_private(),
 select is(pg_temp.bucket_policy_count(), 0,
   'no storage.objects policy exposes the bucket — access is service-role only');
 
+-- ===========================================================================
+-- R13.3 — snapshot rows, performance rows, publications
+--
+-- These run under real RLS with a real `auth.uid()`. A migration postcondition
+-- proves the state at APPLY time; only these prove that an actual principal
+-- sees exactly their entitled scopes and nothing else.
+-- ===========================================================================
+
+select ok(to_regclass('public.portfolio_publications') is not null, 'portfolio_publications exists');
+select ok(to_regclass('public.portfolio_snapshot_rows') is not null, 'portfolio_snapshot_rows exists');
+select ok(to_regclass('public.portfolio_performance_rows') is not null, 'portfolio_performance_rows exists');
+
+-- Schema: provenance and parser attribution are mandatory.
+select is(
+  (select is_nullable from information_schema.columns
+   where table_schema='public' and table_name='portfolio_publications' and column_name='parser_version'),
+  'NO', 'portfolio_publications.parser_version is NOT NULL');
+select is(
+  (select is_nullable from information_schema.columns
+   where table_schema='public' and table_name='portfolio_snapshot_rows' and column_name='source_cell'),
+  'NO', 'portfolio_snapshot_rows.source_cell is NOT NULL');
+select is(
+  (select is_nullable from information_schema.columns
+   where table_schema='public' and table_name='portfolio_snapshot_rows' and column_name='source_sheet'),
+  'NO', 'portfolio_snapshot_rows.source_sheet is NOT NULL');
+
+-- `value` MUST stay nullable: NULL is how "genuinely unavailable" is recorded,
+-- and forcing NOT NULL would push a fabricated 0 into the book.
+select is(
+  (select is_nullable from information_schema.columns
+   where table_schema='public' and table_name='portfolio_snapshot_rows' and column_name='value'),
+  'YES', 'portfolio_snapshot_rows.value stays nullable so unavailable is never 0');
+
+select ok(
+  (select count(*)::int from pg_catalog.pg_class c
+   join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+   where n.nspname='public'
+     and c.relname in ('portfolio_publications','portfolio_snapshot_rows','portfolio_performance_rows')
+     and c.relrowsecurity) = 3,
+  'RLS is enabled on all three R13.3 tables');
+
+select is(
+  (select count(*)::int from pg_catalog.pg_policies
+   where schemaname='public'
+     and tablename in ('portfolio_publications','portfolio_snapshot_rows','portfolio_performance_rows')
+     and cmd <> 'SELECT'),
+  0, 'no non-SELECT policy exists on any R13.3 table');
+
+select ok(not has_table_privilege('authenticated','public.portfolio_snapshot_rows','INSERT'),
+  'authenticated cannot INSERT snapshot rows');
+select ok(not has_table_privilege('authenticated','public.portfolio_snapshot_rows','UPDATE'),
+  'authenticated cannot UPDATE snapshot rows');
+select ok(not has_table_privilege('authenticated','public.portfolio_snapshot_rows','DELETE'),
+  'authenticated cannot DELETE snapshot rows');
+select ok(not has_table_privilege('anon','public.portfolio_snapshot_rows','SELECT'),
+  'anon cannot read snapshot rows');
+select ok(not has_table_privilege('anon','public.portfolio_performance_rows','SELECT'),
+  'anon cannot read performance rows');
+
+-- Seed a publication and one row per scope, as the service role.
+insert into public.portfolio_source_uploads
+  (id, upload_kind, storage_object_path, original_filename, file_sha256,
+   file_size_bytes, uploaded_by, parser_version)
+values ('aaaaaaaa-0000-4000-8000-0000000000c1', 'portfolio',
+        'portfolio/2026/aaaaaaaa-0000-4000-8000-0000000000c1.xlsx', 's.xlsx',
+        repeat('c', 64), 512, '11111111-1111-1111-1111-111111111111', 'r13.3-test');
+
+insert into public.portfolio_publications
+  (id, upload_id, upload_kind, as_of_date, revision, published_by, is_current, parser_version)
+values ('bbbbbbbb-0000-4000-8000-0000000000c1', 'aaaaaaaa-0000-4000-8000-0000000000c1',
+        'portfolio', date '2026-08-06', 1, '11111111-1111-1111-1111-111111111111', true, 'r13.3-test');
+
+insert into public.portfolio_snapshot_rows
+  (publication_id, scope, as_of_date, row_key, depth, display_order, row_type,
+   label_es, value_class, source_sheet, source_cell)
+values
+  ('bbbbbbbb-0000-4000-8000-0000000000c1','main','2026-08-06','main.total',0,0,'portfolio_total','TOTAL','source_value','RESUMEN','RESUMEN!DE87'),
+  ('bbbbbbbb-0000-4000-8000-0000000000c1','jaime','2026-08-06','jaime.total',0,1,'portfolio_total','TOTAL JAIME','source_value','RESUMEN','RESUMEN!DE150'),
+  ('bbbbbbbb-0000-4000-8000-0000000000c1','andres','2026-08-06','andres.total',0,2,'portfolio_total','TOTAL ANDRES','source_value','RESUMEN','RESUMEN!DE207'),
+  ('bbbbbbbb-0000-4000-8000-0000000000c1','pablo','2026-08-06','pablo.total',0,3,'portfolio_total','TOTAL PABLO','source_value','RESUMEN','RESUMEN!DE266'),
+  -- The documented sub-asset-class depth must be storable.
+  ('bbbbbbbb-0000-4000-8000-0000000000c1','main','2026-08-06','main.portafolio_liquido.renta_fija.investment_grade',
+   2,4,'sub_asset_class','Investment Grade','source_value','RESUMEN','RESUMEN!DE13');
+
+-- Both Main bases must COEXIST for one publication — the uniqueness constraint
+-- must not collapse them into a single Main performance record.
+insert into public.portfolio_performance_rows
+  (publication_id, scope, as_of_date, basis, metric, value, value_class, source_sheet, source_cell)
+values
+  ('bbbbbbbb-0000-4000-8000-0000000000c1','main','2026-08-06','ex_chilean_equities','weekly_profit',
+   1,'source_provided_return','RESUMEN','RESUMEN!DE90'),
+  ('bbbbbbbb-0000-4000-8000-0000000000c1','main','2026-08-06','with_chilean_equities','weekly_profit',
+   2,'source_provided_return','RESUMEN','RESUMEN!DE97'),
+  ('bbbbbbbb-0000-4000-8000-0000000000c1','jaime','2026-08-06','total','weekly_profit',
+   3,'source_provided_return','RESUMEN','RESUMEN!DE154');
+
+select is((select count(*)::int from public.portfolio_performance_rows
+           where scope='main' and basis in ('ex_chilean_equities','with_chilean_equities')),
+  2, 'both Main performance bases coexist for one publication');
+
+select throws_ok(
+  $$ insert into public.portfolio_performance_rows
+       (publication_id, scope, as_of_date, basis, metric, value, value_class, source_sheet, source_cell)
+     values ('bbbbbbbb-0000-4000-8000-0000000000c1','main','2026-08-06','ex_chilean_equities','weekly_profit',
+             9,'source_provided_return','RESUMEN','RESUMEN!DE90') $$,
+  '23505', null, 'one Main basis cannot be duplicated (nor silently overwrite the other)');
+
+select throws_ok(
+  $$ insert into public.portfolio_performance_rows
+       (publication_id, scope, as_of_date, basis, metric, value, value_class, source_sheet, source_cell)
+     values ('bbbbbbbb-0000-4000-8000-0000000000c1','main','2026-08-06','made_up_basis','weekly_profit',
+             1,'source_provided_return','RESUMEN','RESUMEN!DE90') $$,
+  '23514', null, 'an unknown performance basis is refused by the schema');
+
+select throws_ok(
+  $$ insert into public.portfolio_snapshot_rows
+       (publication_id, scope, as_of_date, row_key, depth, display_order, row_type,
+        label_es, value_class, source_sheet, source_cell)
+     values ('bbbbbbbb-0000-4000-8000-0000000000c1','not_a_scope','2026-08-06','x',0,9,'portfolio_total',
+             'X','source_value','RESUMEN','RESUMEN!DE1') $$,
+  '23514', null, 'an unknown scope is refused by the schema');
+
+-- Publication currency: at most one current per (kind, as_of_date).
+select throws_ok(
+  $$ insert into public.portfolio_publications
+       (upload_id, upload_kind, as_of_date, revision, published_by, is_current, parser_version)
+     values ('aaaaaaaa-0000-4000-8000-0000000000c1','portfolio', date '2026-08-06', 2,
+             '11111111-1111-1111-1111-111111111111', true, 'r13.3-test') $$,
+  '23505', null, 'a second CURRENT publication for the same week is refused');
+
+select lives_ok(
+  $$ insert into public.portfolio_publications
+       (id, upload_id, upload_kind, as_of_date, revision, published_by, is_current, parser_version)
+     values ('bbbbbbbb-0000-4000-8000-0000000000c2','aaaaaaaa-0000-4000-8000-0000000000c1','portfolio',
+             date '2026-08-06', 2, '11111111-1111-1111-1111-111111111111', false, 'r13.3-test') $$,
+  'a historical NON-current revision of the same week is allowed');
+
+select lives_ok(
+  $$ update public.portfolio_publications set is_current = false
+      where id = 'bbbbbbbb-0000-4000-8000-0000000000c1';
+     update public.portfolio_publications set is_current = true
+      where id = 'bbbbbbbb-0000-4000-8000-0000000000c2' $$,
+  'demoting the old current row allows the new revision to become current');
+
+-- Restore revision 1 as current for the RLS checks below.
+update public.portfolio_publications set is_current = false where id = 'bbbbbbbb-0000-4000-8000-0000000000c2';
+update public.portfolio_publications set is_current = true  where id = 'bbbbbbbb-0000-4000-8000-0000000000c1';
+
+-- ── Scope-filtered reads, per principal ──────────────────────────────────────
+select pg_temp.as_user('33333333-3333-3333-3333-333333333333'); -- Jaime
+select is((select count(*)::int from public.portfolio_snapshot_rows where scope='jaime'), 1,
+  'Jaime reads his own scope');
+select is((select count(*)::int from public.portfolio_snapshot_rows where scope='andres'), 0,
+  'Jaime CANNOT read Andres');
+select is((select count(*)::int from public.portfolio_snapshot_rows where scope='pablo'), 0,
+  'Jaime CANNOT read Pablo');
+select ok((select count(*)::int from public.portfolio_snapshot_rows where scope='main') > 0,
+  'Jaime reads Main, which the entitlement contract shares');
+select is((select count(*)::int from public.portfolio_performance_rows where scope='andres'), 0,
+  'Jaime CANNOT read Andres performance rows');
+select is((select count(*)::int from public.portfolio_publications), 0,
+  'a non-administrator reads no publication metadata');
+
+select pg_temp.as_service();
+select pg_temp.as_user('44444444-4444-4444-4444-444444444444'); -- Andrés
+select is((select count(*)::int from public.portfolio_snapshot_rows where scope='andres'), 1,
+  'Andres reads his own scope');
+select is((select count(*)::int from public.portfolio_snapshot_rows where scope='jaime'), 0,
+  'Andres CANNOT read Jaime');
+select is((select count(*)::int from public.portfolio_snapshot_rows where scope='pablo'), 0,
+  'Andres CANNOT read Pablo');
+
+select pg_temp.as_service();
+select pg_temp.as_user('55555555-5555-5555-5555-555555555555'); -- Pablo
+select is((select count(*)::int from public.portfolio_snapshot_rows where scope='pablo'), 1,
+  'Pablo reads his own scope');
+select is((select count(*)::int from public.portfolio_snapshot_rows where scope='jaime'), 0,
+  'Pablo CANNOT read Jaime');
+select is((select count(*)::int from public.portfolio_snapshot_rows where scope='andres'), 0,
+  'Pablo CANNOT read Andres');
+
+-- An approved user with NO principal and no administrative role gets nothing.
+select pg_temp.as_service();
+insert into auth.users (id, email) values
+  ('66666666-6666-6666-6666-666666666666','noprincipal@test.invalid')
+  on conflict (id) do nothing;
+insert into public.user_profiles (id, username, email, display_name, role, portfolio_principal)
+values ('66666666-6666-6666-6666-666666666666','u_noprincipal','noprincipal@test.invalid',
+        'No Principal','user', null)
+  on conflict (id) do nothing;
+
+select pg_temp.as_user('66666666-6666-6666-6666-666666666666');
+select is((select count(*)::int from public.portfolio_snapshot_rows), 0,
+  'an approved user with a NULL principal reads NO family portfolio data');
+select is((select count(*)::int from public.portfolio_performance_rows), 0,
+  'an approved user with a NULL principal reads NO performance data');
+
+-- Administrator sees every scope.
+select pg_temp.as_service();
+select pg_temp.as_user('11111111-1111-1111-1111-111111111111');
+select is((select count(distinct scope)::int from public.portfolio_snapshot_rows), 4,
+  'an administrator reads all four scopes');
+select ok((select count(*)::int from public.portfolio_publications) > 0,
+  'an administrator reads publication metadata');
+
+-- Scope cannot be bypassed by joining through the publication.
+select pg_temp.as_service();
+select pg_temp.as_user('33333333-3333-3333-3333-333333333333');
+select is(
+  (select count(*)::int
+     from public.portfolio_snapshot_rows r
+     join public.portfolio_publications p on p.id = r.publication_id
+    where r.scope = 'andres'),
+  0, 'a publication join cannot expose another principal''s rows');
+
+select throws_ok(
+  $$ insert into public.portfolio_snapshot_rows
+       (publication_id, scope, as_of_date, row_key, depth, display_order, row_type,
+        label_es, value_class, source_sheet, source_cell)
+     values ('bbbbbbbb-0000-4000-8000-0000000000c1','jaime','2026-08-06','forged',0,99,'portfolio_total',
+             'FORGED','source_value','RESUMEN','RESUMEN!DE1') $$,
+  '42501', null, 'a principal CANNOT forge a snapshot row, even in their own scope');
+
+select pg_temp.as_service();
+
 select * from finish();
 rollback;

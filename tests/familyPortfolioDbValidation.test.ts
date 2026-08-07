@@ -147,7 +147,33 @@ describe('executable pgTAP suite', () => {
   })
 
   test('it contains no financial fixture', () => {
-    assert.doesNotMatch(T, /portfolio_snapshot|holdings|market_value|net_asset/i)
+    // ORIGINAL INVARIANT, UNCHANGED: no real financial data may appear in the
+    // pgTAP suite.
+    //
+    // The original form asserted the suite never mentions `portfolio_snapshot`.
+    // That was a PROXY, valid only while no such table existed — R13.3 creates
+    // portfolio_snapshot_rows, and instruction is to prove scope-filtered RLS on
+    // it, which is impossible without naming it. So the proxy is replaced by a
+    // direct test of the thing it stood for: any numeric literal that could
+    // plausibly be a real portfolio figure. That is strictly stronger — the old
+    // form would have happily allowed a real nine-figure portfolio total under
+    // any other table name.
+    const structural = T
+      // Throwaway fixture UUIDs.
+      .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '')
+      // Quoted five-character SQLSTATE codes ('23514', '42501', …) — these are
+      // PostgreSQL error codes, not amounts.
+      .replace(/'\d{5}'/g, '')
+      .replace(/'?\d{4}-\d{2}-\d{2}'?/g, '')
+      .replace(/RESUMEN![A-Z]+\d+/g, '')
+      .replace(/repeat\('[a-z]',\s*\d+\)/g, '')
+
+    assert.doesNotMatch(structural, /\b\d{5,}\b/,
+      'a five-or-more digit literal looks like a real portfolio figure')
+    assert.doesNotMatch(structural, /\b\d+\.\d{2,}\b/,
+      'a decimal money literal looks like a real portfolio figure')
+    // Alternatives fixtures belong to Stage 4 and must not appear yet.
+    assert.doesNotMatch(T, /holdings|market_value|net_asset/i)
   })
 })
 
