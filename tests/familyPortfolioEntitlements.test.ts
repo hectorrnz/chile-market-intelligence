@@ -884,49 +884,56 @@ describe('existing behaviour is unchanged', () => {
     }
   })
 
-  test('no CLIENT-FACING Family Portfolio page or route exists yet', () => {
+  test('the Family Portfolio surface is exactly the R13.6 set — nothing from a later stage', () => {
     // ORIGINAL INVARIANT, UNCHANGED: nothing client-facing exists before the
-    // stage that owns it. Doc 05 § 7.4's scope endpoints and the four member
-    // pages belong to Stages 6-9 and must not appear early.
+    // stage that owns it. The enumeration below is the R13.6 widening of the
+    // same rule that was widened once before for R13.5's administrator console:
     //
-    // Two clauses were stage-bound to R13.2 and are widened, not dropped:
+    //   (a) Stage 6 (doc 08) owns the module shell, the five-page navigation
+    //       tree and the Portfolio surface, so the page enumeration becomes the
+    //       EXACT Stage-6 set. Overview/Weekly Changes/Alternatives pages exist
+    //       as documented honest "not yet available" states — their CONTENT
+    //       belongs to Stages 7/8/9 and is asserted absent below.
     //
-    //   (a) "no `src/app/family-portfolio` directory at all" — R13.5's own
-    //       deliverable is the administrator publication console (doc 08
-    //       Stage 5, "Draft preview API + Admin UI") at `/family-portfolio/admin`,
-    //       which doc 05 § 7.1 lists as administrator-only. The absence check is
-    //       replaced by an ENUMERATION of the page tree, which is strictly
-    //       stronger: the old form could not have caught an Overview page added
-    //       alongside a permitted one.
-    //
-    //   (b) "every route is under /admin/uploads" — R13.5 adds publish, rollback
-    //       and commentary, all administrator-only. The rule becomes "every route
-    //       is under /admin", which is the boundary that actually matters.
+    //   (b) Doc 05 § 7.4's client READ endpoints consumed by Stage 6 —
+    //       `/scopes`, `/[scope]/weeks`, `/[scope]/snapshot` — join the
+    //       administrator routes. The Stage 7-9 endpoints (`/overview`,
+    //       `/[scope]/weekly-changes`, the client `/alternatives` read route)
+    //       stay forbidden until their stages.
     const pageRoot = join(ROOT, 'src/app/family-portfolio')
-    if (existsSync(pageRoot)) {
-      const pages: string[] = []
-      const walkPages = (dir: string) => {
-        for (const e of readdirSync(dir, { withFileTypes: true })) {
-          const full = join(dir, e.name)
-          if (e.isDirectory()) walkPages(full)
-          else pages.push(full.replace(pageRoot, '').replace(/\\/g, '/'))
-        }
+    assert.ok(existsSync(pageRoot), 'the Stage-6 module shell must exist')
+    const pages: string[] = []
+    const walkPages = (dir: string) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, e.name)
+        if (e.isDirectory()) walkPages(full)
+        else pages.push(full.replace(pageRoot, '').replace(/\\/g, '/'))
       }
-      walkPages(pageRoot)
-      for (const p of pages) {
-        assert.match(p, /^\/admin\//,
-          `only the administrator console may exist under /family-portfolio yet: ${p}`)
-      }
-      // The member-facing pages and the module shell are Stage 6+.
-      for (const forbidden of ['/page.tsx', '/layout.tsx', '/portfolio/', '/weekly-changes/', '/alternatives/', '/overview/']) {
-        assert.ok(!pages.some((p) => p.startsWith(forbidden) || p === forbidden),
-          `${forbidden} is a later-stage surface and must not exist yet`)
-      }
+    }
+    walkPages(pageRoot)
+    assert.deepEqual(pages.sort(), [
+      '/admin/page.tsx',
+      '/alternatives/page.tsx',
+      '/layout.tsx',
+      '/page.tsx',
+      '/portfolio/page.tsx',
+      '/weekly-changes/page.tsx',
+    ], 'the page tree must be exactly the Stage-6 shell — no early later-stage surface')
+
+    // The two placeholder pages must stay placeholders: the Stage-8/9
+    // experiences must not be implemented early behind them.
+    for (const rel of [
+      'src/app/family-portfolio/weekly-changes/page.tsx',
+      'src/app/family-portfolio/alternatives/page.tsx',
+    ]) {
+      const src = read(rel)
+      assert.match(src, /AsyncState/, `${rel} must render the honest pending state`)
+      assert.ok(!/fetchFamilyPortfolioSnapshot|HierarchicalTable|waterfall|Waterfall|EventTimeline/.test(src),
+        `${rel} must not implement its later-stage experience early`)
     }
 
     const apiRoot = join(ROOT, 'src/app/api/family-portfolio')
-    if (!existsSync(apiRoot)) return
-
+    assert.ok(existsSync(apiRoot))
     const routes: string[] = []
     const walk = (dir: string) => {
       for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -936,21 +943,26 @@ describe('existing behaviour is unchanged', () => {
       }
     }
     walk(apiRoot)
+    assert.deepEqual(routes.sort(), [
+      '/[scope]/snapshot/route.ts',
+      '/[scope]/weeks/route.ts',
+      '/admin/publications/[id]/commentary/route.ts',
+      '/admin/publications/[id]/rollback/route.ts',
+      '/admin/uploads/[id]/publish/route.ts',
+      '/admin/uploads/[id]/route.ts',
+      '/admin/uploads/route.ts',
+      '/scopes/route.ts',
+    ], 'the API surface must be exactly the Stage-5 admin set plus the three Stage-6 read endpoints')
 
-    // Every route present must live under the ADMINISTRATOR surface.
-    for (const r of routes) {
-      assert.match(r, /^\/admin\//,
-        `unexpected Family Portfolio route for this stage: ${r}`)
-    }
-    for (const forbidden of ['/scopes', '/snapshot', '/weekly-changes', '/overview']) {
+    // Stage 7-9 endpoints stay absent until their stages: the generated
+    // Overview read, the Weekly Changes read, and the client-facing
+    // Alternatives read route (the administrator publish path reaches
+    // alternatives through `/admin/uploads/[id]/publish`, never its own
+    // client endpoint).
+    for (const forbidden of ['/overview', '/weekly-changes', '/alternatives']) {
       assert.ok(!routes.some((r) => r.includes(forbidden)),
         `${forbidden} is a later-stage route and must not exist yet`)
     }
-    // `/alternatives` is a client-facing READ route (doc 05 § 7.4) and stays
-    // forbidden; the administrator publish path reaches alternatives through
-    // `/admin/uploads/[id]/publish`, never its own client endpoint.
-    assert.ok(!routes.some((r) => r.startsWith('/alternatives')),
-      'the client-facing alternatives route is a later stage')
   })
 
   test('username + password authentication is untouched', () => {

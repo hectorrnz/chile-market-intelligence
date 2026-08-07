@@ -228,7 +228,18 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       rows,
       performance,
       adminNote,
-      metadata,
+      // R13.6 — the workbook's OWN previous-week and beginning-of-year column
+      // dates ride on the publication. The read path heads the four-column view
+      // with these (doc 07 § 7.2, "each column labelled with its actual date")
+      // rather than inferring them from adjacent publications, which could
+      // mislabel a column whenever a week was skipped. Null stays null: a
+      // column whose source date is unknown renders without a date, never with
+      // a guessed one.
+      metadata: {
+        ...metadata,
+        previousWeekDate: review.previousWeekDate,
+        beginningOfYearDate: review.beginningOfYearDate,
+      },
     })
   } else if (loaded.draft.alternatives) {
     const draft = loaded.draft.alternatives

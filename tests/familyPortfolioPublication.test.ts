@@ -1230,6 +1230,27 @@ describe('R13.5 · contract', () => {
     assert.match(read(PUBLISH_ROUTE), /lifecycleVersion: PUBLICATION_LIFECYCLE_VERSION/)
   })
 
+  test('R13.6 — the workbook\'s own column dates ride on the portfolio publication', () => {
+    // The parser derives `previousWeekDate` / `beginningOfYearDate` from the
+    // workbook's OWN columns, and the Stage-6 read path heads the four-column
+    // view with them (doc 07 § 7.2, "each column labelled with its actual
+    // date"). Inferring them from adjacent publications instead would mislabel
+    // a column whenever a week was skipped — so they are persisted at publish
+    // time, on the PORTFOLIO branch specifically.
+    const route = read(PUBLISH_ROUTE)
+    const portfolioBranch = route.slice(
+      route.indexOf('if (loaded.draft.resumen)'),
+      route.indexOf('} else if (loaded.draft.alternatives)'),
+    )
+    assert.ok(portfolioBranch.length > 0, 'the portfolio publish branch must exist')
+    assert.match(portfolioBranch, /previousWeekDate: review\.previousWeekDate/)
+    assert.match(portfolioBranch, /beginningOfYearDate: review\.beginningOfYearDate/)
+    // And the read layer surfaces them without inventing a fallback date.
+    const repo = read('src/lib/db/repositories/familyPortfolioReadRepository.ts')
+    assert.match(repo, /spineDate\(p\.metadata, 'previousWeekDate'\)/)
+    assert.match(repo, /spineDate\(p\.metadata, 'beginningOfYearDate'\)/)
+  })
+
   test('the pgTAP suite covers what only PostgreSQL can prove', () => {
     const sql = read(PGTAP)
     for (const marker of [
@@ -1248,10 +1269,14 @@ describe('R13.5 · contract', () => {
       'ROLLING BACK ALTERNATIVES DID NOT TOUCH',
       'the week is never left with zero current revisions',
       'two live commentary revisions',
-      // Revision-ordering repair (run 31210961884).
+      // Revision-ordering repair. The PUBLICATION-side "points at revision 2"
+      // sibling was deliberately REMOVED in the assertion-alignment commit: it
+      // sat after § 8g's rollback, which deliberately clears `superseded_by`,
+      // so it asserted a lifecycle stage that had already moved on. The
+      // commentary sibling below survives because no rollback intervenes
+      // before it.
       'every publication superseded_by resolves to an existing revision',
       'every commentary superseded_by resolves to an existing revision',
-      'revision 1 points at revision 2, and revision 2 is a real row',
       'commentary revision 1 points at revision 2, and revision 2 is a real row',
       'the refused edit left revision 2 live and untouched',
       'inserts the new revision BEFORE pointing the predecessor at it',

@@ -144,6 +144,35 @@ export function formatSourceDate(isoDate: string): string {
   return `${day}-${month}`
 }
 
+/**
+ * R13.6 — Family Portfolio USD amount: Chilean-convention grouping (periods as
+ * thousands, comma as decimal), whole dollars by default, `—` for a value that
+ * is genuinely unavailable. The currency itself is labelled by the surrounding
+ * table ("Values in USD"), never appended per cell.
+ */
+export function formatUsd(value: number | null | undefined, decimals = 0): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
+  return value.toLocaleString('es-CL', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })
+}
+
+/**
+ * R13.6 — a DATE-ONLY ISO string ("2026-08-13") as `DD-MM-YYYY`, read directly
+ * off the string. Same rule as `formatSourceDate`: a date-only value is never
+ * run through `new Date()`, which parses it as UTC midnight and can render the
+ * prior day in Chile's negative-UTC-offset timezone. Used for published-week
+ * labels, where the year matters across a multi-year selector.
+ */
+export function formatIsoDateLabel(isoDate: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate)
+  if (!m) return isoDate
+  const [, y, mo, d] = m
+  if (Number(mo) < 1 || Number(mo) > 12 || Number(d) < 1 || Number(d) > 31) return isoDate
+  return `${d}-${mo}-${y}`
+}
+
 /** Format ISO date string as DD MMM YYYY (es-CL short month). */
 export function formatDate(isoDate: string): string {
   return new Date(isoDate).toLocaleDateString('es-CL', {
