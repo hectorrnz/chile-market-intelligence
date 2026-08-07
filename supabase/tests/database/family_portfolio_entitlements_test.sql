@@ -1362,15 +1362,27 @@ select is(
       and not exists (select 1 from public.portfolio_commentary b where b.id = a.superseded_by)),
   0, 'every commentary superseded_by resolves to an existing revision');
 
--- The predecessor of the current portfolio week points at the CURRENT revision,
--- which is only true if the successor existed before the pointer was written.
-select is(
-  (select b.revision from public.portfolio_publications a
-     join public.portfolio_publications b on b.id = a.superseded_by
-    where a.upload_kind = 'portfolio' and a.as_of_date = date '2026-08-13' and a.revision = 1),
-  2, 'revision 1 points at revision 2, and revision 2 is a real row');
+-- NO PUBLICATION-POINTER ASSERTION BELONGS HERE. An earlier draft of this
+-- section asserted that portfolio revision 1 still points at revision 2. It does
+-- not, and correctly so: section 8g runs a rollback and a roll-forward between
+-- that publication and this point, and rollback DELIBERATELY CLEARS
+-- `superseded_by` on both rows — a rolled-back revision is neither current nor
+-- superseded. The assertion was reading a lifecycle stage that had already moved
+-- on, not detecting a defect.
+--
+-- The relationship is proven where it is actually true, and remains fully
+-- covered by three assertions that survive rollback:
+--   * section 8f, immediately after the re-publication and BEFORE any rollback,
+--     asserts revision 1 points at the revision that superseded it;
+--   * the check above asserts EVERY publication pointer resolves to a real row;
+--   * section 9c asserts no pointer targets an equal or lower revision, so the
+--     graph stays strictly forward-directed and acyclic.
+-- Restoring the pointer after a rollback purely to satisfy a test would change
+-- documented lifecycle semantics to fit an assertion — backwards.
 
--- Commentary: the superseded revision points forward to the live one.
+-- Commentary: the superseded revision points forward to the live one. Unlike the
+-- publication ledger, no rollback intervenes before this point, so the pointer
+-- written by the edit is still the committed state.
 select is(
   (select b.revision from public.portfolio_commentary a
      join public.portfolio_commentary b on b.id = a.superseded_by
