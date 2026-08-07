@@ -178,10 +178,26 @@ administrator who classifies nothing simply cannot publish that one investment's
 **PROPOSED — tint/shade tolerance.** Match within a colour *family*, not by exact equality:
 normalise the fill to sRGB (resolving `theme` + `tint` via `theme1.xml`, and `indexed` via the
 standard palette), convert to HSL, and accept a candidate when hue is within ±12° of the legend
-colour and it is the nearest legend colour by ΔE. This admits genuine tints/shades of navy, green,
-and blue while keeping `#002060` (navy, Aporte) and `#1F497D`+tint (medium blue, Distribución)
-distinguishable — they are 20°+ apart in hue and far apart in lightness. If two legend colours tie
-within tolerance, do not guess: emit `ambiguous_fill_classification` and require classification.
+colour **and** it is the nearest legend colour by ΔE. This admits genuine tints/shades of navy,
+green, and blue. If two legend colours tie within tolerance, do not guess: emit
+`ambiguous_fill_classification` and require classification.
+
+> **Corrected during R13.4 implementation — ΔE is REQUIRED, not a redundant second test.**
+> An earlier draft of this section justified the rule by asserting that `#002060` (navy, Aporte) and
+> `#1F497D`+tint (medium blue, Distribución) are "20°+ apart in hue". **That is factually wrong.**
+> Computed from the values in § 3.2: `#002060` has hue ≈ 220°, `#1F497D` ≈ 213°, and tint changes
+> lightness only — it does not move hue. The two are therefore **≈ 7° apart, comfortably INSIDE the
+> ±12° gate**, and both are eligible candidates for a bluish fill.
+>
+> The hue gate alone consequently **cannot** separate Aporte from Distribución. What separates them
+> is the second half of the same rule: **nearest by ΔE**, where they are far apart because ΔE is
+> dominated by lightness here. Dropping or short-circuiting the ΔE step as "redundant" would make
+> every `Distribución` cell ambiguous and break the module.
+>
+> The algorithm is unchanged — exact → hue-family gate (±12°) → nearest eligible family by ΔE →
+> `unclassified`. Only this rationale was wrong. `tests/alternativesParser.test.ts` pins the
+> correction by asserting that both colours pass the hue gate, so the ΔE discriminator can never be
+> removed on the belief that hue already separates them.
 
 **PROPOSED — provenance.** Every ingested event stores: source sheet, source cell reference, raw
 fill as stored (`rgb` or `theme`+`tint`), resolved sRGB hex, normalised event type, classification
@@ -227,7 +243,10 @@ Because the workbook's own USD conversion is `#NAME?`, **NMI has no source-provi
 alternatives**. NMI must not invent one by applying its own FX rates and presenting the result as if
 it came from the source. Alternatives are presented **grouped by currency**, with per-currency
 subtotals. A USD-equivalent view is a **future, explicitly-labelled derived feature** requiring an
-approved FX source (see `09-open-decisions.md` § D5).
+approved FX source (see `09-open-decisions.md` **§ D4** — corrected during R13.4 implementation from
+an earlier reference to § D5, which is the *retention* decision; **D4** is the USD-total decision).
+The interim rule is unchanged: **no cross-currency aggregate total**, per-currency subtotals are
+preserved, and the USD-equivalent view stays deferred under D4.
 
 ---
 

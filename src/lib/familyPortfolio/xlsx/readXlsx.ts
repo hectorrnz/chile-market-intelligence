@@ -49,6 +49,8 @@ export interface XlsxCell {
   formula: string | null
   /** True when the cell's style resolves to a date number format. */
   isDateFormatted: boolean
+  /** Raw fill as stored, or null when the cell is unfilled. */
+  fill: FillSpec | null
 }
 
 export interface XlsxSheet {
@@ -63,6 +65,8 @@ export interface XlsxWorkbook {
   sheets: XlsxSheet[]
   /** True when the workbook uses the 1904 date system (Mac legacy). */
   date1904: boolean
+  /** Theme palette in Excel's theme-attribute index order (may be empty). */
+  themeColours: string[]
   /** Diagnostics from the styles parse — see rule 3 above. */
   styleCounts: { declared: number | null; parsed: number }
 }
@@ -155,9 +159,27 @@ export function isDateFormatCode(code: string): boolean {
   return /[dmyhs]/i.test(stripped) && /(d|m{1,5}|y{2,4}|h|s)/i.test(stripped)
 }
 
+/**
+ * A cell fill exactly as the file stores it (doc 03 § 3.2).
+ *
+ * The RAW representation is preserved verbatim, never only its resolved hex, so
+ * a future re-classification can be re-derived from the source (doc 03 § 3.4
+ * provenance requirement).
+ */
+export interface FillSpec {
+  rgb: string | null
+  theme: number | null
+  tint: number | null
+  indexed: number | null
+  /** `patternType`; `none` means the cell is genuinely unfilled. */
+  patternType: string | null
+}
+
 export interface StyleTable {
   /** Per cellXf index: does this style render a date? */
   isDate: boolean[]
+  /** Per cellXf index: the fill it points at, or null when unfilled. */
+  fill: (FillSpec | null)[]
   declaredCount: number | null
 }
 
@@ -186,15 +208,73 @@ export function parseStyles(xml: string): StyleTable {
   const declaredCount = declaredRaw === null ? null : Number(declaredRaw)
   const body = block ? block[2] : ''
 
+  // Fills, in declaration order — `fillId` on a cellXf indexes this array.
+  const fills: (FillSpec | null)[] = []
+  const fillsBlock = /<fills\b[^>]*>([\s\S]*?)<\/fills>/.exec(xml)
+  if (fillsBlock) {
+    const fillRe = /<fill\b[^>]*>([\s\S]*?)<\/fill>|<fill\b[^>]*\/>/g
+    let f: RegExpExecArray | null
+    while ((f = fillRe.exec(fillsBlock[1])) !== null) {
+      const inner = f[1] ?? ''
+      const pat = /<patternFill\b([^>]*)/.exec(inner)
+      const patternType = pat ? attr(pat[1], 'patternType') : null
+      const fg = /<fgColor\b([^>]*)/.exec(inner)
+      if (!fg || patternType === 'none' || patternType === null) {
+        fills.push(patternType && patternType !== 'none' ? { rgb: null, theme: null, tint: null, indexed: null, patternType } : null)
+        continue
+      }
+      const themeRaw = attr(fg[1], 'theme')
+      const tintRaw = attr(fg[1], 'tint')
+      const indexedRaw = attr(fg[1], 'indexed')
+      fills.push({
+        rgb: attr(fg[1], 'rgb'),
+        theme: themeRaw === null ? null : Number(themeRaw),
+        tint: tintRaw === null ? null : Number(tintRaw),
+        indexed: indexedRaw === null ? null : Number(indexedRaw),
+        patternType,
+      })
+    }
+  }
+
   const isDate: boolean[] = []
+  const fill: (FillSpec | null)[] = []
   const xfRe = /<xf\b([^>]*?)\/?>/g
   let x: RegExpExecArray | null
   while ((x = xfRe.exec(body)) !== null) {
     const id = Number(attr(x[1], 'numFmtId') ?? '0')
     isDate.push(BUILTIN_DATE_FMT_IDS.has(id) || customDate.get(id) === true)
+    const fillId = Number(attr(x[1], 'fillId') ?? '0')
+    fill.push(Number.isInteger(fillId) ? (fills[fillId] ?? null) : null)
   }
 
-  return { isDate, declaredCount: Number.isFinite(declaredCount) ? declaredCount : null }
+  return { isDate, fill, declaredCount: Number.isFinite(declaredCount) ? declaredCount : null }
+}
+
+/**
+ * Parses `xl/theme/theme1.xml`'s colour scheme into Excel's THEME INDEX order.
+ *
+ * The `clrScheme` element order is `dk1, lt1, dk2, lt2, accent1…`, but Excel's
+ * `theme=` attribute indexes `0=lt1, 1=dk1, 2=lt2, 3=dk2, 4=accent1…` — the
+ * first two pairs are SWAPPED. Getting this wrong inverts light and dark and
+ * would misclassify every `Distribución` (doc 03 § 3.2). The returned array is
+ * already in `theme=` order, so callers index it directly.
+ */
+export function parseThemeColours(xml: string): string[] {
+  const scheme = /<a:clrScheme\b[^>]*>([\s\S]*?)<\/a:clrScheme>/.exec(xml)
+  if (!scheme) return []
+  const byName = new Map<string, string>()
+  const slotRe = /<a:(dk1|lt1|dk2|lt2|accent[1-6]|hlink|folHlink)\b[^>]*>([\s\S]*?)<\/a:\1>/g
+  let m: RegExpExecArray | null
+  while ((m = slotRe.exec(scheme[1])) !== null) {
+    const body = m[2]
+    const srgb = /<a:srgbClr\b[^>]*\bval\s*=\s*"([0-9A-Fa-f]{6})"/.exec(body)
+    const sys = /<a:sysClr\b[^>]*\blastClr\s*=\s*"([0-9A-Fa-f]{6})"/.exec(body)
+    const hex = srgb?.[1] ?? sys?.[1] ?? null
+    if (hex) byName.set(m[1], `#${hex.toUpperCase()}`)
+  }
+  // THEME-INDEX order, not document order.
+  const order = ['lt1', 'dk1', 'lt2', 'dk2', 'accent1', 'accent2', 'accent3', 'accent4', 'accent5', 'accent6', 'hlink', 'folHlink']
+  return order.map((n) => byName.get(n) ?? '')
 }
 
 // ---------------------------------------------------------------------------
@@ -219,6 +299,7 @@ function parseSheetXml(name: string, xml: string, shared: string[], styles: Styl
     const t = attr(tag, 't') ?? 'n'
     const sIdx = Number(attr(tag, 's') ?? '0')
     const isDateFormatted = Number.isInteger(sIdx) ? styles.isDate[sIdx] === true : false
+    const cellFill = Number.isInteger(sIdx) ? (styles.fill[sIdx] ?? null) : null
 
     const fM = /<f\b[^>]*>([\s\S]*?)<\/f>|<f\b[^>]*\/>/.exec(body)
     const formula = fM ? (fM[1] === undefined ? '' : decodeXmlText(fM[1])) : null
@@ -263,7 +344,7 @@ function parseSheetXml(name: string, xml: string, shared: string[], styles: Styl
     if (kind === 'empty' && formula === null) continue
 
     cells.set(`${pos.row}:${pos.column}`, {
-      ref, column: pos.column, row: pos.row, kind, number: num, text, formula, isDateFormatted,
+      ref, column: pos.column, row: pos.row, kind, number: num, text, formula, isDateFormatted, fill: cellFill,
     })
     if (pos.row > maxRow) maxRow = pos.row
     if (pos.column > maxColumn) maxColumn = pos.column
@@ -316,7 +397,7 @@ export function readXlsx(bytes: Buffer): XlsxReadResult {
   const stylesEntry = entry(entries, 'xl/styles.xml')
   const styles = stylesEntry
     ? parseStyles(stylesEntry.data.toString('utf8'))
-    : { isDate: [], declaredCount: null }
+    : { isDate: [], fill: [], declaredCount: null }
 
   // RULE 3 — fail loudly on the fail-silent defect.
   if (styles.declaredCount !== null && styles.declaredCount !== styles.isDate.length) {
@@ -343,6 +424,9 @@ export function readXlsx(bytes: Buffer): XlsxReadResult {
       if (id && target && mode !== 'External') relTarget.set(id, target)
     }
   }
+
+  const themeEntry = entry(entries, 'xl/theme/theme1.xml')
+  const themeColours = themeEntry ? parseThemeColours(themeEntry.data.toString('utf8')) : []
 
   const sharedEntry = entry(entries, 'xl/sharedStrings.xml')
   const shared = sharedEntry ? parseSharedStrings(sharedEntry.data.toString('utf8')) : []
@@ -373,6 +457,7 @@ export function readXlsx(bytes: Buffer): XlsxReadResult {
     workbook: {
       sheets,
       date1904,
+      themeColours,
       styleCounts: { declared: styles.declaredCount, parsed: styles.isDate.length },
     },
   }

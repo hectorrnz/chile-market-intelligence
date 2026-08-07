@@ -165,15 +165,28 @@ describe('executable pgTAP suite', () => {
       // PostgreSQL error codes, not amounts.
       .replace(/'\d{5}'/g, '')
       .replace(/'?\d{4}-\d{2}-\d{2}'?/g, '')
-      .replace(/RESUMEN![A-Z]+\d+/g, '')
+      // Provenance cell references, e.g. RESUMEN!DE87 / Alternatives!N9.
+      .replace(/[A-Za-z]+![A-Z]+\d+/g, '')
       .replace(/repeat\('[a-z]',\s*\d+\)/g, '')
+      // Colour definitions (#002060, rgb:FF002060, theme:3@0.4). R13.4's legend
+      // colours are COLOUR values, not amounts — the guard must not confuse a
+      // six-hex-digit colour with a six-figure sum.
+      .replace(/#[0-9A-Fa-f]{6}\b/g, '')
+      .replace(/\b(rgb|theme):[0-9A-Fa-f]+(@[\d.]+)?/g, '')
 
     assert.doesNotMatch(structural, /\b\d{5,}\b/,
       'a five-or-more digit literal looks like a real portfolio figure')
     assert.doesNotMatch(structural, /\b\d+\.\d{2,}\b/,
       'a decimal money literal looks like a real portfolio figure')
-    // Alternatives fixtures belong to Stage 4 and must not appear yet.
-    assert.doesNotMatch(T, /holdings|market_value|net_asset/i)
+    // `holdings` was part of the same stage-bound proxy and is dropped for the
+    // same reason: R13.4 creates `alternatives_holdings` and must prove its
+    // shared-scope RLS, which requires naming it. The numeric check above is
+    // what actually enforces "no financial fixture" for BOTH stages.
+    //
+    // `market_value` / `net_asset` are retained: no R13 table declares either,
+    // so their appearance would mean someone invented a derived-valuation
+    // column rather than storing what the source states.
+    assert.doesNotMatch(T, /market_value|net_asset/i)
   })
 })
 

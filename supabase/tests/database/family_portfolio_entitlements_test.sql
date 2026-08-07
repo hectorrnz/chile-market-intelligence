@@ -795,5 +795,144 @@ select throws_ok(
 
 select pg_temp.as_service();
 
+-- ===========================================================================
+-- R13.4 — alternatives holdings and events
+--
+-- Alternatives are SHARED: doc 05 § 2.3 grants the `alternatives` scope to
+-- every principal and to the administrator. These assertions prove that the
+-- shared scope is genuinely shared AND still gated — a caller with no scopes
+-- must still see nothing.
+-- ===========================================================================
+
+select ok(to_regclass('public.alternatives_holdings') is not null, 'alternatives_holdings exists');
+select ok(to_regclass('public.alternatives_events') is not null, 'alternatives_events exists');
+
+select is(
+  (select is_nullable from information_schema.columns
+   where table_schema='public' and table_name='alternatives_holdings' and column_name='currency'),
+  'NO', 'alternatives_holdings.currency is NOT NULL — a row can never lose its denomination');
+select is(
+  (select is_nullable from information_schema.columns
+   where table_schema='public' and table_name='alternatives_events' and column_name='currency'),
+  'NO', 'alternatives_events.currency is NOT NULL');
+
+select ok(
+  (select count(*)::int from pg_catalog.pg_class c
+   join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+   where n.nspname='public' and c.relname in ('alternatives_holdings','alternatives_events')
+     and c.relrowsecurity) = 2,
+  'RLS is enabled on both R13.4 tables');
+select is(
+  (select count(*)::int from pg_catalog.pg_policies
+   where schemaname='public' and tablename in ('alternatives_holdings','alternatives_events')
+     and cmd <> 'SELECT'),
+  0, 'no non-SELECT policy exists on the R13.4 tables');
+select ok(not has_table_privilege('anon','public.alternatives_holdings','SELECT'),
+  'anon cannot read alternatives holdings');
+select ok(not has_table_privilege('authenticated','public.alternatives_events','INSERT'),
+  'authenticated cannot INSERT alternatives events');
+
+insert into public.alternatives_holdings
+  (id, publication_id, as_of_date, category, currency, investment_name, sociedad,
+   capital_committed, contributions, unfunded, current_value, source_sheet, source_row, source_cell)
+values ('cccccccc-0000-4000-8000-0000000000a1','bbbbbbbb-0000-4000-8000-0000000000c1',
+        '2026-08-06','Private Debt','dolares','FI Compass','NAIDELT',
+        100, 40, 60, 75, 'Alternatives', 9, 'Alternatives!B9');
+
+insert into public.alternatives_events
+  (publication_id, holding_id, event_date, amount, currency, event_type,
+   raw_fill, resolved_hex, classification_method, source_sheet, source_cell, source_row)
+values ('bbbbbbbb-0000-4000-8000-0000000000c1','cccccccc-0000-4000-8000-0000000000a1',
+        '2026-06-30', -25, 'dolares', 'aporte',
+        'rgb:FF002060', '#002060', 'legend_exact', 'Alternatives', 'Alternatives!N9', 9);
+
+-- An unclassified event is representable and carries NO method.
+select lives_ok(
+  $$ insert into public.alternatives_events
+       (publication_id, holding_id, event_date, amount, currency, event_type,
+        raw_fill, source_sheet, source_cell, source_row)
+     values ('bbbbbbbb-0000-4000-8000-0000000000c1','cccccccc-0000-4000-8000-0000000000a1',
+             '2026-07-31', 12, 'dolares', 'unclassified', null, 'Alternatives', 'Alternatives!DC9', 9) $$,
+  'an unclassified event is representable with no classification method');
+
+-- A CLASSIFIED event without a method would lose its provenance.
+select throws_ok(
+  $$ insert into public.alternatives_events
+       (publication_id, holding_id, event_date, amount, currency, event_type,
+        source_sheet, source_cell, source_row)
+     values ('bbbbbbbb-0000-4000-8000-0000000000c1','cccccccc-0000-4000-8000-0000000000a1',
+             '2026-05-31', 5, 'dolares', 'dividendo', 'Alternatives', 'Alternatives!M9', 9) $$,
+  '23514', null, 'a classified event CANNOT omit how it was classified');
+
+-- An unclassified event must not carry a method either — that would be a false record.
+select throws_ok(
+  $$ insert into public.alternatives_events
+       (publication_id, holding_id, event_date, amount, currency, event_type,
+        classification_method, source_sheet, source_cell, source_row)
+     values ('bbbbbbbb-0000-4000-8000-0000000000c1','cccccccc-0000-4000-8000-0000000000a1',
+             '2026-04-30', 5, 'dolares', 'unclassified', 'legend_exact', 'Alternatives', 'Alternatives!L9', 9) $$,
+  '23514', null, 'an unclassified event CANNOT claim a classification method');
+
+select throws_ok(
+  $$ insert into public.alternatives_events
+       (publication_id, holding_id, event_date, amount, currency, event_type,
+        classification_method, source_sheet, source_cell, source_row)
+     values ('bbbbbbbb-0000-4000-8000-0000000000c1','cccccccc-0000-4000-8000-0000000000a1',
+             '2026-03-31', 5, 'dolares', 'made_up', 'legend_exact', 'Alternatives', 'Alternatives!K9', 9) $$,
+  '23514', null, 'an unknown event type is refused by the schema');
+
+-- The (investment x sociedad) grain cannot be ingested twice.
+select throws_ok(
+  $$ insert into public.alternatives_holdings
+       (publication_id, as_of_date, category, currency, investment_name, sociedad,
+        source_sheet, source_row, source_cell)
+     values ('bbbbbbbb-0000-4000-8000-0000000000c1','2026-08-06','Private Debt','dolares',
+             'FI Compass','NAIDELT','Alternatives', 9, 'Alternatives!B9') $$,
+  '23505', null, 'the same investment x sociedad cannot be ingested twice in one publication');
+
+-- The SAME investment and sociedad under a different CURRENCY is legitimate.
+select lives_ok(
+  $$ insert into public.alternatives_holdings
+       (publication_id, as_of_date, category, currency, investment_name, sociedad,
+        source_sheet, source_row, source_cell)
+     values ('bbbbbbbb-0000-4000-8000-0000000000c1','2026-08-06','Real Assets','euros',
+             'FI Compass','NAIDELT','Alternatives', 14, 'Alternatives!B14') $$,
+  'the same holding under a different currency is a distinct row');
+
+-- Shared-scope reads.
+select pg_temp.as_user('33333333-3333-3333-3333-333333333333'); -- Jaime
+select ok((select count(*)::int from public.alternatives_holdings) > 0,
+  'Jaime reads shared alternatives');
+select ok((select count(*)::int from public.alternatives_events) > 0,
+  'Jaime reads shared alternatives events');
+
+select pg_temp.as_service();
+select pg_temp.as_user('55555555-5555-5555-5555-555555555555'); -- Pablo
+select ok((select count(*)::int from public.alternatives_holdings) > 0,
+  'Pablo also reads shared alternatives');
+
+select pg_temp.as_service();
+select pg_temp.as_user('66666666-6666-6666-6666-666666666666'); -- no principal
+select is((select count(*)::int from public.alternatives_holdings), 0,
+  'an approved user with a NULL principal reads NO alternatives — shared is still gated');
+select is((select count(*)::int from public.alternatives_events), 0,
+  'an approved user with a NULL principal reads NO alternatives events');
+
+select pg_temp.as_service();
+select pg_temp.as_user('11111111-1111-1111-1111-111111111111'); -- administrator
+select ok((select count(*)::int from public.alternatives_holdings) > 0,
+  'an administrator reads alternatives');
+
+select pg_temp.as_user('33333333-3333-3333-3333-333333333333');
+select throws_ok(
+  $$ insert into public.alternatives_events
+       (publication_id, holding_id, event_date, amount, currency, event_type,
+        classification_method, source_sheet, source_cell, source_row)
+     values ('bbbbbbbb-0000-4000-8000-0000000000c1','cccccccc-0000-4000-8000-0000000000a1',
+             '2026-02-28', 1, 'dolares', 'aporte', 'administrator', 'Alternatives', 'Alternatives!J9', 9) $$,
+  '42501', null, 'a principal CANNOT forge an alternatives event');
+
+select pg_temp.as_service();
+
 select * from finish();
 rollback;
