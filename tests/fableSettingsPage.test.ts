@@ -1395,7 +1395,31 @@ describe('R9.5 · the surface is one integrated product', () => {
     // The shell scrolls <main>; TopBar and SecondaryNav are flex siblings ABOVE
     // it, not fixed/sticky overlays, so an in-page anchor can never land under
     // the chrome. Locked here because a later `sticky` on either would break it.
-    assert.match(code(APP_SHELL), /<main className="flex-1 overflow-y-auto/)
+    //
+    // The scroll container is identified by its CLASS TOKENS, never by their
+    // order or adjacency. `flex-1 min-h-0 overflow-y-auto` states exactly the
+    // same requirement as `flex-1 overflow-y-auto` — `min-h-0` is the standard
+    // flex-shrink fix a scrolling flex child needs — but the previous
+    // `/<main className="flex-1 overflow-y-auto/` regex required the two tokens
+    // to be adjacent and so failed on a correct shell. The requirement below is
+    // unchanged and no weaker: <main> must still fill the shell AND be the
+    // element that scrolls.
+    const mainEl = /<main\b[^>]*\sclassName="([^"]*)"/.exec(code(APP_SHELL))
+    assert.ok(mainEl, 'AppShell must render a <main> element carrying a className')
+    assert.equal(
+      (code(APP_SHELL).match(/<main\b/g) ?? []).length,
+      1,
+      'exactly one <main> — otherwise this assertion could pass on the wrong element',
+    )
+    const mainClasses = mainEl[1].split(/\s+/).filter(Boolean)
+    assert.ok(
+      mainClasses.includes('flex-1'),
+      `<main> must fill the remaining shell height; classes were: ${mainEl[1]}`,
+    )
+    assert.ok(
+      mainClasses.includes('overflow-y-auto'),
+      `<main> must be the page scroll container; classes were: ${mainEl[1]}`,
+    )
     for (const [name, src] of [['TopBar', TOP_BAR], ['SecondaryNav', SECONDARY_NAV]] as const) {
       assert.doesNotMatch(code(src), /\b(fixed|sticky)\s/, `${name} must not overlay the scroll container`)
     }
