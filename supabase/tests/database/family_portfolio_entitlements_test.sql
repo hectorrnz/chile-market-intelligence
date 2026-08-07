@@ -1019,6 +1019,15 @@ select ok(not has_table_privilege('anon','public.portfolio_commentary','SELECT')
 -- ── 8c Fixtures for the lifecycle proper ─────────────────────────────────
 -- A separate upload and a separate week, so the R13.3/R13.4 fixtures above stay
 -- exactly as those assertions left them.
+--
+-- DIGESTS MUST BE UNIQUE PER UPLOAD KIND ACROSS THE WHOLE TRANSACTION.
+-- `unique (upload_kind, file_sha256)` is transaction-wide, and an earlier
+-- assertion LEAVES A ROW BEHIND: the R13.2 `lives_ok` proving "the same digest
+-- IS allowed under a different upload kind" persists
+-- ('alternatives', 'a'x64) for the rest of the run. Reusing that exact pair here
+-- aborted the suite mid-file after 205 assertions. The alternatives fixture below
+-- therefore uses a DIGIT run, which no earlier fixture uses at all — a new
+-- fixture that reaches for the next unused letter cannot collide with it.
 insert into public.portfolio_source_uploads
   (id, upload_kind, storage_object_path, original_filename, file_sha256,
    file_size_bytes, uploaded_by, parser_version)
@@ -1034,7 +1043,7 @@ values
    repeat('f', 64), 512, '11111111-1111-1111-1111-111111111111', 'r13.5-test'),
   ('aaaaaaaa-0000-4000-8000-0000000000d4', 'alternatives',
    'alternatives/2026/aaaaaaaa-0000-4000-8000-0000000000d4.xlsx', 'alts.xlsx',
-   repeat('a', 64), 512, '11111111-1111-1111-1111-111111111111', 'r13.5-test');
+   repeat('0', 64), 512, '11111111-1111-1111-1111-111111111111', 'r13.5-test');
 
 -- ── 8d First publication ─────────────────────────────────────────────────
 select lives_ok($$
