@@ -679,12 +679,57 @@ describe('R13.5 · migration', () => {
     assert.ok(hits.length >= 2, 'both publish functions must refuse an empty payload')
   })
 
-  test('the current publication is demoted BEFORE the new one is inserted', () => {
-    // The partial unique index permits exactly one current row per (kind, date),
-    // so the reverse order would deadlock against the index.
-    const demote = code.indexOf('set is_current = false, superseded_by = v_pub_id')
-    const insert = code.indexOf('insert into public.portfolio_publications')
-    assert.ok(demote > 0 && insert > 0 && demote < insert)
+  test('the new revision is INSERTED before the predecessor points at it', () => {
+    // CORRECTED after run 31210961884. This test previously asserted the exact
+    // opposite — demote-then-insert — which satisfied the partial current-row
+    // index but violated the non-deferrable `superseded_by` self-FK: the
+    // predecessor was pointed at a row that did not exist yet, so PostgreSQL
+    // raised 23503 on every re-publication. The assertion was wrong, not merely
+    // outdated, and it could never have caught the defect because it encoded it.
+    //
+    // The repaired order is insert-non-current -> fill -> demote -> promote,
+    // which satisfies BOTH constraints. Verified at runtime in pgTAP against the
+    // deployed `prosrc`; this static check exists only so the order cannot
+    // silently regress in the migration text.
+    for (const fn of ['nmi_publish_portfolio', 'nmi_publish_alternatives']) {
+      const body = functionBody(fn)
+      const insert = body.indexOf('insert into public.portfolio_publications')
+      const demote = body.indexOf('set is_current = false, superseded_by = v_pub_id')
+      const promote = body.indexOf('set is_current = true where id = v_pub_id')
+      assert.ok(insert > 0 && demote > 0 && promote > 0, fn)
+      assert.ok(insert < demote, `${fn}: the successor must exist before it is referenced`)
+      assert.ok(demote < promote, `${fn}: demote must precede promote — never two current rows`)
+    }
+  })
+
+  test('the new revision is inserted NON-current', () => {
+    // A row inserted `is_current = true` alongside a still-current predecessor
+    // would collide with the partial unique index immediately.
+    for (const fn of ['nmi_publish_portfolio', 'nmi_publish_alternatives']) {
+      const body = functionBody(fn)
+      assert.match(body, /p_published_by, false,/, `${fn} must insert non-current`)
+    }
+  })
+
+  test('commentary inserts the new revision before superseding the prior one', () => {
+    const body = functionBody('nmi_upsert_portfolio_commentary')
+    const insert = body.indexOf('insert into public.portfolio_commentary')
+    const demote = body.indexOf('set superseded_by = v_id')
+    assert.ok(insert > 0 && demote > 0 && insert < demote)
+    // The new row is parked behind its predecessor so the one-live partial index
+    // is satisfied, then released once the predecessor has been superseded.
+    assert.match(body, /revision, superseded_by\)/)
+    assert.match(body, /set superseded_by = null\s*\n\s*where id = v_id/)
+  })
+
+  test('rollback never writes a forward reference', () => {
+    // Both rows already exist and both statements CLEAR superseded_by, so
+    // rollback needed no equivalent repair.
+    const body = functionBody('nmi_rollback_publication')
+    assert.ok(!/superseded_by = v_[a-z_]*id/.test(body),
+      'rollback must not point a row at another publication')
+    const clears = body.match(/superseded_by = null/g) ?? []
+    assert.equal(clears.length, 2)
   })
 
   test('rollback moves a pointer and DELETES nothing', () => {
@@ -1203,6 +1248,14 @@ describe('R13.5 · contract', () => {
       'ROLLING BACK ALTERNATIVES DID NOT TOUCH',
       'the week is never left with zero current revisions',
       'two live commentary revisions',
+      // Revision-ordering repair (run 31210961884).
+      'every publication superseded_by resolves to an existing revision',
+      'every commentary superseded_by resolves to an existing revision',
+      'revision 1 points at revision 2, and revision 2 is a real row',
+      'commentary revision 1 points at revision 2, and revision 2 is a real row',
+      'the refused edit left revision 2 live and untouched',
+      'inserts the new revision BEFORE pointing the predecessor at it',
+      'anon is REFUSED outright on commentary',
     ]) {
       assert.ok(sql.includes(marker), `pgTAP must exercise ${marker}`)
     }

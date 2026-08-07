@@ -252,19 +252,42 @@ begin
     raise exception 'publication_refused_duplicate_submission';
   end if;
 
-  -- Demote first: the partial unique index permits exactly one current row per
-  -- (kind, date), so the new row cannot be inserted while the old one stands.
-  if v_previous is not null then
-    update public.portfolio_publications
-       set is_current = false, superseded_by = v_pub_id
-     where id = v_previous;
-  end if;
-
+  -- ORDERING — INSERT NON-CURRENT, FILL, DEMOTE, PROMOTE.
+  --
+  -- Two constraints pull in opposite directions and both must be honoured:
+  --
+  --   * `portfolio_publications_current_idx` is a PARTIAL unique index over
+  --     (upload_kind, as_of_date) WHERE is_current, so two current rows for one
+  --     week cannot coexist even for an instant.
+  --   * `superseded_by` carries a NON-DEFERRABLE self-referential foreign key,
+  --     so it can only ever name a row that ALREADY EXISTS.
+  --
+  -- Demoting the predecessor first and pointing it at the not-yet-inserted new
+  -- id satisfies the index but violates the FK — PostgreSQL checks it at the end
+  -- of that UPDATE and raises 23503. That is exactly what run 31210961884 hit on
+  -- every re-publication; the first publication survived only because there was
+  -- no predecessor to demote.
+  --
+  -- The sequence below satisfies both. The new revision is inserted NON-CURRENT,
+  -- which the partial index ignores entirely, so it can exist alongside the
+  -- still-current predecessor while its children are written. Only once the
+  -- complete revision exists is the predecessor demoted — and by then the row its
+  -- `superseded_by` names is real. The promotion is last, after the demote, so
+  -- the index is never asked to hold two current rows.
+  --
+  -- The intermediate state (predecessor current, successor complete but not yet
+  -- current) is invisible outside this transaction under MVCC, and it is the
+  -- SAFE intermediate state to be interrupted in: a failure at any point leaves
+  -- the previously-current week serving readers untouched.
+  --
+  -- There is no `supersedes` column to populate on the way in. Doc 05 § 5.1
+  -- models the relation in one direction only, and adding an inverse column
+  -- would be a schema change, not a repair.
   insert into public.portfolio_publications
     (id, upload_id, upload_kind, as_of_date, revision, published_by, is_current,
      admin_note, parser_version, metadata)
   values
-    (v_pub_id, p_upload_id, 'portfolio', p_as_of_date, v_revision, p_published_by, true,
+    (v_pub_id, p_upload_id, 'portfolio', p_as_of_date, v_revision, p_published_by, false,
      p_admin_note, p_parser_version, coalesce(p_metadata, '{}'::jsonb));
 
   insert into public.portfolio_snapshot_rows
@@ -291,6 +314,17 @@ begin
         scope text, basis text, metric text, value numeric, value_class text,
         source_sheet text, source_cell text, metadata jsonb);
   end if;
+
+  -- The complete revision now exists. Demote the predecessor and point it at a
+  -- row that is real, then promote. Demote MUST precede promote: the partial
+  -- index tolerates zero current rows for an instant, never two.
+  if v_previous is not null then
+    update public.portfolio_publications
+       set is_current = false, superseded_by = v_pub_id
+     where id = v_previous;
+  end if;
+
+  update public.portfolio_publications set is_current = true where id = v_pub_id;
 
   perform public.nmi_sync_upload_status(p_upload_id);
   if v_prev_upload is not null and v_prev_upload <> p_upload_id then
@@ -363,17 +397,15 @@ begin
     raise exception 'publication_refused_duplicate_submission';
   end if;
 
-  if v_previous is not null then
-    update public.portfolio_publications
-       set is_current = false, superseded_by = v_pub_id
-     where id = v_previous;
-  end if;
-
+  -- INSERT NON-CURRENT, FILL, DEMOTE, PROMOTE — identical to the portfolio path,
+  -- and for the identical reason: the partial current-row index forbids two
+  -- current rows, while the non-deferrable `superseded_by` FK forbids naming a
+  -- row that does not exist yet. See the portfolio function for the full note.
   insert into public.portfolio_publications
     (id, upload_id, upload_kind, as_of_date, revision, published_by, is_current,
      admin_note, parser_version, metadata)
   values
-    (v_pub_id, p_upload_id, 'alternatives', p_as_of_date, v_revision, p_published_by, true,
+    (v_pub_id, p_upload_id, 'alternatives', p_as_of_date, v_revision, p_published_by, false,
      p_admin_note, p_parser_version, coalesce(p_metadata, '{}'::jsonb));
 
   insert into public.alternatives_holdings
@@ -404,6 +436,16 @@ begin
         raw_fill text, resolved_hex text, classification_method text,
         source_sheet text, source_cell text, source_row int, metadata jsonb);
   end if;
+
+  -- Complete revision exists; demote the predecessor onto a real row, then
+  -- promote. Demote strictly before promote.
+  if v_previous is not null then
+    update public.portfolio_publications
+       set is_current = false, superseded_by = v_pub_id
+     where id = v_previous;
+  end if;
+
+  update public.portfolio_publications set is_current = true where id = v_pub_id;
 
   perform public.nmi_sync_upload_status(p_upload_id);
   if v_prev_upload is not null and v_prev_upload <> p_upload_id then
@@ -463,6 +505,11 @@ begin
 
   -- Demote before promote, for the partial unique index. NOTHING IS DELETED:
   -- the demoted revision keeps its rows and can be rolled forward again.
+  --
+  -- Reviewed against the repaired publication ordering: rollback needs no
+  -- equivalent change. Both rows already exist before either statement runs, and
+  -- both statements CLEAR `superseded_by` rather than setting it, so no
+  -- forward reference to a not-yet-inserted row is possible here.
   update public.portfolio_publications
      set is_current = false, superseded_by = null
    where id = v_current;
@@ -496,6 +543,7 @@ as $$
 declare
   v_id       uuid := gen_random_uuid();
   v_revision int;
+  v_prior    uuid;
 begin
   if p_body is null or length(btrim(p_body)) = 0 then
     raise exception 'commentary_refused_empty';
@@ -521,14 +569,46 @@ begin
     from public.portfolio_commentary
    where publication_id = p_publication_id and scope = p_scope;
 
-  -- Supersede the live revision BEFORE inserting the new one: the partial
-  -- unique index allows exactly one row with `superseded_by is null`.
-  update public.portfolio_commentary
-     set superseded_by = v_id, updated_at = now()
+  select id into v_prior
+    from public.portfolio_commentary
    where publication_id = p_publication_id and scope = p_scope and superseded_by is null;
 
-  insert into public.portfolio_commentary (id, publication_id, scope, body, author, revision)
-  values (v_id, p_publication_id, p_scope, btrim(p_body), p_author, v_revision);
+  -- INSERT NON-LIVE, DEMOTE, PROMOTE — the same shape as a publication, adapted
+  -- to a table that has no `is_current` column: here LIVENESS IS
+  -- `superseded_by is null`, and `portfolio_commentary_current_idx` is unique
+  -- over (publication_id, scope) on exactly that predicate.
+  --
+  -- So the two constraints bite in the same way as on the publication ledger.
+  -- Superseding the prior revision first would point it at a row that does not
+  -- exist yet and raise 23503 on the non-deferrable self-FK; inserting the new
+  -- revision live while the prior is still live would put two live rows under
+  -- the partial index.
+  --
+  -- The new revision is therefore inserted pointing AT ITS PREDECESSOR, which
+  -- already exists. That makes it non-live, so the index is satisfied, and the
+  -- FK is valid. The predecessor is then pointed at the new row — also real by
+  -- now — and only then is the new row's pointer cleared to make it live.
+  --
+  -- Between those last two statements the two rows briefly reference each other.
+  -- That is confined to this transaction, invisible under MVCC, and resolved by
+  -- the final statement; the committed chain is strictly one-directional from
+  -- older revision to newer, which is what the acyclicity assertions check.
+  --
+  -- With no predecessor the insert is live immediately and both updates are
+  -- skipped, so the first revision and every later one share one code path.
+  insert into public.portfolio_commentary
+    (id, publication_id, scope, body, author, revision, superseded_by)
+  values (v_id, p_publication_id, p_scope, btrim(p_body), p_author, v_revision, v_prior);
+
+  if v_prior is not null then
+    update public.portfolio_commentary
+       set superseded_by = v_id, updated_at = now()
+     where id = v_prior;
+
+    update public.portfolio_commentary
+       set superseded_by = null
+     where id = v_id;
+  end if;
 
   return v_id;
 end $$;

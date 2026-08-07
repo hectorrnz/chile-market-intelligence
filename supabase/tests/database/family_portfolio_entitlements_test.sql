@@ -1338,6 +1338,90 @@ select lives_ok($$
     'jaime', 'a note on a personal scope', '11111111-1111-1111-1111-111111111111'::uuid)
 $$, 'commentary can be written on a personal scope');
 
+-- ── 8i-bis REVISION ORDERING — the defect CI exposed ─────────────────────
+--
+-- `superseded_by` carries a NON-DEFERRABLE self-referential FK on both the
+-- publication ledger and the commentary chain, while a PARTIAL unique index
+-- forbids two live rows. Pointing a predecessor at a not-yet-inserted successor
+-- satisfied the index and violated the self-FK on EVERY re-publication and
+-- EVERY commentary edit (SQLSTATE '23503'). The repaired order — insert
+-- non-live, fill, demote, promote — satisfies both. These assertions prove the
+-- result rather than the statement order.
+
+-- Every supersession pointer resolves to a row that actually exists. The FK
+-- enforces this, so a failure here would mean the constraint had been dropped.
+select is(
+  (select count(*)::int from public.portfolio_publications a
+    where a.superseded_by is not null
+      and not exists (select 1 from public.portfolio_publications b where b.id = a.superseded_by)),
+  0, 'every publication superseded_by resolves to an existing revision');
+
+select is(
+  (select count(*)::int from public.portfolio_commentary a
+    where a.superseded_by is not null
+      and not exists (select 1 from public.portfolio_commentary b where b.id = a.superseded_by)),
+  0, 'every commentary superseded_by resolves to an existing revision');
+
+-- The predecessor of the current portfolio week points at the CURRENT revision,
+-- which is only true if the successor existed before the pointer was written.
+select is(
+  (select b.revision from public.portfolio_publications a
+     join public.portfolio_publications b on b.id = a.superseded_by
+    where a.upload_kind = 'portfolio' and a.as_of_date = date '2026-08-13' and a.revision = 1),
+  2, 'revision 1 points at revision 2, and revision 2 is a real row');
+
+-- Commentary: the superseded revision points forward to the live one.
+select is(
+  (select b.revision from public.portfolio_commentary a
+     join public.portfolio_commentary b on b.id = a.superseded_by
+    where a.scope = 'main' and a.revision = 1),
+  2, 'commentary revision 1 points at revision 2, and revision 2 is a real row');
+
+-- A commentary chain never commits with two live revisions or a self-reference.
+select is((select count(*)::int from public.portfolio_commentary where superseded_by = id),
+  0, 'no commentary revision supersedes itself');
+
+-- A REFUSED edit must leave the live revision exactly as it was.
+select throws_ok($$
+  select public.nmi_upsert_portfolio_commentary(
+    (select id from public.portfolio_publications
+      where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+    'main', '', '11111111-1111-1111-1111-111111111111'::uuid)
+$$, 'P0001', 'commentary_refused_empty', 'an empty edit is refused');
+
+select is((select revision from public.portfolio_commentary
+           where scope='main' and superseded_by is null),
+  2, 'the refused edit left revision 2 live and untouched');
+select is((select count(*)::int from public.portfolio_commentary where scope='main'),
+  2, 'the refused edit created no revision');
+
+-- The installed function bodies must not regress to the broken order. Runtime
+-- behaviour above is the primary authority; this reads the ACTUAL prosrc of the
+-- deployed function, so it cannot drift from what the database is running.
+select ok(
+  (select position('insert into public.portfolio_publications' in p.prosrc)
+        < position('set is_current = false, superseded_by = v_pub_id' in p.prosrc)
+     from pg_catalog.pg_proc p
+     join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'nmi_publish_portfolio'),
+  'nmi_publish_portfolio inserts the new revision BEFORE pointing the predecessor at it');
+
+select ok(
+  (select position('insert into public.portfolio_publications' in p.prosrc)
+        < position('set is_current = false, superseded_by = v_pub_id' in p.prosrc)
+     from pg_catalog.pg_proc p
+     join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'nmi_publish_alternatives'),
+  'nmi_publish_alternatives inserts the new revision BEFORE pointing the predecessor at it');
+
+select ok(
+  (select position('insert into public.portfolio_commentary' in p.prosrc)
+        < position('set superseded_by = v_id' in p.prosrc)
+     from pg_catalog.pg_proc p
+     join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'nmi_upsert_portfolio_commentary'),
+  'nmi_upsert_portfolio_commentary inserts the new revision BEFORE pointing the predecessor at it');
+
 -- ── 8j Commentary reads through the SAME scope predicate as the rows ────
 select pg_temp.as_user('33333333-3333-3333-3333-333333333333'); -- Jaime
 select is((select count(*)::int from public.portfolio_commentary where scope='jaime'),
@@ -1357,8 +1441,18 @@ select is((select count(*)::int from public.portfolio_commentary),
 
 select pg_temp.as_service();
 select pg_temp.as_anon();
-select is((select count(*)::int from public.portfolio_commentary),
-  0, 'anon reads no commentary');
+-- `anon` holds no SELECT privilege on this table at all, so COUNTING rows as
+-- anon does not return 0 — it raises '42501' and aborts the whole script, which is
+-- what happened in the validation run that first reached this point. Denial is
+-- asserted the way every other anon check in this suite does: by proving the
+-- refusal, not by requiring anon to be able to run the query.
+select throws_ok(
+  $$ select count(*) from public.portfolio_commentary $$,
+  '42501', null, 'anon is REFUSED outright on commentary — it holds no SELECT privilege');
+select ok(not has_table_privilege('anon', 'public.portfolio_commentary', 'SELECT'),
+  'anon holds no effective SELECT on commentary');
+select ok(not has_table_privilege('anon', 'public.portfolio_publications', 'SELECT'),
+  'anon holds no effective SELECT on the publication ledger');
 
 -- ── 8k No browser-reachable role can publish ────────────────────────────
 select pg_temp.as_service();
