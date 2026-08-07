@@ -347,10 +347,24 @@ describe('audit schema amendment', () => {
     assert.match(SQL, /recorded honestly/)
   })
 
-  test('the amendment stays inside the single unpushed R13.1 migration', () => {
+  test('the amendment stays inside the single R13.1 migration', () => {
+    // The guarantee being protected is that R13.1.1A recorded its audit-schema
+    // amendment INSIDE the R13.1 migration rather than adding a second one of
+    // its own. R13.2 then legitimately adds its own upload/storage migration —
+    // it is a separate stage, and R13.1 is now pushed, so amending it in place
+    // would no longer be legal. Both facts are asserted explicitly, so a stray
+    // extra migration still fails here.
+    // Scoped to R13.1's own window rather than "everything after R13.0". A
+    // later stage legitimately adds its own migration (R13.2 did), and that is
+    // not a defect — but a SECOND migration belonging to R13.1/R13.1.1A is.
+    // Bounding the window keeps the guarantee without dating the test.
+    const R13_1_WINDOW_START = '20260804'
+    const R13_2_START = '20260807000000'
+
     const all = readdirSync(join(ROOT, 'supabase/migrations')).filter((f) => f.endsWith('.sql')).sort()
-    assert.equal(all[all.length - 1], '20260806000000_family_portfolio_entitlements.sql')
-    assert.equal(all.filter((f) => f > '20260804').length, 1, 'R13.1.1A adds no second migration')
+    const inR13_1Window = all.filter((f) => f > R13_1_WINDOW_START && f < R13_2_START)
+    assert.deepEqual(inR13_1Window, ['20260806000000_family_portfolio_entitlements.sql'],
+      'R13.1.1A must amend the R13.1 migration in place, never add a second one')
   })
 
   test('field_changed still accepts role, which the bootstrap writes', () => {

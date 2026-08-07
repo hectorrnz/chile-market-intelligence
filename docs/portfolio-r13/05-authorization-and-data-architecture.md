@@ -181,30 +181,34 @@ database. The local stack mints throwaway credentials inside the runner.
 
 **The boundary between static and executed validation:**
 
-| Executed locally today | Executed only in the workflow | Not executed anywhere yet |
+| Executed locally | Executed in the workflow | Not executed anywhere |
 |---|---|---|
-| TypeScript authorization rule; role/principal decision rules; every denial path; structural assertions over the migration, config, SQL suite and workflow | Migration application from clean; migration postconditions incl. the in-database parity truth table; CHECK enforcement; SECURITY DEFINER behaviour; function privileges; `auth.uid()` resolution; RLS; audit protection | — (once the workflow passes) |
+| TypeScript authorization rule; role/principal decision rules; every denial path; structural assertions over the migration, config, SQL suite and workflow | Migration application from clean; migration postconditions incl. the in-database parity truth table; CHECK enforcement; SECURITY DEFINER behaviour; function privileges; `auth.uid()` resolution; RLS; audit protection | — |
 
-> **Creating this workflow is not validation.** R13.1.1 remains **incomplete** until the workflow has
-> actually **run and passed** on the committed branch. **R13.2 remains blocked** until then.
-
-> ### ⚠ Validation status — PostgreSQL execution NOT performed
+> ### ✅ Validation status — PostgreSQL execution PERFORMED and PASSED
 >
-> **PostgreSQL migration execution and RLS runtime behaviour remain UNVERIFIED** until the migration
-> is applied in a real PostgreSQL environment. This environment has no local Supabase instance:
-> Docker is absent (`supabase start` cannot run), `psql` is absent, there is no
-> `supabase/config.toml`, and no service-role key is present.
+> **Creating the workflow was not validation. The workflow has now run and passed**, so R13.1.1 is
+> **COMPLETE** and R13.2 is unblocked.
 >
-> What R13.1 *did* verify: the TypeScript authorization rule, the assignment decision rules, and the
-> full negative-authorization surface are **executed for real** in
-> `tests/familyPortfolioEntitlements.test.ts`; the migration's embedded truth table is asserted
-> row-for-row identical to the TypeScript truth table. What it did **not** verify: that PostgreSQL
-> returns those results, that the policies behave as written, or that the privilege postconditions
-> hold. The migration carries its own `do $$` postcondition blocks — including an in-database
-> execution of the parity truth table — which raise on any mismatch **when the migration is pushed**.
-> That push is the real verification event.
+> **Authoritative validation run:** `31191695325` — workflow `R13 Family Portfolio DB Validation`,
+> event `workflow_dispatch`, commit `821b460`, concluded **success**.
 >
-> **R13.2 must not depend on these policies until R13.1.1 execution validation passes.**
+> | Gate | Evidence |
+> |---|---|
+> | Hermeticity | pinned Supabase CLI `2.108.0` asserted at runtime; "no linked project, no committed environment file" guard passed; **no repository secret consumed**; `permissions: contents: read` |
+> | Full migration chain from clean | every migration applied in order, `20260806000000_family_portfolio_entitlements.sql` last; the only PostgreSQL `ERROR` in the run is `42P01 relation "supabase_migrations.seed_files" does not exist` — the Supabase CLI probing for its own bookkeeping table on a fresh database, not originating from R13 SQL |
+> | pgTAP entitlement suite | `Files=1, Tests=108, Result: PASS` — CHECK enforcement, SECURITY DEFINER behaviour, function privileges, the full access matrix through real `auth.uid()`, profile-mutation security under real RLS, and audit protection |
+> | SQL ↔ TypeScript parity (TS half) | `tests/familyPortfolioEntitlements.test.ts` — 87 tests, 87 pass, 0 fail |
+> | Regression | `accessControl` 217/217 · `userProfilesRls` 62/62 · `supabaseSchema` 6/6 |
+>
+> **Superseded run `31127081898` is INVALID and carries no evidentiary weight.** It was an
+> infrastructure-corrupted record: zero jobs were ever materialised, so **no step executed**. Three
+> GitHub subsystems reported mutually exclusive states for it (`rerun` → "already running",
+> `cancel` → "already completed", `force-cancel` → "a re-run that has not yet queued"). It is
+> deliberately not repaired or deleted.
+>
+> Production credentials were never used: the local stack minted throwaway credentials inside the
+> disposable runner and nothing left it — no artifact, no database dump.
 
 ### 2.3 Scope resolution
 
@@ -345,6 +349,25 @@ Reusing and extending the verified `/api/structured-notes/extract` pattern (audi
 
 Items 4 and 11 are additions beyond the existing precedent and are mandatory: the sample workbook
 proves both external links and add-in formulas are routinely present.
+
+**Ordering caveat — a cap must bound the allocation it names.** Checks 5 and 9 are only real if they
+execute *before* the memory they limit is taken. Two distinct ceilings therefore sit behind check 5:
+`MAX_REQUEST_BYTES`, screened against `Content-Length` **before** `request.formData()` parses the body
+(that call materialises the entire workbook), and `MAX_UPLOAD_BYTES`, measured from the bytes that
+actually arrived — the authoritative bound, since `Content-Length` is client-supplied and absent under
+chunked transfer. Check 9 likewise cannot rely on the ZIP's **declared** uncompressed size, which an
+archive can under-declare; the enforced bound is zlib's `maxOutputLength`, applied *during*
+decompression. Check 4 is also evaluated before check 3's extension half, so a `.xlsm` reports
+`macro_enabled_workbook` rather than hiding behind the generic `unsupported_type`.
+
+**Storage ↔ database atomicity — what is actually guaranteed.** Supabase Storage and Postgres share no
+transaction, and none is claimed. Storage is written first and the database second, so the failure that
+an administrator would notice — a row pointing at no object — cannot occur; a database failure
+compensates by removing the object. The residual case (process death between the two writes) leaves an
+**inert** orphan: the bucket is private, has no `authenticated` policy, and a signed URL can only be
+minted by resolving the object path *from* a `portfolio_source_uploads` row, so an object with no row
+is unnameable by any code path. Findings are written after the upload row; a failure there is reported
+as `findingsPersisted: false` rather than silently echoing the in-memory list as recorded.
 
 **PROPOSED — parsing runtime.** `export const runtime = 'nodejs'` (Edge lacks `node:zlib`) and
 `export const dynamic = 'force-dynamic'`. Parse synchronously and return the draft; no background
@@ -604,9 +627,9 @@ added to any allowlist.
 - [x] **Last-administrator protection** — the deadlock cannot recur
 - [x] **Honest bootstrap audit semantics** — `actor_kind` + nullable `actor_user_id`, CHECK-bound
 - [x] **Isolated database validation harness committed** (config, pgTAP suite, pinned-CLI workflow; § 2.2c)
-- [ ] **PostgreSQL migration execution — NOT PERFORMED.** Harness exists; the workflow has not run
-- [ ] **RLS runtime validation — NOT PERFORMED.** Same
-- [ ] **R13.1.1 complete** — blocked until the workflow runs and passes on the committed branch
+- [x] **PostgreSQL migration execution — PERFORMED and PASSED.** Full chain applied from clean in run `31191695325`
+- [x] **RLS runtime validation — PERFORMED and PASSED.** 108 pgTAP assertions against real PostgreSQL
+- [x] **R13.1.1 complete** — the workflow ran and passed on the committed branch; R13.2 unblocked
 - [x] Principal assignment defined as administrator-controlled data, never hardcoded identities
 - [x] Required access matrix expressed for all three principals, `null`, and administrators
 - [x] Route architecture fixed: `Family Portfolio` module under `/family-portfolio`, five routes, Admin administrator-only

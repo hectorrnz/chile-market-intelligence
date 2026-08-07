@@ -68,9 +68,12 @@ enable_confirmations = false
 enabled = false
 
 [storage]
-# R13.1 creates no bucket and no storage policy — storage belongs to a later
-# upload stage. Re-enable when that stage adds storage tests.
-enabled = false
+# ENABLED for R13.2. Stage 2 creates the private `portfolio-source-uploads`
+# bucket and its service-role-only `storage.objects` policies, and the pgTAP
+# suite asserts that `authenticated` holds no privilege on that bucket. Those
+# assertions are only meaningful if the storage schema is actually present, so
+# this must stay enabled. Local/CI only — no remote project is ever linked.
+enabled = true
 
 [realtime]
 enabled = false

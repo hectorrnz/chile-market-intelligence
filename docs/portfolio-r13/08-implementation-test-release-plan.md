@@ -102,16 +102,23 @@ administrator could ever exist ⇒ no principal could ever be assigned).
 - `supabase/tests/database/family_portfolio_entitlements_test.sql` — executable pgTAP.
 - `.github/workflows/r13-family-portfolio-db-validation.yml` — hermetic, pinned CLI, no secrets.
 
-**Validation boundary — binding.** Stage 1's guarantees are proven in two places, and only one of
-them has run:
+**Validation boundary — binding.** Stage 1's guarantees are proven in two places, and **both have
+now run**:
 
-| Proven locally (executed) | Proven only by the workflow (NOT yet run) |
+| Proven locally (executed) | Proven by the workflow (executed, run `31191695325`) |
 |---|---|
 | TypeScript rule, role/principal decisions, all denial paths, structural assertions | migration application from clean, postconditions + in-database parity truth table, CHECK enforcement, SECURITY DEFINER behaviour, function privileges, `auth.uid()`, RLS, audit protection |
 
-> **Creating the harness is not validation.** **R13.2 must not begin until
-> `R13 Family Portfolio DB Validation` has actually run and passed on the committed branch.**
-> Production credentials are never used by it.
+> **Creating the harness was not validation — the harness has since run and passed.**
+> `R13 Family Portfolio DB Validation` run **`31191695325`** (commit `821b460`) concluded
+> **success**: full migration chain from clean, **pgTAP `Files=1, Tests=108, Result: PASS`**, plus
+> the TypeScript parity half (87/87) and regression suites (217/62/6). No repository secret was
+> consumed and no production credential was used.
+>
+> Run `31127081898` is **INVALID** — an infrastructure-corrupted record that materialised zero jobs
+> and executed no step. It is superseded and carries no evidentiary weight.
+
+**R13.1.1 is COMPLETE. R13.2 (Stage 2) is authorized to begin.**
 
 ---
 
@@ -135,6 +142,24 @@ input is refused with a structured code and no stack trace.
 
 **Risk.** New attack surface. **Mitigation:** fail-closed ladder; in-memory only; nothing written to
 the serverless filesystem.
+
+**Validation status — R13.2 (implemented, NOT yet database-validated).**
+
+| Layer | Status |
+|---|---|
+| Ladder, container guards, opaque keys, route authorization order, service-role boundary, migration/pgTAP structure | **PERFORMED** — `npm run lint` 0, `npm run build` 0 errors, `tests/portfolioUploadSecurity.test.ts`, full suite green apart from the three authorized date-dependent `newsModule` failures |
+| Migration application from clean, CHECK/RLS enforcement on the two new tables, private-bucket creation, storage-policy absence | **NOT YET PERFORMED** — no Docker or `psql` on the development machine; these execute only in `R13 Family Portfolio DB Validation` |
+
+> Same discipline as R13.1.1: **writing the migration and the pgTAP assertions is not validation.**
+> R13.2 is not complete until that workflow runs and passes on the committed branch.
+
+**Resource-boundary note (audit finding, fixed before commit).** Two caps were originally enforced
+only *after* the allocation they were meant to bound: `request.formData()` materialises the whole
+body before any size check, and `inflateRawSync` trusted the ZIP's own **declared** uncompressed size,
+which an archive can under-declare. Both are now bounded before allocation — a `Content-Length` screen
+ahead of body parsing, and zlib's `maxOutputLength` applied during decompression. The four ceilings are
+now distinct and ordered: **platform body limit → `MAX_REQUEST_BYTES` (header screen) →
+`MAX_UPLOAD_BYTES` (measured bytes) → ZIP entry-count / per-entry / total caps**.
 
 ---
 

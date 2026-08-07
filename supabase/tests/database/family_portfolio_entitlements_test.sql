@@ -431,5 +431,144 @@ select throws_ok(
 
 select pg_temp.as_service();
 
+-- ===========================================================================
+-- R13.2 — upload spine and private storage
+--
+-- The migration asserts this posture too, but a migration postcondition only
+-- proves the state at APPLY time. These run under real RLS with a real
+-- `auth.uid()`, so they prove the posture holds for an actual caller.
+-- ===========================================================================
+
+select ok(to_regclass('public.portfolio_source_uploads') is not null,
+  'portfolio_source_uploads exists');
+select ok(to_regclass('public.portfolio_upload_findings') is not null,
+  'portfolio_upload_findings exists');
+
+select ok(
+  (select relrowsecurity from pg_catalog.pg_class c
+   join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relname = 'portfolio_source_uploads'),
+  'RLS is enabled on portfolio_source_uploads');
+select ok(
+  (select relrowsecurity from pg_catalog.pg_class c
+   join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relname = 'portfolio_upload_findings'),
+  'RLS is enabled on portfolio_upload_findings');
+
+-- Writes must be service-role only: no write policy may exist for authenticated.
+select is(
+  (select count(*)::int from pg_catalog.pg_policies
+   where schemaname = 'public'
+     and tablename in ('portfolio_source_uploads', 'portfolio_upload_findings')
+     and cmd <> 'SELECT'),
+  0, 'no non-SELECT policy exists on either upload table');
+
+select ok(not has_table_privilege('authenticated', 'public.portfolio_source_uploads', 'INSERT'),
+  'authenticated cannot INSERT uploads');
+select ok(not has_table_privilege('authenticated', 'public.portfolio_source_uploads', 'UPDATE'),
+  'authenticated cannot UPDATE uploads');
+select ok(not has_table_privilege('authenticated', 'public.portfolio_source_uploads', 'DELETE'),
+  'authenticated cannot DELETE uploads');
+select ok(not has_table_privilege('anon', 'public.portfolio_source_uploads', 'SELECT'),
+  'anon cannot read uploads at all');
+
+-- Seed one upload row as the service role, then prove who can see it.
+insert into public.portfolio_source_uploads
+  (id, upload_kind, storage_object_path, original_filename, file_sha256,
+   file_size_bytes, uploaded_by, parser_version)
+values
+  ('aaaaaaaa-0000-4000-8000-000000000001', 'portfolio',
+   'portfolio/2026/aaaaaaaa-0000-4000-8000-000000000001.xlsx', 'sample.xlsx',
+   repeat('a', 64), 1024, '11111111-1111-1111-1111-111111111111', 'r13.2-test');
+
+insert into public.portfolio_upload_findings (upload_id, severity, code, detail)
+values ('aaaaaaaa-0000-4000-8000-000000000001', 'warning', 'external_links_present',
+        'an external-link part is present; it is recorded and ignored, never resolved');
+
+select pg_temp.as_user('11111111-1111-1111-1111-111111111111');
+select is((select count(*)::int from public.portfolio_source_uploads), 1,
+  'an administrator reads upload rows');
+select is((select count(*)::int from public.portfolio_upload_findings), 1,
+  'an administrator reads upload findings');
+
+select pg_temp.as_service();
+select pg_temp.as_user('33333333-3333-3333-3333-333333333333');
+select is((select count(*)::int from public.portfolio_source_uploads), 0,
+  'an ordinary user reads NO upload rows');
+select is((select count(*)::int from public.portfolio_upload_findings), 0,
+  'an ordinary user reads NO upload findings');
+select throws_ok(
+  $$ insert into public.portfolio_source_uploads
+       (upload_kind, storage_object_path, original_filename, file_sha256,
+        file_size_bytes, uploaded_by, parser_version)
+     values ('portfolio','portfolio/2026/x.xlsx','x.xlsx', repeat('b',64), 10,
+             '33333333-3333-3333-3333-333333333333','forged') $$,
+  '42501', null, 'an ordinary user CANNOT forge an upload row');
+
+select pg_temp.as_service();
+
+-- Duplicate detection (doc 05 section 4, check 13) is a database guarantee, not
+-- an application convention.
+select throws_ok(
+  $$ insert into public.portfolio_source_uploads
+       (upload_kind, storage_object_path, original_filename, file_sha256,
+        file_size_bytes, uploaded_by, parser_version)
+     values ('portfolio','portfolio/2026/dupe.xlsx','dupe.xlsx', repeat('a',64), 2048,
+             '11111111-1111-1111-1111-111111111111','r13.2-test') $$,
+  '23505', null, 'the same digest cannot be ingested twice for one upload kind');
+
+-- The same bytes under the OTHER kind are legitimately allowed.
+select lives_ok(
+  $$ insert into public.portfolio_source_uploads
+       (upload_kind, storage_object_path, original_filename, file_sha256,
+        file_size_bytes, uploaded_by, parser_version)
+     values ('alternatives','alternatives/2026/same.xlsx','same.xlsx', repeat('a',64), 2048,
+             '11111111-1111-1111-1111-111111111111','r13.2-test') $$,
+  'the same digest IS allowed under a different upload kind');
+
+-- An overridden as-of date must carry a reason.
+select throws_ok(
+  $$ update public.portfolio_source_uploads
+        set detected_as_of_date = date '2026-08-06',
+            confirmed_as_of_date = date '2026-07-30'
+      where id = 'aaaaaaaa-0000-4000-8000-000000000001' $$,
+  '23514', null, 'a date override without a note is refused by the database');
+
+-- Private storage bucket (doc 05 section 3). Dynamic SQL keeps these statements
+-- parseable even where the storage schema is absent; the presence assertion
+-- below is what stops a vacuous pass.
+create or replace function pg_temp.storage_present() returns boolean language plpgsql as $$
+begin
+  return to_regclass('storage.buckets') is not null;
+end $$;
+
+create or replace function pg_temp.bucket_is_private() returns boolean language plpgsql as $$
+declare v boolean;
+begin
+  if to_regclass('storage.buckets') is null then return false; end if;
+  execute 'select public from storage.buckets where id = $1'
+    into v using 'portfolio-source-uploads';
+  return v is not null and v = false;
+end $$;
+
+create or replace function pg_temp.bucket_policy_count() returns int language plpgsql as $$
+declare n int;
+begin
+  if to_regclass('storage.objects') is null then return 0; end if;
+  execute $q$ select count(*)::int from pg_catalog.pg_policies
+               where schemaname = 'storage' and tablename = 'objects'
+                 and (coalesce(qual,'') like '%portfolio-source-uploads%'
+                   or coalesce(with_check,'') like '%portfolio-source-uploads%') $q$
+    into n;
+  return n;
+end $$;
+
+select ok(pg_temp.storage_present(),
+  'the storage schema is provisioned, so the bucket assertions are not vacuous');
+select ok(pg_temp.bucket_is_private(),
+  'the portfolio-source-uploads bucket exists and is PRIVATE');
+select is(pg_temp.bucket_policy_count(), 0,
+  'no storage.objects policy exposes the bucket — access is service-role only');
+
 select * from finish();
 rollback;

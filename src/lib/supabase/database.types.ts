@@ -587,11 +587,20 @@ export interface Database {
       // R13.1 — immutable audit of administrative Family Portfolio access
       // changes. Service-role writes only (no insert/update/delete policy
       // exists); administrators may read.
+      //
+      // R13.2 drift correction: R13.1.1A amended the migration to make
+      // `actor_user_id` NULLABLE and to add `actor_kind`, so that the one-time
+      // service-authorized bootstrap — which has no application actor — is
+      // recorded honestly instead of naming the target as its own actor. This
+      // declaration was not updated at the time. Typing `actor_user_id` as
+      // non-null made TypeScript assert a value that is genuinely null on every
+      // bootstrap row.
       family_portfolio_access_audit: {
         Row: {
           id: string
           target_user_id: string
-          actor_user_id: string
+          actor_user_id: string | null
+          actor_kind: string
           field_changed: string
           previous_value: string | null
           new_value: string | null
@@ -599,7 +608,8 @@ export interface Database {
         }
         Insert: {
           target_user_id: string
-          actor_user_id: string
+          actor_user_id?: string | null
+          actor_kind?: string
           field_changed: string
           previous_value?: string | null
           new_value?: string | null
@@ -607,6 +617,81 @@ export interface Database {
         Update: {
           previous_value?: string | null
           new_value?: string | null
+        }
+      }
+      // R13.2 — Family Portfolio source-workbook uploads (doc 05 section 5.1).
+      // Provenance only: opaque storage key, digest, size, status, dates. No
+      // financial value and no cell content is ever stored here.
+      //
+      // Service-role writes only — there is no insert/update/delete policy for
+      // `authenticated` — so every mutating field is deliberately ABSENT from
+      // Insert/Update below, mirroring how `user_profiles.role` is handled.
+      portfolio_source_uploads: {
+        Row: {
+          id: string
+          upload_kind: string
+          storage_object_path: string
+          original_filename: string
+          file_sha256: string
+          file_size_bytes: number
+          uploaded_by: string
+          uploaded_at: string
+          parser_version: string
+          status: string
+          detected_as_of_date: string | null
+          confirmed_as_of_date: string | null
+          date_override_note: string | null
+          metadata: Json
+        }
+        Insert: {
+          id?: string
+          upload_kind: string
+          storage_object_path: string
+          original_filename: string
+          file_sha256: string
+          file_size_bytes: number
+          uploaded_by: string
+          parser_version: string
+          status?: string
+          detected_as_of_date?: string | null
+          metadata?: Json
+        }
+        Update: {
+          status?: string
+          detected_as_of_date?: string | null
+          confirmed_as_of_date?: string | null
+          date_override_note?: string | null
+          metadata?: Json
+        }
+      }
+      // R13.2 — structured validation findings (doc 05 section 5.5).
+      // `detail` is a CODE-DERIVED message, never a raw cell value or amount.
+      portfolio_upload_findings: {
+        Row: {
+          id: string
+          upload_id: string
+          severity: string
+          code: string
+          scope: string | null
+          source_sheet: string | null
+          source_cell: string | null
+          row_label: string | null
+          detail: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          upload_id: string
+          severity: string
+          code: string
+          scope?: string | null
+          source_sheet?: string | null
+          source_cell?: string | null
+          row_label?: string | null
+          detail: string
+        }
+        Update: {
+          detail?: string
         }
       }
       watchlists: {
@@ -1313,6 +1398,8 @@ export type CmfFilingRow = Database['public']['Tables']['cmf_filings']['Row']
 export type DocumentRow = Database['public']['Tables']['documents']['Row']
 export type IngestionRunRow = Database['public']['Tables']['ingestion_runs']['Row']
 export type UserProfileRow = Database['public']['Tables']['user_profiles']['Row']
+export type PortfolioSourceUploadRow = Database['public']['Tables']['portfolio_source_uploads']['Row']
+export type PortfolioUploadFindingRow = Database['public']['Tables']['portfolio_upload_findings']['Row']
 export type FamilyPortfolioAccessAuditRow =
   Database['public']['Tables']['family_portfolio_access_audit']['Row']
 export type WatchlistRow = Database['public']['Tables']['watchlists']['Row']

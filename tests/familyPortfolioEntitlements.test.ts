@@ -307,8 +307,29 @@ describe('SQL and TypeScript authorization parity', () => {
 
 describe('migration file conventions', () => {
   test('it sorts after every migration that preceded it', () => {
+    // Written when R13.1 was the newest migration; R13.2 legitimately adds a
+    // newer one. Asserting "nothing before it sorts after it" over a SORTED
+    // list would be tautological and would catch nothing, so this asserts the
+    // properties that can actually be violated:
+    //   - every filename follows the timestamp convention;
+    //   - no two migrations share a timestamp (the real forward-only hazard —
+    //     two stages colliding on one prefix makes apply order undefined);
+    //   - the R13 migrations sort in their documented stage order.
     const all = readdirSync(join(ROOT, MIGRATION_DIR)).filter((f) => f.endsWith('.sql')).sort()
-    assert.equal(all[all.length - 1], MIGRATION_NAME, 'R13.1 must be the newest migration')
+    assert.ok(all.includes(MIGRATION_NAME), 'the R13.1 migration must exist')
+
+    for (const f of all) assert.match(f, /^\d{14}_[a-z0-9_]+\.sql$/)
+
+    const stamps = all.map((f) => f.slice(0, 14))
+    assert.equal(new Set(stamps).size, stamps.length,
+      `two migrations share a timestamp prefix: ${stamps.join(', ')}`)
+
+    // Each R13 stage must sort strictly after the stage it builds on.
+    const r13 = all.filter((f) => f.includes('family_portfolio'))
+    for (let i = 1; i < r13.length; i++) {
+      assert.ok(r13[i] > r13[i - 1], `${r13[i]} must sort after ${r13[i - 1]}`)
+    }
+    assert.equal(r13[0], MIGRATION_NAME, 'R13.1 must remain the first Family Portfolio migration')
   })
 
   test('it is schema-qualified and idempotent', () => {
@@ -863,9 +884,36 @@ describe('existing behaviour is unchanged', () => {
     }
   })
 
-  test('no Family Portfolio page or route handler was added in R13.1', () => {
-    assert.equal(existsSync(join(ROOT, 'src/app/family-portfolio')), false)
-    assert.equal(existsSync(join(ROOT, 'src/app/api/family-portfolio')), false)
+  test('no Family Portfolio page or client-facing route exists yet', () => {
+    // R13.1 added no route at all. R13.2 adds the administrator upload API and
+    // NOTHING else — no page, no UI, and none of the client-facing scope
+    // endpoints (doc 05 § 7.4), which belong to Stages 5-9. Narrowed rather than
+    // deleted, so premature scope still fails here.
+    assert.equal(existsSync(join(ROOT, 'src/app/family-portfolio')), false,
+      'no Family Portfolio page may exist before Stage 6')
+
+    const apiRoot = join(ROOT, 'src/app/api/family-portfolio')
+    if (!existsSync(apiRoot)) return
+
+    const routes: string[] = []
+    const walk = (dir: string) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, e.name)
+        if (e.isDirectory()) walk(full)
+        else if (e.name === 'route.ts') routes.push(full.replace(apiRoot, '').replace(/\\/g, '/'))
+      }
+    }
+    walk(apiRoot)
+
+    // Every route present must live under the administrator upload surface.
+    for (const r of routes) {
+      assert.match(r, /^\/admin\/uploads(\/\[id\])?\/route\.ts$/,
+        `unexpected Family Portfolio route for this stage: ${r}`)
+    }
+    for (const forbidden of ['/scopes', '/snapshot', '/weekly-changes', '/overview', '/alternatives']) {
+      assert.ok(!routes.some((r) => r.includes(forbidden)),
+        `${forbidden} is a later-stage route and must not exist yet`)
+    }
   })
 
   test('username + password authentication is untouched', () => {

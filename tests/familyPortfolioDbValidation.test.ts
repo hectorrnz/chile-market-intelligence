@@ -12,10 +12,14 @@
 // supabase/tests/database/family_portfolio_entitlements_test.sql and runs on a
 // disposable GitHub-hosted runner.
 //
-// **Creating the workflow is not validation.** R13.1.1 stays incomplete until
-// that workflow has actually RUN and PASSED on the committed branch, and R13.2
-// stays blocked until then. Nothing in this file may be read as evidence that
-// the database behaved correctly.
+// **Creating the workflow was not validation** — nothing in THIS file may ever be
+// read as evidence that the database behaved correctly. That evidence comes only
+// from the workflow, which has since actually RUN and PASSED on the committed
+// branch: run 31191695325 (commit 821b460), pgTAP `Files=1, Tests=108,
+// Result: PASS` against real PostgreSQL. R13.1.1 is therefore COMPLETE.
+//
+// Run 31127081898 is INVALID and is not evidence of anything: it materialised
+// zero jobs and executed no step.
 
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
@@ -233,17 +237,35 @@ describe('validation status is stated honestly', () => {
   const DOC = read('docs/portfolio-r13/05-authorization-and-data-architecture.md')
   const PLAN = read('docs/portfolio-r13/08-implementation-test-release-plan.md')
 
-  test('the architecture doc records that PostgreSQL execution has not happened', () => {
-    assert.match(DOC, /NOT PERFORMED/)
-    assert.match(DOC, /Creating this workflow is not validation/i)
+  // These assertions previously required the docs to state that PostgreSQL
+  // execution had NOT happened. That guard existed to stop the harness being
+  // mistaken for validation. The workflow has since actually run and passed
+  // (run 31191695325), so the same guard is INVERTED rather than removed: the
+  // docs must now record the real evidence, and must NOT still claim the
+  // validation is pending. Either direction of dishonesty fails.
+
+  test('the architecture doc records that PostgreSQL execution was performed and passed', () => {
+    assert.match(DOC, /PostgreSQL execution PERFORMED and PASSED/i)
+    assert.match(DOC, /31191695325/)
+    assert.match(DOC, /Tests=108, Result: PASS/)
   })
 
-  test('both docs state that R13.2 stays blocked until the workflow passes', () => {
-    assert.match(DOC, /R13\.2 remains blocked|R13\.2 must not depend/i)
-    assert.match(PLAN, /R13\.2 must not begin until/i)
+  test('the docs no longer claim the validation is outstanding', () => {
+    for (const [name, body] of [['doc 05', DOC], ['doc 08', PLAN]] as const) {
+      assert.doesNotMatch(body, /NOT PERFORMED/, `${name} must not still claim execution is outstanding`)
+      assert.doesNotMatch(body, /R13\.2 remains blocked|R13\.2 must not begin until/i,
+        `${name} must not still block R13.2`)
+    }
   })
 
-  test('the plan records the static/executed boundary', () => {
-    assert.match(PLAN, /Proven only by the workflow/i)
+  test('the superseded run is recorded as invalid, with zero execution', () => {
+    assert.match(DOC, /31127081898/)
+    assert.match(DOC, /INVALID/)
+    assert.match(DOC, /zero jobs|no step executed/i)
+  })
+
+  test('both docs still record the static/executed boundary', () => {
+    assert.match(PLAN, /Proven by the workflow \(executed, run `?31191695325`?\)/i)
+    assert.match(DOC, /Executed in the workflow/i)
   })
 })

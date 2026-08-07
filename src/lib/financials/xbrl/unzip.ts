@@ -36,6 +36,40 @@ export const MAX_TOTAL_UNCOMPRESSED_BYTES = 64 * 1024 * 1024 // 64 MB
 export const MAX_ENTRY_UNCOMPRESSED_BYTES = 48 * 1024 * 1024 // 48 MB
 /** The compressed ZIP we accept downloading — a hard ceiling well above the ~250 KB real archives. */
 export const MAX_ZIP_BYTES = 32 * 1024 * 1024 // 32 MB
+/**
+ * R13.2 — entry-count ceiling (doc 05 § 4, check 9).
+ *
+ * The byte caps above bound how much data an archive can expand to, but not how
+ * many *members* it declares. A "zip quine"-style archive of hundreds of
+ * thousands of tiny entries stays under every byte cap while forcing an
+ * unbounded loop and unbounded allocation. This ceiling closes that.
+ *
+ * The default is deliberately generous so no existing CMF caller changes
+ * behaviour (real CMF archives carry a handful of entries; a large `.xlsx`
+ * carries a few hundred). Callers needing a tighter bound pass `maxEntries`.
+ */
+export const MAX_ENTRY_COUNT = 2048
+
+/** Zip64 end-of-central-directory *locator* signature — its presence means Zip64. */
+const ZIP64_EOCD_LOCATOR_SIG = 0x07064b50
+/** Sentinel values a Zip64 archive stores in the classic EOCD fields. */
+const ZIP64_U16_SENTINEL = 0xffff
+const ZIP64_U32_SENTINEL = 0xffffffff
+
+/**
+ * Per-call limits. Every field is optional; an omitted field keeps the module
+ * default, so `unzip(buf)` behaves exactly as it did before R13.2.
+ */
+export interface UnzipOptions {
+  /** Maximum number of declared central-directory entries. Default `MAX_ENTRY_COUNT`. */
+  maxEntries?: number
+  /** Maximum compressed archive size in bytes. Default `MAX_ZIP_BYTES`. */
+  maxZipBytes?: number
+  /** Maximum uncompressed bytes for any single entry. Default `MAX_ENTRY_UNCOMPRESSED_BYTES`. */
+  maxEntryUncompressedBytes?: number
+  /** Maximum uncompressed bytes across all entries. Default `MAX_TOTAL_UNCOMPRESSED_BYTES`. */
+  maxTotalUncompressedBytes?: number
+}
 
 export interface ZipEntry {
   /** Entry name exactly as stored (already validated safe). */
@@ -97,9 +131,14 @@ function isSafeEntryName(name: string): boolean {
  * Directory record, walks the central directory, and inflates each entry from
  * its local header. Directory entries (names ending in '/') are skipped.
  */
-export function unzip(buf: Buffer): UnzipResult {
-  if (buf.length > MAX_ZIP_BYTES) {
-    return { ok: false, error: { code: 'too_large', reason: `archive is ${buf.length} bytes, over the ${MAX_ZIP_BYTES}-byte cap` } }
+export function unzip(buf: Buffer, options: UnzipOptions = {}): UnzipResult {
+  const maxZipBytes = options.maxZipBytes ?? MAX_ZIP_BYTES
+  const maxEntries = options.maxEntries ?? MAX_ENTRY_COUNT
+  const maxEntryBytes = options.maxEntryUncompressedBytes ?? MAX_ENTRY_UNCOMPRESSED_BYTES
+  const maxTotalBytes = options.maxTotalUncompressedBytes ?? MAX_TOTAL_UNCOMPRESSED_BYTES
+
+  if (buf.length > maxZipBytes) {
+    return { ok: false, error: { code: 'too_large', reason: `archive is ${buf.length} bytes, over the ${maxZipBytes}-byte cap` } }
   }
   if (!looksLikeZip(buf)) {
     return { ok: false, error: { code: 'not_a_zip', reason: 'missing ZIP local-file-header signature (PK\\x03\\x04)' } }
@@ -114,8 +153,39 @@ export function unzip(buf: Buffer): UnzipResult {
   }
   if (eocd < 0) return { ok: false, error: { code: 'malformed', reason: 'no End Of Central Directory record found' } }
 
+  // R13.2 (doc 05 § 4, check 6) — single-disk only, and no Zip64.
+  //
+  // A multi-disk archive cannot be fully read from one buffer, and a Zip64
+  // archive stores the real counts/offsets in a separate record this reader
+  // does not parse. In both cases the classic EOCD fields are either wrong or
+  // sentinels, so continuing would silently read the WRONG entries rather than
+  // fail. Both are refused outright — never guessed.
+  const thisDisk = buf.readUInt16LE(eocd + 4)
+  const cdStartDisk = buf.readUInt16LE(eocd + 6)
+  if (thisDisk !== 0 || cdStartDisk !== 0) {
+    return { ok: false, error: { code: 'not_a_zip', reason: 'multi-disk archive (disk numbers are non-zero); only single-disk archives are accepted' } }
+  }
+
   const entryCount = buf.readUInt16LE(eocd + 10)
+  const cdSize = buf.readUInt32LE(eocd + 12)
   let cdOffset = buf.readUInt32LE(eocd + 16)
+
+  const hasZip64Locator = eocd >= 20 && buf.readUInt32LE(eocd - 20) === ZIP64_EOCD_LOCATOR_SIG
+  if (
+    hasZip64Locator ||
+    entryCount === ZIP64_U16_SENTINEL ||
+    cdSize === ZIP64_U32_SENTINEL ||
+    cdOffset === ZIP64_U32_SENTINEL
+  ) {
+    return { ok: false, error: { code: 'not_a_zip', reason: 'Zip64 archive; only classic single-disk ZIP is accepted' } }
+  }
+
+  // R13.2 (doc 05 § 4, check 9) — entry-count ceiling. Checked BEFORE the walk
+  // so a hostile count can never drive the loop even once.
+  if (entryCount > maxEntries) {
+    return { ok: false, error: { code: 'zip_bomb', reason: `archive declares ${entryCount} entries, over the ${maxEntries}-entry ceiling` } }
+  }
+
   if (cdOffset >= buf.length) return { ok: false, error: { code: 'malformed', reason: 'central directory offset out of range' } }
 
   const entries: ZipEntry[] = []
@@ -140,7 +210,13 @@ export function unzip(buf: Buffer): UnzipResult {
     if (!isSafeEntryName(name)) {
       return { ok: false, error: { code: 'unsafe_entry_name', reason: `entry name failed safety validation: "${name.slice(0, 80)}"` } }
     }
-    if (uncompSize > MAX_ENTRY_UNCOMPRESSED_BYTES) {
+    // NOTE: `uncompSize` is the DECLARED size from the central directory, which
+    // is attacker-controlled. Refusing an honestly-oversized entry here is
+    // cheap, but it is NOT the real bound — an archive that lies (declares 1 KB
+    // and expands to 2 GB) passes this check. The enforced bound is
+    // `maxOutputLength` on the inflate call below, which zlib applies while
+    // decompressing rather than after.
+    if (uncompSize > maxEntryBytes) {
       return { ok: false, error: { code: 'zip_bomb', reason: `entry "${name}" declares ${uncompSize} uncompressed bytes, over the per-entry cap` } }
     }
     if (method !== 0 && method !== 8) {
@@ -167,15 +243,27 @@ export function unzip(buf: Buffer): UnzipResult {
       data = Buffer.from(compressed)
     } else {
       try {
-        data = inflateRawSync(compressed)
+        // `maxOutputLength` makes zlib STOP DECOMPRESSING once the cap is
+        // reached, so a header that under-declares its uncompressed size can
+        // never drive an unbounded allocation. Without it, the only remaining
+        // guard is the running total below — which is checked AFTER the entry
+        // has already been fully inflated into memory.
+        data = inflateRawSync(compressed, { maxOutputLength: maxEntryBytes })
       } catch (e) {
+        // Node raises ERR_BUFFER_TOO_LARGE when maxOutputLength is exceeded.
+        // That is a decompression bomb, not a malformed archive, and is
+        // reported as such.
+        const code = (e as { code?: string } | null)?.code
+        if (code === 'ERR_BUFFER_TOO_LARGE') {
+          return { ok: false, error: { code: 'zip_bomb', reason: `entry "${name}" expands beyond the ${maxEntryBytes}-byte per-entry cap` } }
+        }
         return { ok: false, error: { code: 'malformed', reason: `failed to inflate "${name}": ${e instanceof Error ? e.message.slice(0, 120) : 'unknown'}` } }
       }
     }
 
     totalUncompressed += data.length
-    if (totalUncompressed > MAX_TOTAL_UNCOMPRESSED_BYTES) {
-      return { ok: false, error: { code: 'zip_bomb', reason: `total uncompressed size exceeded ${MAX_TOTAL_UNCOMPRESSED_BYTES} bytes` } }
+    if (totalUncompressed > maxTotalBytes) {
+      return { ok: false, error: { code: 'zip_bomb', reason: `total uncompressed size exceeded ${maxTotalBytes} bytes` } }
     }
 
     entries.push({ name, ext: extOf(name), data })
