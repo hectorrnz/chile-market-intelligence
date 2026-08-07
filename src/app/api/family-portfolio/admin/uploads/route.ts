@@ -25,6 +25,7 @@ import {
   MAX_REQUEST_BYTES,
 } from '@/lib/familyPortfolio/uploadValidation'
 import { persistUpload, findUploadByDigest } from '@/lib/db/repositories/portfolioUploadRepository'
+import { listUploads, listPublications } from '@/lib/db/repositories/portfolioPublicationRepository'
 
 // `node:zlib` and `node:crypto` are unavailable on Edge.
 export const runtime = 'nodejs'
@@ -34,6 +35,28 @@ const NO_STORE = { 'Cache-Control': 'no-store' } as const
 
 function fail(code: string, status: number, detail: string) {
   return NextResponse.json({ error: code, detail }, { status, headers: NO_STORE })
+}
+
+/**
+ * R13.5 — the administrator console's index: every upload and every publication.
+ *
+ * Both lists live on this one route rather than a new `/publications` path
+ * because they are a single console payload and doc 05 § 7.4 fixes the module's
+ * route architecture. Neither list carries a financial value: uploads are
+ * provenance (digest, size, status, dates) and publications are ledger metadata
+ * (kind, date, revision, current). Nothing here needs an amount.
+ */
+export async function GET() {
+  const denied = await guardPrivateApi()
+  if (denied) return denied
+
+  const entitlement = await getFamilyPortfolioEntitlement()
+  if (!entitlement.isAdministrator) {
+    return fail('not_authorized', 403, 'administrative capability is required')
+  }
+
+  const [uploads, publications] = await Promise.all([listUploads(), listPublications()])
+  return NextResponse.json({ uploads, publications }, { headers: NO_STORE })
 }
 
 export async function POST(request: Request) {

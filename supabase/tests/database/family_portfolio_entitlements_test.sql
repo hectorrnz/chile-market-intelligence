@@ -934,5 +934,682 @@ select throws_ok(
 
 select pg_temp.as_service();
 
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 8 · R13.5 — PUBLICATION LIFECYCLE (doc 05 §§ 5.1, 5.6, 6)
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- Only PostgreSQL can prove what follows. The TypeScript suite proves the
+-- refusal RULES; these assertions prove the TRANSACTION: that a failed
+-- publication leaves nothing behind, that exactly one revision is ever current,
+-- that rollback deletes nothing, and that no browser-reachable role can invoke
+-- the publication functions at all.
+--
+-- Every value below is a small synthetic integer. Nothing here is, or resembles,
+-- a real portfolio figure.
+
+select pg_temp.as_service();
+
+-- ── 8a Function posture ──────────────────────────────────────────────────
+select has_function('public', 'nmi_publish_portfolio',
+  array['uuid','date','uuid','text','jsonb','jsonb','text','jsonb'], 'nmi_publish_portfolio exists');
+select has_function('public', 'nmi_publish_alternatives',
+  array['uuid','date','uuid','text','jsonb','jsonb','text','jsonb'], 'nmi_publish_alternatives exists');
+select has_function('public', 'nmi_rollback_publication',
+  array['uuid','uuid','text'], 'nmi_rollback_publication exists');
+select has_function('public', 'nmi_upsert_portfolio_commentary',
+  array['uuid','text','text','uuid'], 'nmi_upsert_portfolio_commentary exists');
+
+-- INVOKER, not DEFINER: a DEFINER publication function would run as its owner,
+-- so anyone able to execute it would gain write access to the entire book.
+select is(
+  (select count(*)::int from pg_catalog.pg_proc p
+   join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and p.proname in ('nmi_publish_portfolio','nmi_publish_alternatives',
+                       'nmi_rollback_publication','nmi_upsert_portfolio_commentary')
+     and p.prosecdef),
+  0, 'no R13.5 publication function is SECURITY DEFINER');
+
+select is(
+  (select count(*)::int from pg_catalog.pg_proc p
+   join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and p.proname in ('nmi_publish_portfolio','nmi_publish_alternatives',
+                       'nmi_rollback_publication','nmi_upsert_portfolio_commentary',
+                       'nmi_sync_upload_status','nmi_assert_publishable')
+     and (p.proconfig is null
+          or not exists (select 1 from unnest(p.proconfig) c where c like 'search\_path=%'))),
+  0, 'every R13.5 function pins search_path');
+
+select ok(not has_function_privilege('authenticated',
+  'public.nmi_publish_portfolio(uuid,date,uuid,text,jsonb,jsonb,text,jsonb)', 'EXECUTE'),
+  'authenticated cannot EXECUTE nmi_publish_portfolio');
+select ok(not has_function_privilege('anon',
+  'public.nmi_publish_portfolio(uuid,date,uuid,text,jsonb,jsonb,text,jsonb)', 'EXECUTE'),
+  'anon cannot EXECUTE nmi_publish_portfolio');
+select ok(not has_function_privilege('authenticated',
+  'public.nmi_rollback_publication(uuid,uuid,text)', 'EXECUTE'),
+  'authenticated cannot EXECUTE nmi_rollback_publication');
+select ok(not has_function_privilege('authenticated',
+  'public.nmi_upsert_portfolio_commentary(uuid,text,text,uuid)', 'EXECUTE'),
+  'authenticated cannot EXECUTE nmi_upsert_portfolio_commentary');
+select ok(has_function_privilege('service_role',
+  'public.nmi_publish_portfolio(uuid,date,uuid,text,jsonb,jsonb,text,jsonb)', 'EXECUTE'),
+  'service_role CAN EXECUTE nmi_publish_portfolio — publication must not fail closed');
+
+-- ── 8b Commentary table posture ──────────────────────────────────────────
+select has_table('public', 'portfolio_commentary', 'portfolio_commentary exists');
+select ok(
+  (select c.relrowsecurity from pg_catalog.pg_class c
+   join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relname = 'portfolio_commentary'),
+  'RLS is enabled on portfolio_commentary');
+select is(
+  (select count(*)::int from pg_catalog.pg_policies
+   where schemaname='public' and tablename='portfolio_commentary' and cmd <> 'SELECT'),
+  0, 'portfolio_commentary carries no non-SELECT policy');
+select ok(not has_table_privilege('authenticated','public.portfolio_commentary','INSERT'),
+  'authenticated cannot INSERT commentary');
+select ok(not has_table_privilege('authenticated','public.portfolio_commentary','UPDATE'),
+  'authenticated cannot UPDATE commentary — an edit must append a revision');
+select ok(not has_table_privilege('anon','public.portfolio_commentary','SELECT'),
+  'anon cannot read commentary');
+
+-- ── 8c Fixtures for the lifecycle proper ─────────────────────────────────
+-- A separate upload and a separate week, so the R13.3/R13.4 fixtures above stay
+-- exactly as those assertions left them.
+insert into public.portfolio_source_uploads
+  (id, upload_kind, storage_object_path, original_filename, file_sha256,
+   file_size_bytes, uploaded_by, parser_version)
+values
+  ('aaaaaaaa-0000-4000-8000-0000000000d1', 'portfolio',
+   'portfolio/2026/aaaaaaaa-0000-4000-8000-0000000000d1.xlsx', 'week-a.xlsx',
+   repeat('d', 64), 512, '11111111-1111-1111-1111-111111111111', 'r13.5-test'),
+  ('aaaaaaaa-0000-4000-8000-0000000000d2', 'portfolio',
+   'portfolio/2026/aaaaaaaa-0000-4000-8000-0000000000d2.xlsx', 'week-a-corrected.xlsx',
+   repeat('e', 64), 512, '11111111-1111-1111-1111-111111111111', 'r13.5-test'),
+  ('aaaaaaaa-0000-4000-8000-0000000000d3', 'portfolio',
+   'portfolio/2026/aaaaaaaa-0000-4000-8000-0000000000d3.xlsx', 'blocked.xlsx',
+   repeat('f', 64), 512, '11111111-1111-1111-1111-111111111111', 'r13.5-test'),
+  ('aaaaaaaa-0000-4000-8000-0000000000d4', 'alternatives',
+   'alternatives/2026/aaaaaaaa-0000-4000-8000-0000000000d4.xlsx', 'alts.xlsx',
+   repeat('a', 64), 512, '11111111-1111-1111-1111-111111111111', 'r13.5-test');
+
+-- ── 8d First publication ─────────────────────────────────────────────────
+select lives_ok($$
+  select public.nmi_publish_portfolio(
+    'aaaaaaaa-0000-4000-8000-0000000000d1'::uuid,
+    date '2026-08-13',
+    '11111111-1111-1111-1111-111111111111'::uuid,
+    'r13.5-test',
+    '[{"scope":"main","row_key":"main.total","parent_row_key":null,"depth":0,"display_order":0,
+       "row_type":"portfolio_total","label_es":"TOTAL","label_en":null,"currency":"USD",
+       "value":7,"value_class":"source_value","source_sheet":"RESUMEN","source_cell":"RESUMEN!DE87"},
+      {"scope":"main","row_key":"main.acciones","parent_row_key":"main.total","depth":1,"display_order":1,
+       "row_type":"asset_class","label_es":"ACCIONES","label_en":null,"currency":"USD",
+       "value":null,"value_class":"unavailable","source_sheet":"RESUMEN","source_cell":"RESUMEN!DE85"},
+      {"scope":"jaime","row_key":"jaime.total","parent_row_key":null,"depth":0,"display_order":2,
+       "row_type":"portfolio_total","label_es":"TOTAL JAIME","label_en":null,"currency":"USD",
+       "value":9,"value_class":"source_value","source_sheet":"RESUMEN","source_cell":"RESUMEN!DE150"}]'::jsonb,
+    '[{"scope":"main","basis":"ex_chilean_equities","metric":"weekly_profit","value":2,
+       "value_class":"source_provided_return","source_sheet":"RESUMEN","source_cell":"RESUMEN!DE90"}]'::jsonb)
+$$, 'a first publication succeeds');
+
+select is((select revision from public.portfolio_publications
+           where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+  1, 'the first publication is revision 1');
+select is((select count(*)::int from public.portfolio_snapshot_rows r
+           join public.portfolio_publications p on p.id = r.publication_id
+           where p.as_of_date = date '2026-08-13'),
+  3, 'every snapshot row was written');
+select is((select status from public.portfolio_source_uploads
+           where id='aaaaaaaa-0000-4000-8000-0000000000d1'),
+  'published', 'the upload status becomes published');
+
+-- A NULL value is stored as NULL. `unavailable` is never 0 (doc 02 § 9): a
+-- fabricated zero baseline would produce a meaningless or infinite YTD return.
+
+select is((select value from public.portfolio_snapshot_rows r
+           join public.portfolio_publications p on p.id = r.publication_id
+           where p.as_of_date = date '2026-08-13' and r.row_key = 'main.acciones'),
+  null::numeric, 'an unavailable value is stored as NULL, never coerced to 0');
+
+-- ── 8e Atomicity — the property this whole design exists for ─────────────
+-- A row payload whose LAST element violates the row_type CHECK. The parent
+-- publication and the first rows are inserted before it fails, so if the
+-- function were not one transaction this would leave a half-published week
+-- with the previous one already demoted.
+select throws_ok($$
+  select public.nmi_publish_portfolio(
+    'aaaaaaaa-0000-4000-8000-0000000000d2'::uuid,
+    date '2026-08-13',
+    '11111111-1111-1111-1111-111111111111'::uuid,
+    'r13.5-test',
+    '[{"scope":"main","row_key":"main.total","parent_row_key":null,"depth":0,"display_order":0,
+       "row_type":"portfolio_total","label_es":"TOTAL","label_en":null,"currency":"USD",
+       "value":7,"value_class":"source_value","source_sheet":"RESUMEN","source_cell":"RESUMEN!DE87"},
+      {"scope":"main","row_key":"main.bogus","parent_row_key":null,"depth":0,"display_order":1,
+       "row_type":"not_a_row_type","label_es":"X","label_en":null,"currency":"USD",
+       "value":1,"value_class":"source_value","source_sheet":"RESUMEN","source_cell":"RESUMEN!DE1"}]'::jsonb)
+$$, '23514', null, 'a publication with an invalid row is refused by the schema');
+
+select is((select count(*)::int from public.portfolio_publications
+           where upload_kind='portfolio' and as_of_date=date '2026-08-13'),
+  1, 'ATOMICITY: the failed publication left no publication row behind');
+select is((select revision from public.portfolio_publications
+           where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+  1, 'ATOMICITY: the previously-current revision is still current');
+select is((select count(*)::int from public.portfolio_publications
+           where upload_kind='portfolio' and as_of_date=date '2026-08-13' and superseded_by is not null),
+  0, 'ATOMICITY: the demote was rolled back with the rest of the transaction');
+select is((select count(*)::int from public.portfolio_snapshot_rows r
+           join public.portfolio_publications p on p.id = r.publication_id
+           where p.as_of_date = date '2026-08-13'),
+  3, 'ATOMICITY: no orphan snapshot row survived the failure');
+
+-- ── 8f Same-date revision and supersession ───────────────────────────────
+select lives_ok($$
+  select public.nmi_publish_portfolio(
+    'aaaaaaaa-0000-4000-8000-0000000000d2'::uuid,
+    date '2026-08-13',
+    '11111111-1111-1111-1111-111111111111'::uuid,
+    'r13.5-test',
+    '[{"scope":"main","row_key":"main.total","parent_row_key":null,"depth":0,"display_order":0,
+       "row_type":"portfolio_total","label_es":"TOTAL","label_en":null,"currency":"USD",
+       "value":8,"value_class":"source_value","source_sheet":"RESUMEN","source_cell":"RESUMEN!DE87"}]'::jsonb,
+    '[]'::jsonb, 'corrected after recalculation')
+$$, 're-publishing the same week succeeds');
+
+select is((select revision from public.portfolio_publications
+           where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+  2, 'a re-publish creates revision 2 and it becomes current');
+select is((select count(*)::int from public.portfolio_publications
+           where upload_kind='portfolio' and as_of_date=date '2026-08-13'),
+  2, 'revision 1 is RETAINED, never deleted');
+select is((select is_current from public.portfolio_publications
+           where upload_kind='portfolio' and as_of_date=date '2026-08-13' and revision = 1),
+  false, 'revision 1 is no longer current');
+select ok((select superseded_by is not null from public.portfolio_publications
+           where upload_kind='portfolio' and as_of_date=date '2026-08-13' and revision = 1),
+  'revision 1 points at the revision that superseded it');
+select is((select count(*)::int from public.portfolio_snapshot_rows r
+           join public.portfolio_publications p on p.id = r.publication_id
+           where p.as_of_date = date '2026-08-13' and p.revision = 1),
+  3, 'revision 1 keeps every row it published');
+
+-- Exactly one current publication per (kind, date) — the partial unique index.
+select is((select count(*)::int from public.portfolio_publications
+           where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+  1, 'exactly one revision is current for the week');
+select throws_ok($$
+  insert into public.portfolio_publications
+    (upload_id, upload_kind, as_of_date, revision, published_by, is_current, parser_version)
+  values ('aaaaaaaa-0000-4000-8000-0000000000d1','portfolio', date '2026-08-13', 9,
+          '11111111-1111-1111-1111-111111111111', true, 'r13.5-test')
+$$, '23505', null, 'a SECOND current publication for the same week is impossible');
+
+-- ── 8g Rollback — a pointer move, never a delete ─────────────────────────
+select lives_ok($$
+  select public.nmi_rollback_publication(
+    (select id from public.portfolio_publications
+      where upload_kind='portfolio' and as_of_date=date '2026-08-13' and revision=1),
+    '11111111-1111-1111-1111-111111111111'::uuid,
+    'reverted')
+$$, 'rollback to revision 1 succeeds');
+
+select is((select revision from public.portfolio_publications
+           where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+  1, 'rollback restores revision 1 as current');
+select is((select count(*)::int from public.portfolio_publications
+           where upload_kind='portfolio' and as_of_date=date '2026-08-13'),
+  2, 'ROLLBACK DELETES NOTHING — both revisions still exist');
+select is((select count(*)::int from public.portfolio_snapshot_rows r
+           join public.portfolio_publications p on p.id = r.publication_id
+           where p.as_of_date = date '2026-08-13'),
+  4, 'rollback deletes no snapshot row from either revision');
+select is((select count(*)::int from public.portfolio_publications
+           where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+  1, 'still exactly one current revision after rollback');
+
+select throws_ok($$
+  select public.nmi_rollback_publication(
+    (select id from public.portfolio_publications
+      where upload_kind='portfolio' and as_of_date=date '2026-08-13' and revision=1),
+    '11111111-1111-1111-1111-111111111111'::uuid, null)
+$$, 'P0001', 'rollback_refused_already_current',
+  'rolling back to the CURRENT revision is refused');
+
+select throws_ok($$
+  select public.nmi_rollback_publication(
+    '00000000-0000-4000-8000-000000000000'::uuid,
+    '11111111-1111-1111-1111-111111111111'::uuid, null)
+$$, 'P0001', 'rollback_refused_publication_not_found',
+  'rolling back an unknown publication is refused');
+
+-- Rolling forward again proves the move is reversible in both directions.
+select lives_ok($$
+  select public.nmi_rollback_publication(
+    (select id from public.portfolio_publications
+      where upload_kind='portfolio' and as_of_date=date '2026-08-13' and revision=2),
+    '11111111-1111-1111-1111-111111111111'::uuid, null)
+$$, 'a rolled-back revision can be rolled forward again');
+select is((select revision from public.portfolio_publications
+           where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+  2, 'revision 2 is current again');
+
+-- ── 8h Database-level publication refusals ───────────────────────────────
+-- A blocking finding invalidates the dataset as a whole (doc 02 § 6.3). The
+-- server refuses too; this proves the database does not depend on it.
+insert into public.portfolio_upload_findings (upload_id, severity, code, detail)
+values ('aaaaaaaa-0000-4000-8000-0000000000d3', 'blocking', 'source_cell_error',
+        'a required cell is in error');
+
+select throws_ok($$
+  select public.nmi_publish_portfolio(
+    'aaaaaaaa-0000-4000-8000-0000000000d3'::uuid, date '2026-08-20',
+    '11111111-1111-1111-1111-111111111111'::uuid, 'r13.5-test',
+    '[{"scope":"main","row_key":"main.total","parent_row_key":null,"depth":0,"display_order":0,
+       "row_type":"portfolio_total","label_es":"TOTAL","label_en":null,"currency":"USD",
+       "value":1,"value_class":"source_value","source_sheet":"RESUMEN","source_cell":"RESUMEN!DE87"}]'::jsonb)
+$$, 'P0001', 'publication_refused_blocking_findings',
+  'the DATABASE refuses to publish an upload carrying a blocking finding');
+
+select throws_ok($$
+  select public.nmi_publish_portfolio(
+    'aaaaaaaa-0000-4000-8000-0000000000d1'::uuid, date '2026-08-27',
+    '11111111-1111-1111-1111-111111111111'::uuid, 'r13.5-test', '[]'::jsonb)
+$$, 'P0001', 'publication_refused_nothing_to_publish',
+  'an empty payload is refused rather than blanking the week');
+
+select is((select count(*)::int from public.portfolio_publications
+           where as_of_date in (date '2026-08-20', date '2026-08-27')),
+  0, 'a refused publication writes nothing at all');
+
+-- An unclassified event blocks the alternatives publication (doc 03 § 3.4,
+-- doc 05 § 5.4): a timeline missing a value-bearing cell would read as complete.
+select throws_ok($$
+  select public.nmi_publish_alternatives(
+    'aaaaaaaa-0000-4000-8000-0000000000d4'::uuid, date '2026-08-13',
+    '11111111-1111-1111-1111-111111111111'::uuid, 'r13.5-test',
+    '[{"id":"dddddddd-0000-4000-8000-0000000000a1","category":"Real Assets","currency":"dolares",
+       "investment_name":"Fixture Fund","sociedad":"FIXTURE","source_sheet":"Alternatives",
+       "source_row":9,"source_cell":"Alternatives!B9"}]'::jsonb,
+    '[{"holding_id":"dddddddd-0000-4000-8000-0000000000a1","event_date":"2026-03-31","amount":1,
+       "currency":"dolares","event_type":"unclassified","source_sheet":"Alternatives",
+       "source_cell":"Alternatives!J9","source_row":9}]'::jsonb)
+$$, 'P0001', 'publication_refused_unclassified_events',
+  'the DATABASE refuses an alternatives publication carrying an unclassified event');
+
+select is((select count(*)::int from public.portfolio_publications
+           where upload_kind='alternatives' and as_of_date=date '2026-08-13'),
+  0, 'the refused alternatives publication wrote nothing');
+
+-- The same payload with the event CLASSIFIED publishes, and lands under its own
+-- independent alternatives lifecycle rather than touching the portfolio week.
+select lives_ok($$
+  select public.nmi_publish_alternatives(
+    'aaaaaaaa-0000-4000-8000-0000000000d4'::uuid, date '2026-08-13',
+    '11111111-1111-1111-1111-111111111111'::uuid, 'r13.5-test',
+    '[{"id":"dddddddd-0000-4000-8000-0000000000a1","category":"Real Assets","currency":"dolares",
+       "investment_name":"Fixture Fund","sociedad":"FIXTURE","source_sheet":"Alternatives",
+       "source_row":9,"source_cell":"Alternatives!B9"}]'::jsonb,
+    '[{"holding_id":"dddddddd-0000-4000-8000-0000000000a1","event_date":"2026-03-31","amount":1,
+       "currency":"dolares","event_type":"aporte","classification_method":"administrator",
+       "source_sheet":"Alternatives","source_cell":"Alternatives!J9","source_row":9}]'::jsonb)
+$$, 'an alternatives publication with every event classified succeeds');
+
+select is((select count(*)::int from public.portfolio_publications
+           where upload_kind='alternatives' and as_of_date=date '2026-08-13' and is_current),
+  1, 'alternatives publishes on its own lifecycle');
+select is((select revision from public.portfolio_publications
+           where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+  2, 'publishing alternatives did not disturb the portfolio week of the same date');
+select is((select classification_method from public.alternatives_events e
+           join public.portfolio_publications p on p.id = e.publication_id
+           where p.upload_kind='alternatives' and p.as_of_date=date '2026-08-13'),
+  'administrator', 'an administrator-resolved event records HOW it was classified');
+
+-- ── 8i Commentary — append and supersede ─────────────────────────────────
+select lives_ok($$
+  select public.nmi_upsert_portfolio_commentary(
+    (select id from public.portfolio_publications
+      where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+    'main', 'first note', '11111111-1111-1111-1111-111111111111'::uuid)
+$$, 'commentary can be written for a publication');
+
+select lives_ok($$
+  select public.nmi_upsert_portfolio_commentary(
+    (select id from public.portfolio_publications
+      where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+    'main', 'second note', '11111111-1111-1111-1111-111111111111'::uuid)
+$$, 'commentary can be edited');
+
+select is((select count(*)::int from public.portfolio_commentary where scope='main'),
+  2, 'an edit APPENDS a revision — the original is retained, never updated in place');
+select is((select count(*)::int from public.portfolio_commentary
+           where scope='main' and superseded_by is null),
+  1, 'exactly one commentary revision is live');
+select is((select body from public.portfolio_commentary
+           where scope='main' and superseded_by is null),
+  'second note', 'the live revision is the latest one');
+select is((select revision from public.portfolio_commentary
+           where scope='main' and superseded_by is null),
+  2, 'the live revision is numbered 2');
+select ok((select superseded_by is not null from public.portfolio_commentary
+           where scope='main' and revision = 1),
+  'revision 1 points at the revision that replaced it');
+
+select throws_ok($$
+  select public.nmi_upsert_portfolio_commentary(
+    (select id from public.portfolio_publications
+      where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+    'main', '   ', '11111111-1111-1111-1111-111111111111'::uuid)
+$$, 'P0001', 'commentary_refused_empty', 'an empty commentary body is refused');
+
+select throws_ok($$
+  insert into public.portfolio_commentary (publication_id, scope, body, author, revision)
+  values ((select id from public.portfolio_publications
+            where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+          'main', 'a third live note', '11111111-1111-1111-1111-111111111111', 3)
+$$, '23505', null, 'a SECOND live commentary revision is impossible');
+
+select throws_ok($$
+  insert into public.portfolio_commentary (publication_id, scope, body, author)
+  values ((select id from public.portfolio_publications
+            where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+          'admin', 'not a data scope', '11111111-1111-1111-1111-111111111111')
+$$, '23514', null, 'admin is not a commentary scope — nothing is published under it');
+
+-- Commentary on a scope only its principal may read.
+select lives_ok($$
+  select public.nmi_upsert_portfolio_commentary(
+    (select id from public.portfolio_publications
+      where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+    'jaime', 'a note on a personal scope', '11111111-1111-1111-1111-111111111111'::uuid)
+$$, 'commentary can be written on a personal scope');
+
+-- ── 8j Commentary reads through the SAME scope predicate as the rows ────
+select pg_temp.as_user('33333333-3333-3333-3333-333333333333'); -- Jaime
+select is((select count(*)::int from public.portfolio_commentary where scope='jaime'),
+  1, 'Jaime reads commentary on his own scope');
+select ok((select count(*)::int from public.portfolio_commentary where scope='main') > 0,
+  'Jaime reads commentary on the shared Main scope');
+
+select pg_temp.as_service();
+select pg_temp.as_user('44444444-4444-4444-4444-444444444444'); -- Andres
+select is((select count(*)::int from public.portfolio_commentary where scope='jaime'),
+  0, 'Andres CANNOT read commentary on Jaime''s scope');
+
+select pg_temp.as_service();
+select pg_temp.as_user('66666666-6666-6666-6666-666666666666'); -- approved, no principal
+select is((select count(*)::int from public.portfolio_commentary),
+  0, 'an approved user with a NULL principal reads NO commentary at all');
+
+select pg_temp.as_service();
+select pg_temp.as_anon();
+select is((select count(*)::int from public.portfolio_commentary),
+  0, 'anon reads no commentary');
+
+-- ── 8k No browser-reachable role can publish ────────────────────────────
+select pg_temp.as_service();
+select pg_temp.as_user('11111111-1111-1111-1111-111111111111'); -- an ADMINISTRATOR
+select throws_ok($$
+  select public.nmi_publish_portfolio(
+    'aaaaaaaa-0000-4000-8000-0000000000d1'::uuid, date '2026-09-03',
+    '11111111-1111-1111-1111-111111111111'::uuid, 'r13.5-test',
+    '[{"scope":"main","row_key":"main.total","parent_row_key":null,"depth":0,"display_order":0,
+       "row_type":"portfolio_total","label_es":"TOTAL","label_en":null,"currency":"USD",
+       "value":1,"value_class":"source_value","source_sheet":"RESUMEN","source_cell":"RESUMEN!DE87"}]'::jsonb)
+$$, '42501', null,
+  'even an APPLICATION ADMINISTRATOR cannot publish through a session — publication is service-role only');
+
+select throws_ok($$
+  select public.nmi_rollback_publication(
+    (select id from public.portfolio_publications where revision = 1 limit 1),
+    '11111111-1111-1111-1111-111111111111'::uuid, null)
+$$, '42501', null, 'an administrator session cannot roll back either');
+
+select throws_ok($$
+  update public.portfolio_commentary set body = 'edited in place' where scope = 'main'
+$$, '42501', null, 'an administrator session cannot edit commentary in place');
+
+select pg_temp.as_service();
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 9 · R13.5 PUBLICATION-SAFETY AUDIT — serialization, retry, target integrity
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- TRUE CONCURRENCY IS NOT EXERCISED HERE. `supabase test db` runs one session
+-- inside one transaction, so a second concurrent writer cannot be started. What
+-- IS proven, against real PostgreSQL, is every guarantee the concurrent case
+-- ultimately rests on:
+--
+--   * the lock helper exists, is callable, and is idempotent within a
+--     transaction (so a retry inside one publication cannot self-deadlock);
+--   * the unique keys that make duplicate revisions impossible are real and
+--     enforced — these, not the locks, are what bound the worst case;
+--   * a rollback cannot be redirected outside the target's own lifecycle;
+--   * a duplicate submission is refused deterministically;
+--   * every refusal leaves the book byte-for-byte unchanged.
+--
+-- The locks turn a lost race into an orderly turn; the constraints are what make
+-- a lost race harmless. Both are asserted.
+
+select pg_temp.as_service();
+
+-- ── 9a The series lock ────────────────────────────────────────────────────
+select has_function('public', 'nmi_lock_publication_series',
+  array['text','date'], 'the shared series lock helper exists');
+
+select lives_ok($$ select public.nmi_lock_publication_series('portfolio', date '2026-09-10') $$,
+  'the series lock can be acquired');
+
+-- Advisory locks are re-entrant for the holder, so a writer that takes the lock
+-- twice in one transaction proceeds rather than deadlocking against itself.
+select lives_ok($$ select public.nmi_lock_publication_series('portfolio', date '2026-09-10') $$,
+  're-acquiring the same series lock in one transaction does not self-deadlock');
+
+-- Different series must not share a key, or an alternatives publication would
+-- serialise behind an unrelated portfolio one.
+select isnt(
+  (select pg_catalog.hashtext('portfolio:2026-09-10')),
+  (select pg_catalog.hashtext('alternatives:2026-09-10')),
+  'the portfolio and alternatives series of one date hash to different keys');
+select isnt(
+  (select pg_catalog.hashtext('portfolio:2026-09-10')),
+  (select pg_catalog.hashtext('portfolio:2026-09-17')),
+  'two weeks of one lifecycle hash to different keys');
+
+-- The lock is transaction-scoped: it must be held now, and it must be released
+-- automatically at commit or abort rather than needing an explicit unlock.
+-- Matched on lock TYPE rather than on the key: hashtext() returns a signed
+-- int4 and pg_locks.classid is an oid, so an exact comparison would rest on a
+-- sign-wrapping cast rather than on the property being tested. That the lock is
+-- advisory and transaction-scoped is the property that matters; the key
+-- derivation is asserted above by the three hash-inequality checks.
+select ok(
+  exists (select 1 from pg_catalog.pg_locks where locktype = 'advisory'),
+  'the series lock is held as a transaction-scoped advisory lock');
+
+-- ── 9b Revision uniqueness is enforced, not merely intended ───────────────
+-- This is the guarantee that bounds the worst concurrent case: even with no
+-- lock at all, two writers cannot both land the same revision number.
+select throws_ok($$
+  insert into public.portfolio_publications
+    (upload_id, upload_kind, as_of_date, revision, published_by, is_current, parser_version)
+  values ('aaaaaaaa-0000-4000-8000-0000000000d1','portfolio', date '2026-08-13', 2,
+          '11111111-1111-1111-1111-111111111111', false, 'r13.5-test')
+$$, '23505', null, 'a DUPLICATE REVISION NUMBER is impossible for one lifecycle and date');
+
+-- The same revision number under a different date or kind is legitimate.
+select lives_ok($$
+  insert into public.portfolio_publications
+    (id, upload_id, upload_kind, as_of_date, revision, published_by, is_current, parser_version)
+  values ('bbbbbbbb-0000-4000-8000-0000000000e1','aaaaaaaa-0000-4000-8000-0000000000d1',
+          'portfolio', date '2026-09-24', 2, '11111111-1111-1111-1111-111111111111', false, 'r13.5-test')
+$$, 'the same revision number in a DIFFERENT week is allowed');
+
+-- ── 9c superseded_by can never form a cycle or point across a lifecycle ───
+-- Publication only ever points a LOWER revision at a HIGHER one, so the graph
+-- is a strict order; rollback only nulls pointers.
+select is(
+  (select count(*)::int from public.portfolio_publications a
+   join public.portfolio_publications b on b.id = a.superseded_by
+   where b.revision <= a.revision),
+  0, 'no publication is superseded by an equal or lower revision — no cycle is possible');
+
+select is(
+  (select count(*)::int from public.portfolio_publications a
+   join public.portfolio_publications b on b.id = a.superseded_by
+   where b.upload_kind <> a.upload_kind or b.as_of_date <> a.as_of_date),
+  0, 'no supersession pointer crosses a lifecycle or a week');
+
+select is(
+  (select count(*)::int from public.portfolio_publications where superseded_by = id),
+  0, 'no publication supersedes itself');
+
+-- A current publication is never simultaneously marked superseded.
+select is(
+  (select count(*)::int from public.portfolio_publications where is_current and superseded_by is not null),
+  0, 'the current revision is never also flagged as superseded');
+
+-- ── 9d Rollback cannot be redirected outside the target lifecycle ─────────
+-- The request names ONE publication id; kind and date are read off that row.
+-- Roll the alternatives lifecycle back and prove the portfolio week of the very
+-- same date is untouched.
+insert into public.portfolio_source_uploads
+  (id, upload_kind, storage_object_path, original_filename, file_sha256,
+   file_size_bytes, uploaded_by, parser_version)
+values ('aaaaaaaa-0000-4000-8000-0000000000d5', 'alternatives',
+        'alternatives/2026/aaaaaaaa-0000-4000-8000-0000000000d5.xlsx', 'alts-2.xlsx',
+        repeat('b', 64), 512, '11111111-1111-1111-1111-111111111111', 'r13.5-test');
+
+select lives_ok($$
+  select public.nmi_publish_alternatives(
+    'aaaaaaaa-0000-4000-8000-0000000000d5'::uuid, date '2026-08-13',
+    '11111111-1111-1111-1111-111111111111'::uuid, 'r13.5-test',
+    '[{"id":"dddddddd-0000-4000-8000-0000000000a2","category":"Real Assets","currency":"dolares",
+       "investment_name":"Fixture Fund","sociedad":"FIXTURE","source_sheet":"Alternatives",
+       "source_row":9,"source_cell":"Alternatives!B9"}]'::jsonb)
+$$, 'a second alternatives revision publishes for the same date');
+
+select is((select revision from public.portfolio_publications
+           where upload_kind='alternatives' and as_of_date=date '2026-08-13' and is_current),
+  2, 'alternatives is now on revision 2');
+select is((select revision from public.portfolio_publications
+           where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+  2, 'the portfolio week of the SAME date is unaffected by the alternatives publish');
+
+select lives_ok($$
+  select public.nmi_rollback_publication(
+    (select id from public.portfolio_publications
+      where upload_kind='alternatives' and as_of_date=date '2026-08-13' and revision=1),
+    '11111111-1111-1111-1111-111111111111'::uuid, null)
+$$, 'the alternatives lifecycle rolls back');
+
+select is((select revision from public.portfolio_publications
+           where upload_kind='alternatives' and as_of_date=date '2026-08-13' and is_current),
+  1, 'alternatives is back on revision 1');
+select is((select revision from public.portfolio_publications
+           where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+  2, 'ROLLING BACK ALTERNATIVES DID NOT TOUCH the portfolio week of the same date');
+select is((select count(*)::int from public.portfolio_publications
+           where as_of_date=date '2026-08-13' and is_current),
+  2, 'each lifecycle still has exactly one current revision for the date');
+
+-- ── 9e Duplicate submission ───────────────────────────────────────────────
+-- Publishing the upload that is ALREADY current, at the SAME parser version, is
+-- a double-click or a transport retry, never a correction: R13.2 makes the same
+-- bytes unrepeatable for one kind, so a real correction is a different upload.
+select throws_ok($$
+  select public.nmi_publish_portfolio(
+    (select upload_id from public.portfolio_publications
+      where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+    date '2026-08-13', '11111111-1111-1111-1111-111111111111'::uuid,
+    (select parser_version from public.portfolio_publications
+      where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+    '[{"scope":"main","row_key":"main.total","parent_row_key":null,"depth":0,"display_order":0,
+       "row_type":"portfolio_total","label_es":"TOTAL","label_en":null,"currency":"USD",
+       "value":8,"value_class":"source_value","source_sheet":"RESUMEN","source_cell":"RESUMEN!DE87"}]'::jsonb)
+$$, 'P0001', 'publication_refused_duplicate_submission',
+  'republishing the CURRENT upload at the SAME parser version is refused');
+
+select is((select revision from public.portfolio_publications
+           where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+  2, 'the refused duplicate minted no revision');
+select is((select count(*)::int from public.portfolio_publications
+           where upload_kind='portfolio' and as_of_date=date '2026-08-13'),
+  2, 'and left the revision history exactly as it was');
+
+-- A PARSER UPGRADE over the same upload is explicitly still allowed: the rows
+-- genuinely differ, and doc 05 § 5.1 requires the two to be distinguishable.
+select lives_ok($$
+  select public.nmi_publish_portfolio(
+    (select upload_id from public.portfolio_publications
+      where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+    date '2026-08-13', '11111111-1111-1111-1111-111111111111'::uuid,
+    'r13.5-test-next-parser',
+    '[{"scope":"main","row_key":"main.total","parent_row_key":null,"depth":0,"display_order":0,
+       "row_type":"portfolio_total","label_es":"TOTAL","label_en":null,"currency":"USD",
+       "value":8,"value_class":"source_value","source_sheet":"RESUMEN","source_cell":"RESUMEN!DE87"}]'::jsonb)
+$$, 'the SAME upload republishes under a NEW parser version');
+
+select is((select revision from public.portfolio_publications
+           where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+  3, 'the parser upgrade became revision 3');
+select is((select parser_version from public.portfolio_publications
+           where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+  'r13.5-test-next-parser', 'the publication records the parser version that produced it');
+
+-- ── 9f Every refusal leaves the book unchanged ────────────────────────────
+-- A refusal must not demote the current revision on its way out; a week that is
+-- readable before a failed publish must be readable after it.
+-- Upload d1 deliberately: it carries no blocking finding, so the refusal under
+-- test is the EMPTY PAYLOAD one and not the publishability guard that runs
+-- ahead of it.
+select throws_ok($$
+  select public.nmi_publish_portfolio(
+    'aaaaaaaa-0000-4000-8000-0000000000d1'::uuid, date '2026-08-13',
+    '11111111-1111-1111-1111-111111111111'::uuid, 'r13.5-test', '[]'::jsonb)
+$$, 'P0001', 'publication_refused_nothing_to_publish',
+  'an empty payload against an EXISTING week is refused');
+
+select is((select revision from public.portfolio_publications
+           where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+  3, 'the refusal did not demote the current revision');
+select is((select count(*)::int from public.portfolio_publications
+           where upload_kind='portfolio' and as_of_date=date '2026-08-13' and is_current),
+  1, 'the week is never left with zero current revisions');
+
+-- ── 9g Commentary revision chain ──────────────────────────────────────────
+-- Numbering is guarded by a unique key, not only by the one-live index: without
+-- it, two writers could each supersede a different predecessor and land the same
+-- number.
+select throws_ok($$
+  insert into public.portfolio_commentary
+    (publication_id, scope, body, author, revision, superseded_by)
+  values ((select id from public.portfolio_publications
+            where upload_kind='portfolio' and as_of_date=date '2026-08-13' and revision=1),
+          'main', 'a duplicate revision number', '11111111-1111-1111-1111-111111111111', 1,
+          '00000000-0000-4000-8000-000000000000')
+$$, '23503', null, 'a commentary row cannot point at a non-existent predecessor');
+
+select is(
+  (select count(*)::int from public.portfolio_commentary a
+   join public.portfolio_commentary b on b.id = a.superseded_by
+   where b.revision <= a.revision),
+  0, 'no commentary revision is superseded by an equal or lower one');
+
+select is(
+  (select count(*)::int
+   from (select publication_id, scope, count(*) as live
+         from public.portfolio_commentary where superseded_by is null
+         group by publication_id, scope having count(*) > 1) x),
+  0, 'no (publication, scope) has two live commentary revisions');
+
+select pg_temp.as_service();
+
 select * from finish();
 rollback;

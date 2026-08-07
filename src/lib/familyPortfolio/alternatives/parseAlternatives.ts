@@ -386,7 +386,12 @@ export function parseAlternatives(bytes: Buffer): AlternativesDraft {
   // --- Per-(category, currency) subtotals ONLY (rule 3).
   const groups = new Map<string, { category: string; currency: string; currentValue: number | null; holdings: number }>()
   for (const h of holdings) {
-    const key = `${h.category} ${h.currency}`
+    // NUL separator, written as an ESCAPE and never as a raw byte. A category
+    // and a currency can each contain spaces, so a space separator would let
+    // ('Real Assets','USD') and ('Real','Assets USD') collapse into one group.
+    // Emitting the raw byte instead made this file read as BINARY to grep and
+    // diff, which is exactly how it escaped review until R13.5.
+    const key = `${h.category}\u0000${h.currency}`
     const g = groups.get(key) ?? { category: h.category, currency: h.currency, currentValue: null, holdings: 0 }
     if (h.currentValue !== null) g.currentValue = (g.currentValue ?? 0) + h.currentValue
     g.holdings += 1
