@@ -62,6 +62,43 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
+      # ── Port hardening ──────────────────────────────────────────────────
+      # Run 31401352496 failed before Supabase started, with Docker unable to
+      # bind host port 54322 ("address already in use"). It was NOT a race with
+      # the sibling pull_request run: that run was on a DIFFERENT hosted runner
+      # VM and completed all of its own validation successfully, and concurrent
+      # push/PR pairs have started this stack cleanly on every other commit. The
+      # collision was therefore runner-local. Its owning process was not
+      # captured, so the exact cause is not established — but the Supabase host
+      # ports are fixed (supabase/config.toml: api 54321, db 54322) and sit in
+      # the range Linux draws ephemeral source ports from, which makes a
+      # transient local allocation the most plausible candidate.
+      #
+      # Reserving the range stops the kernel from NEWLY handing these ports out
+      # as ephemeral source ports later in the job. It does not, and cannot,
+      # evict a socket that already holds one — hence the diagnostics and the
+      # single bounded retry further down.
+      - name: Reserve the local Supabase ports from the ephemeral range
+        run: |
+          # Hardening, not a gate: if the runner refuses the sysctl this must
+          # warn and continue, never block the database validation itself.
+          set +e
+          echo "ephemeral port range : $(sysctl -n net.ipv4.ip_local_port_range 2>/dev/null || echo '<unreadable>')"
+          before="$(sysctl -n net.ipv4.ip_local_reserved_ports 2>/dev/null || true)"
+          echo "reserved ports before: '${before}'"
+
+          want='54320-54330'
+          # Preserve whatever the runner image already reserves — never replace it.
+          case ",${before}," in
+            *",${want},"*) merged="${before}" ;;
+            *)             merged="${before:+${before},}${want}" ;;
+          esac
+
+          sudo sysctl -w "net.ipv4.ip_local_reserved_ports=${merged}" \
+            || echo "::warning::Could not reserve ${want}; the bounded start retry remains the safety net."
+          echo "reserved ports after : $(sysctl -n net.ipv4.ip_local_reserved_ports 2>/dev/null || echo '<unreadable>')"
+          exit 0
+
       - name: Set up Node.js 24
         uses: actions/setup-node@v4
         with:
@@ -99,8 +136,73 @@ jobs:
           fi
           echo "OK: no linked project, no committed environment file."
 
+      # Diagnostic only — never fails the job, never kills anything. If a
+      # runner-local collision recurs, this is the evidence that identifies the
+      # owner, which run 31401352496 did not capture.
+      - name: Record port diagnostics before starting Supabase
+        run: |
+          set +e
+          echo "== listening sockets on 54321/54322 =="
+          sudo ss -ltnp 2>/dev/null | grep -E ':(54321|54322)\b' || echo "  none listening"
+          echo "== all TCP sockets (incl. established/ephemeral) on 54321/54322 =="
+          sudo ss -tanp 2>/dev/null | grep -E ':(54321|54322)\b' || echo "  none"
+          echo "== UDP sockets on 54321/54322 =="
+          sudo ss -uanp 2>/dev/null | grep -E ':(54321|54322)\b' || echo "  none"
+          echo "== lsof =="
+          if command -v lsof >/dev/null 2>&1; then
+            sudo lsof -nP -iTCP:54321 -iTCP:54322 2>/dev/null || echo "  no match"
+          else
+            echo "  lsof not installed"
+          fi
+          echo "== containers already publishing ports =="
+          docker ps --format '{{.Names}}  {{.Ports}}' 2>/dev/null || echo "  docker ps unavailable"
+          exit 0
+
+      # ONE bounded retry, around the STACK STARTUP ONLY. Migrations, pgTAP and
+      # every regression suite below are never retried — a real database failure
+      # must still fail this job on its first and only attempt. A second startup
+      # failure fails the job normally, and the first failure is always printed.
       - name: Start the isolated local Supabase stack
-        run: supabase start --ignore-health-check
+        run: |
+          # GitHub invokes this with `bash -e`. The retry must inspect a
+          # non-zero exit itself, so errexit is disabled DELIBERATELY here and
+          # every failure path below exits explicitly instead.
+          set +e
+          set -u -o pipefail
+
+          echo "::group::Supabase start — attempt 1 of 2"
+          supabase start --ignore-health-check
+          rc=$?
+          echo "::endgroup::"
+
+          if [ "${rc}" -eq 0 ]; then
+            echo "SUPABASE START: succeeded on ATTEMPT 1."
+            exit 0
+          fi
+
+          echo "::warning::Supabase start attempt 1 failed (exit ${rc}) — capturing diagnostics, then retrying once."
+          echo "== post-failure socket diagnostics for 54321/54322 =="
+          sudo ss -tanp 2>/dev/null | grep -E ':(54321|54322)\b' || echo "  none"
+          sudo lsof -nP -iTCP:54321 -iTCP:54322 2>/dev/null || echo "  lsof: no match"
+
+          # Tears down ONLY this project's own stack (scoped by supabase/config.toml
+          # in this working directory). No unrelated container is touched.
+          echo "== stopping this workflow's own partial stack =="
+          supabase stop --no-backup || true
+          sleep 15
+
+          echo "::group::Supabase start — attempt 2 of 2"
+          supabase start --ignore-health-check
+          rc2=$?
+          echo "::endgroup::"
+
+          if [ "${rc2}" -eq 0 ]; then
+            echo "SUPABASE START: attempt 1 FAILED, succeeded on ATTEMPT 2 (transient bind conflict)."
+            exit 0
+          fi
+
+          echo "::error::Supabase failed to start on both attempts (attempt 1 exit ${rc}, attempt 2 exit ${rc2})."
+          exit 1
 
       # `db reset` drops and recreates the local database, then applies EVERY
       # migration in supabase/migrations in order. This is what proves the full
