@@ -951,15 +951,15 @@ describe('existing behaviour is unchanged', () => {
       '/admin/uploads/[id]/publish/route.ts',
       '/admin/uploads/[id]/route.ts',
       '/admin/uploads/route.ts',
+      '/overview/[scope]/route.ts',
       '/scopes/route.ts',
-    ], 'the API surface must be exactly the Stage-5 admin set plus the three Stage-6 read endpoints')
+    ], 'the API surface must be exactly the Stage-5 admin set plus the Stage-6/7 read endpoints')
 
-    // Stage 7-9 endpoints stay absent until their stages: the generated
-    // Overview read, the Weekly Changes read, and the client-facing
-    // Alternatives read route (the administrator publish path reaches
-    // alternatives through `/admin/uploads/[id]/publish`, never its own
-    // client endpoint).
-    for (const forbidden of ['/overview', '/weekly-changes', '/alternatives']) {
+    // Stage 8-9 endpoints stay absent until their stages: the Weekly Changes
+    // read and the client-facing Alternatives read route (the administrator
+    // publish path reaches alternatives through `/admin/uploads/[id]/publish`,
+    // never its own client endpoint). The Overview read joined in Stage 7.
+    for (const forbidden of ['/weekly-changes', '/alternatives']) {
       assert.ok(!routes.some((r) => r.includes(forbidden)),
         `${forbidden} is a later-stage route and must not exist yet`)
     }

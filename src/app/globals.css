@@ -332,6 +332,19 @@
   --news-src-cmf:   #004A64;  /* CMF — deep navy (reserved, official) */
   --news-src-bc:    #6B5B14;  /* BCCh — bronze (reserved, official) */
 
+  /* R13.7 — family-module allocation-slice identity colors (the --news-src-*
+     precedent): institutional non-signal hues for donut slices and their
+     legend chips. Identity only — NEVER the positive/negative/warning signal
+     tokens, which carry meaning. */
+  --fp-slice-1:     #004A64;  /* deep teal */
+  --fp-slice-2:     #0E7FB8;  /* institutional blue */
+  --fp-slice-3:     #1A6630;  /* deep green */
+  --fp-slice-4:     #B07A12;  /* bronze */
+  --fp-slice-5:     #5B6770;  /* slate */
+  --fp-slice-6:     #3A5A8C;  /* steel blue */
+  --fp-slice-7:     #0F6E6E;  /* teal */
+  --fp-slice-8:     #6B5B14;  /* dark bronze */
+
   /* Top bar */
   --topbar:         var(--nv-hdrbg-solid);
   --topbar-fg:      var(--nv-text);
@@ -546,6 +559,16 @@
   --news-src-de:    #8CA8D8;
   --news-src-cmf:   #6FA8C4;
   --news-src-bc:    #C0AA5A;
+
+  /* R13.7 — allocation-slice identity colors, lightened for the dark surface */
+  --fp-slice-1:     #4FA0BC;
+  --fp-slice-2:     #4FB0E0;
+  --fp-slice-3:     #5FAE72;
+  --fp-slice-4:     #D0A045;
+  --fp-slice-5:     #9AA4AD;
+  --fp-slice-6:     #8CA8D8;
+  --fp-slice-7:     #4FA8A8;
+  --fp-slice-8:     #C0AA5A;
 
   /* Top bar */
   --topbar:         var(--nv-hdrbg-solid);

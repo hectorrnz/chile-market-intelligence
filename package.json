@@ -27,6 +27,7 @@
         "ingest:cmf-financials:dry": "node scripts/discover/cmfXbrlFinancials.ts",
         "ingest:cmf-financials": "node scripts/discover/cmfXbrlFinancials.ts --write",
         "discover:cmf-coverage": "node scripts/discover/cmfCoverageSweep.ts",
+        "discover:onepager-benchmarks": "node scripts/discover/onePagerBenchmarks.ts",
         "ingest:yahoo-financials:dry": "node scripts/ingest/yahooFinancials.ts",
         "ingest:yahoo-financials": "node scripts/ingest/yahooFinancials.ts --write",
         "discover:cmf-bank": "node scripts/discover/cmfBankFinancials.ts",

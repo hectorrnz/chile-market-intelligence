@@ -221,3 +221,225 @@ export async function getSnapshotRowsForScope(
     })),
   }
 }
+
+// ---------------------------------------------------------------------------
+// R13.7 — Overview reads. Same client discipline as above: everything below
+// reads through the CALLER'S OWN session, so `nmi_can_access_scope` RLS is the
+// authority on every row (performance rows and commentary both carry the
+// scope-select policy from their migrations).
+// ---------------------------------------------------------------------------
+
+export interface PerformanceRowRead {
+  basis: string
+  metric: string
+  value: number | null
+  valueClass: string
+  /** The snapshot row this block was NUMERICALLY bound to at parse time. */
+  boundRowKey: string | null
+}
+
+type ScopedOrderedSelect<T> = {
+  from: (t: string) => {
+    select: (c: string) => {
+      eq: (col: string, v: unknown) => {
+        eq: (col: string, v: unknown) => Promise<{ data: T[] | null; error: unknown }>
+      }
+    }
+  }
+}
+
+/** One publication's performance rows for one scope (user session, RLS). */
+export async function getPerformanceRowsForScope(
+  publicationId: string,
+  scope: string,
+): Promise<{ ok: true; rows: PerformanceRowRead[] } | { ok: false; code: 'not_configured' | 'read_failed' }> {
+  const client = await getSupabaseUserClient()
+  if (!client) return { ok: false, code: 'not_configured' }
+
+  const { data, error } = await (client as never as ScopedOrderedSelect<{
+    basis: string
+    metric: string
+    value: number | null
+    value_class: string
+    metadata: Record<string, unknown> | null
+  }>)
+    .from('portfolio_performance_rows')
+    .select('basis, metric, value, value_class, metadata')
+    .eq('publication_id', publicationId)
+    .eq('scope', scope)
+
+  if (error) return { ok: false, code: 'read_failed' }
+  return {
+    ok: true,
+    rows: (data ?? []).map((r) => ({
+      basis: r.basis,
+      metric: r.metric,
+      value: r.value,
+      valueClass: r.value_class,
+      boundRowKey: metaString(r.metadata, 'boundRowKey'),
+    })),
+  }
+}
+
+export interface PublicationBinding {
+  publicationId: string
+  basis: string
+  boundRowKey: string | null
+}
+
+type InScopedSelect<T> = {
+  from: (t: string) => {
+    select: (c: string) => {
+      in: (col: string, v: readonly string[]) => {
+        eq: (col: string, v: unknown) => Promise<{ data: T[] | null; error: unknown }>
+      }
+    }
+  }
+}
+
+/**
+ * Performance-block bindings for MANY publications at once — the evolution
+ * charts resolve each week's SUBTOTAL/TOTAL through that week's OWN bindings,
+ * never through a label match on historical rows.
+ */
+export async function getPerformanceBindings(
+  publicationIds: readonly string[],
+  scope: string,
+): Promise<{ ok: true; bindings: PublicationBinding[] } | { ok: false; code: 'not_configured' | 'read_failed' }> {
+  if (publicationIds.length === 0) return { ok: true, bindings: [] }
+  const client = await getSupabaseUserClient()
+  if (!client) return { ok: false, code: 'not_configured' }
+
+  const { data, error } = await (client as never as InScopedSelect<{
+    publication_id: string
+    basis: string
+    metadata: Record<string, unknown> | null
+  }>)
+    .from('portfolio_performance_rows')
+    .select('publication_id, basis, metadata')
+    .in('publication_id', publicationIds)
+    .eq('scope', scope)
+
+  if (error) return { ok: false, code: 'read_failed' }
+
+  // One binding per (publication, basis): rows of one block share it.
+  const seen = new Map<string, PublicationBinding>()
+  for (const r of data ?? []) {
+    const key = `${r.publication_id}|${r.basis}`
+    const bound = metaString(r.metadata, 'boundRowKey')
+    const existing = seen.get(key)
+    if (!existing || (existing.boundRowKey === null && bound !== null)) {
+      seen.set(key, { publicationId: r.publication_id, basis: r.basis, boundRowKey: bound })
+    }
+  }
+  return { ok: true, bindings: [...seen.values()] }
+}
+
+export interface BoundRowValue {
+  publicationId: string
+  rowKey: string
+  value: number | null
+}
+
+type InInScopedSelect<T> = {
+  from: (t: string) => {
+    select: (c: string) => {
+      in: (col: string, v: readonly string[]) => {
+        in: (col: string, v: readonly string[]) => {
+          eq: (col: string, v: unknown) => Promise<{ data: T[] | null; error: unknown }>
+        }
+      }
+    }
+  }
+}
+
+/** Values of specific rows across many publications (user session, RLS). */
+export async function getSnapshotValuesByKeys(
+  publicationIds: readonly string[],
+  scope: string,
+  rowKeys: readonly string[],
+): Promise<{ ok: true; values: BoundRowValue[] } | { ok: false; code: 'not_configured' | 'read_failed' }> {
+  if (publicationIds.length === 0 || rowKeys.length === 0) return { ok: true, values: [] }
+  const client = await getSupabaseUserClient()
+  if (!client) return { ok: false, code: 'not_configured' }
+
+  const { data, error } = await (client as never as InInScopedSelect<{
+    publication_id: string
+    row_key: string
+    value: number | null
+  }>)
+    .from('portfolio_snapshot_rows')
+    .select('publication_id, row_key, value')
+    .in('publication_id', publicationIds)
+    .in('row_key', rowKeys)
+    .eq('scope', scope)
+
+  if (error) return { ok: false, code: 'read_failed' }
+  return {
+    ok: true,
+    values: (data ?? []).map((r) => ({
+      publicationId: r.publication_id,
+      rowKey: r.row_key,
+      // null stays null — a missing week must surface as a gap, never a 0.
+      value: r.value,
+    })),
+  }
+}
+
+export interface CurrentCommentary {
+  body: string
+  revision: number
+  updatedAt: string
+}
+
+type CommentarySelect = {
+  from: (t: string) => {
+    select: (c: string) => {
+      eq: (col: string, v: unknown) => {
+        eq: (col: string, v: unknown) => {
+          is: (col: string, v: null) => {
+            maybeSingle: () => Promise<{
+              data: { body: string; revision: number; updated_at: string } | null
+              error: unknown
+            }>
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * The LIVE commentary revision for one (publication, scope) — liveness is
+ * `superseded_by is null`, the same partial-unique predicate the R13.5
+ * lifecycle enforces, so a superseded revision can never surface here.
+ *
+ * The author's account id is deliberately NOT selected: members see the text,
+ * its revision and its date, attributed generically as administrator
+ * commentary — never another account's identifier.
+ */
+export async function getCurrentCommentary(
+  publicationId: string,
+  scope: string,
+): Promise<
+  | { ok: true; commentary: CurrentCommentary | null }
+  | { ok: false; code: 'not_configured' | 'read_failed' }
+> {
+  const client = await getSupabaseUserClient()
+  if (!client) return { ok: false, code: 'not_configured' }
+
+  const { data, error } = await (client as never as CommentarySelect)
+    .from('portfolio_commentary')
+    .select('body, revision, updated_at')
+    .eq('publication_id', publicationId)
+    .eq('scope', scope)
+    .is('superseded_by', null)
+    .maybeSingle()
+
+  if (error) return { ok: false, code: 'read_failed' }
+  if (!data) return { ok: true, commentary: null }
+  return {
+    ok: true,
+    commentary: { body: data.body, revision: data.revision, updatedAt: data.updated_at },
+  }
+}

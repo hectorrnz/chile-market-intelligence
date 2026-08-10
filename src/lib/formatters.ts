@@ -159,6 +159,59 @@ export function formatUsd(value: number | null | undefined, decimals = 0): strin
 }
 
 /**
+ * R13.7 — an UNSIGNED percentage from a ratio (0.423 → "42,3%"), for
+ * allocation weights where a "+" sign would misread as a change figure.
+ * Unavailable stays an em dash, never 0%.
+ */
+export function formatWeightPct(weight: number | null | undefined, decimals = 1): string {
+  if (weight === null || weight === undefined || !Number.isFinite(weight)) return '—'
+  return `${(weight * 100).toLocaleString('es-CL', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })}%`
+}
+
+/**
+ * R13.7 — a SIGNED percentage from a RATIO (0.0123 → "+1,23%"), for
+ * source-provided returns and benchmark variations stored as ratios.
+ * Unavailable stays an em dash, never 0%.
+ */
+export function formatRatioPct(ratio: number | null | undefined, decimals = 2): string {
+  if (ratio === null || ratio === undefined || !Number.isFinite(ratio)) return '—'
+  return formatPercent(ratio * 100, decimals)
+}
+
+export interface CalendarParts {
+  year: number
+  month: number
+  day: number
+}
+
+/**
+ * The calendar parts of a bare `YYYY-MM-DD` (or `YYYY-MM`, which resolves to
+ * the first of the month) string, read DIRECTLY off the string.
+ *
+ * Same rule as `formatSourceDate`/`formatIsoDateLabel`, extracted so a caller
+ * that needs the individual parts (a chart axis, a tooltip) can obey it too:
+ * `new Date("2026-08-07")` is an *instant* at UTC midnight, so the local
+ * getters (`getDate()`, `getMonth()`) return the PRIOR day in every negative
+ * UTC offset — 6 August in Chile. A publication date is a calendar date, not
+ * an instant; no viewer's timezone may shift it.
+ *
+ * Returns null for anything that is not a bare calendar date, so the caller
+ * decides what to do with a real instant rather than being handed a guess.
+ */
+export function calendarPartsOf(value: string): CalendarParts | null {
+  const m = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(value)
+  if (!m) return null
+  const year = Number(m[1])
+  const month = Number(m[2])
+  const day = m[3] === undefined ? 1 : Number(m[3])
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null
+  return { year, month, day }
+}
+
+/**
  * R13.6 — a DATE-ONLY ISO string ("2026-08-13") as `DD-MM-YYYY`, read directly
  * off the string. Same rule as `formatSourceDate`: a date-only value is never
  * run through `new Date()`, which parses it as UTC midnight and can render the

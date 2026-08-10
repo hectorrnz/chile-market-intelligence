@@ -636,3 +636,57 @@ server cache still applies, so a burst of manual refreshes doesn't hammer df.cl)
   Diario Estrategia; periodically re-check whether Emol ever restores a real feed.
 - **Priority:** P2 (CMF Comunicados — official source, real candidate) / P3 (Diario Estrategia via aggregate;
   periodic Emol re-check).
+
+---
+
+## Family Portfolio · Overview benchmarks (R13.7, verified 2026-08-10)
+
+- **What:** the generated Overview's market-context block needs FIVE instruments (doc
+  `portfolio-r13/06` § 4.1): `INRETC1 PE Equity` (InRetail price/variation), `ACWI US EQUITY`
+  (`Bolsas Mundiales` — ACWI ALONE, proven 80/80 against the source; the five-instrument average
+  was rejected 0/80), and `AGGG LN Equity` / `GHYG US Equity` / `CEMB US Equity` (whose arithmetic
+  mean is `Promedio Renta Fija`). Symbol mappings live in `src/config/onePagerBenchmarks.ts`.
+- **Status — four `live`, one `unavailable`.** The doc 06 § 4.3 verification ran in full on
+  **2026-08-10** against the private reference workbook (outside the repository; no reference value
+  is recorded anywhere in it), over the full 82-week header = **80 comparable week-over-week
+  pairs**, using the shipped 5-calendar-day alignment rule. Two independent checks per candidate:
+  price-level identity against the source's own `PX_LAST` row (proves the symbol IS the instrument,
+  and cannot be satisfied by errors cancelling inside a composite), then the decisive reproduction
+  of the source's own derived rows.
+  - **`ACWI` — VERIFIED.** NASDAQ, quote currency USD. Price identity over 82 weeks: median
+    relative deviation 2.3e-8. Derived row reproduced **80/80** pairs at ≤ 1e-6 (max 9.9e-8).
+  - **`AGGG.L` — VERIFIED.** London Stock Exchange, venue quote currency **confirmed USD** by
+    provider metadata (doc 06 § 4.3's specific concern about this listing), not assumed. Price
+    identity over 81 weeks: median 2.6e-8.
+  - **`GHYG` — VERIFIED.** NYSE Arca, USD. Price identity over 81 weeks: median 2.7e-8, max 1.1e-4.
+  - **`CEMB` — VERIFIED.** NASDAQ, USD. Price identity over 81 weeks: median 2.7e-8, max 1.1e-4.
+  - **Fixed-income composite — VERIFIED AS A CONSTRUCTION.** `mean(AGGG.L, GHYG, CEMB)` reproduces
+    the source's derived row in **80/80** pairs (76/80 ≤ 1e-4, 78/80 ≤ 5e-4, 80/80 ≤ 1e-3, median
+    1.5e-5); all three legs are computable in 81/81 weeks. The residual is the scale of the
+    source's own rounded pasted prices.
+  - **`INRETC1.LM` — UNVERIFIED (verification performed, not skipped).** Identity is largely
+    established (price identity exact on 72/80 weeks, median 1.4e-8; derived row ≤ 1e-6 on 65/76
+    pairs), but two findings block promotion: (1) the Lima venue reports **no quote currency at
+    all**, so USD would rest on inference rather than the venue's declaration, and doc 06 § 4.3
+    requires it confirmed; (2) Lima history is genuinely incomplete — one reference week has no
+    aligned bar inside the 5-day window, and on further weeks there is no bar on the reference date
+    itself, so the alignment rule falls back 1–2 days and the recomputed weekly return misses the
+    reference by **more than 0.5 pp in 3 of 76 weeks (max 1.30 pp)**. InRetail price and variation
+    therefore keep rendering `—`. The InRetail **portfolio-value impact** metric is unaffected: doc
+    06 § 3.3 derives it from published snapshots and needs no market feed.
+  - **Source-side artefact, recorded not hidden:** one workbook column carries a corrupted pasted
+    `PX_LAST` for BOTH ACWI (~13 % off) and INRETC1 (~42×) while its derived rows still agree with
+    the provider — consistent with doc 06 § 3's finding that rows 66–79 are independent hardcoded
+    pastes, so one bad paste cannot propagate. Not a symbol mismatch.
+- **Deliberately not surfaced:** the source workbook also collects `SPX INDEX`, `EZU US EQUITY`,
+  `URTH US EQUITY`, `EEM US EQUITY` as **unused reference data** — they feed no One Pager output
+  (doc 06 § 3.2) and are NOT mapped or displayed. This line is the documented starting point if a
+  "market context strip" is ever requested.
+- **Conversion path (INRETC1 only):** confirm the Lima venue's quote currency from a source that
+  declares it, and establish coverage good enough that the 5-day fallback stops producing
+  percentage-point-scale disagreement — then re-run the reproduction and flip `verified`. Until
+  then the gate holds and the resolver performs **no fetch at all** for it. No architecture change
+  is needed either way.
+- **Priority:** P3 — the four verified instruments carry `Renta Variable Mundial` and
+  `Promedio de Renta Fija Mundial` live; only the two InRetail market rows remain `—`, and the
+  portfolio-derived Overview content was never affected (it is live from published snapshots).

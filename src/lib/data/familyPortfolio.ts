@@ -98,3 +98,95 @@ export function fetchFamilyPortfolioSnapshot(
   const qs = asOf ? `?asOf=${encodeURIComponent(asOf)}` : ''
   return get(`/api/family-portfolio/${encodeURIComponent(scope)}/snapshot${qs}`)
 }
+
+// ---------------------------------------------------------------------------
+// R13.7 — Overview (One Pager)
+// ---------------------------------------------------------------------------
+
+export interface OverviewHeroData {
+  totalValue: number | null
+  weeklyDifference: number | null
+  weeklyReturn: number | null
+  ytdReturn: number | null
+}
+
+export interface OverviewAllocationEntry {
+  rowKey: string
+  labelEs: string
+  labelEn: string | null
+  value: number | null
+  weight: number | null
+}
+
+export interface OverviewAllocationBasis {
+  id: 'total' | 'ex_chilean' | 'ex_chilean_ex_inretail'
+  denominatorRowKey: string | null
+  denominatorLabelEs: string | null
+  denominatorLabelEn: string | null
+  denominatorValue: number | null
+  entries: OverviewAllocationEntry[]
+  status: 'ok' | 'partial' | 'unavailable'
+  residual: number | null
+}
+
+export interface OverviewPerformanceBlock {
+  basis: string
+  flow: number | null
+  weeklyReturn: number | null
+  weeklyProfit: number | null
+  ytdReturn: number | null
+  ytdProfit: number | null
+}
+
+export interface OverviewEvolutionPoint {
+  date: string
+  value: number
+}
+
+export interface OverviewMarketMetric {
+  status: 'unverified' | 'unavailable' | 'ok'
+  value: number | null
+  observationDate: string | null
+  previousObservationDate: string | null
+}
+
+export interface OverviewCommentary {
+  body: string
+  revision: number
+  updatedAt: string
+}
+
+export interface FamilyPortfolioOverviewResponse {
+  scope: string
+  /** Null when no portfolio week has ever been published. */
+  publication: {
+    asOfDate: string
+    revision: number
+    publishedAt: string
+    parserVersion: string
+    dates: { beginningOfYear: string | null; previousWeek: string | null; thisWeek: string }
+  } | null
+  hero?: OverviewHeroData
+  comparison?: FamilyPortfolioSnapshotRow[] | null
+  allocation?: OverviewAllocationBasis[]
+  performanceBlocks?: OverviewPerformanceBlock[]
+  evolution?: { exChilean: OverviewEvolutionPoint[]; withChilean: OverviewEvolutionPoint[] }
+  inretailImpact?: { rowKey: string | null; value: number | null }
+  marketContext?: {
+    globalEquity: OverviewMarketMetric
+    globalFixedIncome: OverviewMarketMetric
+    inretailPrice: OverviewMarketMetric
+    inretailVariation: OverviewMarketMetric
+  }
+  commentary?: OverviewCommentary | null
+  freshness?: {
+    portfolio: { asOfDate: string; publishedAt: string }
+    alternatives: { asOfDate: string; publishedAt: string } | null
+  }
+}
+
+export function fetchFamilyPortfolioOverview(
+  scope: string,
+): Promise<FetchResult<FamilyPortfolioOverviewResponse>> {
+  return get(`/api/family-portfolio/overview/${encodeURIComponent(scope)}`)
+}

@@ -35,11 +35,16 @@ const GATE = 'src/components/familyPortfolio/MemberGate.tsx'
 const TABLE = 'src/components/familyPortfolio/HierarchicalTable.tsx'
 const WEEK_SELECTOR = 'src/components/familyPortfolio/WeekSelector.tsx'
 const DATA_HELPER = 'src/lib/data/familyPortfolio.ts'
+// R13.7 additions.
+const MASKED_AMOUNT = 'src/components/familyPortfolio/MaskedAmount.tsx'
+const DONUT = 'src/components/familyPortfolio/AllocationDonut.tsx'
+const FRESHNESS = 'src/components/familyPortfolio/DualFreshnessBadge.tsx'
 
-/** Every CLIENT file Stage 6 added — pages, components, and the fetch helper. */
+/** Every CLIENT file the module ships — pages, components, the fetch helper. */
 const CLIENT_FILES = [
   LAYOUT, OVERVIEW_PAGE, PORTFOLIO_PAGE, WEEKLY_PAGE, ALTERNATIVES_PAGE,
   PROVIDER, NAV, GATE, TABLE, WEEK_SELECTOR, DATA_HELPER,
+  MASKED_AMOUNT, DONUT, FRESHNESS,
 ]
 
 /** Strips comments so hygiene regexes cannot be tripped by prose. */
@@ -75,14 +80,20 @@ describe('R13.6 · module shell', () => {
   })
 
   test('the placeholder pages render honest pending states, not early implementations', () => {
-    for (const rel of [OVERVIEW_PAGE, WEEKLY_PAGE, ALTERNATIVES_PAGE]) {
+    // R13.7: the Overview graduated from placeholder to the real generated
+    // One Pager; Weekly Changes (Stage 8) and Alternatives (Stage 9) remain.
+    for (const rel of [WEEKLY_PAGE, ALTERNATIVES_PAGE]) {
       const src = read(rel)
       assert.match(src, /AsyncState/, `${rel} must use the shared async-state language`)
       assert.match(src, /kind="unavailable"/, `${rel} must render the unavailable state`)
       assert.match(src, /MemberGate/, `${rel} must gate on the caller's entitlement`)
-      assert.ok(!/fetchFamilyPortfolioSnapshot|HierarchicalTable/.test(src),
+      assert.ok(!/fetchFamilyPortfolioSnapshot|fetchFamilyPortfolioOverview|HierarchicalTable/.test(src),
         `${rel} must not fetch or render snapshot data`)
     }
+    const overview = read(OVERVIEW_PAGE)
+    assert.match(overview, /fetchFamilyPortfolioOverview\('main'\)/,
+      'the Overview is now the real Stage-7 page')
+    assert.match(overview, /MemberGate/)
   })
 
   test('the zero-scope caller gets a plain no-access state — loading, error and denied stay distinct', () => {
@@ -383,7 +394,7 @@ describe('R13.6 · portfolio page', () => {
     assert.match(amountCell, /PrivacyValue masked=\{masked\}/)
   })
 
-  test('amountCell is the ONLY monetary renderer — no amount can bypass the mask (audit area 5)', () => {
+  test('every monetary render path is privacy-guarded — no amount can bypass the mask (audit area 5)', () => {
     const table = read(TABLE)
     // In the table's CODE (comments stripped), `formatUsd` appears exactly
     // twice: the import and the single call inside amountCell's PrivacyValue
@@ -397,18 +408,93 @@ describe('R13.6 · portfolio page', () => {
     assert.match(table, /\{amountCell\(row\.previousValue, masked\)\}/)
     assert.match(table, /\{amountCell\(row\.value, masked\)\}/)
     assert.match(table, /\{amountCell\(row\.difference, masked, diffColor\)\}/)
-    // No client file in the module formats an amount any other way, and no
-    // title/tooltip carries a raw amount around the mask.
+
+    // R13.7 — MaskedAmount is the shared renderer outside the table: its one
+    // formatUsd call sits inside PrivacyValue, and null renders an em dash.
+    const maskedAmount = read(MASKED_AMOUNT)
+    assert.equal(codeOf(maskedAmount).split('formatUsd').length - 1, 2)
+    assert.match(maskedAmount, /<PrivacyValue masked=\{masked\}[^>]*>\s*\{formatUsd\(value, decimals\)\}/)
+    assert.match(maskedAmount, />—</)
+
+    // The Overview page's own formatUsd uses are each privacy-safe by
+    // construction: the KpiHero value is masked via its privacyMasked prop,
+    // and the evolution LineChart (whose axis/tooltip text carries raw
+    // amounts) renders ONLY in the unmasked branch — masking replaces the
+    // whole chart. The one unguarded use is the PUBLIC InRetail closing
+    // price, which is market data, not family wealth.
+    const overview = read(OVERVIEW_PAGE)
+    assert.match(overview, /privacyMasked=\{masked\}/)
+    assert.match(overview, /\) : masked \? \(/)
+    const lineChartAt = overview.indexOf('<LineChart')
+    const maskGuardAt = overview.indexOf(') : masked ? (')
+    assert.ok(maskGuardAt > 0 && lineChartAt > maskGuardAt,
+      'the evolution chart must render only in the unmasked branch')
+
+    // Everywhere else: no direct amount formatting, no toLocaleString, and no
+    // title/tooltip carrying a raw amount around the mask.
+    const MAY_FORMAT_AMOUNTS = new Set([TABLE, MASKED_AMOUNT, OVERVIEW_PAGE])
     for (const rel of CLIENT_FILES) {
       const src = codeOf(read(rel))
       assert.ok(!src.includes('toLocaleString'),
         `${rel} must not format an amount outside the shared formatters`)
-      if (rel !== TABLE) {
-        assert.ok(!src.includes('formatUsd'), `${rel} must not render amounts — only the table does`)
+      if (!MAY_FORMAT_AMOUNTS.has(rel)) {
+        assert.ok(!src.includes('formatUsd'),
+          `${rel} must not render amounts — only the approved renderers do`)
       }
       assert.ok(!/title=\{[^}]*(value|difference|formatUsd)/.test(src),
         `${rel} must not expose an amount through a title attribute`)
     }
+  })
+
+  test('EXHAUSTIVE: no monetary value escapes the hero mask through any KpiHero slot', () => {
+    // Doc 06 defines the hero from the TOTAL value, the weekly NMI-derived
+    // portfolio-value difference, the weekly return and the YTD return. Two of
+    // those are AMOUNTS; both must obey the same privacy state, through every
+    // slot KpiHero renders — headline, change capsule, minis, accessible label,
+    // title attribute, and any DOM that stays mounted while masked.
+    const hero = read('src/components/fable/KpiHero.tsx')
+    const overview = read(OVERVIEW_PAGE)
+    const heroCode = codeOf(hero)
+
+    // 1 · The headline amount is masked.
+    assert.match(heroCode, /<PrivacyValue masked=\{privacyMasked\}>/)
+
+    // 2 · A monetary mini is masked by the hero's OWN state — not a second flag
+    //     a caller could set inconsistently with the headline.
+    assert.match(heroCode, /m\.sensitive \? <PrivacyValue masked=\{privacyMasked\}>\{m\.value\}<\/PrivacyValue> : m\.value/)
+    assert.ok(!/masked=\{m\./.test(heroCode),
+      'a mini must never carry its own independent masked state')
+
+    // 3 · Nothing in KpiHero leaks a value through a title/tooltip/aria label.
+    assert.ok(!/title=/.test(heroCode), 'KpiHero must not put any value in a title attribute')
+    assert.ok(!/aria-label=\{[^}]*(value|display|m\.value)/.test(heroCode),
+      'KpiHero must not put a value in an accessible label')
+
+    // 4 · While masked, PrivacyValue does not render children AT ALL, so no
+    //     raw amount remains in hidden mounted DOM, the a11y tree, or the
+    //     clipboard. (Not a blur/opacity treatment.)
+    const privacy = codeOf(read('src/components/fable/PrivacyValue.tsx'))
+    const maskedBranch = privacy.slice(privacy.indexOf('return ('))
+    assert.ok(!maskedBranch.includes('{children}'),
+      'the masked branch must not render children in any form')
+    assert.ok(!/filter:|blur|opacity/.test(privacy), 'masking must not be a visual-only treatment')
+
+    // 5 · The page marks the weekly Difference — the one monetary hero field —
+    //     sensitive, and an unavailable figure stays a plain em dash.
+    assert.match(overview, /label: o\.weeklyDifference,\s*\n\s*value: formatUsd\(data\.hero\?\.weeklyDifference \?\? null\)/)
+    assert.match(overview, /sensitive: data\.hero\?\.weeklyDifference != null/)
+
+    // 6 · The change capsule and the remaining mini carry PERCENTAGES only —
+    //     formatRatioPct, never an amount formatter.
+    assert.match(overview, /changeLabel=\{`\$\{formatRatioPct\(/)
+    assert.match(overview, /label: o\.ytdReturn, value: formatRatioPct\(/)
+
+    // 7 · Every formatUsd call on the page is one of the four approved sites:
+    //     the masked headline, the sensitive mini, the PUBLIC InRetail closing
+    //     price, and the evolution chart that renders only when unmasked. A
+    //     fifth use must fail this test rather than ship unmasked.
+    assert.equal(codeOf(overview).split('formatUsd').length - 1, 5,
+      'formatUsd occurrences on the Overview page changed — re-audit each against the mask')
   })
 
   test('the Difference column\'s NMI derivation is disclosed beside the footer (audit area 3)', () => {
@@ -477,10 +563,18 @@ describe('R13.6 · hierarchical table', () => {
   })
 
   test('no hardcoded colors — semantic tokens only', () => {
-    for (const rel of [TABLE, NAV, WEEK_SELECTOR, GATE, PORTFOLIO_PAGE, OVERVIEW_PAGE, WEEKLY_PAGE, ALTERNATIVES_PAGE, LAYOUT]) {
+    for (const rel of [TABLE, NAV, WEEK_SELECTOR, GATE, PORTFOLIO_PAGE, OVERVIEW_PAGE, WEEKLY_PAGE, ALTERNATIVES_PAGE, LAYOUT, MASKED_AMOUNT, DONUT, FRESHNESS]) {
       assert.ok(!/#[0-9a-fA-F]{3,8}\b/.test(codeOf(read(rel))),
         `${rel} must not hardcode a hex color`)
     }
+    // The donut's slice colors are the --fp-slice identity tokens, declared
+    // for BOTH themes in globals.css — never the signal tokens.
+    const donut = read(DONUT)
+    assert.match(donut, /--fp-slice-/)
+    assert.ok(!/--positive|--negative|--warning/.test(donut))
+    const css = read('src/app/globals.css')
+    assert.ok((css.match(/--fp-slice-1:/g) ?? []).length >= 2,
+      'each --fp-slice token needs a light AND a dark value')
   })
 
   test('no forbidden attribution vocabulary anywhere on the Stage-6 surface (doc 07 § 4.3)', () => {
