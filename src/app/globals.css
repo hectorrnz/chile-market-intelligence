@@ -345,6 +345,20 @@
   --fp-slice-7:     #0F6E6E;  /* teal */
   --fp-slice-8:     #6B5B14;  /* dark bronze */
 
+  /* R13.9 — Alternatives event-type colors (doc 07 §§ 7.4, 8; the
+     --news-src-* precedent). LIGHT THEME = the LITERAL source-legend colours
+     ("colours drawn from the source legend", doc 03 § 3.2) — the canonical
+     hexes recorded in eventPresentation.ts's ALT_EVENT_SOURCE_HEX. The dark
+     theme carries documented derivative tints of the same hues (see the .dark
+     block). Meaning always travels in the text label beside the chip — the
+     theme adapts pigment, never classification. Components consume these ONLY
+     through eventPresentation.ts, never as hex. Unclassified is the explicit
+     needs-attention state and deliberately reuses the warning hue. */
+  --alt-event-aporte:        #002060;  /* Aporte — source legend DC1, navy */
+  --alt-event-dividendo:     #92D050;  /* Dividendo — source legend DC2, green */
+  --alt-event-distribucion:  #1F497D;  /* Distribución — source legend DC3 (dk2 base) */
+  --alt-event-unclassified:  var(--warning);
+
   /* Top bar */
   --topbar:         var(--nv-hdrbg-solid);
   --topbar-fg:      var(--nv-text);
@@ -569,6 +583,17 @@
   --fp-slice-6:     #8CA8D8;
   --fp-slice-7:     #4FA8A8;
   --fp-slice-8:     #C0AA5A;
+
+  /* R13.9 — Alternatives event colors on dark: DERIVATIVE TINTS of the same
+     source hues (never presented as the raw source fill — the light theme
+     carries the literal legend colours; the canonical record lives in
+     eventPresentation.ts). Aporte's navy and Distribución's dk2 are lightened
+     for a dark surface; Distribución uses the source legend's own tint-0.4
+     rendering; Dividendo's green is already high-luminance and stays. */
+  --alt-event-aporte:        #8FA9DB;
+  --alt-event-dividendo:     #92D050;
+  --alt-event-distribucion:  #7992B1;
+  --alt-event-unclassified:  var(--warning);
 
   /* Top bar */
   --topbar:         var(--nv-hdrbg-solid);

@@ -250,3 +250,41 @@ export function fetchFamilyPortfolioWeeklyChanges(
   const qs = asOf ? `?asOf=${encodeURIComponent(asOf)}` : ''
   return get(`/api/family-portfolio/weekly-changes/${encodeURIComponent(scope)}${qs}`)
 }
+
+// ---------------------------------------------------------------------------
+// R13.9 — Alternatives
+// ---------------------------------------------------------------------------
+
+// Type-only imports from the pure Stage-9 module — the route computes with
+// these exact shapes and the page re-derives filtered views through the same
+// functions, so no parallel financial vocabulary can appear client-side.
+import type {
+  AlternativesEventRead,
+  AlternativesGroup,
+  AlternativesHoldingRead,
+} from '@/lib/familyPortfolio/alternativesView'
+
+export type AlternativesViewState = 'ok' | 'empty' | 'no_publication'
+
+export interface FamilyPortfolioAlternativesResponse {
+  state: AlternativesViewState
+  /** The CURRENT alternatives publication — its OWN as-of, never the portfolio's. */
+  publication: {
+    id: string
+    asOfDate: string
+    revision: number
+    publishedAt: string
+    parserVersion: string
+  } | null
+  holdings?: AlternativesHoldingRead[]
+  events?: AlternativesEventRead[]
+  /** Per-(category, currency) groups — NEVER a cross-currency total. */
+  groups?: AlternativesGroup[]
+  eventSummary?: { total: number; byType: Record<string, number>; unclassified: number }
+}
+
+export function fetchFamilyPortfolioAlternatives(): Promise<
+  FetchResult<FamilyPortfolioAlternativesResponse>
+> {
+  return get('/api/family-portfolio/alternatives')
+}

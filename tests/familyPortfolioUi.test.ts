@@ -84,17 +84,17 @@ describe('R13.6 · module shell', () => {
     assert.match(nav, /aria-label/)
   })
 
-  test('the placeholder pages render honest pending states, not early implementations', () => {
-    // R13.7 graduated the Overview; R13.8 graduated Weekly Changes.
-    // Alternatives (Stage 9) remains the one placeholder.
-    for (const rel of [ALTERNATIVES_PAGE]) {
-      const src = read(rel)
-      assert.match(src, /AsyncState/, `${rel} must use the shared async-state language`)
-      assert.match(src, /kind="unavailable"/, `${rel} must render the unavailable state`)
-      assert.match(src, /MemberGate/, `${rel} must gate on the caller's entitlement`)
-      assert.ok(!/fetchFamilyPortfolioSnapshot|fetchFamilyPortfolioOverview|HierarchicalTable/.test(src),
-        `${rel} must not fetch or render snapshot data`)
-    }
+  test('every member surface is now a real implementation behind the member gate', () => {
+    // R13.7 graduated the Overview; R13.8 graduated Weekly Changes; R13.9
+    // graduated Alternatives — no placeholder page remains.
+    const alternatives = read(ALTERNATIVES_PAGE)
+    assert.match(alternatives, /fetchFamilyPortfolioAlternatives/,
+      'Alternatives is now the real Stage-9 page')
+    assert.match(alternatives, /MemberGate/)
+    assert.ok(!alternatives.includes('kind="unavailable"'),
+      'the Stage-9 placeholder state is gone')
+    assert.ok(!/fetchFamilyPortfolioSnapshot|HierarchicalTable/.test(alternatives),
+      'Alternatives renders its own model, never the snapshot table')
     const overview = read(OVERVIEW_PAGE)
     assert.match(overview, /fetchFamilyPortfolioOverview\('main'\)/,
       'the Overview is now the real Stage-7 page')

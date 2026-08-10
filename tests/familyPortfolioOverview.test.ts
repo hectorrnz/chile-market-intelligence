@@ -518,7 +518,11 @@ describe('R13.7 · overview route and reads', () => {
 
   test('the R13.7 reads go through the user-session client under RLS', () => {
     const repo = read(READ_REPO)
-    const r137 = repo.slice(repo.indexOf('R13.7 — Overview reads'))
+    // Bounded at the R13.9 Alternatives block, which follows it in the file —
+    // those reads carry the same discipline, asserted by their own suite.
+    const from = repo.indexOf('R13.7 — Overview reads')
+    const to = repo.indexOf('R13.9 — Alternatives reads')
+    const r137 = repo.slice(from, to > from ? to : undefined)
     assert.ok(r137.length > 0)
     assert.equal((r137.match(/getSupabaseUserClient\(\)/g) ?? []).length, 4,
       'performance rows, bindings, bound values and commentary all read as the caller')

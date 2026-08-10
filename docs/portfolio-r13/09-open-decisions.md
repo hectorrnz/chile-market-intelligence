@@ -54,6 +54,13 @@ holding or hides one.
 Alternatives (which all principals see) — the same treatment as every other alternatives row. Flag it
 for confirmation before Stage 9 ships.
 
+> **R13.9 status — OUTSTANDING RELEASE CONDITION.** Stage 9 shipped the interim position exactly:
+> `SAN ROQUE` renders in shared Alternatives with **no special-cased code path anywhere** (pinned by
+> `tests/familyPortfolioAlternatives.test.ts`), and no member-facing surface mentions the ownership
+> question. The question itself is **not resolved**: SAN ROQUE ownership must be confirmed by the
+> user **before the Stage-11 production release**. This paragraph is the durable release-control
+> record of that condition — removing it without a recorded confirmation fails the R13.9 suite.
+
 ---
 
 ## D3 · `.xlsx` parsing — dependency-free reader vs a vetted library

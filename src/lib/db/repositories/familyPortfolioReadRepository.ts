@@ -443,3 +443,148 @@ export async function getCurrentCommentary(
     commentary: { body: data.body, revision: data.revision, updatedAt: data.updated_at },
   }
 }
+
+// ---------------------------------------------------------------------------
+// R13.9 — Alternatives reads. Same client discipline: every holding and event
+// row goes through the CALLER'S OWN session, so the `nmi_can_access_scope`
+// RLS policy on both tables (R13.4) independently re-derives the shared
+// `alternatives` entitlement. Rows are ordered by their source row in SQL —
+// the workbook's own presentation order — but source coordinates are NOT
+// selected: they are provenance for the admin surface, not member content
+// (doc 07 § 7.4).
+// ---------------------------------------------------------------------------
+
+/** One published alternatives holding — no source coordinates, no metadata. */
+export interface AlternativesHoldingRow {
+  id: string
+  category: string
+  currency: string
+  investmentName: string
+  sociedad: string
+  capitalCommitted: number | null
+  contributions: number | null
+  unfunded: number | null
+  lastStatementDate: string | null
+  lastStatementLabel: string | null
+  lastValuation: number | null
+  flowSinceStatement: number | null
+  currentValue: number | null
+  reportedIrr: number | null
+  calculatedIrr: number | null
+}
+
+/** One published alternatives event. Classification is the parser's. */
+export interface AlternativesEventRow {
+  holdingId: string | null
+  eventDate: string
+  amount: number
+  currency: string
+  eventType: string
+}
+
+type OrderedByPublication<T> = {
+  from: (t: string) => {
+    select: (c: string) => {
+      eq: (col: string, v: unknown) => {
+        order: (
+          col: string,
+          opts: { ascending: boolean },
+        ) => Promise<{ data: T[] | null; error: unknown }>
+      }
+    }
+  }
+}
+
+/** Holdings of ONE (current) alternatives publication (user session, RLS). */
+export async function getAlternativesHoldings(
+  publicationId: string,
+): Promise<
+  | { ok: true; holdings: AlternativesHoldingRow[] }
+  | { ok: false; code: 'not_configured' | 'read_failed' }
+> {
+  const client = await getSupabaseUserClient()
+  if (!client) return { ok: false, code: 'not_configured' }
+
+  const { data, error } = await (client as never as OrderedByPublication<{
+    id: string
+    category: string
+    currency: string
+    investment_name: string
+    sociedad: string
+    capital_committed: number | null
+    contributions: number | null
+    unfunded: number | null
+    last_statement_date: string | null
+    last_statement_label: string | null
+    last_valuation: number | null
+    flow_since_statement: number | null
+    current_value: number | null
+    reported_irr: number | null
+    calculated_irr: number | null
+  }>)
+    .from('alternatives_holdings')
+    .select(
+      'id, category, currency, investment_name, sociedad, capital_committed, contributions, unfunded, last_statement_date, last_statement_label, last_valuation, flow_since_statement, current_value, reported_irr, calculated_irr',
+    )
+    .eq('publication_id', publicationId)
+    .order('source_row', { ascending: true })
+
+  if (error) return { ok: false, code: 'read_failed' }
+  return {
+    ok: true,
+    holdings: (data ?? []).map((h) => ({
+      id: h.id,
+      category: h.category,
+      currency: h.currency,
+      investmentName: h.investment_name,
+      sociedad: h.sociedad,
+      // Every numeric passes through as-is — null stays null, never 0.
+      capitalCommitted: h.capital_committed,
+      contributions: h.contributions,
+      unfunded: h.unfunded,
+      lastStatementDate: h.last_statement_date,
+      lastStatementLabel: h.last_statement_label,
+      lastValuation: h.last_valuation,
+      flowSinceStatement: h.flow_since_statement,
+      currentValue: h.current_value,
+      reportedIrr: h.reported_irr,
+      calculatedIrr: h.calculated_irr,
+    })),
+  }
+}
+
+/** Events of ONE (current) alternatives publication (user session, RLS). */
+export async function getAlternativesEvents(
+  publicationId: string,
+): Promise<
+  | { ok: true; events: AlternativesEventRow[] }
+  | { ok: false; code: 'not_configured' | 'read_failed' }
+> {
+  const client = await getSupabaseUserClient()
+  if (!client) return { ok: false, code: 'not_configured' }
+
+  const { data, error } = await (client as never as OrderedByPublication<{
+    holding_id: string | null
+    event_date: string
+    amount: number
+    currency: string
+    event_type: string
+  }>)
+    .from('alternatives_events')
+    .select('holding_id, event_date, amount, currency, event_type')
+    .eq('publication_id', publicationId)
+    .order('event_date', { ascending: true })
+
+  if (error) return { ok: false, code: 'read_failed' }
+  return {
+    ok: true,
+    events: (data ?? []).map((e) => ({
+      holdingId: e.holding_id,
+      eventDate: e.event_date,
+      amount: e.amount,
+      currency: e.currency,
+      // The parser's classification, verbatim — `unclassified` included.
+      eventType: e.event_type,
+    })),
+  }
+}

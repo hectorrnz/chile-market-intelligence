@@ -515,11 +515,11 @@ describe('R13.8 · route and boundaries', () => {
     assert.match(route, /resolvePreviousPortfolioTotal\(currentRows\.rows, previousRows\.rows, boundKey\)/)
   })
 
-  test('Stage 9 stays blocked: no Alternatives API, page still a placeholder, no Alternatives import', () => {
-    assert.ok(!existsSync(join(ROOT, 'src/app/api/family-portfolio/alternatives')),
-      'no Stage-9 Alternatives API may exist')
-    const alt = read('src/app/family-portfolio/alternatives/page.tsx')
-    assert.match(alt, /kind="unavailable"/)
+  test('Stage 8 never touches the Alternatives surface, even now that Stage 9 exists', () => {
+    // R13.9 graduated Alternatives — the API and real page now exist — but the
+    // Stage-8 files still must not import, read, or render any of it.
+    assert.ok(existsSync(join(ROOT, 'src/app/api/family-portfolio/alternatives')),
+      'the Stage-9 Alternatives API exists (R13.9)')
     for (const rel of [...STAGE8_UI_FILES, ROUTE]) {
       assert.ok(!/alternatives/i.test(codeOf(read(rel)).replace(/s\.id !== 'alternatives'/g, '')),
         `${rel} must not touch the Stage-9 Alternatives surface`)

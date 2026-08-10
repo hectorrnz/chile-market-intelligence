@@ -921,15 +921,14 @@ describe('existing behaviour is unchanged', () => {
       '/weekly-changes/page.tsx',
     ], 'the page tree must be exactly the Stage-6 shell — no early later-stage surface')
 
-    // R13.8 graduated Weekly Changes; Alternatives (Stage 9) is the one
-    // remaining placeholder and must not be implemented early behind it.
-    for (const rel of [
-      'src/app/family-portfolio/alternatives/page.tsx',
-    ]) {
-      const src = read(rel)
-      assert.match(src, /AsyncState/, `${rel} must render the honest pending state`)
-      assert.ok(!/fetchFamilyPortfolioSnapshot|HierarchicalTable|waterfall|Waterfall|EventTimeline/.test(src),
-        `${rel} must not implement its later-stage experience early`)
+    // R13.9 graduated Alternatives — the last member surface. Its page now
+    // renders the real Stage-9 experience through its own read model, never
+    // the snapshot table of another stage.
+    {
+      const src = read('src/app/family-portfolio/alternatives/page.tsx')
+      assert.match(src, /fetchFamilyPortfolioAlternatives/)
+      assert.ok(!/fetchFamilyPortfolioSnapshot|HierarchicalTable|Waterfall/.test(src),
+        'Alternatives must not render another stage\'s surface')
     }
 
     const apiRoot = join(ROOT, 'src/app/api/family-portfolio')
@@ -951,19 +950,11 @@ describe('existing behaviour is unchanged', () => {
       '/admin/uploads/[id]/publish/route.ts',
       '/admin/uploads/[id]/route.ts',
       '/admin/uploads/route.ts',
+      '/alternatives/route.ts',
       '/overview/[scope]/route.ts',
       '/scopes/route.ts',
       '/weekly-changes/[scope]/route.ts',
-    ], 'the API surface must be exactly the Stage-5 admin set plus the Stage-6/7/8 read endpoints')
-
-    // The Stage-9 endpoint stays absent until its stage: the client-facing
-    // Alternatives read route (the administrator publish path reaches
-    // alternatives through `/admin/uploads/[id]/publish`, never its own client
-    // endpoint). The Overview read joined in Stage 7, Weekly Changes in Stage 8.
-    for (const forbidden of ['/alternatives']) {
-      assert.ok(!routes.some((r) => r.includes(forbidden)),
-        `${forbidden} is a later-stage route and must not exist yet`)
-    }
+    ], 'the API surface must be exactly the Stage-5 admin set plus the Stage-6/7/8/9 read endpoints')
   })
 
   test('username + password authentication is untouched', () => {
