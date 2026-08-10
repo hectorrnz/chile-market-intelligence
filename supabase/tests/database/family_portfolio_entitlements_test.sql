@@ -739,8 +739,18 @@ update public.portfolio_publications set is_current = true  where id = 'bbbbbbbb
 
 -- ── Scope-filtered reads, per principal ──────────────────────────────────────
 select pg_temp.as_user('33333333-3333-3333-3333-333333333333'); -- Jaime
-select is((select count(*)::int from public.portfolio_snapshot_rows where scope='jaime'), 1,
-  'Jaime reads his own scope');
+-- Jaime's scope is seeded with THREE rows: his portfolio total, plus the two
+-- R13.8 D4 sociedad aggregate grades (the intermediate `SUBTOTAL LA ESPERANZA`
+-- and the terminal `TOTAL LA ESPERANZA`) inserted above to prove both grades
+-- coexist. Asserting the row IDENTITIES rather than a bare count proves the
+-- stronger invariant — the entitlement exposes exactly the seeded set, with no
+-- row withheld and none extra — and it cannot go stale silently: growing the
+-- fixture changes the expected list rather than quietly passing a count.
+select is(
+  (select string_agg(row_key, ',' order by row_key)
+     from public.portfolio_snapshot_rows where scope='jaime'),
+  'jaime.la_esperanza.subtotal_la_esperanza,jaime.la_esperanza.total_la_esperanza,jaime.total',
+  'Jaime reads exactly the rows seeded for his own scope');
 select is((select count(*)::int from public.portfolio_snapshot_rows where scope='andres'), 0,
   'Jaime CANNOT read Andres');
 select is((select count(*)::int from public.portfolio_snapshot_rows where scope='pablo'), 0,
