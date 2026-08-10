@@ -103,9 +103,14 @@ create table if not exists public.portfolio_snapshot_rows (
   parent_row_key  text,
   depth           int  not null check (depth >= 0),
   display_order   int  not null,
+  -- R13.8 D4: `sociedad_total` is the sociedad's TERMINAL aggregate
+  -- (`TOTAL <SOC>`), distinct from `sociedad_subtotal` (its intermediate
+  -- liquid aggregate — `SUBTOTAL <SOC>` or the verified bare-`TOTAL` form).
+  -- One type for both made every sociedad enter the Stage-8 tilings twice.
   row_type        text not null check (row_type in
                     ('group_header','asset_class','sub_asset_class','sociedad_header',
-                     'individual_asset','sociedad_subtotal','portfolio_subtotal','portfolio_total',
+                     'individual_asset','sociedad_subtotal','sociedad_total',
+                     'portfolio_subtotal','portfolio_total',
                      'named_holding','flow','performance')),
   label_es        text not null,
   label_en        text,
@@ -271,6 +276,17 @@ begin
   end if;
   if def not like '%sociedad_header%' or def not like '%individual_asset%' then
     raise exception 'row_type CHECK cannot represent the alternatives hierarchy: %', def;
+  end if;
+  -- R13.8 D4: BOTH sociedad aggregate grades must survive. Asserting only the
+  -- terminal one would let a future edit collapse them back into a single type,
+  -- which is exactly the defect that made every sociedad enter the Stage-8
+  -- tilings twice. (`sociedad_subtotal` does not contain `sociedad_total` as a
+  -- substring, so neither test can vacuously satisfy the other.)
+  if def not like '%sociedad_subtotal%' then
+    raise exception 'row_type CHECK cannot represent the sociedad intermediate aggregate (R13.8 D4): %', def;
+  end if;
+  if def not like '%sociedad_total%' then
+    raise exception 'row_type CHECK cannot distinguish the sociedad terminal total (R13.8 D4): %', def;
   end if;
 
   select pg_get_constraintdef(oid) into def

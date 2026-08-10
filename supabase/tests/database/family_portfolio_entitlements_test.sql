@@ -652,7 +652,26 @@ values
   ('bbbbbbbb-0000-4000-8000-0000000000c1','pablo','2026-08-06','pablo.total',0,3,'portfolio_total','TOTAL PABLO','source_value','RESUMEN','RESUMEN!DE266'),
   -- The documented sub-asset-class depth must be storable.
   ('bbbbbbbb-0000-4000-8000-0000000000c1','main','2026-08-06','main.portafolio_liquido.renta_fija.investment_grade',
-   2,4,'sub_asset_class','Investment Grade','source_value','RESUMEN','RESUMEN!DE13');
+   2,4,'sub_asset_class','Investment Grade','source_value','RESUMEN','RESUMEN!DE13'),
+  -- R13.8 D4: the sociedad TERMINAL total is its own row type, distinct from
+  -- the intermediate sociedad subtotal (doc 02 § 5.4) — both must be storable
+  -- side by side under one sociedad.
+  ('bbbbbbbb-0000-4000-8000-0000000000c1','jaime','2026-08-06','jaime.la_esperanza.subtotal_la_esperanza',
+   1,5,'sociedad_subtotal','SUBTOTAL LA ESPERANZA','source_value','RESUMEN','RESUMEN!CZ124'),
+  ('bbbbbbbb-0000-4000-8000-0000000000c1','jaime','2026-08-06','jaime.la_esperanza.total_la_esperanza',
+   1,6,'sociedad_total','TOTAL LA ESPERANZA','source_value','RESUMEN','RESUMEN!CZ126');
+
+select is((select count(*)::int from public.portfolio_snapshot_rows
+           where scope='jaime' and row_type in ('sociedad_subtotal','sociedad_total')),
+  2, 'R13.8 D4: intermediate and terminal sociedad aggregates coexist as distinct row types');
+
+select throws_ok(
+  $$ insert into public.portfolio_snapshot_rows
+       (publication_id, scope, as_of_date, row_key, depth, display_order, row_type,
+        label_es, value_class, source_sheet, source_cell)
+     values ('bbbbbbbb-0000-4000-8000-0000000000c1','jaime','2026-08-06','jaime.x',0,7,'made_up_type',
+             'X','source_value','RESUMEN','RESUMEN!CZ1') $$,
+  '23514', null, 'an unknown row type is refused by the schema');
 
 -- Both Main bases must COEXIST for one publication — the uniqueness constraint
 -- must not collapse them into a single Main performance record.

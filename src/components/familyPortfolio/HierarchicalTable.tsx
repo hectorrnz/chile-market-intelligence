@@ -49,6 +49,7 @@ function rowClasses(rowType: string): string {
       return 'font-semibold border-t-2 border-border-strong'
     case 'portfolio_subtotal':
     case 'sociedad_subtotal':
+    case 'sociedad_total':
     case 'named_holding':
       return 'font-medium border-t border-border'
     default:

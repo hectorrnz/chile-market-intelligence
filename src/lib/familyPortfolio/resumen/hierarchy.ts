@@ -27,6 +27,11 @@ export type RowType =
   | 'sociedad_header'
   | 'individual_asset'
   | 'sociedad_subtotal'
+  /** R13.8 D4 — a sociedad's TERMINAL aggregate (`TOTAL <SOC>`), distinct from
+   *  its intermediate liquid aggregate (`SUBTOTAL <SOC>` / a bare `TOTAL`,
+   *  Vanglor-form). One row type could not express both without the Stage-8
+   *  tilings double-counting every sociedad (doc 02 § 5.4; doc 07 § 6e). */
+  | 'sociedad_total'
   | 'portfolio_subtotal'
   | 'portfolio_total'
   | 'named_holding'
@@ -84,10 +89,14 @@ const PERSONAL_ANCHORS: ReadonlyArray<{ scope: ScopeId; pattern: RegExp }> = [
  * (`CÁLCULO DE STOCKS`, doc 02 § 7) terminates the last scope and is itself
  * excluded from ingestion entirely.
  */
-export function detectScopes(sheet: XlsxSheet, headerRow: number): ScopeRange[] {
+export function detectScopes(sheet: XlsxSheet): ScopeRange[] {
   const found: Array<{ scope: ScopeId | 'technical'; row: number; label: string }> = []
 
-  for (let row = headerRow; row <= sheet.maxRow; row++) {
+  // The scan starts at ROW 1, not at the date header row: the real sheet
+  // anchors Main at row 3, ABOVE its own header row (5), and a scan that
+  // started at the header silently dropped the entire Main scope (R13.8 D4 —
+  // verified against the private reference workbook).
+  for (let row = 1; row <= sheet.maxRow; row++) {
     const raw = textAt(sheet, row, 2)
     if (!raw) continue
     const norm = normalizeLabel(raw)
@@ -142,11 +151,18 @@ export function technicalBlockStart(sheet: XlsxSheet, headerRow: number): number
 const GROUP_HEADERS = /^(portafolio liquido|portfolio liquido|alternativos)$/
 const ASSET_CLASSES = /^(caja y equivalentes|renta fija|renta variable|opciones|inmobiliario|venture capital ?\/ ?private equity)$/
 const FLOW_LABEL = /^(retiros ?\/ ?aportes|aportes ?\/ ?retiros)/
+// Metric ids ARE the persisted vocabulary: `portfolio_performance_rows.metric`
+// is CHECK-constrained to ('flow','weekly_profit','weekly_return','ytd_profit',
+// 'ytd_return') and every reader (Stage-7 Overview, Stage-8 Weekly Changes)
+// queries those names. R13.8 audit finding: the original 'annual_profit'/
+// 'annual_return' ids here never matched that enum, so a publish carrying the
+// workbook's `Utilidad del Año`/`Retorno del Año` rows would have failed the
+// CHECK outright. The year metrics are emitted under their persisted names.
 const PERFORMANCE_LABELS: ReadonlyArray<{ metric: string; pattern: RegExp }> = [
   { metric: 'weekly_profit', pattern: /^utilidad de la semana$/ },
   { metric: 'weekly_return', pattern: /^retorno de la semana$/ },
-  { metric: 'annual_profit', pattern: /^utilidad del ano$/ },
-  { metric: 'annual_return', pattern: /^retorno del ano$/ },
+  { metric: 'ytd_profit', pattern: /^utilidad del ano$/ },
+  { metric: 'ytd_return', pattern: /^retorno del ano$/ },
 ]
 /**
  * Main's spine lines (doc 02 § 5.3), which sit at the top level and carry
@@ -167,12 +183,13 @@ const SPINE_AGGREGATE = /^port(a)?folio liquido \+ alternativos$/
 /**
  * The sociedades that carry their own `SUBTOTAL`/`TOTAL` lines (doc 02 § 2.1).
  *
- * Both forms are sociedad-level aggregates, so BOTH classify as
- * `sociedad_subtotal`. Reading `TOTAL LA ESPERANZA` as a `portfolio_total`
- * would put a sociedad line in the same class as `TOTAL JAIME`, and the
- * personal performance block would then bind to the wrong row — precisely the
- * "silent, plausible-looking error" doc 02 § 2.1 warns about, where Andrés's
- * rows 205 and 207 differ materially on the weekly figure (see doc 02 § 2.1).
+ * Both forms are sociedad-level aggregates — `TOTAL <SOC>` the TERMINAL
+ * `sociedad_total`, `SUBTOTAL <SOC>` the intermediate `sociedad_subtotal`
+ * (R13.8 D4). Reading `TOTAL LA ESPERANZA` as a `portfolio_total` would put a
+ * sociedad line in the same class as `TOTAL JAIME`, and the personal
+ * performance block would then bind to the wrong row — precisely the "silent,
+ * plausible-looking error" doc 02 § 2.1 warns about, where Andrés's rows 205
+ * and 207 differ materially on the weekly figure (see doc 02 § 2.1).
  */
 const SOCIEDAD_NAMES = 'la esperanza|naidelt|los sauzales|retboy|los laureles|vanglor'
 const SOCIEDAD_AGGREGATE = new RegExp(`^(subtotal|total) (${SOCIEDAD_NAMES})`)
@@ -187,6 +204,22 @@ const SOCIEDAD_AGGREGATE = new RegExp(`^(subtotal|total) (${SOCIEDAD_NAMES})`)
  * does not require them.
  */
 const NAMED_COMPONENT = /^proporcional otras sociedades$|^staten capital/
+
+/**
+ * Presentation-only annotation rows the source repeats inside every scope —
+ * VERIFIED against the reference workbook (R13.8 D4): the `valores en dólares`
+ * currency note (whose OTHER columns carry the repeated date headers, so it
+ * looks value-bearing and previously fabricated an `individual_asset` holding
+ * a date serial), and Main's `Watermill + Dubai + 3 Uruguayas` subtitle. They
+ * are never economic nodes; the parser skips them entirely. This recognition
+ * is deliberately parser-boundary label matching over documented source
+ * constructs — never Stage-8 analytics logic.
+ */
+const ANNOTATION_LABELS = /^valores en dolares$|watermill \+ dubai/
+
+export function isAnnotationRow(label: string): boolean {
+  return ANNOTATION_LABELS.test(normalizeLabel(label))
+}
 
 /**
  * Classifies a row from its label, whether it carries a value, and its PARENT.
@@ -206,16 +239,39 @@ const NAMED_COMPONENT = /^proporcional otras sociedades$|^staten capital/
  * So a value row directly beneath an `asset_class` is a sub-asset class, and a
  * value row beneath a `sociedad_header` is an individual asset.
  */
-export function classifyRow(label: string, hasValue: boolean, parentType: RowType | null = null): RowType {
+export function classifyRow(
+  label: string,
+  hasValue: boolean,
+  parentType: RowType | null = null,
+  /**
+   * R13.8 D4 — the label of the sociedad currently OPEN on the parse stack,
+   * when there is one. It lets the sociedad's own aggregates resolve against
+   * the sociedad they actually sit in: `TOTAL <that name>` is its TERMINAL
+   * total; `SUBTOTAL <that name>` or a BARE `TOTAL`/`SUBTOTAL` (the verified
+   * Vanglor form) is its INTERMEDIATE liquid aggregate. A new sociedad name
+   * therefore classifies correctly with no list to maintain.
+   */
+  sociedadLabel: string | null = null,
+): RowType {
   const n = normalizeLabel(label)
 
-  if (GROUP_HEADERS.test(n)) return 'group_header'
+  // Main's `PORTAFOLIO LÍQUIDO`/`ALTERNATIVOS` section headers carry no value.
+  // Inside a personal sociedad the SAME `Alternativos` word heads a
+  // VALUE-BEARING line (doc 02 § 5.4) — an asset-class-grade amount, never a
+  // container that could reset the hierarchy.
+  if (GROUP_HEADERS.test(n)) return hasValue ? 'asset_class' : 'group_header'
   if (FLOW_LABEL.test(n)) return 'flow'
   if (PERFORMANCE_LABELS.some((p) => p.pattern.test(n))) return 'performance'
   if (NAMED_HOLDING.test(n) || NAMED_COMPONENT.test(n)) return 'named_holding'
 
-  // Sociedad aggregates before the generic subtotal/total forms.
-  if (SOCIEDAD_AGGREGATE.test(n)) return 'sociedad_subtotal'
+  // Sociedad aggregates, resolved against the OPEN sociedad first, then the
+  // known-name fallback — always before the generic subtotal/total forms.
+  const soc = sociedadLabel !== null ? normalizeLabel(sociedadLabel) : null
+  if (soc !== null) {
+    if (n === `total ${soc}`) return 'sociedad_total'
+    if (n === `subtotal ${soc}` || n === 'total' || n === 'subtotal') return 'sociedad_subtotal'
+  }
+  if (SOCIEDAD_AGGREGATE.test(n)) return /^total /.test(n) ? 'sociedad_total' : 'sociedad_subtotal'
   if (SPINE_AGGREGATE.test(n) || /^subtotal/.test(n)) return 'portfolio_subtotal'
   if (/^total/.test(n)) return 'portfolio_total'
   if (ASSET_CLASSES.test(n)) return 'asset_class'
@@ -244,6 +300,7 @@ export const REQUIRED_ROW_TYPES: ReadonlySet<RowType> = new Set<RowType>([
   'asset_class',
   'sub_asset_class',
   'sociedad_subtotal',
+  'sociedad_total',
   'portfolio_subtotal',
   'portfolio_total',
 ])

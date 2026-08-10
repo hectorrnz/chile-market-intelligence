@@ -190,3 +190,63 @@ export function fetchFamilyPortfolioOverview(
 ): Promise<FetchResult<FamilyPortfolioOverviewResponse>> {
   return get(`/api/family-portfolio/overview/${encodeURIComponent(scope)}`)
 }
+
+// ---------------------------------------------------------------------------
+// R13.8 — Weekly Changes
+// ---------------------------------------------------------------------------
+
+// The response's financial types come from the LOCKED pure Stage-8 module —
+// the same shapes the route computes with, so the client cannot drift into a
+// parallel financial vocabulary. Type-only imports: no calculation moves here.
+import type {
+  ChangeNode,
+  DriverGrouping,
+  FlowReconciliation,
+  TotalMetrics,
+  TrendPoint,
+  Waterfall,
+} from '@/lib/familyPortfolio/weeklyChanges'
+
+export type WeeklyChangesState =
+  | 'ok'
+  | 'empty'
+  | 'no_publications'
+  | 'week_not_found'
+  | 'no_previous_week'
+
+export interface WeeklyChangesResponse {
+  scope: string
+  state: WeeklyChangesState
+  weeks: FamilyPortfolioWeek[]
+  publication: {
+    id: string
+    asOfDate: string
+    revision: number
+    publishedAt: string
+    parserVersion: string
+  } | null
+  /** The immediately preceding PUBLISHED week — null on the earliest week. */
+  previousPublication: { asOfDate: string; publishedAt: string } | null
+  basis?: string
+  grouping?: DriverGrouping
+  availableGroupings?: DriverGrouping[]
+  total?: TotalMetrics
+  flowReconciliation?: FlowReconciliation
+  waterfall?: Waterfall
+  driverRowKeys?: string[]
+  nodes?: ChangeNode[]
+  trend?: TrendPoint[]
+}
+
+/**
+ * Weekly Changes for ONE entitled scope. `asOf` selects an exact published
+ * week; omitted → the latest current publication. There is deliberately no
+ * nearest-week fallback — an unknown week is the server's 404, surfaced as-is.
+ */
+export function fetchFamilyPortfolioWeeklyChanges(
+  scope: string,
+  asOf?: string | null,
+): Promise<FetchResult<WeeklyChangesResponse>> {
+  const qs = asOf ? `?asOf=${encodeURIComponent(asOf)}` : ''
+  return get(`/api/family-portfolio/weekly-changes/${encodeURIComponent(scope)}${qs}`)
+}

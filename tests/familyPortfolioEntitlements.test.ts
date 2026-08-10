@@ -891,15 +891,16 @@ describe('existing behaviour is unchanged', () => {
     //
     //   (a) Stage 6 (doc 08) owns the module shell, the five-page navigation
     //       tree and the Portfolio surface, so the page enumeration becomes the
-    //       EXACT Stage-6 set. Overview/Weekly Changes/Alternatives pages exist
-    //       as documented honest "not yet available" states — their CONTENT
-    //       belongs to Stages 7/8/9 and is asserted absent below.
+    //       EXACT Stage-6 set. The Overview graduated in R13.7 and Weekly
+    //       Changes in R13.8; Alternatives remains the documented honest
+    //       "not yet available" state — its CONTENT belongs to Stage 9 and is
+    //       asserted absent below.
     //
     //   (b) Doc 05 § 7.4's client READ endpoints consumed by Stage 6 —
     //       `/scopes`, `/[scope]/weeks`, `/[scope]/snapshot` — join the
-    //       administrator routes. The Stage 7-9 endpoints (`/overview`,
-    //       `/[scope]/weekly-changes`, the client `/alternatives` read route)
-    //       stay forbidden until their stages.
+    //       administrator routes, plus Stage 7's `/overview/[scope]` and
+    //       Stage 8's `/weekly-changes/[scope]`. The Stage-9 client
+    //       `/alternatives` read route stays forbidden until its stage.
     const pageRoot = join(ROOT, 'src/app/family-portfolio')
     assert.ok(existsSync(pageRoot), 'the Stage-6 module shell must exist')
     const pages: string[] = []
@@ -920,10 +921,9 @@ describe('existing behaviour is unchanged', () => {
       '/weekly-changes/page.tsx',
     ], 'the page tree must be exactly the Stage-6 shell — no early later-stage surface')
 
-    // The two placeholder pages must stay placeholders: the Stage-8/9
-    // experiences must not be implemented early behind them.
+    // R13.8 graduated Weekly Changes; Alternatives (Stage 9) is the one
+    // remaining placeholder and must not be implemented early behind it.
     for (const rel of [
-      'src/app/family-portfolio/weekly-changes/page.tsx',
       'src/app/family-portfolio/alternatives/page.tsx',
     ]) {
       const src = read(rel)
@@ -953,13 +953,14 @@ describe('existing behaviour is unchanged', () => {
       '/admin/uploads/route.ts',
       '/overview/[scope]/route.ts',
       '/scopes/route.ts',
-    ], 'the API surface must be exactly the Stage-5 admin set plus the Stage-6/7 read endpoints')
+      '/weekly-changes/[scope]/route.ts',
+    ], 'the API surface must be exactly the Stage-5 admin set plus the Stage-6/7/8 read endpoints')
 
-    // Stage 8-9 endpoints stay absent until their stages: the Weekly Changes
-    // read and the client-facing Alternatives read route (the administrator
-    // publish path reaches alternatives through `/admin/uploads/[id]/publish`,
-    // never its own client endpoint). The Overview read joined in Stage 7.
-    for (const forbidden of ['/weekly-changes', '/alternatives']) {
+    // The Stage-9 endpoint stays absent until its stage: the client-facing
+    // Alternatives read route (the administrator publish path reaches
+    // alternatives through `/admin/uploads/[id]/publish`, never its own client
+    // endpoint). The Overview read joined in Stage 7, Weekly Changes in Stage 8.
+    for (const forbidden of ['/alternatives']) {
       assert.ok(!routes.some((r) => r.includes(forbidden)),
         `${forbidden} is a later-stage route and must not exist yet`)
     }

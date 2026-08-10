@@ -39,12 +39,17 @@ const DATA_HELPER = 'src/lib/data/familyPortfolio.ts'
 const MASKED_AMOUNT = 'src/components/familyPortfolio/MaskedAmount.tsx'
 const DONUT = 'src/components/familyPortfolio/AllocationDonut.tsx'
 const FRESHNESS = 'src/components/familyPortfolio/DualFreshnessBadge.tsx'
+// R13.8 additions.
+const WATERFALL = 'src/components/familyPortfolio/ValueChangeWaterfall.tsx'
+const DIVERGING = 'src/components/familyPortfolio/DivergingBarChart.tsx'
+const RECON_STATUS = 'src/components/familyPortfolio/ReconciliationStatus.tsx'
 
 /** Every CLIENT file the module ships — pages, components, the fetch helper. */
 const CLIENT_FILES = [
   LAYOUT, OVERVIEW_PAGE, PORTFOLIO_PAGE, WEEKLY_PAGE, ALTERNATIVES_PAGE,
   PROVIDER, NAV, GATE, TABLE, WEEK_SELECTOR, DATA_HELPER,
   MASKED_AMOUNT, DONUT, FRESHNESS,
+  WATERFALL, DIVERGING, RECON_STATUS,
 ]
 
 /** Strips comments so hygiene regexes cannot be tripped by prose. */
@@ -80,9 +85,9 @@ describe('R13.6 · module shell', () => {
   })
 
   test('the placeholder pages render honest pending states, not early implementations', () => {
-    // R13.7: the Overview graduated from placeholder to the real generated
-    // One Pager; Weekly Changes (Stage 8) and Alternatives (Stage 9) remain.
-    for (const rel of [WEEKLY_PAGE, ALTERNATIVES_PAGE]) {
+    // R13.7 graduated the Overview; R13.8 graduated Weekly Changes.
+    // Alternatives (Stage 9) remains the one placeholder.
+    for (const rel of [ALTERNATIVES_PAGE]) {
       const src = read(rel)
       assert.match(src, /AsyncState/, `${rel} must use the shared async-state language`)
       assert.match(src, /kind="unavailable"/, `${rel} must render the unavailable state`)
@@ -94,6 +99,10 @@ describe('R13.6 · module shell', () => {
     assert.match(overview, /fetchFamilyPortfolioOverview\('main'\)/,
       'the Overview is now the real Stage-7 page')
     assert.match(overview, /MemberGate/)
+    const weekly = read(WEEKLY_PAGE)
+    assert.match(weekly, /fetchFamilyPortfolioWeeklyChanges/,
+      'Weekly Changes is now the real Stage-8 page')
+    assert.match(weekly, /MemberGate/)
   })
 
   test('the zero-scope caller gets a plain no-access state — loading, error and denied stay distinct', () => {
@@ -413,7 +422,10 @@ describe('R13.6 · portfolio page', () => {
     // formatUsd call sits inside PrivacyValue, and null renders an em dash.
     const maskedAmount = read(MASKED_AMOUNT)
     assert.equal(codeOf(maskedAmount).split('formatUsd').length - 1, 2)
-    assert.match(maskedAmount, /<PrivacyValue masked=\{masked\}[^>]*>\s*\{formatUsd\(value, decimals\)\}/)
+    // R13.8: the single call site now also carries the optional signed prefix
+    // — still ONE formatUsd, still inside PrivacyValue.
+    assert.match(maskedAmount, /const text = `\$\{signed && value > 0 \? '\+' : ''\}\$\{formatUsd\(value, decimals\)\}`/)
+    assert.match(maskedAmount, /<PrivacyValue masked=\{masked\}[^>]*>\s*\{text\}/)
     assert.match(maskedAmount, />—</)
 
     // The Overview page's own formatUsd uses are each privacy-safe by
@@ -432,7 +444,11 @@ describe('R13.6 · portfolio page', () => {
 
     // Everywhere else: no direct amount formatting, no toLocaleString, and no
     // title/tooltip carrying a raw amount around the mask.
-    const MAY_FORMAT_AMOUNTS = new Set([TABLE, MASKED_AMOUNT, OVERVIEW_PAGE])
+    // R13.8: the Weekly Changes page joins for the SAME two guarded shapes the
+    // Overview was admitted for — a KpiHero `formatValue` (masked by the
+    // hero's own PrivacyValue) and a LineChart `valueFormatter` mounted only
+    // while unmasked. Its dedicated privacy tests assert exactly that.
+    const MAY_FORMAT_AMOUNTS = new Set([TABLE, MASKED_AMOUNT, OVERVIEW_PAGE, WEEKLY_PAGE])
     for (const rel of CLIENT_FILES) {
       const src = codeOf(read(rel))
       assert.ok(!src.includes('toLocaleString'),

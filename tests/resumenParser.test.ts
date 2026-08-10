@@ -1,4 +1,4 @@
-// R13.3 — RESUMEN parser, reader, and reconciliation.
+﻿// R13.3 — RESUMEN parser, reader, and reconciliation.
 //
 // NO PRIVATE SOURCE DATA. Every fixture is a synthetic workbook built in memory
 // with invented, obviously-fake values. The real workbook is never read, copied,
@@ -19,6 +19,7 @@ import { parseCellRef, columnToIndex, indexToColumn, sourceCell } from '../src/l
 import { detectColumns, findHeaderRow, resolveAnchors, checkDateAdvancing } from '../src/lib/familyPortfolio/resumen/dateDetection.ts'
 import {
   classifyRow, detectScopes, normalizeLabel, buildRowKey, childRowKey, REQUIRED_ROW_TYPES,
+  performanceMetricOf,
 } from '../src/lib/familyPortfolio/resumen/hierarchy.ts'
 import {
   weeklyProfit, weeklyReturn, annualProfit, chainLinkedAnnualReturn, crossCheck,
@@ -371,8 +372,20 @@ describe('row classification is semantic', () => {
   test('sociedad aggregates are not confused with personal totals', () => {
     // Binding a personal performance block to a sociedad total instead of the
     // personal total is the doc 02 section 2.1 error (Andres 205 vs 207).
-    assert.equal(classifyRow('TOTAL LA ESPERANZA', true), 'sociedad_subtotal')
+    // R13.8 D4: the terminal `TOTAL <SOC>` and the intermediate
+    // `SUBTOTAL <SOC>` are DIFFERENT aggregates — one row type for both made
+    // every sociedad enter the Stage-8 tilings twice.
+    assert.equal(classifyRow('TOTAL LA ESPERANZA', true), 'sociedad_total')
     assert.equal(classifyRow('SUBTOTAL NAIDELT', true), 'sociedad_subtotal')
+    // The Vanglor-form BARE `TOTAL` resolves against the sociedad open on the
+    // parse stack — intermediate, never a portfolio total.
+    assert.equal(classifyRow('TOTAL', true, null, 'VANGLOR'), 'sociedad_subtotal')
+    assert.equal(classifyRow('TOTAL VANGLOR', true, null, 'VANGLOR'), 'sociedad_total')
+    assert.equal(classifyRow('TOTAL', true, null, null), 'portfolio_total')
+    // A VALUE-BEARING Alternativos line is an asset-class-grade row, never a
+    // container; Main's valueless ALTERNATIVOS header is unchanged.
+    assert.equal(classifyRow('Alternativos', true), 'asset_class')
+    assert.equal(classifyRow('ALTERNATIVOS', false), 'group_header')
     assert.equal(classifyRow('TOTAL JAIME', true), 'portfolio_total')
     assert.equal(classifyRow('TOTAL más Staten Capital Ltd', true), 'portfolio_total')
   })
@@ -410,11 +423,44 @@ describe('row classification is semantic', () => {
     }
   })
 
+  // ── R13.8 audit · persisted metric seam ────────────────────────────────────
+  //
+  // The metric ids the parser emits ARE the persisted vocabulary: the
+  // portfolio_performance_rows CHECK constraint and every reader (Stage-7
+  // Overview, Stage-8 Weekly Changes) use them verbatim — nothing between the
+  // parser and the insert renames a metric. The original 'annual_profit'/
+  // 'annual_return' ids broke this seam: a publish carrying the workbook's
+  // `Utilidad del Año`/`Retorno del Año` rows would have violated the CHECK.
+  test('every parser performance metric id clears the persisted metric CHECK enum', () => {
+    const sql = read('supabase/migrations/20260808000000_family_portfolio_snapshots.sql')
+    const m = /metric\s+text not null check \(metric in\s*\(([\s\S]*?)\)\)/.exec(sql)
+    assert.ok(m, 'the performance-row metric CHECK must exist in the migration')
+    const allowed = new Set(m![1].split(',').map((s) => s.trim().replace(/'/g, '')))
+    assert.ok(allowed.has('flow'), 'the flow metric the parser emits must be persistable')
+    for (const label of [
+      'Utilidad de la semana',
+      'Retorno de la semana',
+      'Utilidad del Año',
+      'Retorno del Año',
+    ]) {
+      const metric = performanceMetricOf(label)
+      assert.ok(metric !== null, `${label} must classify as a performance metric`)
+      assert.ok(allowed.has(metric!), `parser metric '${metric}' for "${label}" must clear the DB CHECK enum`)
+    }
+  })
+
+  test('the year metrics emit their persisted ids — the exact names the readers query', () => {
+    assert.equal(performanceMetricOf('Utilidad del Año'), 'ytd_profit')
+    assert.equal(performanceMetricOf('Retorno del Año'), 'ytd_return')
+    assert.equal(performanceMetricOf('Utilidad de la semana'), 'weekly_profit')
+    assert.equal(performanceMetricOf('Retorno de la semana'), 'weekly_return')
+  })
+
   test('scope ranges are disjoint and bounded by the next anchor', () => {
     const r = readXlsx(resumenWorkbook())
     assert.equal(r.ok, true); if (!r.ok) return
     const sheet = r.workbook.sheets[0]
-    const ranges = detectScopes(sheet, 5)
+    const ranges = detectScopes(sheet)
 
     const main = ranges.find((x) => x.scope === 'main')!
     const jaime = ranges.find((x) => x.scope === 'jaime')!
@@ -918,5 +964,177 @@ describe('the R13.3 migration', () => {
   test('it sorts after R13.2 and keeps the timestamp convention', () => {
     assert.match('20260808000000_family_portfolio_snapshots.sql', /^\d{14}_[a-z0-9_]+\.sql$/)
     assert.ok('20260808000000' > '20260807000000')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// R13.8 D4 — the VERIFIED personal sociedad shape (doc 02 §§ 2.1, 5.4)
+// ---------------------------------------------------------------------------
+//
+// The real RESUMEN lays every sociedad out as:
+//   <SOCIEDAD>  ·  valores en dólares (a date-annotation row)  ·  the liquid
+//   asset classes  ·  SUBTOTAL <SOC> (or a BARE `TOTAL`, Vanglor-style)  ·
+//   a VALUE-BEARING `Alternativos` line  ·  TOTAL <SOC>
+// with root-level named holdings (Proporcional / Staten) and the final
+// portfolio total after the last sociedad, and the flow row separated from
+// its performance metrics by a blank line. This synthetic fixture reproduces
+// that shape with invented amounts — it deliberately does NOT mirror the old
+// parser's assumptions, which is exactly why it failed pre-repair.
+
+const PL = {
+  valores: 28, alternativosLine: 29, naidelt: 30, totalNaidelt: 31,
+  proporcional: 32, rentaFija: 33, investmentGrade: 34,
+}
+const PERSONAL_LABELS = [
+  ...FIXTURE_LABELS,
+  'valores en dólares', 'Alternativos', 'NAIDELT', 'TOTAL NAIDELT',
+  'Proporcional Otras Sociedades', 'Renta Fija', 'Investment Grade',
+]
+
+function personalWorkbook(opts: { shift?: number; bump?: number; duplicateNamed?: boolean } = {}): Buffer {
+  const cells: Cell[] = headerCells()
+  const boyCol = 3
+  const prevCol = 3 + 24
+  const liveCol = 3 + 25 + 3
+  const S = opts.shift ?? 0
+  const B = opts.bump ?? 0
+
+  const put = (row: number, label: number, v: { boy?: number; prev?: number; live?: number } = {}) => {
+    cells.push({ ref: `B${row}`, t: 's', v: label })
+    if (v.boy !== undefined) cells.push({ ref: `${indexToColumn(boyCol)}${row}`, v: v.boy })
+    if (v.prev !== undefined) cells.push({ ref: `${indexToColumn(prevCol)}${row}`, v: v.prev })
+    if (v.live !== undefined) cells.push({ ref: `${indexToColumn(liveCol)}${row}`, v: v.live })
+  }
+
+  put(40 + S, L.jaime)
+  // ── Sociedad A: LA ESPERANZA — multi-level, SUBTOTAL-form intermediate ────
+  put(41 + S, L.laEsperanza)
+  put(42 + S, PL.valores, { boy: 46000, prev: 46000, live: 46000 }) // date serials
+  put(43 + S, L.caja, { boy: 8, prev: 8, live: 10 + B })
+  put(44 + S, L.cajaUsd, { boy: 8, prev: 8, live: 10 + B })
+  put(45 + S, PL.rentaFija, { boy: 18, prev: 18, live: 20 + B })
+  put(46 + S, PL.investmentGrade, { boy: 18, prev: 18, live: 20 + B })
+  put(47 + S, L.subEsperanza, { boy: 26, prev: 26, live: 30 + 2 * B })
+  put(48 + S, PL.alternativosLine, { boy: 4, prev: 4, live: 5 + B })
+  put(49 + S, L.totalEsperanza, { boy: 30, prev: 30, live: 35 + 3 * B })
+  // ── Sociedad B: NAIDELT — simpler, BARE-`TOTAL` intermediate (Vanglor form)
+  put(50 + S, PL.naidelt)
+  put(51 + S, PL.valores, { boy: 46000, prev: 46000, live: 46000 })
+  put(52 + S, L.caja, { boy: 39, prev: 39, live: 40 })
+  put(53 + S, L.cajaUsd, { boy: 39, prev: 39, live: 40 })
+  put(54 + S, L.total, { boy: 39, prev: 39, live: 40 }) // bare intermediate TOTAL
+  put(55 + S, PL.alternativosLine, { boy: 55, prev: 55, live: 60 })
+  put(56 + S, PL.totalNaidelt, { boy: 94, prev: 94, live: 100 })
+  // ── Root: named holding, final personal total ─────────────────────────────
+  put(58 + S, PL.proporcional, { boy: 12, prev: 12, live: 15 })
+  if (opts.duplicateNamed) put(59 + S, PL.proporcional, { boy: 12, prev: 12, live: 15 })
+  put(60 + S, L.totalJaime, { boy: 136, prev: 136, live: 150 + 3 * B })
+  // ── Flow, BLANK, then the metrics — the real personal layout ──────────────
+  put(62 + S, L.flow, { live: 2 })
+  put(64 + S, L.utilidad, { live: 12 + 3 * B })
+  put(65 + S, L.retorno, { live: (12 + 3 * B) / 136 })
+
+  return workbook([{ name: 'RESUMEN', cells }], PERSONAL_LABELS)
+}
+
+describe('R13.8 D4 · the verified personal sociedad shape normalizes correctly', () => {
+  test('a Main anchor ABOVE the header row is still found — the Main scope cannot vanish', () => {
+    // The real sheet anchors Main at row 3; the date header row is row 5.
+    const cells: Cell[] = headerCells()
+    cells.push({ ref: 'B3', t: 's', v: L.mainAnchor })
+    const wb = workbook([{ name: 'RESUMEN', cells }], FIXTURE_LABELS)
+    const r = readXlsx(wb)
+    assert.equal(r.ok, true); if (!r.ok) return
+    const ranges = detectScopes(r.workbook.sheets[0])
+    assert.ok(ranges.some((s) => s.scope === 'main'), 'the Main anchor above the header row must be found')
+  })
+
+  test('the § 5.4 shape parses: annotation skipped, Alternativos stays a value row, aggregates distinguished', () => {
+    const d = parseResumen(personalWorkbook())
+    assert.equal(d.ok, true, JSON.stringify(d.findings))
+    const by = (k: string) => d.rows.find((r) => r.rowKey === k)
+
+    // The date-annotation row is presentation, never an economic node.
+    assert.ok(!d.rows.some((r) => /valores en d/i.test(r.labelEs)),
+      'valores en dólares must not become a node')
+
+    // Each sociedad keeps its own value-bearing Alternativos line, in place.
+    const altA = by('jaime.la_esperanza.alternativos')
+    const altB = by('jaime.naidelt.alternativos')
+    assert.ok(altA && altB, 'both Alternativos value lines must exist, one per sociedad')
+    assert.equal(altA!.rowType, 'asset_class')
+    assert.equal(altA!.parentRowKey, 'jaime.la_esperanza')
+    assert.equal(altB!.rowType, 'asset_class')
+    assert.equal(altB!.parentRowKey, 'jaime.naidelt')
+
+    // Intermediate vs terminal sociedad aggregates carry DIFFERENT types.
+    assert.equal(by('jaime.la_esperanza.subtotal_la_esperanza')!.rowType, 'sociedad_subtotal')
+    assert.equal(by('jaime.la_esperanza.total_la_esperanza')!.rowType, 'sociedad_total')
+    assert.equal(by('jaime.la_esperanza.total_la_esperanza')!.parentRowKey, 'jaime.la_esperanza')
+
+    // The Vanglor-form BARE `TOTAL` is the sociedad's INTERMEDIATE aggregate —
+    // never a root portfolio total, never a binding candidate.
+    const bare = by('jaime.naidelt.total')
+    assert.ok(bare, 'the bare TOTAL must live inside its sociedad')
+    assert.equal(bare!.rowType, 'sociedad_subtotal')
+    assert.equal(bare!.parentRowKey, 'jaime.naidelt')
+    assert.equal(by('jaime.naidelt.total_naidelt')!.rowType, 'sociedad_total')
+
+    // Root named holding and the final personal total.
+    assert.equal(by('jaime.proporcional_otras_sociedades')!.rowType, 'named_holding')
+    assert.equal(by('jaime.proporcional_otras_sociedades')!.parentRowKey, null)
+    assert.equal(by('jaime.total_jaime')!.rowType, 'portfolio_total')
+    assert.equal(by('jaime.total_jaime')!.parentRowKey, null)
+  })
+
+  test('row keys are unique, every parent exists, and the parent graph is acyclic', () => {
+    const d = parseResumen(personalWorkbook())
+    assert.equal(d.ok, true)
+    const keys = d.rows.map((r) => r.rowKey)
+    assert.equal(new Set(keys).size, keys.length, 'row keys must be unique within a publication')
+    const byKey = new Map(d.rows.map((r) => [r.rowKey, r]))
+    for (const r of d.rows) {
+      if (r.parentRowKey === null) continue
+      assert.ok(byKey.has(r.parentRowKey), `${r.rowKey}: parent ${r.parentRowKey} must exist`)
+      let cursor: string | null = r.rowKey
+      const seen = new Set<string>()
+      while (cursor !== null) {
+        assert.ok(!seen.has(cursor), `cycle through ${cursor}`)
+        seen.add(cursor)
+        cursor = byKey.get(cursor)?.parentRowKey ?? null
+      }
+    }
+  })
+
+  test('the flow row separated by a blank line still joins its metrics — ONE block, bound to the final total', () => {
+    const d = parseResumen(personalWorkbook())
+    assert.equal(d.ok, true, JSON.stringify(d.findings))
+    assert.ok(!d.findings.some((f) => f.code === 'ambiguous_performance_basis'))
+    assert.ok(!d.findings.some((f) => f.code === 'performance_definition_mismatch'))
+    const flow = d.performance.find((p) => p.metric === 'flow')
+    const profit = d.performance.find((p) => p.metric === 'weekly_profit')
+    assert.ok(flow && profit, 'the flow and the stated profit must both persist')
+    assert.equal(flow!.basis, 'total')
+    assert.equal(flow!.boundRowKey, 'jaime.total_jaime')
+    assert.equal(profit!.boundRowKey, 'jaime.total_jaime')
+  })
+
+  test('cross-week identity: changed values and shifted source rows produce the SAME row keys', () => {
+    const a = parseResumen(personalWorkbook())
+    const b = parseResumen(personalWorkbook({ bump: 7, shift: 5 }))
+    assert.equal(a.ok, true)
+    assert.equal(b.ok, true)
+    assert.deepEqual(
+      a.rows.map((r) => r.rowKey).sort(),
+      b.rows.map((r) => r.rowKey).sort(),
+      'economic identity must survive value changes and row insertion',
+    )
+  })
+
+  test('a genuine duplicate economic identity fails closed at parse time', () => {
+    const d = parseResumen(personalWorkbook({ duplicateNamed: true }))
+    assert.equal(d.ok, false)
+    assert.ok(d.findings.some((f) => f.severity === 'blocking' && f.code === 'duplicate_row_key'),
+      'a duplicate row key must block — the DB unique constraint must never be the first line of defense')
   })
 })

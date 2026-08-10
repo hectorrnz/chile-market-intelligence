@@ -49,6 +49,7 @@ import {
   detectScopes,
   technicalBlockStart,
   classifyRow,
+  isAnnotationRow,
   performanceMetricOf,
   buildRowKey,
   childRowKey,
@@ -65,8 +66,15 @@ import {
   type PerformanceCrossCheck,
 } from './performance.ts'
 
-/** Recorded on every upload (doc 08 Stage 3). Bump when parse semantics change. */
-export const RESUMEN_PARSER_VERSION = 'r13.3.resumen.2'
+/** Recorded on every upload (doc 08 Stage 3). Bump when parse semantics change.
+ * r13.8.resumen.3 — the single final version for ALL R13.8 parser changes:
+ * year performance metrics emit their PERSISTED ids (`ytd_profit`/`ytd_return`
+ * — the prior 'annual_*' ids could never clear the portfolio_performance_rows
+ * metric CHECK), plus the D4 personal-hierarchy normalization (annotation-row
+ * skipping, the value-bearing personal `Alternativos` line, the
+ * `sociedad_subtotal`/`sociedad_total` split, Main's above-header anchor, and
+ * performance blocks surviving the source's blank separator line). */
+export const RESUMEN_PARSER_VERSION = 'r13.8.resumen.3'
 
 /** Excel error literals that make a cell unusable (doc 02 § 6.3). */
 const ERROR_LITERALS = ['#NAME?', '#REF!', '#VALUE!', '#DIV/0!', '#N/A', '#NULL!', '#NUM!']
@@ -230,7 +238,7 @@ export function bindBlockToCandidate(block: PerformanceBlock, candidates: Candid
 // Parse
 // ---------------------------------------------------------------------------
 
-interface StackEntry { type: RowType; key: string }
+interface StackEntry { type: RowType; key: string; label: string }
 
 export function parseResumen(
   bytes: Buffer,
@@ -290,7 +298,7 @@ export function parseResumen(
   }
   const { thisWeek, previousWeek, beginningOfYear } = anchorRes.anchors
 
-  const scopes = detectScopes(sheet, detection.headerRow)
+  const scopes = detectScopes(sheet)
   if (scopes.length === 0) {
     findings.push(finding('blocking', 'no_portfolio_scope_found', 'no portfolio section anchor was found'))
     return empty()
@@ -316,17 +324,24 @@ export function parseResumen(
     for (let row = range.startRow + 1; row <= endRow; row++) {
       const label = textAt(sheet, row, 2)
       if (!label) {
-        // A blank row CLOSES a performance block. Main's two blocks are
-        // separated by blank rows in the source; without this they would merge
-        // and the second flow would overwrite the first, silently collapsing
-        // two bases into one.
-        current = null
+        // A blank row CLOSES a performance block — but ONLY once the block
+        // carries a metric. Main's two blocks are separated by blank rows and
+        // must not merge; the personal scopes separate the FLOW row from its
+        // own metrics with a blank line (verified, R13.8 D4), and closing
+        // there detached every personal flow and broke the basis binding.
+        if (current !== null && current.metrics.size > 0) current = null
         continue
       }
 
+      // Presentation annotations (`valores en dólares` and its date cells,
+      // Main's subtitle) are never economic nodes (R13.8 D4).
+      if (isAnnotationRow(label)) continue
+
       const thisCell = cellAt(sheet, row, thisWeek.column)
       const hasValue = thisCell !== null && (thisCell.kind === 'number' || thisCell.kind === 'error')
-      const rowType = classifyRow(label, hasValue, top()?.type ?? null)
+      const sociedadLabel =
+        [...stack].reverse().find((e) => e.type === 'sociedad_header')?.label ?? null
+      const rowType = classifyRow(label, hasValue, top()?.type ?? null, sociedadLabel)
 
       const cellName = sourceCell(sheet.name, thisWeek.column, row)
       const err = errorAt(sheet, row, thisWeek.column)
@@ -381,6 +396,7 @@ export function parseResumen(
           ) stack.pop()
           break
         case 'sociedad_subtotal':
+        case 'sociedad_total':
           // Keeps the sociedad as its parent.
           while (top()?.type === 'asset_class') stack.pop()
           break
@@ -407,7 +423,7 @@ export function parseResumen(
       // Derived from the LABEL PATH, never the row number (doc 05 § 5.2, A8).
       const rowKey = parentRowKey ? childRowKey(parentRowKey, label) : buildRowKey(range.scope, [label])
       if (rowType === 'group_header' || rowType === 'asset_class' || rowType === 'sociedad_header') {
-        stack.push({ type: rowType, key: rowKey })
+        stack.push({ type: rowType, key: rowKey, label })
       }
 
       const value = err !== null ? null : numberAt(sheet, row, thisWeek.column)
@@ -441,6 +457,10 @@ export function parseResumen(
         sourceCell: cellName,
         sourceRow: row,
       })
+
+      // A sociedad's TERMINAL total completes the sociedad — the next row can
+      // never belong to it (R13.8 D4; doc 02 § 5.4).
+      if (rowType === 'sociedad_total' && top()?.type === 'sociedad_header') stack.pop()
     }
 
     // --- Bind each block (rule 6).
@@ -495,6 +515,20 @@ export function parseResumen(
         })
       }
     }
+  }
+
+  // R13.8 D4 — economic identity must be unique WITHIN the parse, not just at
+  // the database: a duplicate row key means two source rows would silently
+  // claim the same identity in every week-over-week comparison, so it blocks
+  // here rather than surfacing later as a DB unique-constraint error.
+  const seenKeys = new Set<string>()
+  for (const r of rows) {
+    if (seenKeys.has(r.rowKey)) {
+      findings.push(finding('blocking', 'duplicate_row_key',
+        `${r.labelEs} produces a duplicate row key (${r.rowKey})`,
+        { scope: r.scope, sourceSheet: r.sourceSheet, sourceCell: r.sourceCell, rowLabel: r.labelEs }))
+    }
+    seenKeys.add(r.rowKey)
   }
 
   for (const p of performance) {

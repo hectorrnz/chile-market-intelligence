@@ -133,11 +133,14 @@ export function chainLinkedAnnualReturn(observations: WeeklyObservation[]): numb
 // Cross-check against the source's own stated figures
 // ---------------------------------------------------------------------------
 
+// The year metrics carry their PERSISTED names (`ytd_*` — the
+// portfolio_performance_rows CHECK enum), not the 'annual_*' working names the
+// R13.3 draft used; see the R13.8 audit note in hierarchy.ts.
 export type PerformanceMetric =
   | 'weekly_profit'
   | 'weekly_return'
-  | 'annual_profit'
-  | 'annual_return'
+  | 'ytd_profit'
+  | 'ytd_return'
 
 export interface PerformanceCrossCheck {
   metric: PerformanceMetric
