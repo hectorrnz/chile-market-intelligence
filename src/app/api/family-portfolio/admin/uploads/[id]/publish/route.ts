@@ -39,6 +39,7 @@ import {
   type EventClassificationDecision,
 } from '@/lib/familyPortfolio/publication'
 import { RESUMEN_PARSER_VERSION } from '@/lib/familyPortfolio/resumen/parseResumen'
+import { extractEvolutionHistory } from '@/lib/familyPortfolio/resumen/evolutionHistory'
 import { ALTERNATIVES_PARSER_VERSION } from '@/lib/familyPortfolio/alternatives/parseAlternatives'
 import {
   getUploadFindings,
@@ -47,10 +48,12 @@ import {
   publishPortfolio,
   publishAlternatives,
   upsertCommentary,
+  upsertEvolutionObservations,
   type HoldingPayload,
   type EventPayload,
   type SnapshotRowPayload,
   type PerformanceRowPayload,
+  type EvolutionObservationPayload,
 } from '@/lib/db/repositories/portfolioPublicationRepository'
 
 export const runtime = 'nodejs'
@@ -370,6 +373,45 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return fail(reason, status)
   }
 
+  // --- R13.R1 § 9: the weekly evolution history, refreshed from the SAME
+  // validated bytes this publication was parsed from.
+  //
+  // Deliberately AFTER the publication has committed and deliberately
+  // best-effort: the series is supplementary to the week that was just
+  // published, so a failure here must never invalidate it. The outcome is
+  // reported honestly rather than assumed.
+  //
+  // The bases are bound from `loaded.draft.resumen` — the very draft that was
+  // just published — so the chart's SUBTOTAL/TOTAL series can never disagree
+  // with the publication about which rows they measure. Values still come from
+  // the historical column grid, so weeks that cannot produce a full publication
+  // still contribute a point.
+  let evolutionObservations: number | null = null
+  if (loaded.draft.resumen) {
+    const extraction = extractEvolutionHistory(loaded.draft.bytes, {
+      bindingDraft: loaded.draft.resumen,
+    })
+    if (extraction.ok) {
+      const rows: EvolutionObservationPayload[] = extraction.observations.map((o) => ({
+        scope: o.scope,
+        basis: o.basis,
+        observation_date: o.observationDate,
+        value: o.value,
+        currency: 'USD',
+        source_upload_id: id,
+        source_sheet: o.sourceSheet,
+        source_cell: o.sourceCell,
+        source_row_label: o.sourceRowLabel,
+        parser_version: extraction.parserVersion,
+        extractor_version: extraction.extractorVersion,
+        ingested_by: entitlement.userId,
+        metadata: {},
+      }))
+      const written = await upsertEvolutionObservations(rows)
+      evolutionObservations = written.ok ? written.count : null
+    }
+  }
+
   // Optional commentary, written after the publication it annotates exists.
   // A failure here never invalidates a valid publication, but it is reported
   // honestly rather than being echoed back as though it had been recorded.
@@ -418,6 +460,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       warningCount: review.warningCount,
       administratorClassifiedEvents: decisions.length,
       commentaryPersisted,
+      // Null = the evolution refresh did not run or did not persist. A count is
+      // the number of weekly observations now on record for Main.
+      evolutionObservations,
     },
     { status: 201, headers: NO_STORE },
   )

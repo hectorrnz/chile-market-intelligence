@@ -37,6 +37,11 @@ export type RowType =
   | 'named_holding'
   | 'flow'
   | 'performance'
+  /** R13.R1 § 4 — the TITLE of a performance block (`PORTAFOLIO EX ACCIONES
+   *  CHILENAS` / `PORTAFOLIO CON ACCIONES CHILENAS`). It labels the flow and
+   *  metric rows beneath it and carries no value of its own; it is NOT a
+   *  portfolio position. See `PERFORMANCE_BLOCK_HEADERS` below. */
+  | 'performance_header'
 
 /** Doc 04 § 7 value-class taxonomy. Stored per field; drives the source badge. */
 export type ValueClass =
@@ -151,6 +156,27 @@ export function technicalBlockStart(sheet: XlsxSheet, headerRow: number): number
 const GROUP_HEADERS = /^(portafolio liquido|portfolio liquido|alternativos)$/
 const ASSET_CLASSES = /^(caja y equivalentes|renta fija|renta variable|opciones|inmobiliario|venture capital ?\/ ?private equity)$/
 const FLOW_LABEL = /^(retiros ?\/ ?aportes|aportes ?\/ ?retiros)/
+/**
+ * R13.R1 § 4 — the two Main performance-block TITLES.
+ *
+ * VERIFIED against the private reference workbook: RESUMEN rows 89 and 96 carry
+ * `PORTAFOLIO EX ACCIONES CHILENAS` and `PORTAFOLIO CON ACCIONES CHILENAS` in
+ * column B and NO value in any column. Each introduces the flow + weekly/annual
+ * metric rows immediately beneath it (rows 90-94 and 97-101 respectively).
+ *
+ * Before this rule they matched nothing and fell through to the generic
+ * "labelled row with no value ⇒ grouping label" branch, becoming
+ * `sociedad_header` containers — which is why the Holdings table rendered two
+ * empty rows after the true portfolio TOTAL. They are performance PRESENTATION,
+ * not positions.
+ *
+ * The distinction is structural, not a display filter: they must remain visible
+ * to the performance parser (which records the title on the block it heads) and
+ * must never reach the snapshot rows a member reads as holdings. Recognising
+ * them here — at the parser boundary, from documented source constructs — is
+ * the same discipline `ANNOTATION_LABELS` already applies.
+ */
+const PERFORMANCE_BLOCK_HEADERS = /^port(a)?folio (ex|con) acciones chilenas$/
 // Metric ids ARE the persisted vocabulary: `portfolio_performance_rows.metric`
 // is CHECK-constrained to ('flow','weekly_profit','weekly_return','ytd_profit',
 // 'ytd_return') and every reader (Stage-7 Overview, Stage-8 Weekly Changes)
@@ -260,6 +286,9 @@ export function classifyRow(
   // VALUE-BEARING line (doc 02 § 5.4) — an asset-class-grade amount, never a
   // container that could reset the hierarchy.
   if (GROUP_HEADERS.test(n)) return hasValue ? 'asset_class' : 'group_header'
+  // Ahead of every value-bearing rule: a performance-block title never carries
+  // a value, and must not be reachable by the generic no-value fallback below.
+  if (PERFORMANCE_BLOCK_HEADERS.test(n)) return 'performance_header'
   if (FLOW_LABEL.test(n)) return 'flow'
   if (PERFORMANCE_LABELS.some((p) => p.pattern.test(n))) return 'performance'
   if (NAMED_HOLDING.test(n) || NAMED_COMPONENT.test(n)) return 'named_holding'

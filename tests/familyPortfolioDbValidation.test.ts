@@ -23,6 +23,7 @@
 
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -63,8 +64,35 @@ describe('supabase/config.toml is local-only', () => {
     assert.match(CFG, /major_version\s*=\s*\d+/)
   })
 
-  test('supabase/.temp is not committed', () => {
-    assert.equal(existsSync(join(ROOT, 'supabase/.temp')), false)
+  // R13.R1: this asserted `supabase/.temp` did not EXIST, which is a different
+  // claim from its name and a false one on any developer machine that has run
+  // `supabase link` — the directory is created locally by `migration list`,
+  // `db lint --linked` and `db push`, all of which are legitimate. What actually
+  // matters is that it is never COMMITTED, and CI separately enforces the
+  // stronger rule that applies there (the workflow fails outright if the
+  // directory is present, because CI must never be linked to a real project).
+  test('supabase/.temp is untracked and excluded from git', () => {
+    const tracked = execFileSync('git', ['ls-files', '--', 'supabase/.temp'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+    }).trim()
+    assert.equal(tracked, '', 'supabase/.temp must never be tracked by git')
+
+    // Excluded by .gitignore or .git/info/exclude — `check-ignore` exits 1 when
+    // the path is NOT ignored, which is the failure this test exists to catch.
+    let ignored = true
+    try {
+      execFileSync('git', ['check-ignore', '-q', '--', 'supabase/.temp'], { cwd: ROOT })
+    } catch {
+      ignored = false
+    }
+    assert.ok(ignored, 'supabase/.temp must be git-ignored so it cannot be staged')
+  })
+
+  test('the CI workflow refuses to run against a linked project', () => {
+    const wf = read('.github/workflows/r13-family-portfolio-db-validation.yml')
+    assert.match(wf, /if \[ -d supabase\/\.temp \]/)
+    assert.match(wf, /must never be linked in CI/)
   })
 })
 

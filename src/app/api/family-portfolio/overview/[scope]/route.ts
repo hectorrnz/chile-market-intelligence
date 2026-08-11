@@ -46,6 +46,7 @@ import {
   getPerformanceRowsForScope,
   getPerformanceBindings,
   getSnapshotValuesByKeys,
+  getEvolutionObservations,
   getCurrentCommentary,
 } from '@/lib/db/repositories/familyPortfolioReadRepository'
 
@@ -99,26 +100,57 @@ export async function GET(_request: Request, context: { params: Promise<{ scope:
   const performanceBlocks = extractPerformanceBlocks(perfResult.rows)
   const impact = inretailImpact(structure)
 
-  // --- Evolution: every current publication contributes at most one point per
-  // series, resolved through its OWN performance bindings.
+  // --- Evolution (R13.R1 § 9). TWO honest sources, in this order:
+  //
+  //   1. the PERSISTED weekly history ingested from the workbook's own
+  //      historical column grid — the owner-confirmed series that begins
+  //      2024-08-23 and covers every published week since;
+  //   2. failing that, the points derivable from the publications themselves,
+  //      resolved through each week's OWN performance bindings (the R13.7
+  //      behaviour, retained so a database without the ingest still charts
+  //      whatever has genuinely been published).
+  //
+  // The two are never blended: mixing a two-year source-backed series with a
+  // handful of publication-derived points would present one provenance as the
+  // other. `evolutionSource` states which one the client is looking at.
   const publicationIds = spine.publications.map((p) => p.id)
-  const bindingsResult = await getPerformanceBindings(publicationIds, 'main')
   let evolution: ReturnType<typeof buildEvolutionSeries> = { exChilean: [], withChilean: [] }
-  if (bindingsResult.ok) {
-    const boundKeys = [
-      ...new Set(
-        bindingsResult.bindings
-          .map((b) => b.boundRowKey)
-          .filter((k): k is string => k !== null),
-      ),
-    ]
-    const valuesResult = await getSnapshotValuesByKeys(publicationIds, 'main', boundKeys)
-    if (valuesResult.ok) {
-      evolution = buildEvolutionSeries({
-        publications: spine.publications.map((p) => ({ id: p.id, asOfDate: p.asOfDate })),
-        bindings: bindingsResult.bindings,
-        boundValues: valuesResult.values,
-      })
+  let evolutionSource: 'persisted_history' | 'publications' | 'unavailable' = 'unavailable'
+
+  const persisted = await getEvolutionObservations('main')
+  if (persisted.ok && persisted.observations.length > 0) {
+    // Gaps are ABSENT ROWS in the table, so there is nothing to filter here and
+    // nothing is ever interpolated or carried forward.
+    evolution = {
+      exChilean: persisted.observations
+        .filter((o) => o.basis === 'ex_chilean_equities')
+        .map((o) => ({ date: o.observationDate, value: o.value })),
+      withChilean: persisted.observations
+        .filter((o) => o.basis === 'with_chilean_equities')
+        .map((o) => ({ date: o.observationDate, value: o.value })),
+    }
+    evolutionSource = 'persisted_history'
+  } else {
+    const bindingsResult = await getPerformanceBindings(publicationIds, 'main')
+    if (bindingsResult.ok) {
+      const boundKeys = [
+        ...new Set(
+          bindingsResult.bindings
+            .map((b) => b.boundRowKey)
+            .filter((k): k is string => k !== null),
+        ),
+      ]
+      const valuesResult = await getSnapshotValuesByKeys(publicationIds, 'main', boundKeys)
+      if (valuesResult.ok) {
+        evolution = buildEvolutionSeries({
+          publications: spine.publications.map((p) => ({ id: p.id, asOfDate: p.asOfDate })),
+          bindings: bindingsResult.bindings,
+          boundValues: valuesResult.values,
+        })
+        if (evolution.exChilean.length > 0 || evolution.withChilean.length > 0) {
+          evolutionSource = 'publications'
+        }
+      }
     }
   }
 
@@ -168,6 +200,7 @@ export async function GET(_request: Request, context: { params: Promise<{ scope:
       allocation,
       performanceBlocks,
       evolution,
+      evolutionSource,
       inretailImpact: impact,
       marketContext,
       commentary,

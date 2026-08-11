@@ -113,11 +113,21 @@ describe('R13.6 · module shell', () => {
     assert.match(gate, /noAccess/)
   })
 
-  test('the app-level primary navigation is deliberately untouched by Stage 6', () => {
-    // Doc 08 Stage 6 owns MODULE navigation only; the static app-nav config
-    // cannot express per-user entitlement, so a Family Portfolio entry there
-    // is release wiring for a later stage, not part of this one.
-    assert.ok(!read('src/lib/navigation.ts').includes('family-portfolio'))
+  // SUPERSEDED BY R13.R1 § 2, deliberately. Stage 6 deferred app-level wiring
+  // ("release wiring for a later stage"); R13.R1 IS that stage — the primary
+  // Portfolio item now opens `/family-portfolio`. The property that still
+  // matters is the one Stage 6 was actually protecting: the static app-nav
+  // config cannot express per-user entitlement, so it must carry no
+  // authorization logic and no per-scope destination. Module navigation
+  // (`FamilyPortfolioNav`) remains the only entitlement-aware rail.
+  test('the app-level primary navigation carries no entitlement logic', () => {
+    const nav = read('src/lib/navigation.ts')
+    assert.ok(nav.includes('/family-portfolio'), 'R13.R1 § 2: the module is the Portfolio destination')
+    for (const forbidden of ['isAdministrator', 'entitle', 'scopes', 'canRead', 'auth']) {
+      assert.ok(!nav.includes(forbidden), `navigation.ts must not reference ${forbidden}`)
+    }
+    // No per-principal destination may appear in the static config.
+    assert.ok(!/family-portfolio\/(jaime|andres|pablo)/i.test(nav))
   })
 })
 

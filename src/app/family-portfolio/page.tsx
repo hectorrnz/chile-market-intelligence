@@ -32,10 +32,12 @@ import { usePrivacyMode } from '@/components/fable/usePrivacyMode'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { LineChart } from '@/components/charts/LineChart'
 import { MemberGate } from '@/components/familyPortfolio/MemberGate'
+import { useFamilyPortfolio } from '@/components/familyPortfolio/FamilyPortfolioProvider'
 import { HierarchicalTable } from '@/components/familyPortfolio/HierarchicalTable'
 import { MaskedAmount } from '@/components/familyPortfolio/MaskedAmount'
 import { AllocationDonut } from '@/components/familyPortfolio/AllocationDonut'
 import { DualFreshnessBadge } from '@/components/familyPortfolio/DualFreshnessBadge'
+import { formatTemplate } from '@/components/fable/chart/chartA11y'
 import { formatUsd, formatRatioPct, formatWeightPct, formatIsoDateLabel } from '@/lib/formatters'
 import {
   fetchFamilyPortfolioOverview,
@@ -62,8 +64,15 @@ function PerformanceBlockCard({
 }) {
   const { t } = useLang()
   const o = t.fp.overview
-  const rows: Array<{ label: string; amount?: number | null; ratio?: number | null }> = [
-    { label: o.flow, amount: block.flow },
+  const rows: Array<{
+    label: string
+    help?: string
+    amount?: number | null
+    ratio?: number | null
+  }> = [
+    // R13.R1 § 5 — `Net Flows`, with the definition on hover. Each basis reads
+    // its OWN source flow cell, so the two blocks can legitimately differ.
+    { label: o.flow, help: o.flowHelp, amount: block.flow },
     { label: o.weeklyReturn, ratio: block.weeklyReturn },
     { label: o.weeklyProfit, amount: block.weeklyProfit },
     { label: o.ytdReturn, ratio: block.ytdReturn },
@@ -75,7 +84,9 @@ function PerformanceBlockCard({
       <dl className="flex flex-col gap-1.5">
         {rows.map((r) => (
           <div key={r.label} className="flex items-baseline justify-between gap-3 text-xs">
-            <dt className="text-muted-fg min-w-0 truncate">{r.label}</dt>
+            <dt className="text-muted-fg min-w-0 truncate" title={r.help}>
+              {r.label}
+            </dt>
             <dd className="ui-number text-foreground shrink-0">
               {r.ratio !== undefined ? (
                 <span className={r.ratio !== null && r.ratio < 0 ? 'text-negative' : r.ratio !== null && r.ratio > 0 ? 'text-positive' : ''}>
@@ -272,11 +283,20 @@ function MarketMetricRow({
 // ---------------------------------------------------------------------------
 
 export default function FamilyPortfolioOverviewPage() {
-  const { t } = useLang()
+  const { t, lang } = useLang()
   const o = t.fp.overview
+  const { scopes } = useFamilyPortfolio()
   const [masked, setMasked] = usePrivacyMode()
   const [state, setState] = useState<PageState>('loading')
   const [data, setData] = useState<FamilyPortfolioOverviewResponse | null>(null)
+
+  // R13.R1 § 3 — the Summary is composed for `main` only, so its visible scope
+  // heading is the Main portfolio's. The label stays server-supplied.
+  const mainScope = scopes.find((s) => s.id === 'main')
+  const mainLabel = mainScope ? (lang === 'es' ? mainScope.labelEs : mainScope.labelEn) : ''
+  const scopeHeading = mainLabel
+    ? formatTemplate(t.fp.scopeHeading, { scope: mainLabel.toLocaleUpperCase(lang) })
+    : ''
 
   useEffect(() => {
     let cancelled = false
@@ -308,6 +328,7 @@ export default function FamilyPortfolioOverviewPage() {
         metadata={
           pub ? (
             <>
+              {scopeHeading && <span>{scopeHeading}</span>}
               <span>
                 {t.fp.portfolio.week} {formatIsoDateLabel(pub.asOfDate)}
               </span>
@@ -417,7 +438,23 @@ export default function FamilyPortfolioOverviewPage() {
                       valueFormatter={(v) => formatUsd(v)}
                     />
                   )}
-                  <TableSourceFooter source={t.fp.portfolio.source} />
+                  <div className="flex flex-col gap-y-0.5">
+                    <TableSourceFooter source={t.fp.portfolio.source} />
+                    {/* R13.R1 § 9 — the chart states its own provenance and,
+                        when it is the weekly source history, its real span and
+                        point count. Gaps stay gaps: nothing is interpolated,
+                        carried forward, or zero-filled. */}
+                    {chart.points.length >= 2 && (
+                      <p className="ui-meta text-muted-fg">
+                        {data.evolutionSource === 'persisted_history'
+                          ? o.evolutionSourceHistory
+                          : o.evolutionSourcePublications}{' '}
+                        · {chart.points.length} {o.evolutionPoints} ·{' '}
+                        {formatIsoDateLabel(chart.points[0].date)} —{' '}
+                        {formatIsoDateLabel(chart.points[chart.points.length - 1].date)}
+                      </p>
+                    )}
+                  </div>
                 </GlassSurface>
               ))}
             </div>

@@ -423,3 +423,74 @@ export async function upsertCommentary(params: {
     p_author: params.author,
   })
 }
+
+// ---------------------------------------------------------------------------
+// R13.R1 § 9 — weekly evolution history (administrator write path)
+// ---------------------------------------------------------------------------
+
+/** One row of the weekly evolution series, as extracted from the source. */
+export interface EvolutionObservationPayload {
+  scope: string
+  basis: string
+  observation_date: string
+  value: number
+  currency: string
+  source_upload_id: string
+  source_sheet: string
+  source_cell: string
+  source_row_label: string
+  parser_version: string
+  extractor_version: string
+  ingested_by: string | null
+  metadata: Record<string, unknown>
+}
+
+/** The upsert shape, kept out of `AdminShape` so its column list is explicit. */
+interface EvolutionUpsertShape {
+  from: (t: string) => {
+    upsert: (
+      rows: EvolutionObservationPayload[],
+      opts: { onConflict: string },
+    ) => Promise<{ error: { message?: string } | null }>
+  }
+}
+
+/**
+ * Replaces the persisted weekly evolution series for one scope, idempotently.
+ *
+ * UPSERT ON `(scope, basis, observation_date)` — the constraint the migration
+ * creates. A re-ingest of the same workbook rewrites the same rows in place; a
+ * later workbook that restates a historical week updates that week rather than
+ * adding a second, contradictory observation for the same date.
+ *
+ * NOTHING IS DELETED. A week that stops appearing in a newer workbook keeps its
+ * previously-ingested observation: that value was really published by the
+ * source, and silently dropping history is not a correction.
+ *
+ * Called AFTER the publication it accompanies has already committed, so a
+ * failure here can never invalidate a valid publication — the caller reports it
+ * honestly instead.
+ */
+export async function upsertEvolutionObservations(
+  observations: EvolutionObservationPayload[],
+): Promise<{ ok: true; count: number } | Fail> {
+  if (observations.length === 0) return { ok: true, count: 0 }
+  const client = getSupabaseAdminClient() as never as EvolutionUpsertShape | null
+  if (!client) return { ok: false, code: 'not_configured' }
+
+  // Chunked so one oversized statement cannot fail a two-year history; the
+  // upsert is idempotent, so a partial application is safe to re-run.
+  const CHUNK = 250
+  let written = 0
+  for (let i = 0; i < observations.length; i += CHUNK) {
+    const slice = observations.slice(i, i + CHUNK)
+    const { error } = await client
+      .from('portfolio_evolution_observations')
+      .upsert(slice, { onConflict: 'scope,basis,observation_date' })
+    if (error) {
+      return { ok: false, code: 'rpc_failed', reason: error.message ?? 'evolution_upsert_failed' }
+    }
+    written += slice.length
+  }
+  return { ok: true, count: written }
+}

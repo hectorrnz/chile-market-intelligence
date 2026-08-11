@@ -171,6 +171,13 @@ export interface FamilyPortfolioOverviewResponse {
   allocation?: OverviewAllocationBasis[]
   performanceBlocks?: OverviewPerformanceBlock[]
   evolution?: { exChilean: OverviewEvolutionPoint[]; withChilean: OverviewEvolutionPoint[] }
+  /**
+   * R13.R1 § 9 — which provenance the evolution series carries.
+   * `persisted_history` = the weekly series ingested from the workbook's own
+   * historical columns; `publications` = one point per published week, derived
+   * from that week's performance binding. Never a blend of the two.
+   */
+  evolutionSource?: 'persisted_history' | 'publications' | 'unavailable'
   inretailImpact?: { rowKey: string | null; value: number | null }
   marketContext?: {
     globalEquity: OverviewMarketMetric

@@ -588,3 +588,63 @@ export async function getAlternativesEvents(
     })),
   }
 }
+
+// ---------------------------------------------------------------------------
+// R13.R1 § 9 — weekly evolution history
+// ---------------------------------------------------------------------------
+
+/** One persisted evolution observation, as the chart consumes it. */
+export interface EvolutionObservationRead {
+  basis: string
+  observationDate: string
+  value: number
+}
+
+type EvolutionSelect = {
+  from: (t: string) => {
+    select: (c: string) => {
+      eq: (col: string, v: unknown) => {
+        order: (col: string, opts: { ascending: boolean }) => Promise<{
+          data: Array<{ basis: string; observation_date: string; value: number }> | null
+          error: unknown
+        }>
+      }
+    }
+  }
+}
+
+/**
+ * The full persisted weekly evolution history of one scope, ascending.
+ *
+ * Read through the CALLER'S OWN session, so `nmi_can_access_scope` re-derives
+ * the entitlement in the database — an evolution point is a portfolio value and
+ * is protected exactly like the snapshot row it was read from.
+ *
+ * Gaps are absent rows, never null values: a week the source could not supply
+ * simply has no row, so nothing here needs to filter or coalesce.
+ */
+export async function getEvolutionObservations(
+  scope: string,
+): Promise<
+  | { ok: true; observations: EvolutionObservationRead[] }
+  | { ok: false; code: 'not_configured' | 'read_failed' }
+> {
+  const client = await getSupabaseUserClient()
+  if (!client) return { ok: false, code: 'not_configured' }
+
+  const { data, error } = await (client as never as EvolutionSelect)
+    .from('portfolio_evolution_observations')
+    .select('basis, observation_date, value')
+    .eq('scope', scope)
+    .order('observation_date', { ascending: true })
+
+  if (error) return { ok: false, code: 'read_failed' }
+  return {
+    ok: true,
+    observations: (data ?? []).map((o) => ({
+      basis: o.basis,
+      observationDate: o.observation_date,
+      value: o.value,
+    })),
+  }
+}

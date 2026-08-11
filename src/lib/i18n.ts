@@ -6,7 +6,7 @@ export type Lang = 'en' | 'es'
 export const dict = {
   en: {
     fpAdmin: {
-      tag:            'Family Portfolio',
+      tag:            'Portfolio',
       title:          'Publication review',
       subtitle:       'Review a parsed upload, confirm its date, and publish an immutable week.',
       uploadsTitle:   'Source uploads',
@@ -79,13 +79,18 @@ export const dict = {
     // caller by /api/family-portfolio/scopes, so an unentitled principal's
     // name never ships in the client bundle (doc 07 § 7).
     fp: {
-      tag:            'Family Portfolio',
-      navLabel:       'Family Portfolio sections',
-      navOverview:    'Overview',
-      navPortfolio:   'Portfolio',
+      // R13.R1 § 3 — the module is the normal Portfolio experience, so its
+      // member-facing eyebrow is `Portfolio`, never `Family Portfolio`. The
+      // visible scope heading below carries the specific portfolio.
+      tag:            'Portfolio',
+      navLabel:       'Portfolio sections',
+      navOverview:    'Summary',
+      navPortfolio:   'Holdings',
       navWeeklyChanges: 'Weekly Changes',
       navAlternatives:  'Alternatives',
       navAdmin:       'Admin',
+      /** `{scope}` is the server-supplied scope label; word order differs by language. */
+      scopeHeading:   '{scope} PORTFOLIO',
       noAccess:       'This account has no Family Portfolio access. Access is assigned by an administrator.',
       accessError:    'Your access could not be verified. Please try again.',
       overviewPendingTitle: 'Overview',
@@ -138,7 +143,7 @@ export const dict = {
         empty:            'The current Alternatives publication contains no holdings.',
       },
       portfolio: {
-        title:        'Portfolio',
+        title:        'Holdings',
         scopeSelector: 'Portfolio scope',
         weekSelector: 'Published week',
         week:         'Week of',
@@ -176,11 +181,19 @@ export const dict = {
         evolutionTitle:   'Portfolio evolution',
         evolutionExChilean:   'Excluding Chilean equities',
         evolutionWithChilean: 'Including Chilean equities',
-        evolutionEmpty:   'Not enough published weeks to chart yet.',
+        evolutionEmpty:   'Not enough source-backed weeks to chart yet.',
+        // R13.R1 § 9 — provenance of the plotted series, stated on the chart.
+        evolutionSourceHistory:      'Weekly source history',
+        evolutionSourcePublications: 'Derived from published weeks',
+        evolutionPoints:             'weekly observations',
         weeklyResultsTitle: 'Weekly results',
         blockExChilean:   'Portfolio excl. Chilean equities',
         blockWithChilean: 'Portfolio incl. Chilean equities',
-        flow:             'Net Contributions / Withdrawals',
+        // R13.R1 § 5 — renamed after tracing both bases to their OWN source flow
+        // cell (RESUMEN rows 90 and 97). Each performance block carries its own
+        // flow line, so the two bases legitimately differ.
+        flow:             'Net Flows',
+        flowHelp:         'Contributions less withdrawals used in the flow-adjusted return calculation.',
         weeklyProfit:     'Weekly Profit / Loss',
         ytdProfit:        'Year-to-date Profit / Loss',
         marketTitle:      'Market context',
@@ -212,7 +225,7 @@ export const dict = {
         currentValueLabel:  'This Week Portfolio Value',
         previousValueLabel: 'Previous Week Portfolio Value',
         flowReconTitle:     'Flow and investment-result reconciliation',
-        flowReconNote:      'Source-provided identity at the portfolio total: Previous Portfolio Value + Net Contributions / Withdrawals + Weekly Profit / Loss = This Week Portfolio Value.',
+        flowReconNote:      'Source-provided identity at the portfolio total: Previous Portfolio Value + Net Flows + Weekly Profit / Loss = This Week Portfolio Value.',
         impliedCurrent:     'Implied This Week Value',
         publishedCurrent:   'Published This Week Value',
         residual:           'Residual',
@@ -222,7 +235,7 @@ export const dict = {
         partiallyReconciled: 'Partially reconciled',
         reconciliationUnavailable: 'Reconciliation unavailable',
         waterfallTitle:     'Drivers of Weekly Portfolio Value Change',
-        waterfallNote:      'Drivers are asset-level weekly value changes derived from the published hierarchy. Net contributions / withdrawals and profit are not separate bars — the asset-level changes already contain their effects.',
+        waterfallNote:      'Drivers are asset-level weekly value changes derived from the published hierarchy. Net flows and profit are not separate bars — the asset-level changes already contain their effects.',
         waterfallListFallback: 'One or more drivers are unavailable, so cumulative positions cannot be drawn; the steps are listed instead.',
         unavailableDrivers: 'driver(s) unavailable',
         groupBySociedad:    'By Sociedad',
@@ -266,7 +279,7 @@ export const dict = {
         methodologyLevel:   'Below the portfolio total, every figure on this page is a dollar weekly value change, not a return contribution — the source provides no per-asset flows, so per-asset returns are not derivable.',
         methodologyPair:    'Previous Week is the immediately preceding published week, not necessarily seven calendar days earlier; NMI recomputes each change from the two published snapshots, never from the workbook\'s own difference column.',
         methodologyImpact:  'Impact on Portfolio Value is a row\'s dollar change divided by the previous week\'s portfolio total. It does not measure the row\'s own return.',
-        methodologyWaterfall: 'The waterfall\'s drivers are asset-level value changes only; net contributions / withdrawals and profit are not added as bars because the asset-level changes already contain their effects.',
+        methodologyWaterfall: 'The waterfall\'s drivers are asset-level value changes only; net flows and profit are not added as bars because the asset-level changes already contain their effects.',
         methodologyCash:    'Caja y Equivalentes is excluded from the ranked lists by default because it absorbs deposits and withdrawals before they are deployed; a visible toggle can include it.',
       },
     },
@@ -1285,7 +1298,7 @@ export const dict = {
 
   es: {
     fpAdmin: {
-      tag:            'Portafolio Familiar',
+      tag:            'Portafolio',
       title:          'Revisión de publicación',
       subtitle:       'Revise una carga procesada, confirme su fecha y publique una semana inmutable.',
       uploadsTitle:   'Cargas de origen',
@@ -1358,13 +1371,14 @@ export const dict = {
     // usuario, para que el nombre de un principal no autorizado nunca llegue
     // al navegador (doc 07 § 7).
     fp: {
-      tag:            'Portafolio Familiar',
-      navLabel:       'Secciones del Portafolio Familiar',
+      tag:            'Portafolio',
+      navLabel:       'Secciones del Portafolio',
       navOverview:    'Resumen',
-      navPortfolio:   'Portafolio',
+      navPortfolio:   'Posiciones',
       navWeeklyChanges: 'Cambios Semanales',
       navAlternatives:  'Alternativos',
       navAdmin:       'Admin',
+      scopeHeading:   'PORTAFOLIO {scope}',
       noAccess:       'Esta cuenta no tiene acceso al Portafolio Familiar. El acceso lo asigna un administrador.',
       accessError:    'No se pudo verificar su acceso. Intente nuevamente.',
       overviewPendingTitle: 'Resumen',
@@ -1416,7 +1430,7 @@ export const dict = {
         empty:            'La publicación actual de Alternativos no contiene inversiones.',
       },
       portfolio: {
-        title:        'Portafolio',
+        title:        'Posiciones',
         scopeSelector: 'Alcance del portafolio',
         weekSelector: 'Semana publicada',
         week:         'Semana del',
@@ -1454,11 +1468,15 @@ export const dict = {
         evolutionTitle:   'Evolución del Patrimonio',
         evolutionExChilean:   'Sin acciones chilenas',
         evolutionWithChilean: 'Con acciones chilenas',
-        evolutionEmpty:   'Aún no hay suficientes semanas publicadas para graficar.',
+        evolutionEmpty:   'Aún no hay suficientes semanas respaldadas por la fuente para graficar.',
+        evolutionSourceHistory:      'Historia semanal de la fuente',
+        evolutionSourcePublications: 'Derivado de las semanas publicadas',
+        evolutionPoints:             'observaciones semanales',
         weeklyResultsTitle: 'Resumen Semanal',
         blockExChilean:   'Portafolio sin Acciones Chilenas',
         blockWithChilean: 'Portafolio con Acciones Chilenas',
-        flow:             'Aportes / Retiros Netos',
+        flow:             'Flujos Netos',
+        flowHelp:         'Aportes menos retiros, utilizados en el cálculo del retorno ajustado por flujos.',
         weeklyProfit:     'Utilidad de la Semana',
         ytdProfit:        'Utilidad del Año',
         marketTitle:      'Contexto de Mercado',
@@ -1490,7 +1508,7 @@ export const dict = {
         currentValueLabel:  'Valor del Portafolio Esta Semana',
         previousValueLabel: 'Valor del Portafolio Semana Anterior',
         flowReconTitle:     'Conciliación de flujos y resultado de inversión',
-        flowReconNote:      'Identidad provista por la fuente al total del portafolio: Valor Anterior del Portafolio + Aportes / Retiros Netos + Utilidad de la Semana = Valor del Portafolio Esta Semana.',
+        flowReconNote:      'Identidad provista por la fuente al total del portafolio: Valor Anterior del Portafolio + Flujos Netos + Utilidad de la Semana = Valor del Portafolio Esta Semana.',
         impliedCurrent:     'Valor implícito de Esta Semana',
         publishedCurrent:   'Valor publicado de Esta Semana',
         residual:           'Residuo',
@@ -1500,7 +1518,7 @@ export const dict = {
         partiallyReconciled: 'Parcialmente conciliado',
         reconciliationUnavailable: 'Conciliación no disponible',
         waterfallTitle:     'Factores de la Variación de Valor Semanal del Portafolio',
-        waterfallNote:      'Los factores son variaciones de valor semanales a nivel de activos, derivadas de la jerarquía publicada. Los aportes / retiros netos y la utilidad no son barras separadas — las variaciones a nivel de activos ya contienen sus efectos.',
+        waterfallNote:      'Los factores son variaciones de valor semanales a nivel de activos, derivadas de la jerarquía publicada. Los flujos netos y la utilidad no son barras separadas — las variaciones a nivel de activos ya contienen sus efectos.',
         waterfallListFallback: 'Uno o más factores no están disponibles, por lo que las posiciones acumuladas no pueden dibujarse; los pasos se listan en su lugar.',
         unavailableDrivers: 'factor(es) no disponible(s)',
         groupBySociedad:    'Por Sociedad',
@@ -1544,7 +1562,7 @@ export const dict = {
         methodologyLevel:   'Bajo el total del portafolio, cada cifra de esta página es una variación de valor semanal en dólares, no una contribución al retorno — la fuente no provee flujos por activo, por lo que los retornos por activo no son derivables.',
         methodologyPair:    'La Semana Anterior es la semana publicada inmediatamente anterior, no necesariamente siete días calendario antes; NMI recalcula cada variación a partir de los dos cierres publicados, nunca desde la columna de diferencias de la propia planilla.',
         methodologyImpact:  'El Impacto en el Valor del Portafolio es la variación en dólares de una fila dividida por el total del portafolio de la semana anterior. No mide el retorno propio de la fila.',
-        methodologyWaterfall: 'Los factores de la cascada son solo variaciones de valor a nivel de activos; los aportes / retiros netos y la utilidad no se agregan como barras porque las variaciones a nivel de activos ya contienen sus efectos.',
+        methodologyWaterfall: 'Los factores de la cascada son solo variaciones de valor a nivel de activos; los flujos netos y la utilidad no se agregan como barras porque las variaciones a nivel de activos ya contienen sus efectos.',
         methodologyCash:    'Caja y Equivalentes se excluye de las listas de ranking por defecto porque absorbe aportes y retiros antes de ser desplegados; una opción visible permite incluirla.',
       },
     },

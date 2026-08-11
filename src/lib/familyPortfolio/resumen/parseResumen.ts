@@ -67,6 +67,15 @@ import {
 } from './performance.ts'
 
 /** Recorded on every upload (doc 08 Stage 3). Bump when parse semantics change.
+ *
+ * r13.r1.resumen.4 — R13.R1 § 4: `PORTAFOLIO EX/CON ACCIONES CHILENAS` are
+ * recognised as `performance_header` rows. They title the two Main performance
+ * blocks and are no longer emitted as snapshot rows, which is what put two
+ * valueless rows into the Holdings table after the true portfolio TOTAL. The
+ * blocks themselves are unchanged: each basis is still decided by numeric
+ * reconciliation (rule 6), and the title is retained on the block as
+ * corroborating provenance.
+ *
  * r13.8.resumen.3 — the single final version for ALL R13.8 parser changes:
  * year performance metrics emit their PERSISTED ids (`ytd_profit`/`ytd_return`
  * — the prior 'annual_*' ids could never clear the portfolio_performance_rows
@@ -74,7 +83,7 @@ import {
  * skipping, the value-bearing personal `Alternativos` line, the
  * `sociedad_subtotal`/`sociedad_total` split, Main's above-header anchor, and
  * performance blocks surviving the source's blank separator line). */
-export const RESUMEN_PARSER_VERSION = 'r13.8.resumen.3'
+export const RESUMEN_PARSER_VERSION = 'r13.r1.resumen.4'
 
 /** Excel error literals that make a cell unusable (doc 02 § 6.3). */
 const ERROR_LITERALS = ['#NAME?', '#REF!', '#VALUE!', '#DIV/0!', '#N/A', '#NULL!', '#NUM!']
@@ -126,6 +135,12 @@ export interface ParsedPerformanceRow {
   /** The snapshot row this block was proven to measure. */
   boundRowKey: string | null
   boundSourceCell: string | null
+  /**
+   * R13.R1 § 4 — the source title of the block this metric belongs to, when the
+   * source provides one. Parser/model-level provenance, NOT persisted and never
+   * used to decide a basis (see `PerformanceBlock.headerLabel`).
+   */
+  blockHeaderLabel: string | null
   crossChecks: PerformanceCrossCheck[]
 }
 
@@ -191,6 +206,16 @@ interface PerformanceBlock {
   /** Flow for THIS block. Main's two bases carry different flows. */
   flow: number | null
   flowCell: string | null
+  /**
+   * R13.R1 § 4 — the source's own title for this block, when it carries one
+   * (`PORTAFOLIO EX/CON ACCIONES CHILENAS`). CORROBORATING EVIDENCE ONLY: the
+   * basis is still decided by `bindBlockToCandidate`'s numeric reconciliation
+   * (rule 6), never by this label. Retaining it keeps the header row available
+   * to the performance model — which is why the row is skipped rather than
+   * deleted — and makes a mis-binding visible instead of silent.
+   */
+  headerLabel: string | null
+  headerCell: string | null
   metrics: Map<string, BlockMetric>
 }
 
@@ -346,10 +371,23 @@ export function parseResumen(
       const cellName = sourceCell(sheet.name, thisWeek.column, row)
       const err = errorAt(sheet, row, thisWeek.column)
 
+      // --- R13.R1 § 4: a performance-block TITLE opens a block and is never
+      // emitted as a snapshot row. Opening here (rather than merely skipping)
+      // is what guarantees the title can never merge two blocks: it closes any
+      // block still open and starts the one it names.
+      if (rowType === 'performance_header') {
+        current = { flow: null, flowCell: null, headerLabel: label, headerCell: cellName, metrics: new Map() }
+        blocks.push(current)
+        continue
+      }
+
       // --- Performance blocks (rule 6). A run of flow/performance rows forms
       // one block; any other row closes it.
       if (rowType === 'performance' || rowType === 'flow') {
-        if (!current) { current = { flow: null, flowCell: null, metrics: new Map() }; blocks.push(current) }
+        if (!current) {
+          current = { flow: null, flowCell: null, headerLabel: null, headerCell: null, metrics: new Map() }
+          blocks.push(current)
+        }
         if (rowType === 'flow') {
           // Doc 02 § 8: an EMPTY flow cell means ZERO flow, not missing data.
           current.flow = numberAt(sheet, row, thisWeek.column) ?? 0
@@ -497,6 +535,7 @@ export function parseResumen(
           sourceSheet: sheet.name, sourceCell: block.flowCell,
           sourceRow: Number(/[0-9]+$/.exec(block.flowCell)?.[0] ?? 0),
           boundRowKey: bound.rowKey, boundSourceCell: bound.sourceCell,
+          blockHeaderLabel: block.headerLabel,
           crossChecks: [],
         })
       }
@@ -511,6 +550,7 @@ export function parseResumen(
           valueClass: m.error !== null ? 'unavailable' : 'source_provided_return',
           sourceSheet: sheet.name, sourceCell: m.cell, sourceRow: m.row,
           boundRowKey: bound.rowKey, boundSourceCell: bound.sourceCell,
+          blockHeaderLabel: block.headerLabel,
           crossChecks: checks,
         })
       }

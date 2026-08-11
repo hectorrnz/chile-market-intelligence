@@ -30,6 +30,7 @@ import { MemberGate } from '@/components/familyPortfolio/MemberGate'
 import { useFamilyPortfolio } from '@/components/familyPortfolio/FamilyPortfolioProvider'
 import { WeekSelector } from '@/components/familyPortfolio/WeekSelector'
 import { HierarchicalTable } from '@/components/familyPortfolio/HierarchicalTable'
+import { formatTemplate } from '@/components/fable/chart/chartA11y'
 import { formatIsoDateLabel } from '@/lib/formatters'
 import {
   fetchFamilyPortfolioSnapshot,
@@ -100,6 +101,13 @@ function PortfolioPageInner() {
   const weeks = current?.outcome === 'ready' ? (current.data?.weeks ?? []) : []
   const activeLabel = portfolioScopes.find((s) => s.id === activeScope)
   const scopeLabel = activeLabel ? (lang === 'es' ? activeLabel.labelEs : activeLabel.labelEn) : ''
+  // R13.R1 § 3 — the visible heading names the specific portfolio being read
+  // (`MAIN PORTFOLIO`, `JAIME PORTFOLIO`, …). The scope word itself stays
+  // server-supplied, so an unentitled principal's name never reaches the
+  // bundle; only the surrounding template is translated.
+  const scopeHeading = scopeLabel
+    ? formatTemplate(t.fp.scopeHeading, { scope: scopeLabel.toLocaleUpperCase(lang) })
+    : ''
 
   function selectScope(next: string) {
     router.replace(`/family-portfolio/portfolio?scope=${encodeURIComponent(next)}`, {
@@ -134,7 +142,7 @@ function PortfolioPageInner() {
         metadata={
           snapshot ? (
             <>
-              <span>{scopeLabel}</span>
+              <span>{scopeHeading}</span>
               <span>
                 {t.fp.portfolio.week} {formatIsoDateLabel(snapshot.asOfDate)}
               </span>
@@ -164,7 +172,7 @@ function PortfolioPageInner() {
           <AsyncState kind="unavailable" message={t.fp.portfolio.notAuthorized} />
         ) : (
           <TableCard
-            title={scopeLabel}
+            title={scopeHeading}
             controls={
               <>
                 {weeks.length > 0 && snapshot && (

@@ -212,7 +212,9 @@ jobs:
       - name: Apply the full migration chain from a clean database
         run: supabase db reset --debug
 
-      - name: Execute the pgTAP entitlement suite
+      # Runs EVERY file under supabase/tests/database — the R13.1 entitlement
+      # suite and the R13.R1 evolution-history suite alike.
+      - name: Execute the pgTAP suites
         run: supabase test db
 
       # Advisory: surfaces missing RLS, mutable search_path and similar issues.
