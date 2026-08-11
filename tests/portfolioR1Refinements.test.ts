@@ -547,7 +547,12 @@ describe('R13.R1 § 16 — the new forward migration', () => {
     assert.match(t, /23514/, 'the CHECK refusals')
     assert.match(t, /on conflict \(scope, basis, observation_date\) do update/)
     assert.match(t, /cannot read the ANDRES evolution series/)
-    assert.match(t, /anon reads no evolution observation/)
+    // Anon denial is asserted as a REFUSAL ('42501'), not as a zero-row read:
+    // the migration revokes every privilege from anon, so the query raises
+    // rather than returning 0. Requiring anon to run the query at all would
+    // have been a weaker assertion — and would abort the suite.
+    assert.match(t, /anon is REFUSED outright/)
+    assert.match(t, /'42501'/)
   })
 
   test('the DB-validation workflow runs every pgTAP suite', () => {

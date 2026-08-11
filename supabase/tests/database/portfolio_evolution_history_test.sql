@@ -177,12 +177,17 @@ select is(
   (select count(*)::int from public.portfolio_evolution_observations),
   0, 'an unapproved account reads no evolution observation of any scope');
 
--- Anonymous reads nothing.
+-- Anonymous is REFUSED OUTRIGHT — a stronger guarantee than "RLS returns zero
+-- rows". The migration revokes every privilege from `anon`, so counting rows as
+-- anon does not return 0: it raises '42501' and aborts the script. That is the
+-- same trap the entitlement suite documents at its own commentary check, and
+-- denial is asserted the same way here — by proving the refusal, not by
+-- requiring anon to be able to run the query at all.
 select pg_temp.as_service();
 select pg_temp.as_anon();
-select is(
-  (select count(*)::int from public.portfolio_evolution_observations),
-  0, 'anon reads no evolution observation');
+select throws_ok(
+  $$ select count(*) from public.portfolio_evolution_observations $$,
+  '42501', null, 'anon is REFUSED outright — it holds no SELECT privilege');
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 4 · WRITES ARE SERVICE-ROLE ONLY
