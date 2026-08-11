@@ -57,6 +57,7 @@ const code = (rel: string) =>
   read(rel).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
 
 const NAVIGATION = 'src/lib/navigation.ts'
+const APP_SHELL = 'src/components/layout/AppShell.tsx'
 const OVERVIEW_PAGE = 'src/app/family-portfolio/page.tsx'
 const HOLDINGS_PAGE = 'src/app/family-portfolio/portfolio/page.tsx'
 const MODULE_NAV = 'src/components/familyPortfolio/FamilyPortfolioNav.tsx'
@@ -365,6 +366,52 @@ describe('R13.R1 § 5 — Net Flows', () => {
     assert.equal(weeklyProfit(1_000, null, 0), null)
     assert.equal(weeklyReturn(100, 0), null)
     assert.equal(weeklyReturn(100, null), null)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// § 6 · Trailing blank region — the scroll container must contain its own
+//       absolutely-positioned descendants
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('R13.R1 § 6 — the app shell contains its absolute descendants', () => {
+  const shell = read(APP_SHELL)
+
+  test('<main> establishes a containing block for its absolute descendants', () => {
+    const main = /<main className="([^"]*)"/.exec(shell)?.[1] ?? ''
+    assert.ok(main.includes('overflow-y-auto'), 'main is the scroll container')
+    assert.ok(
+      main.split(/\s+/).includes('relative'),
+      'main must be positioned — an overflow value clips only descendants whose ' +
+        'containing block it is, so a static <main> lets absolutely-positioned ' +
+        'content escape to the initial containing block and inflate the document ' +
+        'scroll height (R13.R1 § 6)',
+    )
+  })
+
+  test('the shell root that owns overflow-hidden is positioned too', () => {
+    const root = /<div className="([^"]*h-full overflow-hidden[^"]*)"/.exec(shell)?.[1] ?? ''
+    assert.ok(root.length > 0, 'the shell root is found')
+    assert.ok(
+      root.split(/\s+/).includes('relative'),
+      'the shell root must be positioned for its overflow-hidden to mean anything',
+    )
+  })
+
+  test('overlays still use fixed, which a relative ancestor cannot affect', () => {
+    // The fix would be unsafe if any overlay relied on `absolute` against the
+    // initial containing block. They do not — drawer, panel and modal scrims
+    // are all `fixed`.
+    assert.match(read('src/components/layout/MobileNavDrawer.tsx'), /className="no-print fixed inset-0/)
+    assert.match(read('src/components/fable/ModalShell.tsx'), /fixed inset-0/)
+    assert.match(read('src/components/fable/DetailPanel.tsx'), /fixed inset-0/)
+  })
+
+  test('the shell still owns page scroll — no second scrolling model', () => {
+    assert.ok(shell.includes('h-full overflow-hidden'), 'the page itself never scrolls')
+    assert.ok(shell.includes('flex-1 min-h-0'), 'main is the flex child that scrolls')
+    // The existing Home containment fix must survive untouched.
+    assert.match(read('src/app/page.tsx'), /contain: 'strict'/)
   })
 })
 
