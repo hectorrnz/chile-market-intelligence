@@ -291,8 +291,14 @@ describe('R13.R1 § 4 — performance-block headers never appear in Holdings', (
   })
 
   test('the parser version records the change', () => {
-    assert.equal(RESUMEN_PARSER_VERSION, 'r13.r1.resumen.4')
-    assert.ok(RESUMEN_PARSER_VERSION !== 'r13.8.resumen.3', 'a parse-semantics change bumps the version')
+    // R13.R1.1 superseded r13.r1.resumen.4. The invariant under test is that a
+    // parse-semantics change ALWAYS bumps the version — not that it is frozen
+    // at any one value — so this asserts the property and pins only the
+    // current version.
+    assert.equal(RESUMEN_PARSER_VERSION, 'r13.r1.1.resumen.5')
+    for (const superseded of ['r13.8.resumen.3', 'r13.r1.resumen.4']) {
+      assert.ok(RESUMEN_PARSER_VERSION !== superseded, 'a parse-semantics change bumps the version')
+    }
   })
 
   test('the block title is retained on the performance model, not discarded', () => {
@@ -671,7 +677,10 @@ describe('R13.R1 §§ 10-11 — historical backfill', () => {
     assert.ok(!wc.includes('parseResumen'), 'the page never parses a workbook')
     assert.ok(!wc.includes('publicationColumnLetter'), 'the page never reads workbook columns')
     assert.ok(!/xlsx/i.test(wc))
-    const engine = read('src/lib/familyPortfolio/weeklyChanges.ts')
+    // Comment-stripped: R13.R1.1's lifecycle rule CITES the parser in prose to
+    // explain why a missing row proves absence. The property under test is
+    // that the engine never IMPORTS or CALLS it.
+    const engine = code('src/lib/familyPortfolio/weeklyChanges.ts')
     assert.ok(!engine.includes('parseResumen'), 'the Stage-8 engine stays publication-based')
   })
 })

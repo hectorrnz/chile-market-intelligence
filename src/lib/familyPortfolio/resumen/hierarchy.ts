@@ -250,6 +250,25 @@ export function isAnnotationRow(label: string): boolean {
 /**
  * Classifies a row from its label, whether it carries a value, and its PARENT.
  *
+ * `hasValue` IS A PROPERTY OF THE SOURCE ROW, NOT OF THE WEEK BEING PUBLISHED
+ * (R13.R1.1 § 9). It must be answered over EVERY date column in the sheet — see
+ * `rowCarriesValueAnywhere` in `parseResumen.ts` — never over the one column
+ * being published. Passing the publication column's own emptiness was the root
+ * cause of `duplicate_row_key` in 95 of the 102 historical weeks:
+ *
+ *   RESUMEN rows 66 / 69 / 72 are all `Trinity Alps Venture Opportunities Fund
+ *   II-B LP`, one per holding sociedad (Naidelt / Retboy / Vanglor). In a week
+ *   where each carries a value they classify as `individual_asset`, their keys
+ *   include their sociedad, and all three are distinct. In a week where the
+ *   position did not yet exist the cells are empty, the terminal
+ *   "no value ⇒ grouping label" branch below turned all three into
+ *   `sociedad_header` CONTAINERS directly under the asset class, and all three
+ *   collapsed onto one key.
+ *
+ * A position that did not exist yet, or has since been sold, is a legitimate
+ * portfolio-history event; it must change that row's VALUE for the week, never
+ * its TYPE, its identity, or the parentage of its neighbours.
+ *
  * The parent is what distinguishes the two leaf kinds, and the distinction is
  * semantic — taken from the source contract, never from indentation or
  * formatting:
@@ -333,6 +352,47 @@ export const REQUIRED_ROW_TYPES: ReadonlySet<RowType> = new Set<RowType>([
   'portfolio_subtotal',
   'portfolio_total',
 ])
+
+/**
+ * True when a portfolio-level aggregate is a candidate PERFORMANCE BASIS —
+ * i.e. a row one of the scope's performance blocks could legitimately measure
+ * (R13.R1.1 § 8).
+ *
+ * This narrows the CANDIDATE SET; it never decides which basis a block is. That
+ * decision stays with `bindBlockToCandidate`'s numeric reconciliation (rule 6).
+ *
+ * WHY IT EXISTS. Main carries FIVE rows typed `portfolio_subtotal`/
+ * `portfolio_total`, of which only two are published bases (doc 02 §§ 2.1, 5.3):
+ * the bare `SUBTOTAL` (ex Chilean equities) and the bare `TOTAL` (with Chilean
+ * equities). The other three — `SUBTOTAL PORTFOLIO LÍQUIDO`, `SUBTOTAL
+ * ALTERNATIVOS` and the `PORTFOLIO LÍQUIDO + ALTERNATIVOS` spine aggregate —
+ * are SECTION aggregates. Offering them as candidates is unsound in both
+ * directions, and both were observed live:
+ *
+ *   Ambiguity. `SUBTOTAL` = `PORTFOLIO LÍQUIDO + ALTERNATIVOS` + `INRETAIL PERU
+ *   CORP`. Whenever INRETAIL is unchanged week-over-week — routine, since it is
+ *   a privately-marked holding — the two rows have IDENTICAL weekly deltas and
+ *   both reconcile, so the match is not unique and the week fails closed.
+ *   Verified: 2025-10-30, 2025-11-28 and 2026-05-22.
+ *
+ *   Silent mis-binding. Had a section aggregate ever reconciled ALONE,
+ *   `basisFor` would have published it as `ex_chilean_equities` — the wrong row
+ *   under the right name. The ambiguity guard was all that stood in the way.
+ *
+ * Personal scopes are unaffected: every one of their portfolio totals is a
+ * genuine candidate (doc 02 § 2.1 relies on reconciliation to choose between
+ * Andrés's two), so the predicate admits them all.
+ */
+export function isPerformanceBasisCandidate(
+  scope: ScopeId,
+  rowType: RowType,
+  label: string,
+): boolean {
+  if (rowType !== 'portfolio_subtotal' && rowType !== 'portfolio_total') return false
+  if (scope !== 'main') return true
+  const n = normalizeLabel(label)
+  return n === 'subtotal' || n === 'total'
+}
 
 /**
  * Builds a stable `row_key` from the normalized label path (doc 05 § 5.2).

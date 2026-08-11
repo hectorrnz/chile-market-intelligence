@@ -298,8 +298,15 @@ export function detectColumns(sheet: XlsxSheet, date1904 = false): DateDetection
 
 export interface Anchors {
   thisWeek: ClassifiedColumn
-  previousWeek: ClassifiedColumn
-  beginningOfYear: ClassifiedColumn
+  /**
+   * NULL only when `thisWeek` is the EARLIEST historical column in the sheet —
+   * the first observation on record, which has no predecessor by definition
+   * (R13.R1.1 § 11). Every other week has one, and a missing predecessor there
+   * still blocks.
+   */
+  previousWeek: ClassifiedColumn | null
+  /** NULL under the same condition — see `resolveAnchors`. */
+  beginningOfYear: ClassifiedColumn | null
 }
 
 export type AnchorResult =
@@ -333,9 +340,24 @@ export function resolveAnchors(
     }
   }
 
+  // R13.R1.1 § 11 — THE FIRST OBSERVATION ON RECORD IS NOT A DEFECTIVE WEEK.
+  //
+  // The earliest historical column has no predecessor and no earlier baseline
+  // in its own year; that is the beginning of the record, not missing data. It
+  // resolves with both anchors NULL, so every `previousValue`, `difference` and
+  // `beginningOfYearValue` is `unavailable` — never 0, never carried forward.
+  //
+  // The condition is deliberately "is the earliest column in the sheet", not
+  // "has no prior": a MIDDLE column that somehow lost its predecessor is a real
+  // defect and must still block. It is also why the year-start week of any
+  // LATER year keeps its own date as the baseline (a legitimate 0 % YTD) while
+  // 2024-08-23 does not (its year began before the record did).
+  const earliest = detection.historical.length > 0 ? detection.historical[0] : null
+  const isFirstOnRecord = earliest !== null && earliest.column === publicationColumn.column
+
   const priors = detection.historical.filter((c) => c.date !== null && c.date < asOf)
   const previousWeek = priors.length > 0 ? priors[priors.length - 1] : null
-  if (!previousWeek || previousWeek.column === publicationColumn.column) {
+  if (!isFirstOnRecord && (!previousWeek || previousWeek.column === publicationColumn.column)) {
     blocking.push({
       code: 'previous_week_not_found',
       detail: `no historical column precedes ${asOf}`,
@@ -345,7 +367,7 @@ export function resolveAnchors(
   const year = asOf.slice(0, 4)
   const inYear = detection.historical.filter((c) => c.date !== null && c.date.slice(0, 4) === year)
   const beginningOfYear = inYear.length > 0 ? inYear[0] : null
-  if (!beginningOfYear) {
+  if (!isFirstOnRecord && !beginningOfYear) {
     blocking.push({
       code: 'beginning_of_year_not_found',
       detail: `no historical column falls in ${year}`,
@@ -356,7 +378,11 @@ export function resolveAnchors(
 
   return {
     ok: true,
-    anchors: { thisWeek: publicationColumn, previousWeek: previousWeek!, beginningOfYear: beginningOfYear! },
+    anchors: {
+      thisWeek: publicationColumn,
+      previousWeek: isFirstOnRecord ? null : previousWeek,
+      beginningOfYear: isFirstOnRecord ? null : beginningOfYear,
+    },
     warnings,
   }
 }

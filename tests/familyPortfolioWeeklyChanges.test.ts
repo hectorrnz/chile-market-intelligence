@@ -170,11 +170,22 @@ describe('R13.8 · change nodes', () => {
     assert.equal(node.impactOnPortfolioValue, null)
   })
 
-  test('a row present in only one week is surfaced as unavailable, not silently dropped', () => {
+  // R13.R1.1 § 14 SUPERSEDES the original expectation here. A one-sided row
+  // used to be `unavailable`, because a published snapshot could not say
+  // whether a missing row was absent or merely unrecorded. It can now: the
+  // parser prunes only rows with no value AND no surviving descendant, and
+  // keeps error cells, so MISSING means DEFINITIVELY ABSENT. The row is still
+  // surfaced rather than dropped — that intent is unchanged — but it is now
+  // classified as a New or Exited position against a confirmed zero.
+  test('a row present in only one week is a New or Exited position against a confirmed zero', () => {
     const cur = rowsOf(MAIN, 'cur')
     const prev = rowsOf(MAIN, 'prev').filter((r) => r.rowKey !== 'leaf.fi2')
-    const arrived = buildChangeNodes(cur, prev, 1000)
-    assert.equal(byKey(arrived, 'leaf.fi2').unavailableReason, 'missing_previous')
+    const arrived = byKey(buildChangeNodes(cur, prev, 1000), 'leaf.fi2')
+    assert.equal(arrived.lifecycle, 'new_position')
+    assert.equal(arrived.status, 'ok')
+    assert.equal(arrived.previousValue, 0)
+    assert.equal(arrived.weeklyValueChange, arrived.currentValue)
+    assert.equal(arrived.ownPctChange, null, 'no opening value ⇒ no percentage, never an infinity')
 
     const disposed = buildChangeNodes(
       cur.filter((r) => r.rowKey !== 'leaf.fi2'),
@@ -182,9 +193,25 @@ describe('R13.8 · change nodes', () => {
       1000,
     )
     const gone = byKey(disposed, 'leaf.fi2')
-    assert.equal(gone.status, 'unavailable')
-    assert.equal(gone.currentValue, null)
+    assert.equal(gone.lifecycle, 'exited_position')
+    assert.equal(gone.status, 'ok')
+    assert.equal(gone.currentValue, 0)
     assert.equal(gone.previousValue, 80)
+    assert.equal(gone.weeklyValueChange, -80)
+  })
+
+  test('an UNUSABLE value is never read as an absence — it stays unavailable', () => {
+    // The § 5 boundary: only a missing row proves absence. A row that is
+    // PRESENT carrying null (an error cell, or a valueless container) is
+    // uncertain, and must not be converted to zero by the lifecycle rule.
+    const cur = rowsOf(MAIN, 'cur').map((r) => (r.rowKey === 'leaf.fi2' ? { ...r, value: null } : r))
+    const node = byKey(buildChangeNodes(cur, rowsOf(MAIN, 'prev'), 1000), 'leaf.fi2')
+    assert.equal(node.lifecycle, 'ongoing')
+    assert.equal(node.status, 'unavailable')
+    assert.equal(node.unavailableReason, 'missing_current')
+    assert.equal(node.currentValue, null)
+    assert.notEqual(node.currentValue, 0)
+    assert.equal(node.weeklyValueChange, null)
   })
 
   test('two different currencies are never netted into one change', () => {

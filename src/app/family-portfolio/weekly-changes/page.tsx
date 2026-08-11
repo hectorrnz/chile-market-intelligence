@@ -143,6 +143,13 @@ function structuralRowClasses(rowType: string): string {
   }
 }
 
+/**
+ * Sentinel for "no custom range — compare with the preceding published week"
+ * (R13.R1.1 § 13). A non-date string, so it can never collide with a real
+ * `as_of_date` option value.
+ */
+const WEEKLY_DEFAULT = 'weekly'
+
 const TH = 'py-2.5 px-3 first:pl-4 last:pr-4 ui-table-header text-muted-fg sticky top-0 bg-surface z-10'
 const CELL = 'py-2 px-3 first:pl-4 last:pr-4'
 
@@ -271,7 +278,14 @@ function WeeklyChangesPageInner() {
 
   /** null = the latest published week. */
   const [asOf, setAsOf] = useState<string | null>(null)
-  const requestKey = `${activeScope ?? ''}|${asOf ?? 'latest'}`
+  /**
+   * R13.R1.1 § 13 — the CUSTOM RANGE opening endpoint. Null keeps the default
+   * weekly comparison against the immediately preceding published week; the
+   * default is deliberately preserved, so the surface behaves exactly as before
+   * until a range is chosen.
+   */
+  const [compareFrom, setCompareFrom] = useState<string | null>(null)
+  const requestKey = `${activeScope ?? ''}|${asOf ?? 'latest'}|${compareFrom ?? 'weekly'}`
   const [slot, setSlot] = useState<FetchSlot | null>(null)
 
   /** Personal-scope waterfall driver view (doc 07 § 6e). Main is fixed. */
@@ -288,6 +302,9 @@ function WeeklyChangesPageInner() {
     setPrevScope(activeScope)
     setGrouping('sociedad')
     setIncludeCash(false)
+    // A custom range belongs to the scope it was chosen in; carrying it across
+    // could name a week the new scope has not published.
+    setCompareFrom(null)
   }
   const [prevRequestKey, setPrevRequestKey] = useState(requestKey)
   if (prevRequestKey !== requestKey) {
@@ -299,28 +316,29 @@ function WeeklyChangesPageInner() {
     if (!activeScope) return
     let cancelled = false
     ;(async () => {
-      const res = await fetchFamilyPortfolioWeeklyChanges(activeScope, asOf)
+      const key = `${activeScope}|${asOf ?? 'latest'}|${compareFrom ?? 'weekly'}`
+      const res = await fetchFamilyPortfolioWeeklyChanges(activeScope, asOf, compareFrom)
       if (cancelled) return
       if (!res.ok) {
         // A selected week that stopped existing (rolled back while open)
         // resets to the latest — never a nearest-week guess.
+        if (res.status === 404 && compareFrom !== null) {
+          setCompareFrom(null)
+          return
+        }
         if (res.status === 404 && asOf !== null) {
           setAsOf(null)
           return
         }
-        setSlot({
-          key: `${activeScope}|${asOf ?? 'latest'}`,
-          outcome: res.status === 403 ? 'denied' : 'error',
-          data: null,
-        })
+        setSlot({ key, outcome: res.status === 403 ? 'denied' : 'error', data: null })
         return
       }
-      setSlot({ key: `${activeScope}|${asOf ?? 'latest'}`, outcome: 'ready', data: res.data })
+      setSlot({ key, outcome: 'ready', data: res.data })
     })()
     return () => {
       cancelled = true
     }
-  }, [activeScope, asOf])
+  }, [activeScope, asOf, compareFrom])
 
   const current = slot && slot.key === requestKey ? slot : null
   const loading = activeScope !== null && current === null
@@ -375,12 +393,26 @@ function WeeklyChangesPageInner() {
   const state = data?.state ?? null
   const showSections = ready && state === 'ok' && pub !== null && prevPub !== null && total !== null
 
+  // § 13 — the range controls. `isCustomRange` is the SERVER's answer, so the
+  // title and notes describe the comparison actually performed rather than a
+  // guess made from the two dates.
+  const isCustomRange = data?.mode === 'custom'
+  const selectedWeek = asOf ?? pub?.asOfDate ?? null
+  const earlierWeeks = useMemo(
+    () => (data?.weeks ?? []).filter((x) => selectedWeek !== null && x.asOfDate < selectedWeek),
+    [data, selectedWeek],
+  )
+  const reclassifications = data?.reclassifications ?? []
+
   return (
     <div className="w-full">
       {/* ── § 6h item 1 · header, portfolio selector, week selector ───────── */}
       <PageHeader
         eyebrow={t.fp.tag}
-        title={w.title}
+        // § 13 — a range spanning more than one week is NOT a "Weekly Change".
+        // The mode comes from the server's own answer, never from comparing the
+        // two dates here, so the title always matches the measurement made.
+        title={isCustomRange ? w.customTitle : w.title}
         metadata={
           pub ? (
             <>
@@ -414,6 +446,20 @@ function WeeklyChangesPageInner() {
                 value={asOf ?? pub.asOfDate}
                 onChange={(next) => setAsOf(next)}
                 disabled={loading}
+                label={data.weeks.length > 1 ? w.compareTo : undefined}
+              />
+            )}
+            {/* § 13 — the FROM endpoint. Only weeks strictly EARLIER than the
+                selected one are offered, so an invalid range cannot be built in
+                the UI at all; the server still refuses one independently. */}
+            {ready && pub && earlierWeeks.length > 0 && (
+              <WeekSelector
+                weeks={earlierWeeks}
+                value={compareFrom ?? WEEKLY_DEFAULT}
+                onChange={(next) => setCompareFrom(next === WEEKLY_DEFAULT ? null : next)}
+                disabled={loading}
+                label={w.compareFrom}
+                leadingOption={{ value: WEEKLY_DEFAULT, label: w.compareWeekly }}
               />
             )}
             <PrivacyToggle masked={masked} onToggle={() => setMasked((prev) => !prev)} />
@@ -450,9 +496,34 @@ function WeeklyChangesPageInner() {
           <div className="flex flex-col gap-4">
             {/* The one selection every section below shares (doc 07 § 6b). */}
             <p className="ui-meta text-muted-fg">
-              {w.thisWeekLabel}: {formatIsoDateLabel(pub.asOfDate)} · {w.previousWeekLabel}:{' '}
-              {formatIsoDateLabel(prevPub.asOfDate)} · {w.pairNote}
+              {isCustomRange ? (
+                <>
+                  {w.compareFrom}: {formatIsoDateLabel(prevPub.asOfDate)} · {w.compareTo}:{' '}
+                  {formatIsoDateLabel(pub.asOfDate)} · {w.customPairNote}
+                </>
+              ) : (
+                <>
+                  {w.thisWeekLabel}: {formatIsoDateLabel(pub.asOfDate)} · {w.previousWeekLabel}:{' '}
+                  {formatIsoDateLabel(prevPub.asOfDate)} · {w.pairNote}
+                </>
+              )}
             </p>
+            {/* § 13 — why the source's own flow and profit are absent here. An
+                omission a reader can see explained is honest; a silent one is
+                indistinguishable from a bug. */}
+            {isCustomRange && <p className="ui-meta text-muted-fg">{w.customFlowNote}</p>}
+            {/* § 7 — reported, never merged. */}
+            {reclassifications.length > 0 && (
+              <div className="ui-meta text-muted-fg">
+                <span className="ui-label">{w.reclassTitle}</span>
+                <ul className="mt-1 flex flex-col gap-0.5">
+                  {reclassifications.map((r) => (
+                    <li key={`${r.exitedRowKey}→${r.arrivedRowKey}`}>{r.label}</li>
+                  ))}
+                </ul>
+                <p className="mt-1">{w.reclassNote}</p>
+              </div>
+            )}
 
             {/* ── § 6h item 2 · total-level weekly metrics ─────────────────── */}
             <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-4 items-start">

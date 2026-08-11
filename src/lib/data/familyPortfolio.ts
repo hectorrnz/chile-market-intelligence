@@ -207,8 +207,10 @@ export function fetchFamilyPortfolioOverview(
 // parallel financial vocabulary. Type-only imports: no calculation moves here.
 import type {
   ChangeNode,
+  ComparisonMode,
   DriverGrouping,
   FlowReconciliation,
+  ReclassificationCandidate,
   TotalMetrics,
   TrendPoint,
   Waterfall,
@@ -220,6 +222,11 @@ export type WeeklyChangesState =
   | 'no_publications'
   | 'week_not_found'
   | 'no_previous_week'
+  /** R13.R1.1 § 13 — a custom range whose endpoints are not both published,
+   *  or whose `from` is not strictly before its `to`. Never snapped to a
+   *  nearest week; the caller is told the range is unusable. */
+  | 'from_not_found'
+  | 'from_not_before_to'
 
 export interface WeeklyChangesResponse {
   scope: string
@@ -232,8 +239,15 @@ export interface WeeklyChangesResponse {
     publishedAt: string
     parserVersion: string
   } | null
-  /** The immediately preceding PUBLISHED week — null on the earliest week. */
+  /** The opening endpoint — the preceding week in `weekly` mode, the chosen
+   *  `from` week in `custom`. Null on the earliest published week. */
   previousPublication: { asOfDate: string; publishedAt: string } | null
+  /** `weekly` (default) or `custom` — R13.R1.1 § 13. Drives the surface title:
+   *  a multi-week range is never presented as a Weekly Change. */
+  mode?: ComparisonMode
+  /** Assets that left one parent and arrived under another (§ 7). Reported for
+   *  an administrator to judge; the engine never merges them. */
+  reclassifications?: ReclassificationCandidate[]
   basis?: string
   grouping?: DriverGrouping
   availableGroupings?: DriverGrouping[]
@@ -249,13 +263,20 @@ export interface WeeklyChangesResponse {
  * Weekly Changes for ONE entitled scope. `asOf` selects an exact published
  * week; omitted → the latest current publication. There is deliberately no
  * nearest-week fallback — an unknown week is the server's 404, surfaced as-is.
+ *
+ * `from` opts into CUSTOM COMPARE (R13.R1.1 § 13): the comparison then runs
+ * from that published week to `asOf`, however many weeks apart they are.
  */
 export function fetchFamilyPortfolioWeeklyChanges(
   scope: string,
   asOf?: string | null,
+  from?: string | null,
 ): Promise<FetchResult<WeeklyChangesResponse>> {
-  const qs = asOf ? `?asOf=${encodeURIComponent(asOf)}` : ''
-  return get(`/api/family-portfolio/weekly-changes/${encodeURIComponent(scope)}${qs}`)
+  const params = new URLSearchParams()
+  if (asOf) params.set('asOf', asOf)
+  if (from) params.set('from', from)
+  const qs = params.toString()
+  return get(`/api/family-portfolio/weekly-changes/${encodeURIComponent(scope)}${qs ? `?${qs}` : ''}`)
 }
 
 // ---------------------------------------------------------------------------

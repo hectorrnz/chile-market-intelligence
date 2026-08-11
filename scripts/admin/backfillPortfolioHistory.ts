@@ -12,15 +12,22 @@
 //   of its own — every figure is re-parsed here from the stored workbook, whose
 //   SHA-256 is re-verified first, exactly as the publish route does.
 //
-// WHICH WEEKS QUALIFY (§ 8/§ 10)
+// WHICH WEEKS QUALIFY
 //   Only a week whose FULL parse is clean: every required cell present, the
-//   hierarchy unambiguous, and both Main performance blocks bound to exactly one
-//   total each. R13.R1's inventory found the source maintains that completeness
-//   only for its most recent weeks; the earlier two years carry the total-level
-//   series (which § 9 persists separately) but not a publishable row-level
-//   snapshot. A week that does not parse cleanly is REPORTED AND SKIPPED —
-//   never published with substituted or carried-forward values, and never
-//   approximated from a neighbouring week.
+//   hierarchy unambiguous, and every performance block that states a figure
+//   bound to exactly one total. A week that does not parse cleanly is REPORTED
+//   AND SKIPPED — never published with substituted or carried-forward values,
+//   and never approximated from a neighbouring week.
+//
+//   R13.R1 could publish only 6 of the 102 weeks. R13.R1.1 established that the
+//   other 96 were never defective: the parser was reading a legitimate
+//   portfolio-history event (a position that did not exist yet, a series the
+//   source had not started) as a structural fault. With those four causes fixed
+//   — see RESUMEN_PARSER_VERSION `r13.r1.1.resumen.5` — all 102 qualify.
+//
+//   Each week's snapshot holds exactly what the portfolio held THAT week, so
+//   row counts legitimately differ between weeks (167 in the first, 195 in the
+//   latest). That is the portfolio growing, not data missing.
 //
 // IDEMPOTENT
 //   Each week is its own `(upload_kind, as_of_date)` series, so a backfilled
@@ -262,11 +269,12 @@ for (const week of publishable) {
     p_rows: rows,
     p_performance: performance,
     p_admin_note:
-      'R13.R1 historical backfill — published from the same verified workbook at its own historical column ' +
-      `${week.letter}. Values are the source’s own for that week; nothing is carried forward or interpolated.`,
+      'R13.R1.1 historical backfill — published from the same verified workbook at its own historical column ' +
+      `${week.letter}. Values are the source’s own for that week; nothing is carried forward or interpolated. ` +
+      'The snapshot contains only the rows the portfolio held that week.',
     p_metadata: {
       backfill: true,
-      backfillStage: 'R13.R1',
+      backfillStage: 'R13.R1.1',
       sourceColumnLetter: week.letter,
       detectedAsOfDate: draft.detectedAsOfDate,
       dateOverridden: false,

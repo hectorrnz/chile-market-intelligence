@@ -77,9 +77,14 @@ describe('R13.8 · § 6h page order', () => {
   test('a single (scope, week) selection drives every section — one fetch, no per-section week', () => {
     const body = codeOf(page)
     const calls = body.match(/fetchFamilyPortfolioWeeklyChanges\(/g) ?? []
-    // One import-free call site: the single effect keyed on (scope, asOf).
+    // One import-free call site: a single effect keyed on the whole selection.
+    // R13.R1.1 § 13 widened that selection to include the custom range's FROM
+    // endpoint; the invariant under test is that there is still exactly ONE
+    // effect and ONE fetch driving every section, not that the key has two
+    // members.
     assert.equal(calls.length, 1, 'exactly one fetch call site')
-    assert.match(body, /useEffect\(\(\) => \{[\s\S]*?\}, \[activeScope, asOf\]\)/)
+    assert.match(body, /useEffect\(\(\) => \{[\s\S]*?\}, \[activeScope, asOf, compareFrom\]\)/)
+    assert.equal((body.match(/useEffect\(/g) ?? []).length, 1, 'exactly one effect')
     // No component holds its own week: the chart/status components never fetch.
     for (const rel of [WATERFALL, DIVERGING, RECON]) {
       assert.ok(!/fetch\(/.test(codeOf(read(rel))), `${rel} must not fetch`)
@@ -498,7 +503,12 @@ describe('R13.8 · route and boundaries', () => {
   })
 
   test('week_not_found is a 404; no_previous_week is a 200 explanation', () => {
-    assert.match(route, /pair\.code === 'week_not_found' \? 404 : 200/)
+    // R13.R1.1 § 13 inverted the expression when it added the custom-range
+    // failures (`from_not_found`, `from_not_before_to`), which are 404s for the
+    // same reason `week_not_found` is: the caller named a week the book does
+    // not hold. `no_publications` remains the one 200 — an empty book is a
+    // state, not an error — and `no_previous_week` is still an explained 200.
+    assert.match(route, /pair\.code === 'no_publications' \? 200 : 404/)
     assert.match(route, /state: 'no_previous_week'/)
   })
 

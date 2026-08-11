@@ -29,8 +29,11 @@ import { getFamilyPortfolioEntitlement } from '@/lib/portfolioAccess/getEntitlem
 import { canReadScope } from '@/lib/portfolioAccess/entitlements'
 import {
   selectWeekPair,
+  selectComparisonRange,
   buildChangeNodes,
   buildTotalMetrics,
+  suppressSingleWeekMetrics,
+  detectReclassifications,
   reconcileFlowAndProfit,
   deriveDrivers,
   buildWaterfall,
@@ -106,20 +109,35 @@ export async function GET(request: Request, context: { params: Promise<{ scope: 
 
   const url = new URL(request.url)
   const asOf = url.searchParams.get('asOf')
+  // R13.R1.1 § 13 — `from` opts into CUSTOM COMPARE: any earlier published week
+  // becomes the opening endpoint. Absent, the surface keeps its default and
+  // compares with the immediately preceding published week.
+  const from = url.searchParams.get('from')
   const grouping = parseGrouping(url.searchParams.get('grouping'), scope)
 
   // --- Publication spine (operational metadata only, after entitlement).
   const spine = await listCurrentPublications('portfolio')
   if (!spine.ok) return fail(spine.code, spine.code === 'not_configured' ? 503 : 502)
 
-  const pair = selectWeekPair(spine.publications, asOf)
+  // Both endpoints must be weeks the book actually holds; neither is snapped to
+  // a nearest date (§ 12), so a stale bookmark fails loudly instead of quietly
+  // reporting a different period under the dates that were asked for.
+  const latest = spine.publications.reduce<string | null>(
+    (a, p) => (a === null || p.asOfDate > a ? p.asOfDate : a),
+    null,
+  )
+  const pair =
+    from !== null && latest !== null
+      ? selectComparisonRange(spine.publications, from, asOf ?? latest)
+      : selectWeekPair(spine.publications, asOf)
   if (!pair.ok) {
     return NextResponse.json(
       { scope, state: pair.code, weeks: [], publication: null, previousPublication: null },
-      { status: pair.code === 'week_not_found' ? 404 : 200, headers: NO_STORE },
+      { status: pair.code === 'no_publications' ? 200 : 404, headers: NO_STORE },
     )
   }
 
+  const mode = from !== null ? 'custom' : 'weekly'
   const { current, previous } = pair.selection
   const weeks = spine.publications.map((p) => ({ asOfDate: p.asOfDate, revision: p.revision }))
   const publication = {
@@ -172,10 +190,18 @@ export async function GET(request: Request, context: { params: Promise<{ scope: 
   const previousTotal = resolvePreviousPortfolioTotal(currentRows.rows, previousRows.rows, boundKey)
 
   const nodes = buildChangeNodes(currentRows.rows, previousRows.rows, previousTotal)
-  const total = buildTotalMetrics(nodes, perfRows, basis)
+  // Over a custom range the source's own single-week flow/profit describe the
+  // wrong period and are withheld (§ 13); the value change itself is derived
+  // from the two snapshots and is correct over any span.
+  const total = mode === 'custom'
+    ? suppressSingleWeekMetrics(buildTotalMetrics(nodes, perfRows, basis))
+    : buildTotalMetrics(nodes, perfRows, basis)
   const drivers = deriveDrivers(nodes, grouping)
   const waterfall = buildWaterfall(total, drivers, STEP_LABELS)
   const flowReconciliation = reconcileFlowAndProfit(total)
+  // § 7 — an asset that left one parent and arrived under another is reported,
+  // never merged. Both nodes keep their own identity and their own change.
+  const reclassifications = detectReclassifications(nodes)
 
   // --- Historical weekly-change trend: each week through its OWN binding.
   const publicationIds = spine.publications.map((p) => p.id)
@@ -207,6 +233,13 @@ export async function GET(request: Request, context: { params: Promise<{ scope: 
       weeks,
       publication,
       previousPublication: { asOfDate: previous.asOfDate, publishedAt: previous.publishedAt },
+      /**
+       * `weekly` — the immediately preceding published week (the default).
+       * `custom` — an explicit earlier endpoint. The client titles the surface
+       * from this, so a multi-week range is never called a Weekly Change.
+       */
+      mode,
+      reclassifications,
       basis,
       grouping,
       /** Every grouping this scope may present — Main has exactly one. */

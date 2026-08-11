@@ -289,9 +289,14 @@ export function findPublishableHistoricalColumns(
   const detection = detectColumns(sheet, read.workbook.date1904)
 
   const out: Array<{ date: string; letter: string; rowCount: number; performanceCount: number }> = []
-  // Newest-first: the recent weeks are the ones the source maintains completely,
-  // so a bounded scan finds them immediately instead of parsing two years of
-  // columns that will be refused anyway.
+  // Newest-first so a BOUNDED scan (`limit`) returns the most recent weeks
+  // first. Unbounded — how the backfill calls it — the order only affects the
+  // scan, and the result is sorted by date below either way.
+  //
+  // R13.R1.1: every one of the 102 historical columns now parses cleanly, so
+  // this no longer filters anything out in practice. It is retained as the
+  // GATE: a column is publishable only if the real parser accepts it, and a
+  // future workbook that breaks a week must still be refused here.
   for (let i = detection.historical.length - 1; i >= 0 && out.length < limit; i--) {
     const column = detection.historical[i]
     const draft = parseResumen(bytes, { publicationColumnLetter: column.letter })

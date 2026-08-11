@@ -40,6 +40,62 @@ export interface WeeklyChangeInputRow {
   value: number | null
 }
 
+// ---------------------------------------------------------------------------
+// 0b · Comparison range (R13.R1.1 §§ 13, 14)
+// ---------------------------------------------------------------------------
+
+/**
+ * WEEKLY compares a week with the one published immediately before it. CUSTOM
+ * compares any two normalized weeks, however far apart.
+ *
+ * The mode is carried, not inferred from the gap: two ADJACENT weeks chosen by
+ * hand are still a custom comparison, and a weekly comparison across a
+ * publication gap is still weekly. The surface titles itself from this field,
+ * which is what keeps a 23-Aug-2024 → 31-Jul-2026 range from being labelled a
+ * "Weekly Change" (§ 13).
+ */
+export type ComparisonMode = 'weekly' | 'custom'
+
+export interface ComparisonRange<T> {
+  mode: ComparisonMode
+  /** The LATER endpoint — the week whose portfolio is being described. */
+  current: T
+  /** The EARLIER endpoint. Null only for the earliest week in weekly mode. */
+  previous: T | null
+}
+
+export type ComparisonFailure = WeekPairFailure | 'from_not_found' | 'from_not_before_to'
+
+/**
+ * Resolves an arbitrary FROM → TO comparison over the scope's current
+ * publications (§ 13).
+ *
+ * Both endpoints must be published weeks — a date the book does not hold is
+ * refused rather than snapped to the nearest one (§ 12), because a range whose
+ * endpoints are not the dates the user asked for is a different measurement
+ * wearing the same label. `from` must be strictly earlier than `to`: an equal
+ * pair would report a zero change for a period that never elapsed, and a
+ * reversed pair would silently invert every sign.
+ */
+export function selectComparisonRange<T extends { asOfDate: string }>(
+  currentPublications: readonly T[],
+  from: string,
+  to: string,
+): { ok: true; selection: ComparisonRange<T> } | { ok: false; code: ComparisonFailure } {
+  if (currentPublications.length === 0) return { ok: false, code: 'no_publications' }
+  const iso = /^\d{4}-\d{2}-\d{2}$/
+  if (!iso.test(from)) return { ok: false, code: 'from_not_found' }
+  if (!iso.test(to)) return { ok: false, code: 'week_not_found' }
+  if (!(from < to)) return { ok: false, code: 'from_not_before_to' }
+
+  const current = currentPublications.find((p) => p.asOfDate === to) ?? null
+  if (current === null) return { ok: false, code: 'week_not_found' }
+  const previous = currentPublications.find((p) => p.asOfDate === from) ?? null
+  if (previous === null) return { ok: false, code: 'from_not_found' }
+
+  return { ok: true, selection: { mode: 'custom', current, previous } }
+}
+
 /** One publication's performance row (source-provided figures). */
 export interface WeeklyChangePerformanceRow {
   basis: string
@@ -112,6 +168,16 @@ export type NodeUnavailableReason =
   | 'missing_both'
   | 'currency_mismatch'
 
+/**
+ * How a node's holding period relates to the two compared weeks (§§ 5, 14).
+ *
+ * `new_position` and `exited_position` are asserted ONLY on definitively
+ * established absence — see `buildChangeNodes`. Everything else is `ongoing`,
+ * including every case where absence could not be established, so an uncertain
+ * node can never reach a zero through this field.
+ */
+export type NodeLifecycle = 'ongoing' | 'new_position' | 'exited_position'
+
 export interface ChangeNode {
   rowKey: string
   parentRowKey: string | null
@@ -123,6 +189,7 @@ export interface ChangeNode {
   currency: string
   currentValue: number | null
   previousValue: number | null
+  lifecycle: NodeLifecycle
   /** `this_week_value − previous_week_value`. Null whenever the node is not valid. */
   weeklyValueChange: number | null
   /** The node's OWN percentage change — secondary context, never a return. */
@@ -195,9 +262,27 @@ export function buildChangeNodes(
     const p = prevByKey.get(key) ?? null
     const shape = c ?? p!
 
+    // --- R13.R1.1 § 14: NEW AND EXITED POSITIONS.
+    //
+    // A published snapshot holds exactly what the portfolio held that week: the
+    // parser prunes a row with no value and no surviving descendant, and KEEPS
+    // an error cell as `unavailable` (see `parseResumen`). So a row MISSING
+    // from one side of the comparison is DEFINITIVELY absent — a position not
+    // yet held, or since sold — and its value that week was economically ZERO.
+    //
+    // Only that establishes the zero. A row that is PRESENT with an unusable
+    // value stays `unavailable` through the branches below and is never
+    // converted, which is the § 5 rule that an uncertain node must not be read
+    // as an absent one.
+    const arrived = c !== null && finite(c.value) && p === null
+    const departed = p !== null && finite(p.value) && c === null
+    const lifecycle: NodeLifecycle = arrived ? 'new_position' : departed ? 'exited_position' : 'ongoing'
+
     let status: NodeStatus = 'ok'
     let reason: NodeUnavailableReason | null = null
-    if (c === null && p === null) {
+    if (arrived || departed) {
+      // Settled: one side is a real figure, the other a confirmed zero.
+    } else if (c === null && p === null) {
       status = 'unavailable'
       reason = 'missing_both'
     } else if (c === null || !finite(c.value)) {
@@ -213,8 +298,8 @@ export function buildChangeNodes(
       reason = 'currency_mismatch'
     }
 
-    const currentValue = c !== null && finite(c.value) ? c.value : null
-    const previousValue = p !== null && finite(p.value) ? p.value : null
+    const currentValue = c !== null && finite(c.value) ? c.value : departed ? 0 : null
+    const previousValue = p !== null && finite(p.value) ? p.value : arrived ? 0 : null
     const change = status === 'ok' ? (currentValue as number) - (previousValue as number) : null
 
     return {
@@ -228,7 +313,11 @@ export function buildChangeNodes(
       currency: shape.currency,
       currentValue,
       previousValue,
+      lifecycle,
       weeklyValueChange: change,
+      // A new position has no opening value to divide by, so it has no
+      // percentage change — an "infinite" or 100 % figure would be an artefact
+      // of the zero, not a measurement. The dollar change carries it instead.
       ownPctChange:
         change !== null && previousValue !== null && previousValue !== 0
           ? change / Math.abs(previousValue)
@@ -244,6 +333,73 @@ export function buildChangeNodes(
   })
 
   return nodes.sort((a, b) => a.displayOrder - b.displayOrder)
+}
+
+// ---------------------------------------------------------------------------
+// 2b · Reclassification candidates (R13.R1.1 § 7)
+// ---------------------------------------------------------------------------
+
+export interface ReclassificationCandidate {
+  /** Normalized label the two nodes share. */
+  label: string
+  exitedRowKey: string
+  exitedParentRowKey: string | null
+  arrivedRowKey: string
+  arrivedParentRowKey: string | null
+  exitedValue: number | null
+  arrivedValue: number | null
+}
+
+/**
+ * Nodes that look like ONE asset moved rather than two independent events (§ 7).
+ *
+ * A `row_key` is the normalized label PATH, so re-parenting an asset — a new
+ * sociedad, a different asset class — necessarily changes its key, and the
+ * comparison then reads one Exited and one New position. Economically that is
+ * a transfer, not a purchase and a sale, and § 7 requires the difference to be
+ * identifiable rather than presented as investment performance.
+ *
+ * THIS REPORTS; IT NEVER MERGES. The two nodes keep their own identities and
+ * their own value changes, so no total shifts and nothing is netted on a guess.
+ * Merging would be unsafe here — two sociedades genuinely holding the same fund
+ * is the NORMAL shape of this book (`Trinity Alps` sits under three at once),
+ * so an identical label across parents is evidence of a possible move, never
+ * proof of one. An administrator confirms; the system only surfaces.
+ *
+ * A label that exits more than once or arrives more than once in the same
+ * comparison is deliberately NOT reported: the pairing would be a guess among
+ * several, which § 6 requires to fail visibly rather than resolve silently.
+ */
+export function detectReclassifications(nodes: readonly ChangeNode[]): ReclassificationCandidate[] {
+  const key = (n: ChangeNode) => normalize(n.labelEs)
+  const exited = nodes.filter((n) => n.lifecycle === 'exited_position')
+  const arrived = nodes.filter((n) => n.lifecycle === 'new_position')
+
+  const count = (list: readonly ChangeNode[]) => {
+    const m = new Map<string, number>()
+    for (const n of list) m.set(key(n), (m.get(key(n)) ?? 0) + 1)
+    return m
+  }
+  const exitedCount = count(exited)
+  const arrivedCount = count(arrived)
+
+  const out: ReclassificationCandidate[] = []
+  for (const e of exited) {
+    const label = key(e)
+    if (exitedCount.get(label) !== 1 || arrivedCount.get(label) !== 1) continue
+    const a = arrived.find((n) => key(n) === label)
+    if (!a || a.parentRowKey === e.parentRowKey) continue
+    out.push({
+      label,
+      exitedRowKey: e.rowKey,
+      exitedParentRowKey: e.parentRowKey,
+      arrivedRowKey: a.rowKey,
+      arrivedParentRowKey: a.parentRowKey,
+      exitedValue: e.previousValue,
+      arrivedValue: a.currentValue,
+    })
+  }
+  return out
 }
 
 // ---------------------------------------------------------------------------
@@ -410,6 +566,26 @@ export function buildTotalMetrics(
     ytdReturn: metricValue(performance, basis, 'ytd_return'),
     ytdProfit: metricValue(performance, basis, 'ytd_profit'),
   }
+}
+
+/**
+ * Strips the metrics that describe ONE WEEK from a total spanning many (§ 13).
+ *
+ * `flow`, `weekly_profit` and `weekly_return` are SOURCE-PROVIDED figures for
+ * the current week alone. Over a custom range they are not merely imprecise,
+ * they answer a different question — the flows of the intervening weeks are
+ * nowhere in this payload — so presenting them beside a two-year change would
+ * misstate the period. They are removed, and `reconcileFlowAndProfit` then
+ * reports `unavailable` of its own accord rather than tying an identity out of
+ * mismatched parts.
+ *
+ * KEPT: `currentValue`, `previousValue` and the value change, which are derived
+ * from the two snapshots themselves and are correct over any span; and the YTD
+ * pair, which describes the CURRENT week's year to date regardless of which
+ * earlier week it is being compared with.
+ */
+export function suppressSingleWeekMetrics(total: TotalMetrics): TotalMetrics {
+  return { ...total, flow: null, weeklyProfit: null, weeklyReturn: null }
 }
 
 /**

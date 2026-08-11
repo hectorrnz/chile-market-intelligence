@@ -50,6 +50,7 @@ import {
   technicalBlockStart,
   classifyRow,
   isAnnotationRow,
+  isPerformanceBasisCandidate,
   performanceMetricOf,
   buildRowKey,
   childRowKey,
@@ -68,6 +69,21 @@ import {
 
 /** Recorded on every upload (doc 08 Stage 3). Bump when parse semantics change.
  *
+ * r13.r1.1.resumen.5 — R13.R1.1: full historical normalization. Four changes,
+ * each removing a way a LEGITIMATE portfolio-history event was being reported
+ * as a defective week (6 of 102 weeks parsed before; 102 parse now):
+ *
+ *   § 9  Row type is decided over EVERY date column, not the publication column
+ *        alone, so a position that did not exist yet keeps its type, identity
+ *        and parentage. This alone fixed 95 weeks of `duplicate_row_key`.
+ *   § 8  A performance block with no figures at all is ABSENT, not ambiguous —
+ *        it is skipped, and the week publishes.
+ *   § 8  Only a scope's genuine performance BASES are offered as reconciliation
+ *        candidates, so Main's section aggregates can neither tie with
+ *        `SUBTOTAL` nor be silently published under its name.
+ *   § 11 The earliest column on record resolves with null predecessor/baseline
+ *        instead of blocking; its comparisons are unavailable, never zero.
+ *
  * r13.r1.resumen.4 — R13.R1 § 4: `PORTAFOLIO EX/CON ACCIONES CHILENAS` are
  * recognised as `performance_header` rows. They title the two Main performance
  * blocks and are no longer emitted as snapshot rows, which is what put two
@@ -83,7 +99,7 @@ import {
  * skipping, the value-bearing personal `Alternativos` line, the
  * `sociedad_subtotal`/`sociedad_total` split, Main's above-header anchor, and
  * performance blocks surviving the source's blank separator line). */
-export const RESUMEN_PARSER_VERSION = 'r13.r1.resumen.4'
+export const RESUMEN_PARSER_VERSION = 'r13.r1.1.resumen.5'
 
 /** Excel error literals that make a cell unusable (doc 02 § 6.3). */
 const ERROR_LITERALS = ['#NAME?', '#REF!', '#VALUE!', '#DIV/0!', '#N/A', '#NULL!', '#NUM!']
@@ -330,6 +346,28 @@ export function parseResumen(
   }
   const technicalStart = technicalBlockStart(sheet, detection.headerRow)
 
+  // --- R13.R1.1 § 9: ROW TYPE IS A PROPERTY OF THE SOURCE ROW, NOT OF THE WEEK.
+  //
+  // A row is value-BEARING if it carries a number or an error in ANY date
+  // column of the sheet. Asking only the publication column made a leaf whose
+  // position did not exist that week classify as a CONTAINER, which both
+  // re-parented its neighbours and collapsed same-named holdings onto one key
+  // (see `classifyRow`). Scanning every date column makes the answer identical
+  // for all 102 weeks, so a week's own emptiness can only change VALUES.
+  const valueColumns = [...detection.historical, ...(detection.live ? [detection.live] : [])]
+  const carriesValue = new Map<number, boolean>()
+  const rowCarriesValueAnywhere = (row: number): boolean => {
+    const memo = carriesValue.get(row)
+    if (memo !== undefined) return memo
+    let found = false
+    for (const c of valueColumns) {
+      const cell = cellAt(sheet, row, c.column)
+      if (cell && (cell.kind === 'number' || cell.kind === 'error')) { found = true; break }
+    }
+    carriesValue.set(row, found)
+    return found
+  }
+
   const rows: ParsedSnapshotRow[] = []
   const performance: ParsedPerformanceRow[] = []
 
@@ -339,6 +377,9 @@ export function parseResumen(
       : range.endRow
 
     let order = 0
+    const scopeRows: ParsedSnapshotRow[] = []
+    /** Rows whose publication cell is an Excel error — absent is not the same. */
+    const erroredKeys = new Set<string>()
     const stack: StackEntry[] = []
     const candidates: Candidate[] = []
     const blocks: PerformanceBlock[] = []
@@ -362,8 +403,7 @@ export function parseResumen(
       // Main's subtitle) are never economic nodes (R13.8 D4).
       if (isAnnotationRow(label)) continue
 
-      const thisCell = cellAt(sheet, row, thisWeek.column)
-      const hasValue = thisCell !== null && (thisCell.kind === 'number' || thisCell.kind === 'error')
+      const hasValue = rowCarriesValueAnywhere(row)
       const sociedadLabel =
         [...stack].reverse().find((e) => e.type === 'sociedad_header')?.label ?? null
       const rowType = classifyRow(label, hasValue, top()?.type ?? null, sociedadLabel)
@@ -465,17 +505,21 @@ export function parseResumen(
       }
 
       const value = err !== null ? null : numberAt(sheet, row, thisWeek.column)
-      const prev = numberAt(sheet, row, previousWeek.column)
-      const boy = numberAt(sheet, row, beginningOfYear.column)
+      // Both anchors are null for the first observation on record (R13.R1.1
+      // § 11); every derived comparison is then unavailable rather than zero.
+      const prev = previousWeek ? numberAt(sheet, row, previousWeek.column) : null
+      const boy = beginningOfYear ? numberAt(sheet, row, beginningOfYear.column) : null
       const difference = value !== null && prev !== null ? value - prev : null
 
-      if (rowType === 'portfolio_subtotal' || rowType === 'portfolio_total') {
+      // R13.R1.1 § 8 — only a genuine performance BASIS may be offered; a
+      // section aggregate is not one. See `isPerformanceBasisCandidate`.
+      if (isPerformanceBasisCandidate(range.scope, rowType, label)) {
         candidates.push({
           rowKey, rowType, label, value, previousValue: prev, sourceCell: cellName,
         })
       }
 
-      rows.push({
+      scopeRows.push({
         scope: range.scope,
         rowKey,
         parentRowKey,
@@ -499,12 +543,97 @@ export function parseResumen(
       // A sociedad's TERMINAL total completes the sociedad — the next row can
       // never belong to it (R13.8 D4; doc 02 § 5.4).
       if (rowType === 'sociedad_total' && top()?.type === 'sociedad_header') stack.pop()
+      if (err !== null) erroredKeys.add(rowKey)
+    }
+
+    // --- R13.R1.1 §§ 3, 5: A SNAPSHOT CONTAINS WHAT THE PORTFOLIO HELD THAT
+    // WEEK — nothing more.
+    //
+    // ONE RULE, applied to a fixed point: a row that carries NO VALUE and has
+    // NO SURVIVING DESCENDANT was not part of the portfolio that week, and is
+    // not part of its snapshot. It drops out.
+    //
+    //   · An empty leaf is a position that did not exist yet, or had been sold.
+    //     Emitting it as a blank row states that the family held something
+    //     worth nothing — and would have put nine blank fund rows into a 2024
+    //     Holdings table, the very defect R13.R1 § 4 removed from the live one.
+    //   · A label container (`sociedad_header`, `group_header`) whose every
+    //     child dropped out labels nothing, so it goes too.
+    //   · A valueless row that still HAS a surviving descendant is KEPT — it is
+    //     load-bearing structure, and dropping it would orphan its children.
+    //
+    // AN ERROR CELL IS NOT AN ABSENCE and is never pruned (doc 02 § 6.3): it
+    // stays, `unavailable`. That gives the comparison layer the invariant it
+    // needs — a row MISSING from a cleanly-published snapshot is DEFINITIVELY
+    // absent, never merely unknown — which is what lets § 14 read an arrival as
+    // a New Position rather than as missing data.
+    {
+      const surviving = new Map(scopeRows.map((r) => [r.rowKey, r]))
+      for (let pass = 0; pass < 64; pass++) {
+        const hasChild = new Set<string>()
+        for (const r of surviving.values()) if (r.parentRowKey !== null) hasChild.add(r.parentRowKey)
+        const doomed = [...surviving.values()].filter(
+          (r) => r.value === null && !erroredKeys.has(r.rowKey) && !hasChild.has(r.rowKey),
+        )
+        if (doomed.length === 0) break
+        for (const r of doomed) surviving.delete(r.rowKey)
+      }
+      for (const r of scopeRows) if (surviving.has(r.rowKey)) rows.push(r)
     }
 
     // --- Bind each block (rule 6).
     const usedBases = new Set<PerformanceBasis>()
     for (const block of blocks) {
       if (block.metrics.size === 0) continue
+
+      // --- R13.R1.1 § 8: AN ABSENT BLOCK IS NOT AN AMBIGUOUS ONE.
+      //
+      // The block's LABEL rows exist in every column, so a block the source did
+      // not maintain that week still reaches here — with every metric cell
+      // empty. Binding needs a stated weekly profit, so `bindBlockToCandidate`
+      // returned null and the week was reported as ambiguous. Nothing was
+      // ambiguous: the block simply did not exist yet.
+      //
+      // Verified across the 102-week history: Main's `PORTAFOLIO CON ACCIONES
+      // CHILENAS` block carries no figures at all before 2026 (70 weeks), and
+      // Pablo's block is likewise unmaintained in the first 8. Publishing
+      // nothing for such a block is the honest outcome; a WEEK is not defective
+      // because a series had not started.
+      //
+      // This narrows only the empty case. A block that DOES state a figure and
+      // still fails to match exactly one candidate remains blocking below — an
+      // unbindable real figure is the silent, plausible-looking error doc 02
+      // § 2.1 exists to prevent.
+      if ([...block.metrics.values()].every((m) => m.value === null && m.error === null)) {
+        findings.push(finding('info', 'performance_block_absent',
+          `a performance block for ${range.scope} carries no figures in this week and was not published`,
+          { scope: range.scope, sourceSheet: sheet.name, sourceCell: block.headerCell ?? undefined,
+            rowLabel: block.headerLabel ?? undefined }))
+        continue
+      }
+
+      // --- R13.R1.1 § 8: A BLOCK WITH FIGURES BUT NO STATED WEEKLY PROFIT
+      // CANNOT BE RECONCILED, AND IS NEVER GUESSED.
+      //
+      // Reconciliation is the only admissible evidence for a basis (rule 6),
+      // and it needs the block's own weekly profit. One block-week in the whole
+      // 102-week history has this shape — 2025-12-26's `PORTAFOLIO CON ACCIONES
+      // CHILENAS`, filled with year-end YTD figures only. The block's title
+      // names a portfolio, but promoting that title to a decider is exactly
+      // what doc 02 § 2.1 forbids, so the block is DROPPED and the week is
+      // reported rather than attributed on a guess.
+      //
+      // It is a warning, not a blocker: 195 valid rows and every other block
+      // are unaffected, and a week must not be lost because one derived series
+      // is incomplete.
+      if (block.metrics.get('weekly_profit')?.value == null) {
+        findings.push(finding('warning', 'performance_block_unbindable',
+          `a performance block for ${range.scope} states no weekly profit, so its basis cannot be reconciled; it was not published`,
+          { scope: range.scope, sourceSheet: sheet.name, sourceCell: block.headerCell ?? undefined,
+            rowLabel: block.headerLabel ?? undefined }))
+        continue
+      }
+
       const bound = bindBlockToCandidate(block, candidates)
 
       if (!bound) {
@@ -605,8 +734,8 @@ export function parseResumen(
     ok: blocking.length === 0,
     parserVersion: RESUMEN_PARSER_VERSION,
     detectedAsOfDate: thisWeek.date,
-    previousWeekDate: previousWeek.date,
-    beginningOfYearDate: beginningOfYear.date,
+    previousWeekDate: previousWeek?.date ?? null,
+    beginningOfYearDate: beginningOfYear?.date ?? null,
     rows,
     performance,
     findings,
