@@ -1,6 +1,6 @@
 {
   "status": "live",
-  "asOf": "2026-08-12T13:08:58.987Z",
+  "asOf": "2026-08-13T13:10:20.478Z",
   "source": "Comisión para el Mercado Financiero (CMF)",
   "events": [
     {
@@ -261,6 +261,11 @@
     {
       "ticker": "CAP",
       "reportDate": "2026-11-06",
+      "period": "Q3"
+    },
+    {
+      "ticker": "FALABELLA",
+      "reportDate": "2026-11-10",
       "period": "Q3"
     },
     {
