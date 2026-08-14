@@ -181,8 +181,15 @@ select is(
   'ordering is deterministic: display_order, then created_at, then id');
 
 -- ── Independent edit ──────────────────────────────────────────────────────────
+--
+-- The edit DELIBERATELY supplies a stale sentinel for `updated_at`. A caller can
+-- set that column, so the guarantee worth testing is that the BEFORE UPDATE
+-- trigger overrides whatever was supplied — which is exactly what stops a
+-- client-chosen timestamp from landing in the audit trail. The sentinel makes
+-- that provable inside a single transaction; see the assertion below.
 update public.family_portfolio_weekly_notes
-   set body = 'second note, corrected', updated_by = 'c1111111-1111-1111-1111-111111111111'
+   set body = 'second note, corrected', updated_by = 'c1111111-1111-1111-1111-111111111111',
+       updated_at = timestamptz '1999-01-01 00:00:00+00'
  where id = 'cf000000-0000-0000-0000-00000000000b';
 
 select is(
@@ -196,10 +203,20 @@ select is(
     where id in ('cf000000-0000-0000-0000-00000000000a', 'cf000000-0000-0000-0000-00000000000c')),
   'first note|third note', 'and leaves its siblings untouched');
 
+-- THE TRIGGER IS PROVED BY OVERWRITE, NOT BY WALL-CLOCK ADVANCEMENT. A pgTAP
+-- suite runs entirely inside ONE transaction, and `now()` is
+-- transaction_timestamp() — it does not advance within it. So `created_at`
+-- (DEFAULT now()) and the trigger's `new.updated_at := now()` hold the IDENTICAL
+-- value here, and the old `updated_at > created_at` assertion failed even though
+-- the trigger fired correctly. Asserting against the stale sentinel the edit
+-- supplied is transaction-safe AND a stronger statement: if the trigger were
+-- dropped, `updated_at` would still be 1999 and this fails immediately.
 select ok(
-  (select updated_at > created_at from public.family_portfolio_weekly_notes
+  (select updated_at <> timestamptz '1999-01-01 00:00:00+00'
+      and updated_at  > timestamptz '1999-01-01 00:00:00+00'
+     from public.family_portfolio_weekly_notes
     where id = 'cf000000-0000-0000-0000-00000000000b'),
-  'the updated_at trigger fired on edit');
+  'the updated_at trigger overwrote the stale value the edit supplied');
 
 -- ── Independent delete, as a tombstone ────────────────────────────────────────
 update public.family_portfolio_weekly_notes
