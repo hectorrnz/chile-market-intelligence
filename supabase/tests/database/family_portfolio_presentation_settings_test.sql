@@ -219,10 +219,19 @@ select is(
   (select count(*)::int from public.family_portfolio_presentation_settings),
   0, 'an unapproved account reads no settings row');
 
+-- Anonymous is REFUSED OUTRIGHT — a stronger guarantee than "RLS returns zero
+-- rows", and it has to be asserted as a refusal rather than as a count. The
+-- migration revokes every privilege on this table from `anon`, so counting rows
+-- as anon does not return 0: it raises '42501' and aborts the whole script
+-- before finish() emits a plan ("Non-zero exit status: 3 / Parse errors: No plan
+-- found in TAP output"). That is the same trap the R13.R1 evolution-history
+-- suite hit and fixed in a1c673a, and the weekly-notes suite already avoids;
+-- denial is proved here the same way, without requiring anon to be able to run
+-- the query at all.
 select pg_temp.as_anon();
-select is(
-  (select count(*)::int from public.family_portfolio_presentation_settings),
-  0, 'anon reads no settings row');
+select throws_ok(
+  $$ select count(*) from public.family_portfolio_presentation_settings $$,
+  '42501', null, 'anon is REFUSED outright — it holds no SELECT privilege');
 select ok(
   not has_table_privilege('anon', 'public.family_portfolio_presentation_settings', 'SELECT'),
   'anon holds no SELECT privilege at all');

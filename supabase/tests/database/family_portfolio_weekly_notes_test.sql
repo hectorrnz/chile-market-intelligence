@@ -68,11 +68,23 @@ begin
 end $$;
 
 -- One upload + one publication for the notes to hang off.
+--
+-- EVERY NOT NULL COLUMN WITHOUT A DEFAULT IS SUPPLIED, and that is the point of
+-- listing them explicitly: `portfolio_source_uploads.file_size_bytes` (which
+-- also carries a `> 0` CHECK) and `.parser_version` are both required by the
+-- current schema, and omitting them aborts this script during fixture setup —
+-- before a single assertion runs. The column list mirrors the one the
+-- evolution-history suite already uses for the same table, so the two fixtures
+-- cannot drift apart. The fix belongs here, in the test: the schema requires a
+-- real size and a real parser build for every upload, and that requirement is
+-- correct.
 insert into public.portfolio_source_uploads
-  (id, upload_kind, original_filename, file_sha256, storage_object_path, uploaded_by)
+  (id, upload_kind, original_filename, file_sha256, file_size_bytes, storage_object_path,
+   uploaded_by, parser_version)
 values
   ('cf000000-0000-0000-0000-0000000000f1', 'portfolio', 'notes_test.xlsx',
-   repeat('a', 64), 'notes/test.xlsx', 'c1111111-1111-1111-1111-111111111111');
+   repeat('a', 64), 1024, 'notes/test.xlsx',
+   'c1111111-1111-1111-1111-111111111111', 'test.parser.1');
 
 insert into public.portfolio_publications
   (id, upload_kind, upload_id, as_of_date, revision, is_current, published_by, parser_version)
