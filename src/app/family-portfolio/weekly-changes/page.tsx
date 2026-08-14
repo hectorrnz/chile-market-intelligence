@@ -494,24 +494,31 @@ function WeeklyChangesPageInner() {
           </div>
         ) : showSections ? (
           <div className="flex flex-col gap-4">
-            {/* The one selection every section below shares (doc 07 § 6b). */}
-            <p className="ui-meta text-muted-fg">
-              {isCustomRange ? (
-                <>
-                  {w.compareFrom}: {formatIsoDateLabel(prevPub.asOfDate)} · {w.compareTo}:{' '}
-                  {formatIsoDateLabel(pub.asOfDate)} · {w.customPairNote}
-                </>
-              ) : (
-                <>
-                  {w.thisWeekLabel}: {formatIsoDateLabel(pub.asOfDate)} · {w.previousWeekLabel}:{' '}
-                  {formatIsoDateLabel(prevPub.asOfDate)} · {w.pairNote}
-                </>
-              )}
-            </p>
-            {/* § 13 — why the source's own flow and profit are absent here. An
-                omission a reader can see explained is honest; a silent one is
-                indistinguishable from a bug. */}
-            {isCustomRange && <p className="ui-meta text-muted-fg">{w.customFlowNote}</p>}
+            {/* R13.R2F5.1 § A — these two notes were a bare vertical stack
+                capped far short of the page's width; `.nv-notes` keeps the
+                stack (one left origin) and widens the measure to 110ch. The
+                reclassifications block below is excluded — it is a titled
+                list, not plain footnote text. */}
+            <div className="nv-notes">
+              {/* The one selection every section below shares (doc 07 § 6b). */}
+              <p className="ui-meta text-muted-fg">
+                {isCustomRange ? (
+                  <>
+                    {w.compareFrom}: {formatIsoDateLabel(prevPub.asOfDate)} · {w.compareTo}:{' '}
+                    {formatIsoDateLabel(pub.asOfDate)} · {w.customPairNote}
+                  </>
+                ) : (
+                  <>
+                    {w.thisWeekLabel}: {formatIsoDateLabel(pub.asOfDate)} · {w.previousWeekLabel}:{' '}
+                    {formatIsoDateLabel(prevPub.asOfDate)} · {w.pairNote}
+                  </>
+                )}
+              </p>
+              {/* § 13 — why the source's own flow and profit are absent here. An
+                  omission a reader can see explained is honest; a silent one is
+                  indistinguishable from a bug. */}
+              {isCustomRange && <p className="ui-meta text-muted-fg">{w.customFlowNote}</p>}
+            </div>
             {/* § 7 — reported, never merged. */}
             {reclassifications.length > 0 && (
               <div className="ui-meta text-muted-fg">
@@ -641,7 +648,9 @@ function WeeklyChangesPageInner() {
               ) : (
                 <AsyncState kind="unavailable" />
               )}
-              <div className="flex flex-col gap-y-0.5">
+              {/* R13.R2F5.1 § A — `.nv-notes` stacks the source line and the
+                  waterfall note at ONE left origin, each at a 110ch measure. */}
+              <div className="nv-notes">
                 <TableSourceFooter source={t.fp.portfolio.source} asOf={pub.publishedAt} />
                 <p className="ui-meta text-muted-fg">{w.waterfallNote}</p>
               </div>
@@ -674,14 +683,20 @@ function WeeklyChangesPageInner() {
                   {w.viewAll} ↓
                 </button>
               </div>
-              <p className="ui-meta text-muted-fg">{w.cashWhy}</p>
-              {!includeCash && ranked.cashRowCount > 0 && (
-                <p className="ui-meta text-muted-fg">
-                  {ranked.cashRowCount} {w.cashWithheldSuffix}
-                </p>
-              )}
-              {includeCash && <p className="ui-meta text-muted-fg">{w.cashIncludedNote}</p>}
-              <p className="ui-meta text-muted-fg">{w.rankNote}</p>
+              {/* R13.R2F5 — was four bare stacked `<p>`s at the full section
+                  width; `.nv-notes` stacks the cash-toggle explanation, the
+                  withheld/included state and the ranking note at ONE left
+                  origin, each at a 110ch measure. */}
+              <div className="nv-notes">
+                <p className="ui-meta text-muted-fg">{w.cashWhy}</p>
+                {!includeCash && ranked.cashRowCount > 0 && (
+                  <p className="ui-meta text-muted-fg">
+                    {ranked.cashRowCount} {w.cashWithheldSuffix}
+                  </p>
+                )}
+                {includeCash && <p className="ui-meta text-muted-fg">{w.cashIncludedNote}</p>}
+                <p className="ui-meta text-muted-fg">{w.rankNote}</p>
+              </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
                 <RankedPanel
                   title={w.increasesTitle}
@@ -792,7 +807,9 @@ function WeeklyChangesPageInner() {
                 minWidth={860}
                 maxHeight={640}
                 footer={
-                  <div className="flex flex-col gap-y-0.5">
+                  // R13.R2F5.1 § A — `.nv-notes` stacks the source line and the
+                  // two table notes at ONE left origin, each at 110ch.
+                  <div className="nv-notes">
                     <TableSourceFooter source={t.fp.portfolio.source} asOf={pub.publishedAt} />
                     <p className="ui-meta text-muted-fg">{w.fullTableNote}</p>
                     {!includeCash && <p className="ui-meta text-muted-fg">{w.fullTableCashNote}</p>}
@@ -886,7 +903,9 @@ function WeeklyChangesPageInner() {
               ) : (
                 <LineChart data={data.trend ?? []} height={200} valueFormatter={(v) => formatUsd(v)} />
               )}
-              <div className="flex flex-col gap-y-0.5">
+              {/* R13.R2F5.1 § A — `.nv-notes` stacks the source line and the
+                  trend note at ONE left origin, each at a 110ch measure. */}
+              <div className="nv-notes">
                 <TableSourceFooter source={t.fp.portfolio.source} asOf={pub.publishedAt} />
                 <p className="ui-meta text-muted-fg">{w.trendNote}</p>
               </div>

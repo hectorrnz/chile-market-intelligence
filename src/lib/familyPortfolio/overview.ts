@@ -26,6 +26,17 @@
 // it. Ambiguity (two candidate rows, a missing binding) fails closed to
 // unavailable rather than guessing.
 
+// Relative `.ts` import, not the `@/` alias — this module is loaded directly by
+// Node's native test runner (the standing convention for pure modules under
+// test). `difference.ts` is the single home of the reconciliation tolerances
+// and of the one displayed-Difference rule.
+import {
+  RECON_ABS_TOLERANCE,
+  RECON_REL_TOLERANCE,
+  resolveDisplayedDifference,
+  type DifferenceReconciliation,
+} from './difference.ts'
+
 // ---------------------------------------------------------------------------
 // Input shapes (structurally compatible with the read repository's outputs —
 // declared here so this module imports nothing impure)
@@ -204,9 +215,6 @@ export interface AllocationBasis {
   residual: number | null
 }
 
-const RECON_ABS_TOLERANCE = 0.01
-const RECON_REL_TOLERANCE = 1e-6
-
 function buildBasis(
   id: AllocationBasisId,
   denominator: OverviewSnapshotRow | null,
@@ -316,11 +324,24 @@ function metricValue(
   return row && row.value !== null && Number.isFinite(row.value) ? row.value : null
 }
 
-/** The two Main performance blocks, source-provided values only. */
-export function extractPerformanceBlocks(
+/** The two Main performance bases, in the One Pager's own order. */
+export const MAIN_PERFORMANCE_BASES = ['ex_chilean_equities', 'with_chilean_equities'] as const
+
+/**
+ * A personal scope publishes ONE performance basis, named `total` (verified
+ * against the live book: every personal publication carries exactly this basis,
+ * with the same five metrics Main's bases carry). It is deliberately NOT called
+ * `with_chilean_equities` — a personal portfolio has no Chilean-equities split,
+ * and reusing Main's basis name would invite a reader to compare two different
+ * constructions.
+ */
+export const PERSONAL_PERFORMANCE_BASES = ['total'] as const
+
+/** Performance blocks for an explicit basis list, source-provided values only. */
+export function extractPerformanceBlocksFor(
   performance: readonly OverviewPerformanceRow[],
+  bases: readonly string[],
 ): PerformanceBlockValues[] {
-  const bases = ['ex_chilean_equities', 'with_chilean_equities']
   return bases
     .filter((b) => performance.some((p) => p.basis === b))
     .map((basis) => ({
@@ -333,11 +354,23 @@ export function extractPerformanceBlocks(
     }))
 }
 
+/** The two Main performance blocks. Behaviour unchanged from R13.7. */
+export function extractPerformanceBlocks(
+  performance: readonly OverviewPerformanceRow[],
+): PerformanceBlockValues[] {
+  return extractPerformanceBlocksFor(performance, MAIN_PERFORMANCE_BASES)
+}
+
 export interface OverviewHero {
   /** TOTAL portfolio value — the row bound to `with_chilean_equities`. */
   totalValue: number | null
-  /** NMI-derived thisWeek − previousWeek on that same row. */
+  /**
+   * DERIVED: `value − previousValue` on that same row, through the shared
+   * invariant — never the persisted figure passed through.
+   */
   weeklyDifference: number | null
+  /** Reconciliation of the derived difference against the persisted figure. */
+  weeklyDifferenceStatus: DifferenceReconciliation
   weeklyReturn: number | null
   ytdReturn: number | null
 }
@@ -346,9 +379,15 @@ export function buildHero(
   s: MainStructure,
   performance: readonly OverviewPerformanceRow[],
 ): OverviewHero {
+  const diff = resolveDisplayedDifference(
+    s.totalRow?.value ?? null,
+    s.totalRow?.previousValue ?? null,
+    s.totalRow?.difference ?? null,
+  )
   return {
     totalValue: s.totalRow?.value ?? null,
-    weeklyDifference: s.totalRow?.difference ?? null,
+    weeklyDifference: diff.displayed,
+    weeklyDifferenceStatus: diff.status,
     weeklyReturn: metricValue(performance, 'with_chilean_equities', 'weekly_return'),
     ytdReturn: metricValue(performance, 'with_chilean_equities', 'ytd_return'),
   }
@@ -381,6 +420,24 @@ export function inretailImpact(s: MainStructure): {
 export interface EvolutionPoint {
   date: string
   value: number
+  /**
+   * R13.R2 pass 4 § 2 — the SOURCE-STATED net flow for the week ending on
+   * `date`, attached by the route from the same week's performance block so the
+   * chart can plot a flow-adjusted path.
+   *
+   * Optional and never derived here: the two evolution BUILDERS below read
+   * levels only. R13.R2E.1 § 2 — the flow field is a SPARSE EVENT field, so a
+   * week with no stated flow keeps `null` and means NO MONEY MOVED, not
+   * "unknown"; `flowUnavailable` is how a week says unknown.
+   */
+  flow?: number | null
+  /**
+   * R13.R2E.1 § 2 — true when the publication stated a flow this week that could
+   * not be read as a number (error, malformed, ambiguous, explicitly
+   * unavailable). Only such a week is UNKNOWN, and only such a week's step
+   * cannot be flow-adjusted. No week in the current book carries it.
+   */
+  flowUnavailable?: boolean
 }
 
 export interface EvolutionInput {
@@ -423,6 +480,19 @@ export function buildEvolutionSeries(input: EvolutionInput): {
     exChilean: seriesFor(input, 'ex_chilean_equities'),
     withChilean: seriesFor(input, 'with_chilean_equities'),
   }
+}
+
+/**
+ * R13.R2C § 18 — a PERSONAL scope's single `Evolución del Patrimonio` series,
+ * from that scope's OWN bound total row in each publication.
+ *
+ * Deliberately a separate function rather than a basis parameter on the Main
+ * builder: a personal portfolio has ONE basis and it is named `total`, never a
+ * Main basis name, and giving the two shapes one signature is how a caller ends
+ * up rendering an Ex/Incl split that does not exist (§ 28).
+ */
+export function buildPersonalEvolutionSeries(input: EvolutionInput): EvolutionPoint[] {
+  return seriesFor(input, 'total')
 }
 
 // ---------------------------------------------------------------------------
@@ -533,4 +603,154 @@ export function benchmarkWeeklyReturn(
     observationDate: thisBar!.date,
     previousObservationDate: prevBar!.date,
   }
+}
+
+// ---------------------------------------------------------------------------
+// 8 · Weekly snapshot figures (R13.R2 §§ 11-12)
+// ---------------------------------------------------------------------------
+
+export interface WeeklySnapshotFigures {
+  beginningOfYear: number | null
+  previousWeek: number | null
+  thisWeek: number | null
+  /** DERIVED: `thisWeek − previousWeek`, from the two figures shown above it. */
+  difference: number | null
+  /**
+   * How the derived Difference compares with the publication's own persisted
+   * figure. `mismatch` is surfaced as a visible reconciliation warning; the
+   * displayed value stays the arithmetic either way.
+   */
+  differenceStatus: DifferenceReconciliation
+}
+
+const EMPTY_SNAPSHOT: WeeklySnapshotFigures = {
+  beginningOfYear: null,
+  previousWeek: null,
+  thisWeek: null,
+  difference: null,
+  differenceStatus: 'not_comparable',
+}
+
+/**
+ * The four Weekly Snapshot figures, from ONE row — the row the parser
+ * numerically bound to the scope's performance basis.
+ *
+ * The three levels are source cells. The Difference is DERIVED from the two
+ * levels actually displayed (`difference.ts`), so the card's arithmetic is
+ * internally consistent by construction; the publication's persisted figure is
+ * retained only as a cross-check and can never override it. A missing anchor
+ * (the earliest week on record has no previous week and no year-start
+ * baseline) leaves the Difference null — never 0, never carried forward, and
+ * never filled in from the persisted figure.
+ */
+export function buildWeeklySnapshot(row: OverviewSnapshotRow | null): WeeklySnapshotFigures {
+  if (row === null) return { ...EMPTY_SNAPSHOT }
+  const finite = (v: number | null) => (v !== null && Number.isFinite(v) ? v : null)
+  const thisWeek = finite(row.value)
+  const previousWeek = finite(row.previousValue)
+  const diff = resolveDisplayedDifference(thisWeek, previousWeek, row.difference)
+  return {
+    beginningOfYear: finite(row.beginningOfYearValue),
+    previousWeek,
+    thisWeek,
+    difference: diff.displayed,
+    differenceStatus: diff.status,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 9 · Personal-scope composition (R13.R2 § 10)
+// ---------------------------------------------------------------------------
+
+export interface PersonalStructure {
+  /** The row bound to the scope's own `total` performance basis. */
+  totalRow: OverviewSnapshotRow | null
+  /** The allocation constituents: asset classes plus top-level named holdings. */
+  constituentRows: OverviewSnapshotRow[]
+}
+
+/**
+ * Identifies a PERSONAL scope's spine. Same discipline as
+ * `identifyMainStructure`: the total is the row the parser NUMERICALLY BOUND to
+ * the scope's performance basis at publish time, never a label match and never
+ * "the row typed portfolio_total" — a personal scope routinely carries several
+ * such rows (verified live: 1, 2 and 3 across the three personal scopes), so
+ * picking by type alone would be ambiguous and would sometimes be wrong.
+ *
+ * THE CONSTITUENT SET IS `asset_class` + `named_holding`, AND THAT IS A
+ * MEASURED RESULT, NOT AN ASSUMPTION. Against the live book, over three
+ * separate weeks and all three personal scopes, those rows sum to the bound
+ * total with a relative gap of 0 — exactly, but for one reading of 2e-16, i.e.
+ * floating point. `asset_class` ALONE does not tie for two of the three scopes:
+ * they hold named positions outside the asset-class spine, exactly as Main
+ * holds INRETAIL outside it. `sociedad_total` and `sociedad_subtotal` are
+ * excluded because they aggregate those same asset classes (§ 15's parent +
+ * child double count), and `sub_asset_class` because those are children of the
+ * asset classes. A structure that does not tie is reported by `buildBasis` as a
+ * VISIBLE residual — never silently absorbed.
+ */
+export function identifyPersonalStructure(
+  rows: readonly OverviewSnapshotRow[],
+  performance: readonly OverviewPerformanceRow[],
+): PersonalStructure {
+  const ordered = [...rows].sort((a, b) => a.displayOrder - b.displayOrder)
+
+  const boundKey = boundKeyFor(performance, 'total')
+  const aggregateTypes = new Set(['portfolio_total', 'portfolio_subtotal'])
+  const totalRow =
+    boundKey !== null
+      ? (ordered.find((r) => r.rowKey === boundKey && aggregateTypes.has(r.rowType)) ?? null)
+      : null
+
+  const constituentRows = ordered.filter(
+    (r) => r.rowType === 'asset_class' || r.rowType === 'named_holding',
+  )
+
+  return { totalRow, constituentRows }
+}
+
+/**
+ * A personal scope's SINGLE allocation basis. Personal portfolios have no
+ * Chilean-equities split, so there is one denominator and one constituent set —
+ * presenting three bases here would fabricate distinctions the source does not
+ * make. Built through the same `buildBasis` the Main bases use, so the
+ * partial / residual / unavailable semantics are identical.
+ */
+export function buildPersonalAllocation(s: PersonalStructure): AllocationBasis[] {
+  return [buildBasis('total', s.totalRow, s.constituentRows)]
+}
+
+/**
+ * A personal scope's hero figures, from its own bound total row and its own
+ * `total` performance basis. It can never read a Main row: the caller passes
+ * only that scope's rows, and no Main basis name is consulted here.
+ */
+export function buildPersonalHero(
+  s: PersonalStructure,
+  performance: readonly OverviewPerformanceRow[],
+): OverviewHero {
+  // Same shared invariant as Main's hero — one field, one display semantic.
+  const diff = resolveDisplayedDifference(
+    s.totalRow?.value ?? null,
+    s.totalRow?.previousValue ?? null,
+    s.totalRow?.difference ?? null,
+  )
+  return {
+    totalValue: s.totalRow?.value ?? null,
+    weeklyDifference: diff.displayed,
+    weeklyDifferenceStatus: diff.status,
+    weeklyReturn: metricValue(performance, 'total', 'weekly_return'),
+    ytdReturn: metricValue(performance, 'total', 'ytd_return'),
+  }
+}
+
+/**
+ * A personal scope's Weekly-close rows: the constituents in display order, then
+ * the bound total — the same flattened presentation Main's comparison uses.
+ * Null when the total could not be identified: fail closed rather than render a
+ * partial table that implies a total nothing established.
+ */
+export function buildPersonalComparisonRows(s: PersonalStructure): OverviewSnapshotRow[] | null {
+  if (!s.totalRow) return null
+  return [...s.constituentRows, s.totalRow].map(flatten)
 }

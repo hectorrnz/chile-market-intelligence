@@ -13,7 +13,7 @@
 // price of a listed ETF anyone can look up.
 
 import { PrivacyValue } from '@/components/fable/PrivacyValue'
-import { formatUsd } from '@/lib/formatters'
+import { formatUsd, formatUsdCompactM } from '@/lib/formatters'
 
 interface MaskedAmountProps {
   value: number | null
@@ -26,16 +26,32 @@ interface MaskedAmountProps {
    * unmasked formatter.
    */
   signed?: boolean
+  /**
+   * R13.R2F4 § 2 — render at chart-axis length (`145,5M`) instead of the full
+   * grouped amount. Added HERE rather than at the call site so a printed
+   * y-axis label goes through the SAME guarded path as every other amount in
+   * the module: an axis is not a loophole around the privacy mask.
+   */
+  compact?: boolean
   className?: string
 }
 
-export function MaskedAmount({ value, masked, decimals = 0, signed = false, className = '' }: MaskedAmountProps) {
+export function MaskedAmount({
+  value,
+  masked,
+  decimals = 0,
+  signed = false,
+  compact = false,
+  className = '',
+}: MaskedAmountProps) {
   if (value === null || !Number.isFinite(value)) {
     return <span className={`text-muted-fg ${className}`}>—</span>
   }
-  // ONE formatUsd call site total — the sign prefix wraps the same call, so
-  // the privacy audit's single-call-site invariant keeps holding.
-  const text = `${signed && value > 0 ? '+' : ''}${formatUsd(value, decimals)}`
+  // Still exactly one guarded render path — both formatters live inside this
+  // component, and the sign prefix wraps whichever one applies, so the privacy
+  // audit's single-call-site invariant keeps holding.
+  const amount = compact ? formatUsdCompactM(value) : formatUsd(value, decimals)
+  const text = `${signed && value > 0 ? '+' : ''}${amount}`
   return (
     <PrivacyValue masked={masked} className={className}>
       {text}

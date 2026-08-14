@@ -16,6 +16,7 @@ import { join } from 'node:path'
 import { dict } from '../src/lib/i18n.ts'
 import { formatUsd, formatIsoDateLabel } from '../src/lib/formatters.ts'
 import { selectPublicationWeek } from '../src/lib/familyPortfolio/memberRead.ts'
+import { PALETTE_TOKENS } from '../src/lib/familyPortfolio/allocationSettings.ts'
 
 const ROOT = join(import.meta.dirname, '..')
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
@@ -44,12 +45,23 @@ const WATERFALL = 'src/components/familyPortfolio/ValueChangeWaterfall.tsx'
 const DIVERGING = 'src/components/familyPortfolio/DivergingBarChart.tsx'
 const RECON_STATUS = 'src/components/familyPortfolio/ReconciliationStatus.tsx'
 
+// R13.R2 additions — the recomposed Summary's presentation components. They
+// join CLIENT_FILES so the module's privacy, hex-colour and no-toLocaleString
+// hygiene applies to them from the day they ship, not from whenever someone
+// remembers to add them.
+const STRIP = 'src/components/familyPortfolio/PerformanceMarketsStrip.tsx'
+const SNAPSHOT_CARD = 'src/components/familyPortfolio/WeeklySnapshotCard.tsx'
+const ALLOC_PANEL = 'src/components/familyPortfolio/AllocationPanel.tsx'
+const ALLOC_SETTINGS = 'src/components/familyPortfolio/AllocationSettingsDialog.tsx'
+const EVO_CHART = 'src/components/familyPortfolio/PortfolioEvolutionChart.tsx'
+
 /** Every CLIENT file the module ships — pages, components, the fetch helper. */
 const CLIENT_FILES = [
   LAYOUT, OVERVIEW_PAGE, PORTFOLIO_PAGE, WEEKLY_PAGE, ALTERNATIVES_PAGE,
   PROVIDER, NAV, GATE, TABLE, WEEK_SELECTOR, DATA_HELPER,
   MASKED_AMOUNT, DONUT, FRESHNESS,
   WATERFALL, DIVERGING, RECON_STATUS,
+  STRIP, SNAPSHOT_CARD, ALLOC_PANEL, ALLOC_SETTINGS, EVO_CHART,
 ]
 
 /** Strips comments so hygiene regexes cannot be tripped by prose. */
@@ -96,8 +108,14 @@ describe('R13.6 · module shell', () => {
     assert.ok(!/fetchFamilyPortfolioSnapshot|HierarchicalTable/.test(alternatives),
       'Alternatives renders its own model, never the snapshot table')
     const overview = read(OVERVIEW_PAGE)
-    assert.match(overview, /fetchFamilyPortfolioOverview\('main'\)/,
-      'the Overview is now the real Stage-7 page')
+    // R13.R2 § 10 — the Summary serves the caller's own personal portfolio as
+    // well as Main, so the scope is DERIVED from the entitled list rather than
+    // hardcoded. The property asserted is unchanged (this is the real page,
+    // reading through the real client helper); only the argument moved.
+    assert.match(overview, /fetchFamilyPortfolioOverview\(activeScope\)/,
+      'the Summary is the real page and reads whichever entitled scope is active')
+    assert.match(overview, /const portfolioScopes = scopes\.filter\(\(s\) => s\.id !== 'alternatives'\)/,
+      'scope options come from the SERVER-FILTERED entitlement, never a client list')
     assert.match(overview, /MemberGate/)
     const weekly = read(WEEKLY_PAGE)
     assert.match(weekly, /fetchFamilyPortfolioWeeklyChanges/,
@@ -426,31 +444,66 @@ describe('R13.6 · portfolio page', () => {
     assert.match(table, /\{amountCell\(row\.beginningOfYearValue, masked\)\}/)
     assert.match(table, /\{amountCell\(row\.previousValue, masked\)\}/)
     assert.match(table, /\{amountCell\(row\.value, masked\)\}/)
-    assert.match(table, /\{amountCell\(row\.difference, masked, diffColor\)\}/)
+    // R13.R2 defensive repair: the Difference column renders the DERIVED
+    // figure (`This Week − Previous Week`, via the shared invariant), not the
+    // persisted one — but through the SAME single guarded `amountCell`, so the
+    // privacy property this test exists for is unchanged.
+    assert.match(table, /amountCell\(\s*\n?\s*diff\.displayed,\s*\n?\s*masked,/)
+    assert.ok(!/amountCell\(row\.difference/.test(table),
+      'the persisted difference must not be rendered')
 
-    // R13.7 — MaskedAmount is the shared renderer outside the table: its one
-    // formatUsd call sits inside PrivacyValue, and null renders an em dash.
+    // R13.7 — MaskedAmount is the shared renderer outside the table: its
+    // formatter calls sit inside PrivacyValue, and null renders an em dash.
     const maskedAmount = read(MASKED_AMOUNT)
-    assert.equal(codeOf(maskedAmount).split('formatUsd').length - 1, 2)
-    // R13.8: the single call site now also carries the optional signed prefix
-    // — still ONE formatUsd, still inside PrivacyValue.
-    assert.match(maskedAmount, /const text = `\$\{signed && value > 0 \? '\+' : ''\}\$\{formatUsd\(value, decimals\)\}`/)
+    const maskedCode = codeOf(maskedAmount)
+    // R13.R2F4 — there are now TWO formatters (the full grouped amount and the
+    // chart-axis compact form), so the invariant is stated per-formatter rather
+    // than as a single total: each is imported once and called once, and BOTH
+    // calls feed the one `text` that PrivacyValue wraps. `formatUsd` is counted
+    // on a word boundary so `formatUsdCompactM` cannot inflate it — which is
+    // exactly how the looser total-count version of this check first failed.
+    const occurrences = (src: string, name: string) =>
+      (src.match(new RegExp(`\\b${name}\\b`, 'g')) ?? []).length
+    assert.equal(occurrences(maskedCode, 'formatUsd'), 2, 'formatUsd: one import + one call site')
+    assert.equal(occurrences(maskedCode, 'formatUsdCompactM'), 2, 'formatUsdCompactM: one import + one call site')
+    // R13.8: the single call site also carries the optional signed prefix.
+    assert.match(maskedAmount, /const amount = compact \? formatUsdCompactM\(value\) : formatUsd\(value, decimals\)/)
+    assert.match(maskedAmount, /const text = `\$\{signed && value > 0 \? '\+' : ''\}\$\{amount\}`/)
     assert.match(maskedAmount, /<PrivacyValue masked=\{masked\}[^>]*>\s*\{text\}/)
     assert.match(maskedAmount, />—</)
+    // The compact form is reachable ONLY through this component — a caller
+    // that formatted an axis label itself would print an unmasked amount.
+    for (const f of ['SummaryPrintSheet.tsx', 'AllocationDonut.tsx', 'HierarchicalTable.tsx']) {
+      assert.ok(
+        !/formatUsdCompactM/.test(read(`src/components/familyPortfolio/${f}`)),
+        `${f} must not format a compact amount itself`,
+      )
+    }
 
-    // The Overview page's own formatUsd uses are each privacy-safe by
-    // construction: the KpiHero value is masked via its privacyMasked prop,
-    // and the evolution LineChart (whose axis/tooltip text carries raw
-    // amounts) renders ONLY in the unmasked branch — masking replaces the
-    // whole chart. The one unguarded use is the PUBLIC InRetail closing
-    // price, which is market data, not family wealth.
+    // The Summary page's own formatUsd uses are each privacy-safe by
+    // construction. R13.R2 removed the KpiHero (its figures now render through
+    // MaskedAmount in the Weekly Snapshot and the evolution headline) and
+    // replaced the generic LineChart with PortfolioEvolutionChart; the
+    // INVARIANT is unchanged and is what is asserted — the chart, whose axis
+    // and tooltip text carry raw amounts, mounts ONLY in the unmasked branch,
+    // and masking replaces it whole. The one unguarded formatUsd is the PUBLIC
+    // InRetail closing price passed to the markets strip: market data, not
+    // family wealth.
     const overview = read(OVERVIEW_PAGE)
-    assert.match(overview, /privacyMasked=\{masked\}/)
     assert.match(overview, /\) : masked \? \(/)
-    const lineChartAt = overview.indexOf('<LineChart')
+    const chartAt = overview.indexOf('<PortfolioEvolutionChart')
     const maskGuardAt = overview.indexOf(') : masked ? (')
-    assert.ok(maskGuardAt > 0 && lineChartAt > maskGuardAt,
+    assert.ok(maskGuardAt > 0 && chartAt > maskGuardAt,
       'the evolution chart must render only in the unmasked branch')
+    // The masked branch itself exposes nothing: no chart, no formatter, no
+    // amount — only the shared PrivacyValue placeholder.
+    const maskedBranch = overview.slice(maskGuardAt, chartAt)
+    assert.match(maskedBranch, /<PrivacyValue masked/)
+    assert.ok(!/formatUsd|PortfolioEvolutionChart|formatValue/.test(maskedBranch),
+      'the masked branch must not format or mount any amount-bearing element')
+    // Every portfolio amount on the page still renders through the one guarded
+    // component; the strip and donut are covered by their own assertions below.
+    assert.match(overview, /<MaskedAmount/)
 
     // Everywhere else: no direct amount formatting, no toLocaleString, and no
     // title/tooltip carrying a raw amount around the mask.
@@ -458,7 +511,14 @@ describe('R13.6 · portfolio page', () => {
     // Overview was admitted for — a KpiHero `formatValue` (masked by the
     // hero's own PrivacyValue) and a LineChart `valueFormatter` mounted only
     // while unmasked. Its dedicated privacy tests assert exactly that.
-    const MAY_FORMAT_AMOUNTS = new Set([TABLE, MASKED_AMOUNT, OVERVIEW_PAGE, WEEKLY_PAGE])
+    // R13.R2 admits two more, each for a specific, argued reason:
+    //   * STRIP formats the PUBLIC InRetail closing price (`formatUsd(v, 2)`)
+    //     — market data anyone can look up, which MaskedAmount's own header
+    //     excludes from masking by policy. It renders no portfolio amount.
+    //   * DONUT formats a slice's value label, but only inside a branch gated
+    //     on `!wantsValue || maskedEffective`, so an amount is unreachable
+    //     while the page is masked (asserted directly below).
+    const MAY_FORMAT_AMOUNTS = new Set([TABLE, MASKED_AMOUNT, OVERVIEW_PAGE, WEEKLY_PAGE, STRIP, DONUT])
     for (const rel of CLIENT_FILES) {
       const src = codeOf(read(rel))
       assert.ok(!src.includes('toLocaleString'),
@@ -505,22 +565,57 @@ describe('R13.6 · portfolio page', () => {
       'the masked branch must not render children in any form')
     assert.ok(!/filter:|blur|opacity/.test(privacy), 'masking must not be a visual-only treatment')
 
-    // 5 · The page marks the weekly Difference — the one monetary hero field —
-    //     sensitive, and an unavailable figure stays a plain em dash.
-    assert.match(overview, /label: o\.weeklyDifference,\s*\n\s*value: formatUsd\(data\.hero\?\.weeklyDifference \?\? null\)/)
-    assert.match(overview, /sensitive: data\.hero\?\.weeklyDifference != null/)
+    // 5 · R13.R2 removed the KpiHero from the SUMMARY (it remains in use on
+    //     Weekly Changes, which is why 1-4 above still guard it). Every
+    //     monetary field the hero used to carry — the portfolio value, the
+    //     weekly difference, the InRetail impact, the allocation residual —
+    //     now renders through MaskedAmount, the single guarded path, and an
+    //     unavailable figure stays a plain em dash inside it.
+    assert.ok(!/KpiHero/.test(overview),
+      'the Summary no longer routes amounts through KpiHero — MaskedAmount is the path')
+    assert.ok((overview.match(/<MaskedAmount/g) ?? []).length >= 4,
+      'the Summary renders its amounts through MaskedAmount')
+    for (const m of overview.match(/<MaskedAmount[\s\S]{0,200}?\/>/g) ?? []) {
+      assert.match(m, /masked=\{masked\}/,
+        'every MaskedAmount must bind to the page mask, never a second flag')
+    }
 
-    // 6 · The change capsule and the remaining mini carry PERCENTAGES only —
-    //     formatRatioPct, never an amount formatter.
-    assert.match(overview, /changeLabel=\{`\$\{formatRatioPct\(/)
-    assert.match(overview, /label: o\.ytdReturn, value: formatRatioPct\(/)
+    // 6 · Percentages use formatRatioPct and are NOT masked (the standing
+    //     policy for non-wealth figures); an amount never rides a ratio slot.
+    assert.match(overview, /formatRatioPct\(/)
 
-    // 7 · Every formatUsd call on the page is one of the four approved sites:
-    //     the masked headline, the sensitive mini, the PUBLIC InRetail closing
-    //     price, and the evolution chart that renders only when unmasked. A
-    //     fifth use must fail this test rather than ship unmasked.
-    assert.equal(codeOf(overview).split('formatUsd').length - 1, 5,
-      'formatUsd occurrences on the Overview page changed — re-audit each against the mask')
+    // 7 · formatUsd appears on the page exactly THREE times, each audited:
+    //       (a) the import;
+    //       (b) the evolution chart's `formatValue`, which mounts only in the
+    //           unmasked branch (asserted above);
+    //       (c) R13.R2C — the print sheet's MARKET metric mapping, which
+    //           formats a public benchmark CLOSING PRICE. That is not a
+    //           portfolio amount: masking hides the family's wealth, not a
+    //           listed price, and `PerformanceMarketsStrip` already gives the
+    //           same field the same treatment on screen. Every PORTFOLIO amount
+    //           on the sheet goes through MaskedAmount instead.
+    //     A fourth use must fail this test rather than ship an amount outside
+    //     the mask.
+    assert.equal(codeOf(overview).split('formatUsd').length - 1, 3,
+      'formatUsd occurrences on the Summary changed — re-audit each against the mask')
+    // (c) audited in place: the only new use is the price branch of the market
+    // mapping, never an amount branch.
+    //
+    // PASS 4 § 4 put weekly and year-to-date P&L AMOUNTS into that same band.
+    // They are deliberately NOT formatted here: `printMetric` returns an
+    // `amount` NUMBER for them and the sheet renders it through MaskedAmount,
+    // so the third occurrence is still the price branch and still the only one.
+    assert.match(overview, /m\.kind === 'price'\s*\?\s*formatUsd\(m\.value!?, 2\)/)
+    assert.match(codeOf(overview), /if \(m\.kind === 'amount'\) \{\s*\n?\s*return \{ key: m\.key, label, amount:/,
+      'a portfolio amount must leave printMetric as a number, never as formatted text')
+    // And the print sheet formats no amount of its own.
+    const sheet = codeOf(read('src/components/familyPortfolio/SummaryPrintSheet.tsx'))
+    assert.ok(!/formatUsd|toLocaleString|Intl\./.test(sheet),
+      'the print sheet must not format an amount itself — MaskedAmount is the path')
+    for (const m of sheet.match(/<MaskedAmount[\s\S]{0,160}?\/>/g) ?? []) {
+      assert.match(m, /masked=\{masked\}/,
+        'every printed amount must bind to the SAME page mask, never a second flag')
+    }
   })
 
   test('the Difference column\'s NMI derivation is disclosed beside the footer (audit area 3)', () => {
@@ -589,18 +684,33 @@ describe('R13.6 · hierarchical table', () => {
   })
 
   test('no hardcoded colors — semantic tokens only', () => {
-    for (const rel of [TABLE, NAV, WEEK_SELECTOR, GATE, PORTFOLIO_PAGE, OVERVIEW_PAGE, WEEKLY_PAGE, ALTERNATIVES_PAGE, LAYOUT, MASKED_AMOUNT, DONUT, FRESHNESS]) {
+    for (const rel of [TABLE, NAV, WEEK_SELECTOR, GATE, PORTFOLIO_PAGE, OVERVIEW_PAGE, WEEKLY_PAGE, ALTERNATIVES_PAGE, LAYOUT, MASKED_AMOUNT, DONUT, FRESHNESS, STRIP, SNAPSHOT_CARD, ALLOC_PANEL, ALLOC_SETTINGS, EVO_CHART]) {
       assert.ok(!/#[0-9a-fA-F]{3,8}\b/.test(codeOf(read(rel))),
         `${rel} must not hardcode a hex color`)
     }
-    // The donut's slice colors are the --fp-slice identity tokens, declared
-    // for BOTH themes in globals.css — never the signal tokens.
+    // R13.R2 § 14 made the donut's palette administrator-selectable, so it no
+    // longer names `--fp-slice-` literally: it resolves a token NAME through
+    // `paletteTokenAt`, which is exactly what keeps a colour outside the
+    // approved set unrepresentable. Assert THAT, plus the property the old
+    // literal stood for — every palette token declared for both themes.
     const donut = read(DONUT)
-    assert.match(donut, /--fp-slice-/)
-    assert.ok(!/--positive|--negative|--warning/.test(donut))
+    assert.match(donut, /paletteTokenAt\(settings\.palette, i\)/,
+      'slice colour must resolve through the curated palette map, never a literal')
+    assert.ok(!/--positive|--negative|--warning/.test(donut),
+      'identity colour must never borrow a signal token')
     const css = read('src/app/globals.css')
-    assert.ok((css.match(/--fp-slice-1:/g) ?? []).length >= 2,
-      'each --fp-slice token needs a light AND a dark value')
+    for (const token of Object.values(PALETTE_TOKENS).flat()) {
+      assert.ok((css.match(new RegExp(`${token}:`, 'g')) ?? []).length >= 2,
+        `${token} needs a light AND a dark value in globals.css`)
+    }
+    // The two evolution series are identity colours too, both themed, and
+    // neither is a signal token — a falling portfolio is not an error (§ 5).
+    for (const token of ['--fp-series-incl', '--fp-series-excl']) {
+      assert.ok((css.match(new RegExp(`${token}:`, 'g')) ?? []).length >= 2,
+        `${token} needs a light AND a dark value in globals.css`)
+    }
+    assert.ok(!/--negative|--positive/.test(codeOf(read(EVO_CHART))),
+      'the evolution chart must not colour a series with a signal token')
   })
 
   test('no forbidden attribution vocabulary anywhere on the Stage-6 surface (doc 07 § 4.3)', () => {

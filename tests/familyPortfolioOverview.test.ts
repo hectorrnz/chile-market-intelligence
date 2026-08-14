@@ -254,7 +254,19 @@ describe('R13.7 · hero and blocks', () => {
   test('hero reads the bound TOTAL row and the with-Chilean performance block', () => {
     const s = identifyMainStructure(mainFixture(), mainPerformance())
     const hero = buildHero(s, mainPerformance())
-    assert.deepEqual(hero, { totalValue: 1000, weeklyDifference: 20, weeklyReturn: 0.012, ytdReturn: 0.06 })
+    // R13.R2 defensive repair: `weeklyDifference` is now DERIVED as
+    // `value − previousValue` through the shared invariant rather than passed
+    // through from the persisted figure, and carries the reconciliation
+    // verdict. The fixture's row satisfies the identity, so the derived value
+    // is unchanged (20) and the verdict is `reconciled` — which is exactly the
+    // no-numerical-change property the repair was required to have.
+    assert.deepEqual(hero, {
+      totalValue: 1000,
+      weeklyDifference: 20,
+      weeklyDifferenceStatus: 'reconciled',
+      weeklyReturn: 0.012,
+      ytdReturn: 0.06,
+    })
   })
 
   test('performance blocks carry the five source-provided metrics; a missing metric stays null', () => {
@@ -482,14 +494,28 @@ describe('R13.7 · benchmark gate', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('R13.7 · overview route and reads', () => {
-  test('authorization ladder: guard → entitlement → canReadScope → main-only → database', () => {
+  test('authorization ladder: guard → entitlement → canReadScope → admissible scope → database', () => {
     const src = read(OVERVIEW_ROUTE)
     const guard = src.indexOf('guardPrivateApi()')
     const ent = src.indexOf('getFamilyPortfolioEntitlement()')
     const scopeCheck = src.indexOf('canReadScope(')
-    const mainOnly = src.indexOf("scope !== 'main'")
+    // R13.R2 § 10 widened the composition from main-only to main + the three
+    // personal scopes, so the fourth rung is no longer literally
+    // `scope !== 'main'`. The RUNG ITSELF is unchanged and is what matters:
+    // the scope-admissibility 404 still sits AFTER the entitlement decision,
+    // so an unentitled caller is refused before learning which scopes have a
+    // composition at all, and BEFORE any database read.
+    const admissible = src.indexOf("if (!isMain && !isPersonal) return fail('not_found', 404)")
     const db = src.indexOf('listCurrentPublications(')
-    assert.ok(guard > 0 && ent > guard && scopeCheck > ent && mainOnly > scopeCheck && db > mainOnly)
+    assert.ok(guard > 0 && ent > guard && scopeCheck > ent && admissible > scopeCheck && db > admissible)
+    // `alternatives` and `admin` are not portfolios with a weekly close, so
+    // they stay 404 — asserted through the admissibility predicate itself.
+    assert.match(src, /const isPersonal = scope === 'jaime' \|\| scope === 'andres' \|\| scope === 'pablo'/)
+    assert.match(src, /const isMain = scope === 'main'/)
+    // Every financial read is filtered to the REQUESTED scope, so a personal
+    // response can never carry a Main row.
+    assert.match(src, /getSnapshotRowsForScope\(selected\.id, scope\)/)
+    assert.match(src, /getPerformanceRowsForScope\(selected\.id, scope\)/)
     assert.match(src, /export const runtime = 'nodejs'/)
     assert.match(src, /no-store/)
     const code = codeOf(src)
@@ -524,8 +550,11 @@ describe('R13.7 · overview route and reads', () => {
     const to = repo.indexOf('R13.9 — Alternatives reads')
     const r137 = repo.slice(from, to > from ? to : undefined)
     assert.ok(r137.length > 0)
-    assert.equal((r137.match(/getSupabaseUserClient\(\)/g) ?? []).length, 4,
-      'performance rows, bindings, bound values and commentary all read as the caller')
+    // PASS 4 § 2 added a fifth: the per-week published NET FLOW the evolution
+    // chart subtracts. It is a portfolio amount and reads under RLS exactly like
+    // the level it is subtracted from — which is the property this counts.
+    assert.equal((r137.match(/getSupabaseUserClient\(\)/g) ?? []).length, 5,
+      'performance rows, bindings, flows, bound values and commentary all read as the caller')
     assert.ok(!r137.includes('getSupabaseAdminClient'))
   })
 
@@ -551,9 +580,31 @@ describe('R13.7 · overview route and reads', () => {
     }
   })
 
-  test('commentary and market states are honest: hidden-when-absent, pending note, distinct states', () => {
+  test('commentary and market states are honest: real-or-empty, pending note, distinct states', () => {
     const page = read(OVERVIEW_PAGE)
-    assert.match(page, /\{data\.commentary && \(/)
+    // R13.R2 § 25 replaced "hide the card entirely" with a RESTRAINED EMPTY
+    // STATE — the section is a titled region either way, and an absent note
+    // now says so instead of vanishing. The honesty invariant is unchanged and
+    // is what is asserted: the body is rendered only from the published
+    // commentary, and the empty branch prints a fixed i18n string, never a
+    // generated or inferred note.
+    // R13.R2C §§ 8-12 turned the single note into a LIST of independent notes,
+    // each with its own identity, edit and withdrawal. The honesty invariant
+    // did not change with it and is asserted at both ends: the page hands the
+    // panel the published notes and nothing else, and the panel renders a body
+    // only for a note that exists — never a generated, inferred or placeholder
+    // one, and never as markup.
+    assert.match(page, /notes=\{data\.weeklyNotes \?\? \[\]\}/)
+    const panel = read('src/components/familyPortfolio/WeeklyNotesPanel.tsx')
+    assert.match(panel, /\{notes\.map\(\(note\) =>/)
+    assert.match(panel, /\{note\.body\}/)
+    assert.ok(!/dangerouslySetInnerHTML=/.test(panel), 'a note is text, never markup')
+    assert.match(page, /o\.notesEmpty/)
+    for (const lang of ['en', 'es'] as const) {
+      assert.ok(dict[lang].fp.overview.notesEmpty.length > 0, lang)
+      // The empty state must not imply a note exists or promise one later.
+      assert.ok(!/coming soon|pr[óo]ximamente|generat/i.test(dict[lang].fp.overview.notesEmpty), lang)
+    }
     assert.match(page, /benchmarksPending/)
     assert.match(page, /noPublication/)
     assert.match(page, /loadError/)

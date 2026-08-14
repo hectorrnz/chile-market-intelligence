@@ -159,6 +159,31 @@ export function formatUsd(value: number | null | undefined, decimals = 0): strin
 }
 
 /**
+ * R13.R2F4 § 2 — a Family Portfolio USD amount at CHART-AXIS length: one
+ * decimal and a millions suffix, `145.470.441` → `145,5M`.
+ *
+ * Why this exists rather than `formatUsd`: a printed y-axis label is read for
+ * MAGNITUDE, not for the cent. Eleven grouped digits force a wide reserved
+ * gutter (20mm of a 186mm measure before this change), crowd the plot, and
+ * still give the reader nothing the shorter form does not. Every value on one
+ * axis renders through this single function, so the three labels stay directly
+ * comparable.
+ *
+ * Chilean convention throughout, exactly as every other figure in this app:
+ * the comma IS the decimal separator (`145,5M`, not `145.5M`) — the units are
+ * abbreviated, the locale is not.
+ *
+ * Below a million the abbreviation would destroy resolution (three ticks all
+ * reading `0,3M`), so a small figure falls back to the plain grouped amount.
+ * Unavailable stays `—`, never `0M`.
+ */
+export function formatUsdCompactM(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
+  if (Math.abs(value) < 1_000_000) return formatUsd(value)
+  return `${formatUsd(value / 1_000_000, 1)}M`
+}
+
+/**
  * R13.7 — an UNSIGNED percentage from a ratio (0.423 → "42,3%"), for
  * allocation weights where a "+" sign would misread as a change figure.
  * Unavailable stays an em dash, never 0%.

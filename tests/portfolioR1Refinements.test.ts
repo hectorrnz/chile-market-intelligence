@@ -324,7 +324,15 @@ describe('R13.R1 § 5 — Net Flows', () => {
     assert.equal(dict.en.fp.overview.flow, 'Net Flows')
     assert.equal(dict.es.fp.overview.flow, 'Flujos Netos')
     assert.match(dict.en.fp.overview.flowHelp, /contributions less withdrawals/i)
-    assert.match(dict.en.fp.overview.flowHelp, /flow-adjusted return/i)
+    // R13.R2F § 4 — "flow-adjusted RETURN" IS RETIRED, and was never true. This
+    // app performs no return calculation: the adjustment removes external
+    // capital movements from a portfolio-VALUE path, and § 18's terminology
+    // contract forbids naming anything derived from it a return. What the help
+    // text must still do — define the figure and say where it is used — is
+    // asserted here against the corrected sentence.
+    assert.match(dict.en.fp.overview.flowHelp, /flow-adjusted evolution/i)
+    assert.ok(!/\breturn\b/i.test(dict.en.fp.overview.flowHelp),
+      'the definition must not name a return')
     assert.ok(dict.es.fp.overview.flowHelp.length > 0)
   })
 
@@ -339,7 +347,20 @@ describe('R13.R1 § 5 — Net Flows', () => {
   test('the Summary renders the definition as hover help on the flow row', () => {
     const src = read(OVERVIEW_PAGE)
     assert.ok(src.includes('o.flowHelp'))
-    assert.ok(src.includes('title={r.help}'))
+    // PASS 4 § 4 — the per-basis detail list became a structured band group, so
+    // the definition now travels on the metric's own `title` field instead of a
+    // `r.help` prop. Still hover help on the flow row, and still the same text.
+    assert.ok(/key: `\$\{b\.basis\}-flow`[\s\S]{0,220}?title: o\.flowHelp/.test(src),
+      'the flow metric must carry its definition as hover help')
+    assert.ok(read('src/components/familyPortfolio/PerformanceMarketsStrip.tsx').includes('title={metric.title}'),
+      'the band must render a metric title as hover help')
+    // R13.R2 moved the performance blocks BELOW the Performance & Markets
+    // strip; they were not removed, and this asserts the full source-provided
+    // set survived the recomposition. The strip carries the weekly return; the
+    // block carries the rest.
+    for (const key of ['o.flow', 'o.weeklyProfit', 'o.ytdReturn', 'o.ytdProfit']) {
+      assert.ok(src.includes(key), `${key} must still render on the Summary`)
+    }
   })
 
   test('each basis reads its OWN flow row — the two are never shared', () => {
@@ -443,9 +464,16 @@ describe('R13.R1 §§ 7-9 — historical evolution', () => {
     assert.ok(!/\b\d{7,}\b/.test(doc.replace(/2026|2025|2024/g, '')), 'no large figures leak')
   })
 
-  test('the extractor publishes exactly the two Main bases', () => {
+  // WIDENED BY R13.R2C § 15, not weakened. R13.R1 published Main's two bases
+  // because only Main's history had been normalised; the owner has since asked
+  // for the personal histories too, and the workbook's historical grid carries
+  // each personal scope's own numerically-bound total row. Main's two bases are
+  // unchanged and still asserted here; the extractor now ALSO produces
+  // jaime/andres/pablo on the basis `total` — never a Main basis name — which
+  // `portfolioR2cOwnerReview.test.ts` asserts in full.
+  test("the extractor still publishes Main's two bases, and now every scope", () => {
     assert.deepEqual([...MAIN_EVOLUTION_BASES], ['ex_chilean_equities', 'with_chilean_equities'])
-    assert.equal(EVOLUTION_EXTRACTOR_VERSION, 'r13.r1.evolution.1')
+    assert.equal(EVOLUTION_EXTRACTOR_VERSION, 'r13.r2c.evolution.2')
   })
 
   test('the extractor binds structurally and refuses to guess', () => {
@@ -495,7 +523,16 @@ describe('R13.R1 §§ 7-9 — historical evolution', () => {
     assert.ok(src.includes("'persisted_history'"))
     assert.ok(src.includes("'publications'"))
     // The publication-derived path stays as the fallback, in an else branch.
+    // R13.R2 § 24 narrowed that branch to MAIN: a personal scope has no
+    // published value history at all, and deriving a line from the subset of
+    // weeks whose personal rows happen to be published would present a partial
+    // artefact as the portfolio's history. It reports `unavailable` instead.
+    // R13.R2C § 15 REVERSED the R13.R2 § 24 narrowing: the personal histories
+    // are now normalised into the SAME table, from the SAME workbook grid, so
+    // the persisted-then-publications ladder runs for every scope. The property
+    // this test protects — the two provenances are never blended — is unchanged.
     assert.ok(src.includes('} else {'))
+    assert.match(src, /const persisted = await getEvolutionObservations\(scope\)/)
   })
 
   test('the chart states its provenance and span', () => {
@@ -535,8 +572,26 @@ describe('R13.R1 § 16 — the new forward migration', () => {
   test('it is strictly later than the last deployed R13 migration', () => {
     const names = readdirSync(join(ROOT, 'supabase/migrations')).filter((f) => f.endsWith('.sql')).sort()
     assert.ok(names.includes('20260811000000_portfolio_evolution_history.sql'))
-    assert.equal(names.at(-1), '20260811000000_portfolio_evolution_history.sql')
+    // The invariant is FORWARD-ONLY ordering: R13.R1's migration sorts after
+    // every migration that was deployed before it. It was originally expressed
+    // as "it is the last file", which held only while it WAS the last stage;
+    // R13.R2 legitimately added one after it, so the assertion is restated as
+    // the property it always stood for.
+    const deployedBefore = names.filter((f) => f < '20260811000000')
+    assert.ok(deployedBefore.length > 0)
+    assert.equal(
+      deployedBefore.at(-1),
+      '20260810000000_family_portfolio_publication.sql',
+      'R13.R1 must sort immediately after the last previously-deployed R13 migration',
+    )
     assert.ok('20260811000000' > '20260810000000')
+    // Anything added AFTER R13.R1 must carry a strictly later timestamp — no
+    // back-dating a migration into the middle of the deployed chain. Compared
+    // on the 14-digit prefix, so a file is never measured against itself.
+    const stamp = (f: string) => f.slice(0, 14)
+    for (const later of names.filter((f) => stamp(f) > '20260811000000')) {
+      assert.ok(stamp(later) > '20260811000000', later)
+    }
   })
 
   test('the five deployed R13 migrations are present and untouched by this stage', () => {

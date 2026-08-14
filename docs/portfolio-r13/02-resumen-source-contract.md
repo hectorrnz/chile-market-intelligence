@@ -372,10 +372,85 @@ addressable for rollback.
 detected date is wrong. Requires an audit note recording the detected date, the chosen date, and the
 justification. Never the default path.
 
-**Contributions/withdrawals are sparse — VERIFIED.** `Retiros / Aportes` is populated in some weeks
-and empty in others (e.g. Main ex-Chile is empty at `CZ`; Jaime's is `1.655.600`; Andrés's and
-Pablo's are empty). An empty flow cell means **zero flow**, not missing data — confirmed because the
-source's own profit identity balances exactly when the blank is treated as `0` (doc 04 § 4).
+**Contributions/withdrawals are sparse — VERIFIED.** `Retiros / Aportes` is a **sparse event row**: it
+is populated in some weeks and empty in others (e.g. Main ex-Chile is empty at `CZ`; Jaime's is
+`1.655.600`; Andrés's and Pablo's are empty). A **genuinely empty** flow cell means **zero flow**, not
+missing data — confirmed because the source's own profit identity balances exactly when the blank is
+treated as `0` (doc 04 § 4). A **malformed or errored** cell does **not** mean zero: only a genuine
+blank receives zero semantics (see the fail-closed table below).
+
+**The sparse-event rule, stated in full (R13.R2E.1 § 2, owner-authoritative).** Contributions and
+withdrawals are unusual events, so the flow field's *normal* state is empty:
+
+| Flow cell | Reading |
+|---|---|
+| genuinely blank (empty cell, or no cell at all) | **zero** — no contribution or withdrawal occurred |
+| numeric | that flow actually occurred, at that value |
+| error / malformed / ambiguous / explicitly unavailable | **unknown** — never zero |
+
+**This holds independently of whether the neighbouring performance metrics were maintained.** An
+unmaintained performance block (no Weekly Return, no Weekly P&L, no YTD figures) means nobody
+computed that week's *return*. It says nothing about whether money moved, and must not be read as
+"the flow is unknown". Doing so is what truncated Main's Including-Chilean-Equities flow-adjusted
+history to its final 32 weeks in R13.R2E; the corrected reading restores all 102.
+
+**Census — VERIFIED** against the reference workbook, all five flow rows × all 102 week columns
+(`RESUMEN` r90 Main ex-Chile, r97 Main incl.-Chile, r152 / r209 / r268 personal):
+
+| | cells |
+|---|---|
+| genuinely blank | **477** |
+| numeric non-zero | **33** |
+| literal `0` | **0** |
+| error / text / boolean | **0** |
+
+So the field contains *only* blanks and real events — there is no literal zero anywhere, and the
+"unknown" row of the table above has **no instance in the current workbook**. It is implemented
+regardless, so that the day one appears it cannot be silently read as "no money moved".
+
+**Independently validated 394 times.** Every explicit zero now in the book originated as a blank
+cell, and each one reconciles exactly against the source's *own* published weekly P&L via
+`Δvalue = weekly_profit + flow` — 427 basis-weeks checked, 0 failures, worst relative deviation
+`8.87e-13`.
+
+**A flow on one basis is not a flow on another.** An `ex_chilean_equities` flow can be an internal
+reallocation between sleeves, which is not an external portfolio flow at all (R13.R2E.1 § 7). The
+source draws that line itself: in the one week where it states a flow on *both* Main bases at once,
+`2026-01-02`, it states the ex-Chile flow as non-zero and the total-portfolio flow as exactly **zero**.
+Never substitute one basis' flow for another's, and never infer a flow from a holdings change.
+
+**The parser fails closed — R13.R2E.2.** `classifyFlowCell` (`resumen/hierarchy.ts`) is the single
+place a flow cell is read, and every layer downstream consumes its decision rather than re-deriving
+one:
+
+| Cell state | Reading | `value_class` |
+|---|---|---|
+| no cell at all | **blank → 0** | `source_provided_flow` |
+| stored empty cell, no formula | **blank → 0** | `source_provided_flow` |
+| empty-string text (e.g. `=IF(…,"",…)`) | **blank → 0** | `source_provided_flow` |
+| any finite number, **literal `0` included** | **stated**, that number | `source_provided_flow` |
+| Excel error (`#REF!`, `#N/A`, …) | **unreadable** | `unavailable` |
+| text where a number was expected | **unreadable** | `unavailable` |
+| boolean | **unreadable** | `unavailable` |
+| formula with no cached result | **unreadable** | `unavailable` |
+
+This replaces `numberAt(...) ?? 0`, which returned null for *every* non-numeric kind and therefore
+collapsed an error, a mistyped amount and a stray boolean onto the same zero as a genuine blank — a
+corrupted capital movement would have published as **performance**. No such cell exists in the
+workbook (census above), so no published figure ever changed: re-parsing all 102 historical columns
+emits **427 flow rows, byte-for-byte identical** to the hosted book, with zero blocking findings.
+
+**An unreadable flow cell REFUSES THE WEEK (blocking).** It cannot be downgraded to a warning:
+dropping the block would publish no flow row at all, and an absent row is a blank — so a silent drop
+would convert an error into a confident "no money moved". Nor can the block be published with an
+`unavailable` flow, because the basis is established by reconciling the stated weekly profit against
+each candidate total, and that reconciliation needs the flow (doc 02 § 2.1 forbids deciding a basis
+any other way). The finding names the sheet and the cell; the administrator repairs the workbook and
+re-uploads. Findings never echo cell content — an amount mistyped as text is still an amount — except
+Excel's own fixed error literals, which are not private and are what the operator needs.
+
+**No schema change.** `unavailable` is already in the published `value_class` CHECK constraint on
+both `portfolio_snapshot_rows` and `portfolio_performance_rows`.
 
 ---
 

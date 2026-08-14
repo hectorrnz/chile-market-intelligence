@@ -403,7 +403,11 @@ export default function FamilyPortfolioAlternativesPage() {
               title={w.summaryTitle}
               minWidth={1080}
               footer={
-                <div className="flex flex-col gap-y-0.5">
+                // R13.R2F5.1 § A — this is the widest table on the page
+                // (1080px min); `.nv-notes` (globals.css) keeps the three
+                // notes stacked at ONE left origin and widens each to a 110ch
+                // measure, instead of a narrow column of its own.
+                <div className="nv-notes">
                   <TableSourceFooter source={w.source} asOf={publishedAt} />
                   <p className="text-[11px] text-muted-fg">{w.noCrossCurrencyNote}</p>
                   <p className="text-[11px] text-muted-fg">{w.irrSourceNote}</p>
@@ -448,7 +452,9 @@ export default function FamilyPortfolioAlternativesPage() {
               title={w.timelineTitle}
               controls={<EventLegend t={w} />}
               footer={
-                <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                // R13.R2F5 — the same shared band as the summary table above,
+                // for consistency across the tab.
+                <div className="nv-notes">
                   <TableSourceFooter source={w.source} asOf={publishedAt} />
                   <span className="text-[11px] text-muted-fg">
                     {visibleEvents.length} {w.eventsWord}

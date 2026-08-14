@@ -335,6 +335,82 @@ export async function getPerformanceBindings(
   return { ok: true, bindings: [...seen.values()] }
 }
 
+export interface PerformanceMetricPoint {
+  publicationId: string
+  basis: string
+  value: number | null
+  /**
+   * The publication's own classification of the value — `source_provided_flow`
+   * for a flow the source stated, `unavailable` when it could not be read.
+   * Carried so an unreadable flow is never mistaken for a sparse-event blank.
+   */
+  valueClass: string | null
+}
+
+type InEqEqSelect<T> = {
+  from: (t: string) => {
+    select: (c: string) => {
+      in: (col: string, v: readonly string[]) => {
+        eq: (col: string, v: unknown) => {
+          eq: (col: string, v: unknown) => Promise<{ data: T[] | null; error: unknown }>
+        }
+      }
+    }
+  }
+}
+
+/**
+ * ONE performance metric across MANY publications, for one scope — the shape
+ * the flow-adjusted evolution path needs (R13.R2 pass 4 § 2).
+ *
+ * Read through the CALLER'S OWN session so `nmi_can_access_scope` re-derives
+ * the entitlement in the database: a net flow is a portfolio amount and is
+ * protected exactly like the level it is subtracted from.
+ *
+ * A week that published no row for the metric is simply ABSENT from the result.
+ * Nothing is coalesced here: this layer reports what the book holds, and the
+ * SPARSE-EVENT reading of an absent flow (R13.R2E.1 § 2) belongs to the pure
+ * adjuster, which is where it can be stated, documented and tested.
+ *
+ * `valueClass` travels with the value so the caller can tell a flow the source
+ * STATED from one it published as unavailable — the two are read in opposite
+ * directions and must never arrive indistinguishable.
+ */
+export async function getPerformanceMetricSeries(
+  publicationIds: readonly string[],
+  scope: string,
+  metric: string,
+): Promise<
+  { ok: true; points: PerformanceMetricPoint[] } | { ok: false; code: 'not_configured' | 'read_failed' }
+> {
+  if (publicationIds.length === 0) return { ok: true, points: [] }
+  const client = await getSupabaseUserClient()
+  if (!client) return { ok: false, code: 'not_configured' }
+
+  const { data, error } = await (client as never as InEqEqSelect<{
+    publication_id: string
+    basis: string
+    value: number | null
+    value_class: string | null
+  }>)
+    .from('portfolio_performance_rows')
+    .select('publication_id, basis, value, value_class')
+    .in('publication_id', publicationIds)
+    .eq('scope', scope)
+    .eq('metric', metric)
+
+  if (error) return { ok: false, code: 'read_failed' }
+  return {
+    ok: true,
+    points: (data ?? []).map((r) => ({
+      publicationId: r.publication_id,
+      basis: r.basis,
+      value: r.value,
+      valueClass: r.value_class ?? null,
+    })),
+  }
+}
+
 export interface BoundRowValue {
   publicationId: string
   rowKey: string

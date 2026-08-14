@@ -416,8 +416,18 @@ describe('R9.2 · scope restraint', () => {
   })
 
   test('59. no migration or generated database-type change', () => {
-    const migrations = readdirSync(join(ROOT, 'supabase/migrations'))
+    // The invariant is that THE SETTINGS PAGE PHASE persisted nothing — the
+    // `/settings` surface is a read-only console over existing endpoints. The
+    // filename filter is a proxy for that; R13.R2's Family Portfolio
+    // presentation-settings migration matches the word "settings" while being
+    // an entirely different subject (a global allocation-display record owned
+    // by the Family Portfolio module, guarded by its own pgTAP suite), so it is
+    // named as the one admitted exception rather than loosening the pattern.
+    const ADMITTED = '20260812000000_family_portfolio_presentation_settings.sql'
+    const migrations = readdirSync(join(ROOT, 'supabase/migrations')).filter((f) => f !== ADMITTED)
     assert.equal(migrations.filter((f) => /settings|account|preference/i.test(f)).length, 0)
+    // The load-bearing half, unchanged: no file of THIS phase references a
+    // migration or the generated database types.
     assert.doesNotMatch(BOTH, /supabase\/migrations|database\.types/)
   })
 

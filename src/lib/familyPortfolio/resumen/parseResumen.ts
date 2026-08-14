@@ -55,6 +55,8 @@ import {
   buildRowKey,
   childRowKey,
   REQUIRED_ROW_TYPES,
+  classifyFlowCell,
+  flowValueClass,
   type ScopeId,
   type RowType,
   type ValueClass,
@@ -219,9 +221,25 @@ export function findResumenSheet(sheets: XlsxSheet[]): XlsxSheet | null {
 interface BlockMetric { value: number | null; cell: string; row: number; error: string | null }
 
 interface PerformanceBlock {
-  /** Flow for THIS block. Main's two bases carry different flows. */
+  /**
+   * Flow for THIS block. Main's two bases carry different flows.
+   *
+   * `null` means the block carries no flow ROW at all, which under the
+   * sparse-event convention is zero. It NEVER means "unreadable" — that is
+   * `flowUnreadable`, and the two must not be conflated (R13.R2E.2 § 3).
+   */
   flow: number | null
   flowCell: string | null
+  /**
+   * R13.R2E.2 — set when the block's flow cell holds something that is not a
+   * readable number (Excel error, text, boolean, uncached formula). Names the
+   * KIND of problem, never the cell's content. While it is set the block cannot
+   * be reconciled at all: `bindBlockToCandidate` needs the flow to recompute the
+   * weekly profit, and feeding it a fabricated zero could bind the block to the
+   * WRONG total — the silent, plausible-looking error doc 02 § 2.1 exists to
+   * prevent.
+   */
+  flowUnreadable: string | null
   /**
    * R13.R1 § 4 — the source's own title for this block, when it carries one
    * (`PORTAFOLIO EX/CON ACCIONES CHILENAS`). CORROBORATING EVIDENCE ONLY: the
@@ -263,6 +281,13 @@ function basisFor(scope: ScopeId, candidate: Candidate): PerformanceBasis {
 export function bindBlockToCandidate(block: PerformanceBlock, candidates: Candidate[]): Candidate | null {
   const stated = block.metrics.get('weekly_profit')?.value ?? null
   if (stated === null) return null
+  // R13.R2E.2 § 3 — an UNREADABLE flow cannot be reconciled against anything.
+  // Substituting zero here would silently reconcile the block against whichever
+  // total happens to fit a flow-free week, so this fails closed exactly as an
+  // ambiguous candidate set does. The caller refuses the week before reaching
+  // here; this is the guarantee at the function's own boundary.
+  if (block.flowUnreadable !== null) return null
+  // An absent flow ROW is a blank sparse-event cell, which is zero.
   const flow = block.flow ?? 0
 
   const matches = candidates.filter((c) => {
@@ -416,7 +441,7 @@ export function parseResumen(
       // is what guarantees the title can never merge two blocks: it closes any
       // block still open and starts the one it names.
       if (rowType === 'performance_header') {
-        current = { flow: null, flowCell: null, headerLabel: label, headerCell: cellName, metrics: new Map() }
+        current = { flow: null, flowCell: null, flowUnreadable: null, headerLabel: label, headerCell: cellName, metrics: new Map() }
         blocks.push(current)
         continue
       }
@@ -425,12 +450,21 @@ export function parseResumen(
       // one block; any other row closes it.
       if (rowType === 'performance' || rowType === 'flow') {
         if (!current) {
-          current = { flow: null, flowCell: null, headerLabel: null, headerCell: null, metrics: new Map() }
+          current = { flow: null, flowCell: null, flowUnreadable: null, headerLabel: null, headerCell: null, metrics: new Map() }
           blocks.push(current)
         }
         if (rowType === 'flow') {
           // Doc 02 § 8: an EMPTY flow cell means ZERO flow, not missing data.
-          current.flow = numberAt(sheet, row, thisWeek.column) ?? 0
+          //
+          // R13.R2E.2 § 3 — BUT ONLY AN EMPTY ONE. This was `numberAt(...) ?? 0`,
+          // and `numberAt` returns null for every non-numeric cell — so an Excel
+          // error, a number typed as text or a stray boolean fell into the same
+          // zero as a genuine blank, and a corrupted capital movement would have
+          // published as performance. `classifyFlowCell` separates the two, and
+          // it is the ONLY place that decision is made.
+          const reading = classifyFlowCell(sheet, row, thisWeek.column)
+          current.flow = reading.state === 'unreadable' ? null : reading.value
+          current.flowUnreadable = reading.state === 'unreadable' ? reading.detail : null
           current.flowCell = cellName
         } else {
           const metric = performanceMetricOf(label) ?? 'unknown'
@@ -584,6 +618,37 @@ export function parseResumen(
     // --- Bind each block (rule 6).
     const usedBases = new Set<PerformanceBasis>()
     for (const block of blocks) {
+      // --- R13.R2E.2 § 3: AN UNREADABLE FLOW CELL FAILS THE WEEK CLOSED.
+      //
+      // This is checked FIRST — ahead of every other early exit below —
+      // because those exits DROP the block, and a dropped block publishes no
+      // flow row at all. Downstream, an absent flow row is a blank sparse-event
+      // cell and therefore ZERO (doc 02 § 8), so quietly dropping a block whose
+      // flow cell is corrupted would convert an ERROR into a confident "no money
+      // moved" — the precise failure this rule exists to prevent.
+      //
+      // Nor can the block simply be published with an `unavailable` flow: the
+      // basis is established by reconciling the stated weekly profit against
+      // each candidate total, and that reconciliation needs the flow. Without
+      // it there is no basis to publish the row under, and guessing one is
+      // exactly what doc 02 § 2.1 forbids.
+      //
+      // So the week is REFUSED — blocking, like `ambiguous_performance_basis`,
+      // and for the same reason: a real cell we cannot read must not become a
+      // plausible-looking number. The administrator gets the sheet and the cell,
+      // fixes the workbook, and re-uploads. No week in the current book reaches
+      // this (all 477 blank flow cells are genuinely absent cells, all 33 values
+      // are numbers), so nothing that publishes today is affected.
+      if (block.flowUnreadable !== null) {
+        findings.push(finding('blocking', 'flow_cell_unreadable',
+          `the contribution/withdrawal cell for ${range.scope} holds ${block.flowUnreadable}, ` +
+          'so this week\'s net flow cannot be read; it is not treated as zero',
+          { scope: range.scope, sourceSheet: sheet.name,
+            sourceCell: block.flowCell ?? undefined,
+            rowLabel: block.headerLabel ?? undefined }))
+        continue
+      }
+
       if (block.metrics.size === 0) continue
 
       // --- R13.R1.1 § 8: AN ABSENT BLOCK IS NOT AN AMBIGUOUS ONE.
@@ -657,10 +722,19 @@ export function parseResumen(
       const ret = weeklyReturn(profit, bound.previousValue)
 
       if (block.flowCell) {
+        // R13.R2E.2 § 4 — the value class comes from the ONE classifier, never
+        // from a literal here. `flowUnreadable` is null by this point (the week
+        // is refused above if it is not), so this resolves to
+        // `source_provided_flow` today — but deriving it keeps the single source
+        // of truth intact rather than restating it and letting the two drift.
         performance.push({
           scope: range.scope, basis, metric: 'flow',
           sourceValue: block.flow,
-          valueClass: 'source_provided_flow',
+          valueClass: flowValueClass(
+            block.flowUnreadable !== null
+              ? { state: 'unreadable', value: null, detail: block.flowUnreadable }
+              : { state: 'stated', value: block.flow ?? 0, detail: null },
+          ),
           sourceSheet: sheet.name, sourceCell: block.flowCell,
           sourceRow: Number(/[0-9]+$/.exec(block.flowCell)?.[0] ?? 0),
           boundRowKey: bound.rowKey, boundSourceCell: bound.sourceCell,

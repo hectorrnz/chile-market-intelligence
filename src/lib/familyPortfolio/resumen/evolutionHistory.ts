@@ -44,8 +44,15 @@ import {
   type ResumenDraft,
 } from './parseResumen.ts'
 
-/** Bumped when the extraction semantics change, independently of the row parser. */
-export const EVOLUTION_EXTRACTOR_VERSION = 'r13.r1.evolution.1'
+/**
+ * Bumped when the extraction semantics change, independently of the row parser.
+ *
+ * `…evolution.2` (R13.R2C § 15) widens the extraction from Main to EVERY
+ * published scope. The technique is unchanged — read the numerically-bound
+ * total row across the historical column grid — so the personal series carry
+ * exactly the same guarantees Main's already do.
+ */
+export const EVOLUTION_EXTRACTOR_VERSION = 'r13.r2c.evolution.2'
 
 /** The bases this extractor publishes a Main series for (doc 02 § 2.1). */
 export const MAIN_EVOLUTION_BASES: readonly PerformanceBasis[] = [
@@ -53,9 +60,25 @@ export const MAIN_EVOLUTION_BASES: readonly PerformanceBasis[] = [
   'with_chilean_equities',
 ] as const
 
+/**
+ * A personal scope has ONE basis and it is called `total` — never a Main basis
+ * name. A personal portfolio has no Chilean-equities split, and borrowing
+ * `with_chilean_equities` would invite a reader to compare two different
+ * constructions (R13.R2C § 28).
+ */
+export const PERSONAL_EVOLUTION_SCOPES = ['jaime', 'andres', 'pablo'] as const
+export type PersonalEvolutionScope = (typeof PERSONAL_EVOLUTION_SCOPES)[number]
+export type EvolutionScope = 'main' | PersonalEvolutionScope
+
+/** Every (scope, basis) series this extractor produces, in a stable order. */
+export const EVOLUTION_SERIES_SPECS: ReadonlyArray<{ scope: EvolutionScope; basis: string }> = [
+  ...MAIN_EVOLUTION_BASES.map((basis) => ({ scope: 'main' as const, basis: basis as string })),
+  ...PERSONAL_EVOLUTION_SCOPES.map((scope) => ({ scope, basis: 'total' })),
+]
+
 export interface EvolutionObservation {
-  scope: 'main'
-  basis: PerformanceBasis
+  scope: EvolutionScope
+  basis: string
   /** ISO date of the historical week column this value was read from. */
   observationDate: string
   value: number
@@ -66,7 +89,8 @@ export interface EvolutionObservation {
 }
 
 export interface EvolutionSeriesReport {
-  basis: PerformanceBasis
+  scope: EvolutionScope
+  basis: string
   /** The row the basis was numerically bound to, or null when unbound. */
   boundRowKey: string | null
   boundRowLabel: string | null
@@ -74,7 +98,13 @@ export interface EvolutionSeriesReport {
   observationCount: number
   earliestDate: string | null
   latestDate: string | null
-  /** Historical columns that carried no usable number for this row. */
+  /**
+   * Historical columns that carried no usable number for this row.
+   *
+   * For a scope that JOINED the book later, the leading columns are legitimately
+   * blank — the portfolio did not exist yet — and that is reported as a gap
+   * here rather than back-projected into a fabricated opening value.
+   */
   gapDates: string[]
 }
 
@@ -182,12 +212,12 @@ export function extractEvolutionHistory(
   const observations: EvolutionObservation[] = []
   const series: EvolutionSeriesReport[] = []
 
-  for (const basis of MAIN_EVOLUTION_BASES) {
+  for (const { scope, basis } of EVOLUTION_SERIES_SPECS) {
     const binding = bound.performance.find(
-      (p) => p.scope === 'main' && p.basis === basis && p.boundRowKey !== null,
+      (p) => p.scope === scope && p.basis === basis && p.boundRowKey !== null,
     )
     const row = binding
-      ? (bound.rows.find((r) => r.scope === 'main' && r.rowKey === binding.boundRowKey) ?? null)
+      ? (bound.rows.find((r) => r.scope === scope && r.rowKey === binding.boundRowKey) ?? null)
       : null
 
     if (!binding || !row) {
@@ -196,9 +226,10 @@ export function extractEvolutionHistory(
       findings.push({
         severity: 'warning',
         code: 'evolution_basis_unbound',
-        detail: `no performance binding resolves the ${basis} row, so that series is unavailable`,
+        detail: `no performance binding resolves the ${scope} ${basis} row, so that series is unavailable`,
       })
       series.push({
+        scope,
         basis,
         boundRowKey: binding?.boundRowKey ?? null,
         boundRowLabel: null,
@@ -224,7 +255,7 @@ export function extractEvolutionHistory(
         continue
       }
       observations.push({
-        scope: 'main',
+        scope,
         basis,
         observationDate: date,
         value: cell.number as number,
@@ -237,11 +268,14 @@ export function extractEvolutionHistory(
     }
 
     series.push({
+      scope,
       basis,
       boundRowKey: binding.boundRowKey,
       boundRowLabel: row.labelEs,
       sourceRow: row.sourceRow,
-      observationCount: observations.filter((o) => o.basis === basis).length,
+      // Counted for THIS series, not for every series sharing a basis name —
+      // the three personal scopes all use the basis `total`.
+      observationCount: observations.filter((o) => o.scope === scope && o.basis === basis).length,
       earliestDate: first,
       latestDate: last,
       gapDates,

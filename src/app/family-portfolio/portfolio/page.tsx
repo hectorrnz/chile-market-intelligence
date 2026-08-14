@@ -191,19 +191,22 @@ function PortfolioPageInner() {
             minWidth={760}
             maxHeight={640}
             footer={
-              <div className="flex flex-col gap-y-0.5">
-                <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-                  <TableSourceFooter
-                    source={t.fp.portfolio.source}
-                    asOf={snapshot?.publishedAt ?? null}
-                  />
-                  {snapshot && (
-                    <p className="ui-meta text-muted-fg">
-                      {t.fp.portfolio.revisionShort} {snapshot.revision} ·{' '}
-                      {t.fp.portfolio.parserLabel} {snapshot.parserVersion}
-                    </p>
-                  )}
-                </div>
+              // R13.R2F5.1 § A — `.nv-notes` (globals.css) stacks this footnote
+              // run at ONE left origin and gives each line a 110ch measure, so
+              // it uses this full-width table's freed space by line length
+              // rather than by starting the revision line mid-table. The inner
+              // `flex flex-wrap` row that did exactly that is removed.
+              <div className="nv-notes">
+                <TableSourceFooter
+                  source={t.fp.portfolio.source}
+                  asOf={snapshot?.publishedAt ?? null}
+                />
+                {snapshot && (
+                  <p className="ui-meta text-muted-fg">
+                    {t.fp.portfolio.revisionShort} {snapshot.revision} ·{' '}
+                    {t.fp.portfolio.parserLabel} {snapshot.parserVersion}
+                  </p>
+                )}
                 {/* The one column NMI derives rather than ingests is disclosed
                     as such — a genuine caveat on its own line beside the
                     footer, per the standing footer convention. */}

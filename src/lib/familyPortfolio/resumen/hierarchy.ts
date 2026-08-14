@@ -14,7 +14,7 @@
 // totals numerically unchanged (it adds zero) while silently misattributing the
 // hierarchy — harmless arithmetic, harmful structure.
 
-import { textAt, type XlsxSheet } from '../xlsx/readXlsx.ts'
+import { cellAt, textAt, type XlsxSheet } from '../xlsx/readXlsx.ts'
 
 export type ScopeId = 'main' | 'jaime' | 'andres' | 'pablo'
 
@@ -51,6 +51,100 @@ export type ValueClass =
   | 'nmi_calculated'
   | 'unavailable'
   | 'not_reproducible'
+
+// ---------------------------------------------------------------------------
+// R13.R2E.2 — reading a CONTRIBUTION / WITHDRAWAL cell
+// ---------------------------------------------------------------------------
+//
+// THE SINGLE PLACE a flow cell is classified. Everything downstream — the
+// parser's value class, the published row, `netFlowOf()` in
+// `flowAdjustedEvolution.ts` — consumes this decision rather than re-deriving
+// it, so the blank/unreadable distinction cannot drift between layers.
+//
+// WHY THIS EXISTS. `Retiros / Aportes` is a SPARSE EVENT row: contributions and
+// withdrawals are unusual, so its normal state is empty and an empty cell means
+// NO MONEY MOVED (doc 02 § 8). The parser expressed that as `numberAt(...) ?? 0`
+// — but `numberAt` returns null for EVERY non-numeric cell, so an Excel error,
+// a number typed as text or a stray boolean collapsed onto the SAME zero as a
+// genuine blank. A corrupted flow cell would then have been read as "no money
+// moved", and the week's capital movement would have been published as
+// performance. No such cell exists in the current workbook — all 477 blanks in
+// the five flow rows are literally absent cells and all 33 values are numbers —
+// so nothing was ever mis-read; this closes the door before one appears.
+//
+// FAIL CLOSED, AND ONLY ON REAL AMBIGUITY. A cell that is genuinely without
+// content stays zero, because that is what the source means by it. A cell that
+// HAS content we cannot read as a number is UNREADABLE — never zero, never
+// guessed, never substituted from another basis.
+
+export type FlowCellReading =
+  /** Genuinely without content: the sparse-event convention's zero. */
+  | { readonly state: 'blank'; readonly value: 0; readonly detail: null }
+  /** The source stated a number — including a literal zero, which is a real statement. */
+  | { readonly state: 'stated'; readonly value: number; readonly detail: null }
+  /**
+   * The cell holds something that is not a readable number. `detail` names the
+   * KIND of problem and never echoes cell content — an amount mistyped as text
+   * is still an amount, and a finding is not the place to reproduce it. Excel's
+   * own error literals are the one exception: they are a fixed, non-private
+   * vocabulary and are exactly what an operator needs in order to fix the cell.
+   */
+  | { readonly state: 'unreadable'; readonly value: null; readonly detail: string }
+
+const BLANK_READING: FlowCellReading = { state: 'blank', value: 0, detail: null }
+
+const unreadable = (detail: string): FlowCellReading => ({ state: 'unreadable', value: null, detail })
+
+/** Excel's error vocabulary — fixed, non-private, safe to quote back. */
+const EXCEL_ERROR_LITERALS: readonly string[] = [
+  '#NAME?', '#REF!', '#VALUE!', '#DIV/0!', '#N/A', '#NULL!', '#NUM!',
+]
+
+export function classifyFlowCell(sheet: XlsxSheet, row: number, column: number): FlowCellReading {
+  const cell = cellAt(sheet, row, column)
+  // No cell written at all — the overwhelmingly common case, and precisely the
+  // one the sparse-event convention is about.
+  if (cell === null) return BLANK_READING
+
+  switch (cell.kind) {
+    case 'number':
+      // A literal 0 is a STATEMENT that no money moved, not an absence. It reads
+      // identically to a blank downstream, and that is correct — but it is
+      // classified honestly here rather than folded into the blank case.
+      return Number.isFinite(cell.number)
+        ? { state: 'stated', value: cell.number as number, detail: null }
+        : unreadable('a value that is not a finite number')
+
+    case 'empty':
+      // An empty cell is only reached here when it carries a FORMULA (the reader
+      // drops truly empty cells), which means the workbook was saved without
+      // that formula's cached result. Its value is unknown, not absent.
+      return cell.formula === null
+        ? BLANK_READING
+        : unreadable('a formula with no cached result')
+
+    case 'text': {
+      // An empty string is content-free and reads as blank — a formula that
+      // returned "" is the source saying nothing happened. Anything else is an
+      // amount, a marker or a note that this parser must not interpret.
+      const t = (cell.text ?? '').trim()
+      return t === '' ? BLANK_READING : unreadable('text where a number was expected')
+    }
+
+    case 'boolean':
+      return unreadable('a boolean where a number was expected')
+
+    case 'error': {
+      const t = (cell.text ?? '').trim()
+      return unreadable(EXCEL_ERROR_LITERALS.includes(t) ? t : '#ERROR')
+    }
+  }
+}
+
+/** The value class a reading publishes under — one mapping, used everywhere. */
+export function flowValueClass(reading: FlowCellReading): ValueClass {
+  return reading.state === 'unreadable' ? 'unavailable' : 'source_provided_flow'
+}
 
 export interface ScopeRange {
   scope: ScopeId

@@ -946,15 +946,28 @@ describe('existing behaviour is unchanged', () => {
       '/[scope]/snapshot/route.ts',
       '/[scope]/weeks/route.ts',
       '/admin/publications/[id]/commentary/route.ts',
+      // R13.R2C §§ 8-12 — the Weekly Notes mutations. Both sit INSIDE the
+      // already-administrator-only `/admin/publications/[id]/` namespace beside
+      // the commentary route, so they add no new entitlement surface: each
+      // re-derives `entitlement.isAdministrator` and the table itself has no
+      // write policy for `authenticated` at all.
+      '/admin/publications/[id]/notes/[noteId]/route.ts',
+      '/admin/publications/[id]/notes/route.ts',
       '/admin/publications/[id]/rollback/route.ts',
       '/admin/uploads/[id]/publish/route.ts',
       '/admin/uploads/[id]/route.ts',
       '/admin/uploads/route.ts',
       '/alternatives/route.ts',
       '/overview/[scope]/route.ts',
+      // R13.R2 §§ 14-15 — the global allocation-presentation settings. It is
+      // NOT under `/admin/` deliberately: members must READ what the
+      // administrator approved, and only the PUT is administrator-gated (by
+      // `canAdminister` in the route AND by the RLS write policy). It carries
+      // no financial data.
+      '/presentation-settings/route.ts',
       '/scopes/route.ts',
       '/weekly-changes/[scope]/route.ts',
-    ], 'the API surface must be exactly the Stage-5 admin set plus the Stage-6/7/8/9 read endpoints')
+    ], 'the API surface must be exactly the Stage-5 admin set plus the Stage-6/7/8/9 read endpoints and R13.R2 presentation settings')
   })
 
   test('username + password authentication is untouched', () => {

@@ -154,6 +154,7 @@ export const dict = {
         colDiff:      'Difference',
         valuesInUsd:  'Values in USD',
         diffNote:     'Difference = This Week − Previous Week, computed by NMI from the two published columns.',
+        differenceMismatch: 'The published difference for this row does not match This Week − Previous Week. The subtraction shown is authoritative; the stored figure is retained for reconciliation.',
         noPublication: 'No portfolio week has been published yet.',
         emptyScope:   'The published week carries no rows for this scope.',
         loadError:    'The portfolio could not be loaded. Please try again.',
@@ -168,7 +169,7 @@ export const dict = {
         heroLabel:        'Total portfolio value',
         weeklyReturn:     'Weekly Return',
         weeklyDifference: 'Weekly Difference',
-        ytdReturn:        'Year-to-date Return',
+        ytdReturn:        'YTD Return',
         comparisonTitle:  'Weekly close',
         allocationTitle:  'Asset allocation',
         allocationNote:   'Weights are NMI-calculated from published snapshot values; each basis states its own denominator.',
@@ -193,16 +194,39 @@ export const dict = {
         // cell (RESUMEN rows 90 and 97). Each performance block carries its own
         // flow line, so the two bases legitimately differ.
         flow:             'Net Flows',
-        flowHelp:         'Contributions less withdrawals used in the flow-adjusted return calculation.',
-        weeklyProfit:     'Weekly Profit / Loss',
-        ytdProfit:        'Year-to-date Profit / Loss',
+        // R13.R2F § 4 — "return calculation" is gone. This app performs none:
+        // the flow adjustment produces a VALUE PATH, and § 18's terminology
+        // contract forbids naming anything derived from it a return.
+        flowHelp:         'Contributions less withdrawals. Removed from the flow-adjusted evolution so capital movements do not read as performance.',
+        // R13.R2C § 3 — compact institutional shorthand. The horizon lives in
+        // the metric label itself (Weekly / YTD), so the enclosing section
+        // heading never has to repeat it and can never contradict it.
+        weeklyProfit:     'Weekly P&L',
+        ytdProfit:        'YTD P&L',
         marketTitle:      'Market context',
         inretailTitle:    'InRetail',
         inretailPrice:    'Closing price (USD)',
         inretailVariation: 'Price variation',
-        inretailImpact:   'Portfolio value impact',
-        globalEquity:     'Global equity (weekly)',
-        globalFixedIncome: 'Global fixed income avg. (weekly)',
+        // Owner review pass 2 § 2 — `inretailImpact` and `inretailIncluded` are
+        // GONE. The InRetail portfolio-value impact is already a line of the
+        // Weekly close by line table, so annotating it again above the fold was
+        // a duplicate presentation of one figure. The MARKET metrics above keep
+        // their labels: a closing price and a price variation are market
+        // context, not a second rendering of a portfolio amount.
+        // R13.R2 PASS 4 §§ 3-4 — the comparators are named plainly. "(weekly)"
+        // is gone from both because the band above them is titled with the
+        // horizon and § 2 forbids repeating it on every figure; the fixed-income
+        // benchmark's composition moves from the label to its tooltip rather
+        // than being lost with the "avg." the owner asked to drop.
+        globalEquity:     'Global Equity',
+        globalFixedIncome: 'Global Fixed Income',
+        globalEquityDetail: 'ACWI weekly return',
+        globalFixedIncomeDetail: 'Average of three global fixed-income benchmarks',
+        // § 4A — inside a basis group under a "Weekly Performance" heading, the
+        // basis and the horizon are both already stated; the metric says only
+        // which figure it is.
+        metricReturn:     'Return',
+        metricProfit:     'P&L',
         benchmarksPending: 'A metric shown as — draws on a symbol still pending verification; its value is withheld until that symbol reproduces the source\'s own figures. Verified symbols are shown live.',
         marketUnavailable: 'No observation within the alignment window.',
         observedOn:       'observed',
@@ -211,6 +235,227 @@ export const dict = {
         provisionalDisclaimer: 'All prices are provisional, based on market information or the most recent account statements received.',
         freshnessPortfolio:    'Portfolio as of',
         freshnessAlternatives: 'Alternatives as of',
+
+        // ── R13.R2 — recomposed Summary ──────────────────────────────────
+        // R13.R2C §§ 2, 5, 27 — THE SECTION TITLE DESCRIBES THE SECTION HONESTLY.
+        // Main's headline comparison is entirely weekly, so it says so and the
+        // individual metrics need no "(weekly)" suffix. A personal scope's row
+        // deliberately mixes weekly and year-to-date metrics, so it is titled
+        // plainly "Performance" and each metric states its own horizon — a
+        // "Weekly" heading over a YTD figure is exactly the inconsistency this
+        // pass removes.
+        performanceMarketsTitle: 'Performance & Markets',
+        weeklyPerformanceTitle: 'Weekly Performance',
+        performanceTitle: 'Performance',
+        portfolioGroup:   'Portfolio',
+        marketsGroup:     'Markets',
+        // Owner review § 2 — the page's single focal figure: the latest total
+        // INCLUDING Chilean equities. The basis is named quietly beside it so
+        // the headline is unambiguous, while the Excluding basis stays a
+        // performance detail rather than a competing headline.
+        aumLabel:         'Portfolio Value',
+        aumBasis:         'Including Chilean equities',
+        weeklySnapshotTitle: 'Weekly Snapshot',
+        // Owner review pass 2 § 5 — the basis is STATED, never inferred. Proven
+        // structurally: the snapshot reads the row the parser numerically bound
+        // to `with_chilean_equities`, i.e. the portfolio TOTAL. A personal scope
+        // has no Chilean-equities split, so it shows the first line only.
+        snapBasisTotal:   'Total Portfolio',
+        snapBasisInclChile: 'Includes Chilean equities',
+        notesTitle:       'Weekly Notes',
+        notesEmpty:       'No note has been written for this week.',
+        // §§ 10-13 — the note is authored IN NMI by an administrator. It is
+        // never parsed from the workbook and never generated.
+        notesEdit:        'Edit note',
+        notesAdd:         'Add note',
+        notesEditorLabel: 'Weekly note',
+        notesPlaceholder: 'Buys, sells, flows, portfolio changes, manager comments, decisions worth recording for this week.',
+        notesSave:        'Save note',
+        notesSaving:      'Saving…',
+        notesSaved:       'Saved',
+        notesCancel:      'Cancel',
+        notesEmptyError:  'Write the note before saving.',
+        notesTooLong:     'The note exceeds the maximum length.',
+        notesSaveError:   'The note could not be saved. Nothing was changed.',
+        notesRemaining:   'characters left',
+        // §§ 8-12 — SEVERAL notes per week, each with its own identity, so each
+        // can be edited or withdrawn without touching its siblings.
+        notesDelete:      'Delete',
+        notesDeleteTitle: 'Delete this note?',
+        notesDeleteBody:  'The note stops appearing on this week. The record that it existed is kept for audit.',
+        notesDeleteConfirm: 'Delete note',
+        notesDeleteError: 'The note could not be deleted. Nothing was changed.',
+        notesMainOnly:    'Weekly Notes are kept on the Main portfolio.',
+        // R13.R2 PASS 4 § 1 — the honest blocked state. The previous wording
+        // ("no note has been written for this week" on read, "the note could not
+        // be saved" on write) described the WEEK and the ATTEMPT; neither was
+        // true when the real answer is that the notes table does not exist yet.
+        notesSchemaMissing:
+          'Weekly Notes are unavailable until the weekly-notes database schema is applied. Notes cannot be read or saved yet — nothing you write here would be stored.',
+        notesUnavailable: 'Weekly Notes could not be loaded, so this week\'s notes are not shown. This is a loading failure, not an empty week.',
+        // § 10 — a personal scope has no Ex/Incl Chilean-equities split, so its
+        // one supported basis is labelled plainly rather than borrowing a Main
+        // basis name a reader might try to compare against.
+        personalWeekly:   'Weekly Return',
+        personalYtd:      'YTD Return',
+
+        // §§ 11-12 — Weekly Snapshot. The dates beside these labels are the
+        // publication's own column dates, never a server clock.
+        snapBeginningOfYear: 'Beginning of Year',
+        snapPreviousWeek: 'Previous Week',
+        snapThisWeek:     'This Week',
+        // Owner review pass 2 § 4 — "Difference" said nothing about WHAT was
+        // differenced. The figure is, and remains, `This Week − Previous Week`
+        // resolved through `difference.ts`; only the visible name changed.
+        snapDifference:   'Portfolio Value Change',
+        // § 6 — MANDATORY disclosure. The first sentence is unconditional; the
+        // identity is rendered ONLY where both of its terms are published for
+        // the basis on screen. Verified across the whole live book — 427
+        // basis-weeks, 0 failures, worst relative deviation 5.2e-15 — and
+        // structurally guaranteed besides: a performance block that cannot be
+        // bound to a total row reproducing its own stated weekly profit is not
+        // published at all.
+        snapFlowNote:
+          'Portfolio Value Change includes Net Flows, and therefore differs from Weekly P&L whenever money moved in or out.',
+        snapFlowIdentity: 'Portfolio Value Change = Weekly P&L + Net Flows',
+        snapDetailTitle:  'Weekly close by line',
+
+        // §§ 16-22 — Portfolio Evolution. § 18 IS A TERMINOLOGY CONTRACT: these
+        // series are portfolio VALUE LEVELS, so nothing here may be called a
+        // return. `evoValueChangeNote` states the distinction outright.
+        evoTitle:         'Portfolio Evolution',
+        evoValueLabel:    'Portfolio Value',
+        // ── R13.R2 PASS 4 § 2 — THE PLOTTED LINE IS FLOW-ADJUSTED ────────────
+        // The chart no longer draws the raw account level: each week's published
+        // net flow is subtracted, so a contribution or a withdrawal cannot show
+        // up as a move in the line. Three strings carry that, and the older
+        // `evoValueChangeNote` was REWRITTEN because it asserted the opposite —
+        // it told the reader the line included flows, which is now false.
+        evoAdjustedValueLabel: 'Flow-adjusted portfolio value',
+        // R13.R2F § 3 — THE ADJUSTMENT MUST BE IMPOSSIBLE TO MISS. The owner
+        // keeps "Portfolio Evolution" as the heading, so the qualifier now
+        // NAMES ITSELF ("Flow-adjusted") before saying what that means, rather
+        // than describing the effect and leaving the reader to infer the term
+        // used everywhere else on the page and on paper.
+        evoFlowAdjustedChip:   'Flow-adjusted · Contributions & withdrawals excluded',
+        // R13.R2E §§ 10, 14 — the three concepts, named apart so none can stand
+        // in for another. `evoActualValueLabel` is the REAL published balance;
+        // `evoAdjustedValueLabel` is the DERIVED plotted path;
+        // `evoAdjustedValueChange` is the change along that path.
+        evoActualValueLabel:   'Actual Portfolio Value',
+        evoAdjustedValueChange: 'Flow-Adjusted Value Change',
+        // § 15 — BOTH statements, visible without hover: what is excluded and
+        // why, then what the line is and is not.
+        evoValueChangeNote:
+          'Contributions and withdrawals are excluded from this evolution so external capital movements do not distort the underlying portfolio-value path. This is an analytical value path — not actual historical AUM, and not an investment-return calculation. Week to week the line moves by the portfolio\'s own published profit or loss; the actual portfolio value is shown above.',
+        // R13.R2E.1 § 2 — THESE TWO NOW SIGNAL AN UNREADABLE FIGURE, NOT A BLANK
+        // ONE. A blank contribution/withdrawal cell means no money moved and is
+        // adjusted as zero, so it no longer shortens any series; only a net-flow
+        // figure the source published in a form that cannot be read leaves a
+        // step unadjustable. Neither state occurs in the current book.
+        evoFlowAdjustedFrom:
+          'An earlier week published a net-flow figure that could not be read, so the series shown begins here:',
+        evoFlowAdjustedUnavailable:
+          'Every week in this period published a net-flow figure that could not be read, so a flow-adjusted line cannot be drawn. The raw value path is deliberately not shown in its place.',
+        evoModeCompare:   'Compare',
+        evoModeIncl:      'Incl. Chilean Equities',
+        evoModeExcl:      'Excl. Chilean Equities',
+        evoSeriesLabel:   'Series',
+        evoPeriodLabel:   'Period',
+        evoPeriod1M:      '1M',
+        evoPeriod3M:      '3M',
+        evoPeriodYTD:     'YTD',
+        evoPeriod1Y:      '1Y',
+        evoPeriodALL:     'ALL',
+        evoNoRange:       'No source observation falls in this period.',
+        evoTruncated:     'The record begins after this period would start, so the range shows every observation that exists.',
+        evoMasked:        'Chart hidden while amounts are masked.',
+        // § 24 — personal scopes have no published value history. Stated as a
+        // fact about the source, never as an error.
+        evoUnavailablePersonal:
+          'A weekly value history has not been published for this portfolio yet. Only the Main portfolio carries the two-year weekly series.',
+        evoTableAlternative: 'Observations as a table',
+
+        // ── Owner review §§ 15-20 — the High Water Market reference ──────────
+        // THE VISIBLE TERM IS THE OWNER'S, verbatim: "High Water Market". It is
+        // NOT silently corrected to "High Water Mark", "Peak Portfolio Value" or
+        // "Historical Peak Value" anywhere in the interface.
+        //
+        // Because that name can be read as the fee-calculation term, the
+        // explanation is a first-class tooltip rather than a footnote: it says
+        // what the figure IS (the maximum observed portfolio value in the
+        // history on screen) and what it is NOT (a flow-adjusted return).
+        //
+        // PASS 4 § 2 — REALIGNED, NOT RENAMED. The chart now plots the
+        // flow-adjusted path, so "the maximum observed portfolio value" would
+        // point at a line that is no longer on screen. The reference is the peak
+        // of the LINE DRAWN, and the tooltip names all three figures the reader
+        // could otherwise confuse: the actual portfolio value (at the top of the
+        // page), the plotted flow-adjusted path, and this high on that path. It
+        // remains a LEVEL, not a return.
+        hwmLabel:         'High Water Market',
+        // R13.R2E § 16 — the TERM is locked; the explanation is corrected to the
+        // line it now measures. The plotted levels are DERIVED, so "maximum
+        // observed portfolio value" would be false: it names neither the actual
+        // AUM high nor a return high-water mark, and the copy says so outright.
+        hwmTooltip:
+          'High Water Market is the highest level reached by the displayed flow-adjusted portfolio path. Contributions and withdrawals are excluded. It is not the portfolio\'s actual AUM high and is not an investment-return high-water mark.',
+        hwmSetAt:         'set',
+        hwmCurrent:       'at its high',
+        // Owner review pass 2 §§ 19-20 — the reference's name, amount and date
+        // live in a STABLE header element that no chart tooltip can cover, and
+        // the explanation hangs off an adjacent info control with its own
+        // accessible name (the reference's own label would read as the value).
+        hwmHelpLabel:     'About High Water Market',
+
+        // ── R13.R2C §§ 21-25 — the A4 one-pager ─────────────────────────────
+        // The print sheet is a DELIBERATE composition, not the screen with its
+        // chrome hidden: it prints the scope on screen, for the caller who is
+        // entitled to it, with every control, editor and gear left behind.
+        printAction:      'Print',
+        printTitle:       'Portfolio Summary',
+        printPreparedFor: 'Prepared for',
+        printAsOf:        'As of',
+        printPage:        'One-page summary',
+        hwmSetting:       'High Water Market',
+        hwmSettingAuto:   'Automatic',
+        hwmSettingHidden: 'Hidden',
+        hwmSettingHelp:
+          'Automatic shows the reference on the ALL view of a single series, and hides it when comparing two series.',
+
+        // §§ 14-15 — administrator-only presentation settings.
+        settingsTitle:    'Allocation display',
+        settingsOpen:     'Allocation display settings',
+        settingsEvolution:     'Chart display settings',
+        settingsEvolutionTitle: 'Chart display',
+        settingsGlobalNote:
+          'These settings are global: everyone who can see this allocation sees the presentation you approve here.',
+        settingsReadOnly: 'The allocation display is configured by the administrator.',
+        settingsLabelPosition: 'Label position',
+        settingsPosInside:    'Inside',
+        settingsPosOutside:   'Outside',
+        settingsPosLegend:    'Legend only',
+        settingsLabelContent: 'Label content',
+        settingsContentPct:   'Percentage',
+        settingsContentValue: 'Value',
+        settingsContentBoth:  'Percentage + Value',
+        settingsLegend:       'Legend',
+        settingsLegendShow:   'Show',
+        settingsLegendHide:   'Hide',
+        settingsPalette:      'Palette',
+        settingsPaletteInstitutional: 'Institutional',
+        settingsPaletteSpectrum:      'Spectrum',
+        settingsThickness:    'Ring thickness',
+        settingsThicknessThin:   'Thin',
+        settingsThicknessMedium: 'Medium',
+        settingsThicknessThick:  'Thick',
+        settingsSave:     'Save',
+        settingsCancel:   'Cancel',
+        settingsSaved:    'Saved',
+        settingsError:    'Could not save — nothing was changed.',
+        // A value label prints a monetary amount, so it obeys the page mask
+        // exactly like every other amount.
+        settingsMaskNote: 'Value labels follow privacy mode, like every other amount on this page.',
       },
       weeklyChanges: {
         title:              'Weekly Changes',
@@ -1456,6 +1701,7 @@ export const dict = {
         colDiff:      'Diferencia',
         valuesInUsd:  'Valores en USD',
         diffNote:     'Diferencia = Esta Semana − Semana Anterior, calculada por NMI a partir de las dos columnas publicadas.',
+        differenceMismatch: 'La diferencia publicada de esta fila no coincide con Esta Semana − Semana Anterior. La resta mostrada es la autoritativa; la cifra almacenada se conserva para reconciliación.',
         noPublication: 'Aún no se ha publicado ninguna semana del portafolio.',
         emptyScope:   'La semana publicada no contiene filas para este alcance.',
         loadError:    'No se pudo cargar el portafolio. Intente nuevamente.',
@@ -1470,7 +1716,7 @@ export const dict = {
         heroLabel:        'Valor total del portafolio',
         weeklyReturn:     'Retorno de la Semana',
         weeklyDifference: 'Diferencia de la Semana',
-        ytdReturn:        'Retorno del Año',
+        ytdReturn:        'Retorno YTD',
         comparisonTitle:  'Cierre Semanal',
         allocationTitle:  'Distribución de los Activos',
         allocationNote:   'Las ponderaciones son calculadas por NMI a partir de los valores publicados; cada base indica su propio denominador.',
@@ -1491,16 +1737,21 @@ export const dict = {
         blockExChilean:   'Portafolio sin Acciones Chilenas',
         blockWithChilean: 'Portafolio con Acciones Chilenas',
         flow:             'Flujos Netos',
-        flowHelp:         'Aportes menos retiros, utilizados en el cálculo del retorno ajustado por flujos.',
-        weeklyProfit:     'Utilidad de la Semana',
-        ytdProfit:        'Utilidad del Año',
+        flowHelp:         'Aportes menos retiros. Se excluyen de la evolución ajustada por flujos para que los movimientos de capital no se lean como rentabilidad.',
+        // El atajo P&L ya es vocabulario de la aplicación en español
+        // (cartera: 'P&L No Real.', 'P&L %'), de modo que se conserva.
+        weeklyProfit:     'P&L Semanal',
+        ytdProfit:        'P&L YTD',
         marketTitle:      'Contexto de Mercado',
         inretailTitle:    'InRetail',
         inretailPrice:    'Precio de cierre (USD)',
         inretailVariation: 'Variación del precio',
-        inretailImpact:   'Mayor o menor valor en el portafolio',
         globalEquity:     'Renta Variable Mundial',
-        globalFixedIncome: 'Promedio de Renta Fija Mundial',
+        globalFixedIncome: 'Renta Fija Mundial',
+        globalEquityDetail: 'Retorno semanal de ACWI',
+        globalFixedIncomeDetail: 'Promedio de tres referencias de renta fija mundial',
+        metricReturn:     'Retorno',
+        metricProfit:     'P&L',
         benchmarksPending: 'Una métrica mostrada como — depende de un símbolo aún pendiente de verificación; su valor se omite hasta que ese símbolo reproduzca las cifras de la propia fuente. Los símbolos verificados se muestran en vivo.',
         marketUnavailable: 'Sin observación dentro de la ventana de alineación.',
         observedOn:       'observado',
@@ -1509,6 +1760,138 @@ export const dict = {
         provisionalDisclaimer: 'Todos los precios son provisionales, en base a información de mercado o a las últimas cartolas informadas.',
         freshnessPortfolio:    'Portafolio al',
         freshnessAlternatives: 'Alternativos al',
+
+        // ── R13.R2 — Resumen recompuesto ─────────────────────────────────
+        performanceMarketsTitle: 'Rentabilidad y Mercados',
+        weeklyPerformanceTitle: 'Rentabilidad Semanal',
+        performanceTitle: 'Rentabilidad',
+        portfolioGroup:   'Portafolio',
+        marketsGroup:     'Mercados',
+        aumLabel:         'Valor del Portafolio',
+        aumBasis:         'Con acciones chilenas',
+        weeklySnapshotTitle: 'Cierre de la Semana',
+        snapBasisTotal:   'Portafolio Total',
+        snapBasisInclChile: 'Incluye acciones chilenas',
+        notesTitle:       'Notas de la Semana',
+        notesEmpty:       'Aún no se ha escrito una nota para esta semana.',
+        notesEdit:        'Editar nota',
+        notesAdd:         'Agregar nota',
+        notesEditorLabel: 'Nota de la semana',
+        notesPlaceholder: 'Compras, ventas, flujos, cambios en el portafolio, comentarios del gestor y decisiones que valga la pena registrar esta semana.',
+        notesSave:        'Guardar nota',
+        notesSaving:      'Guardando…',
+        notesSaved:       'Guardada',
+        notesCancel:      'Cancelar',
+        notesEmptyError:  'Escriba la nota antes de guardar.',
+        notesTooLong:     'La nota supera el largo máximo.',
+        notesSaveError:   'No se pudo guardar la nota. No se modificó nada.',
+        notesRemaining:   'caracteres restantes',
+        notesDelete:      'Eliminar',
+        notesDeleteTitle: '¿Eliminar esta nota?',
+        notesDeleteBody:  'La nota deja de aparecer en esta semana. Se conserva el registro de que existió, para auditoría.',
+        notesDeleteConfirm: 'Eliminar nota',
+        notesDeleteError: 'No se pudo eliminar la nota. No se modificó nada.',
+        notesMainOnly:    'Las Notas de la Semana se llevan en el Portafolio Principal.',
+        notesSchemaMissing:
+          'Las Notas de la Semana no están disponibles hasta que se aplique el esquema de base de datos de notas semanales. Todavía no se pueden leer ni guardar notas: nada de lo que escriba aquí quedaría almacenado.',
+        notesUnavailable: 'No se pudieron cargar las Notas de la Semana, por lo que no se muestran las notas de esta semana. Es una falla de carga, no una semana sin notas.',
+        personalWeekly:   'Retorno Semanal',
+        personalYtd:      'Retorno YTD',
+
+        snapBeginningOfYear: 'Inicio del Año',
+        snapPreviousWeek: 'Semana Anterior',
+        snapThisWeek:     'Esta Semana',
+        snapDifference:   'Variación del Valor del Portafolio',
+        snapFlowNote:
+          'La Variación del Valor del Portafolio incluye los Flujos Netos y, por lo tanto, difiere del P&L Semanal cuando hubo entradas o salidas de dinero.',
+        snapFlowIdentity: 'Variación del Valor del Portafolio = P&L Semanal + Flujos Netos',
+        snapDetailTitle:  'Cierre semanal por línea',
+
+        evoTitle:         'Evolución del Patrimonio',
+        evoValueLabel:    'Valor del Portafolio',
+        evoAdjustedValueLabel: 'Valor del portafolio ajustado por flujos',
+        evoFlowAdjustedChip:   'Ajustado por flujos · Excluye aportes y retiros',
+        evoActualValueLabel:   'Valor Real del Portafolio',
+        evoAdjustedValueChange: 'Variación de Valor Ajustada por Flujos',
+        evoValueChangeNote:
+          'Los aportes y retiros están excluidos de esta evolución para que los movimientos externos de capital no distorsionen la trayectoria del valor subyacente del portafolio. Es una trayectoria analítica de valor: no es el AUM histórico real y no es un cálculo de retorno de inversión. Semana a semana la línea se mueve por la propia utilidad o pérdida publicada del portafolio; el valor real del portafolio se muestra arriba.',
+        evoFlowAdjustedFrom:
+          'Una semana anterior publicó un flujo neto que no se pudo leer, por lo que la serie mostrada comienza aquí:',
+        evoFlowAdjustedUnavailable:
+          'Todas las semanas de este período publicaron un flujo neto que no se pudo leer, por lo que no se puede trazar una línea ajustada por flujos. La trayectoria de valor sin ajustar no se muestra en su lugar de forma deliberada.',
+        evoModeCompare:   'Comparar',
+        evoModeIncl:      'Con Acc. Chilenas',
+        evoModeExcl:      'Sin Acc. Chilenas',
+        evoSeriesLabel:   'Serie',
+        evoPeriodLabel:   'Período',
+        evoPeriod1M:      '1M',
+        evoPeriod3M:      '3M',
+        evoPeriodYTD:     'YTD',
+        evoPeriod1Y:      '1A',
+        evoPeriodALL:     'TODO',
+        evoNoRange:       'No hay observaciones de la fuente en este período.',
+        evoTruncated:     'El registro comienza después del inicio de este período, por lo que el rango muestra todas las observaciones existentes.',
+        evoMasked:        'Gráfico oculto mientras los montos están enmascarados.',
+        evoUnavailablePersonal:
+          'Aún no se ha publicado un historial semanal de valor para este portafolio. Solo el Portafolio Principal cuenta con la serie semanal de dos años.',
+        evoTableAlternative: 'Observaciones como tabla',
+
+        // Owner review §§ 15-20. THE TERM IS LEFT IN ENGLISH ON PURPOSE, and the
+        // choice is deliberate rather than an untranslated string: the owner
+        // fixed "High Water Market" as the visible name, it is a proper term of
+        // art that Chilean institutional practice routinely keeps in English,
+        // and inventing a Spanish rendering ("Máximo Histórico") would both
+        // break the owner's naming and assert the very performance-HWM reading
+        // the tooltip exists to rule out. The EXPLANATION is fully translated —
+        // that is the part a reader must understand.
+        hwmLabel:         'High Water Market',
+        hwmTooltip:
+          'El High Water Market es el nivel más alto alcanzado por la trayectoria del portafolio ajustada por flujos que se muestra. Los aportes y retiros están excluidos. No es el máximo real de AUM del portafolio y no es un high-water mark de retorno de inversión.',
+        hwmSetAt:         'alcanzado el',
+        hwmCurrent:       'en su máximo',
+        hwmHelpLabel:     'Acerca del High Water Market',
+
+        printAction:      'Imprimir',
+        printTitle:       'Resumen del Portafolio',
+        printPreparedFor: 'Preparado para',
+        printAsOf:        'Al',
+        printPage:        'Resumen de una página',
+        hwmSetting:       'High Water Market',
+        hwmSettingAuto:   'Automático',
+        hwmSettingHidden: 'Oculto',
+        hwmSettingHelp:
+          'Automático muestra la referencia en la vista TODO de una sola serie y la oculta al comparar dos series.',
+
+        settingsTitle:    'Presentación de la distribución',
+        settingsOpen:     'Ajustes de presentación de la distribución',
+        settingsEvolution:      'Ajustes de presentación del gráfico',
+        settingsEvolutionTitle: 'Presentación del gráfico',
+        settingsGlobalNote:
+          'Estos ajustes son globales: todas las personas que ven esta distribución verán la presentación que apruebe aquí.',
+        settingsReadOnly: 'La presentación de la distribución la configura el administrador.',
+        settingsLabelPosition: 'Posición de la etiqueta',
+        settingsPosInside:    'Interior',
+        settingsPosOutside:   'Exterior',
+        settingsPosLegend:    'Solo leyenda',
+        settingsLabelContent: 'Contenido de la etiqueta',
+        settingsContentPct:   'Porcentaje',
+        settingsContentValue: 'Valor',
+        settingsContentBoth:  'Porcentaje + Valor',
+        settingsLegend:       'Leyenda',
+        settingsLegendShow:   'Mostrar',
+        settingsLegendHide:   'Ocultar',
+        settingsPalette:      'Paleta',
+        settingsPaletteInstitutional: 'Institucional',
+        settingsPaletteSpectrum:      'Espectro',
+        settingsThickness:    'Grosor del anillo',
+        settingsThicknessThin:   'Delgado',
+        settingsThicknessMedium: 'Medio',
+        settingsThicknessThick:  'Grueso',
+        settingsSave:     'Guardar',
+        settingsCancel:   'Cancelar',
+        settingsSaved:    'Guardado',
+        settingsError:    'No se pudo guardar — no se modificó nada.',
+        settingsMaskNote: 'Las etiquetas de valor siguen el modo privacidad, como todo monto en esta página.',
       },
       weeklyChanges: {
         title:              'Cambios Semanales',

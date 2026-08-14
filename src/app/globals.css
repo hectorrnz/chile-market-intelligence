@@ -335,15 +335,70 @@
   /* R13.7 — family-module allocation-slice identity colors (the --news-src-*
      precedent): institutional non-signal hues for donut slices and their
      legend chips. Identity only — NEVER the positive/negative/warning signal
-     tokens, which carry meaning. */
+     tokens, which carry meaning.
+
+     TWELVE SLOTS, ORDERED BY MEASUREMENT (R13.R2 owner review §§ 11-14). The
+     live book's personal scopes carry up to 12 constituents and paletteTokenAt
+     wraps, so at 8 tokens slices 1/9, 2/10, 3/11 and 4/12 rendered in the SAME
+     colour. Twelve covers the largest real scope. The sequence is chosen so
+     that colours which TOUCH round the ring are as far apart as this palette
+     allows — cyclic adjacent ΔE(OKLab) 0.143, against 0.062 for the R13.7
+     order — and every slot clears 1.7:1 against its own theme's card. Verified
+     in both themes by paletteContrast.ts and enforced by the suite. */
   --fp-slice-1:     #004A64;  /* deep teal */
-  --fp-slice-2:     #0E7FB8;  /* institutional blue */
+  --fp-slice-2:     #B07A12;  /* bronze */
   --fp-slice-3:     #1A6630;  /* deep green */
-  --fp-slice-4:     #B07A12;  /* bronze */
-  --fp-slice-5:     #5B6770;  /* slate */
-  --fp-slice-6:     #3A5A8C;  /* steel blue */
-  --fp-slice-7:     #0F6E6E;  /* teal */
-  --fp-slice-8:     #6B5B14;  /* dark bronze */
+  --fp-slice-4:     #0E7FB8;  /* institutional blue */
+  --fp-slice-5:     #003F2D;  /* forest */
+  --fp-slice-6:     #60C5BA;  /* aqua */
+  --fp-slice-7:     #546292;  /* slate blue */
+  --fp-slice-8:     #88CBDF;  /* light cyan */
+  --fp-slice-9:     #5B6770;  /* slate */
+  --fp-slice-10:    #00355F;  /* deep navy */
+  --fp-slice-11:    #7399C6;  /* muted institutional blue */
+  --fp-slice-12:    #679146;  /* olive */
+
+  /* R13.R2 § 14 — the ALTERNATIVE curated allocation palette an administrator
+     may select. The R13.7 `oceanic` preset is WITHDRAWN: it was eight shades of
+     blue (measured worst pair ΔE 0.037 — indistinguishable without hovering),
+     and repairing it inside the approved palette converged on this same set, so
+     shipping both would have been two presets the reader cannot tell apart
+     (§ 12). `spectrum` therefore draws on the same validated twelve colours in
+     a sequence chosen by search so that EVERY slot differs from its
+     institutional counterpart by more than the adjacency floor (worst slot
+     ΔE 0.153, own cyclic adjacency 0.139) — switching palette changes the whole
+     chart, not a few slices. PURPLE IS ABSENT — the project reserves
+     it for the "Review" token, where it carries meaning. Components never see
+     these hexes: they resolve a token NAME through PALETTE_TOKENS. */
+  --fp-spectrum-1:  #B07A12;  /* bronze */
+  --fp-spectrum-2:  #003F2D;  /* forest */
+  --fp-spectrum-3:  #7399C6;  /* muted institutional blue */
+  --fp-spectrum-4:  #1A6630;  /* deep green */
+  --fp-spectrum-5:  #60C5BA;  /* aqua */
+  --fp-spectrum-6:  #004A64;  /* deep teal */
+  --fp-spectrum-7:  #679146;  /* olive */
+  --fp-spectrum-8:  #546292;  /* slate blue */
+  --fp-spectrum-9:  #88CBDF;  /* light cyan */
+  --fp-spectrum-10: #5B6770;  /* slate */
+  --fp-spectrum-11: #00355F;  /* deep navy */
+  --fp-spectrum-12: #0E7FB8;  /* institutional blue */
+
+  /* R13.R2 § 17 — the two Portfolio Evolution series. Named by MEANING, not by
+     index, so a component cannot silently swap which basis is which. Teal vs
+     bronze is a blue/orange pair — the most robust choice under the common
+     forms of colour-vision deficiency, and § 17 forbids two shades that read
+     alike. Neither is a signal token: a falling portfolio is NOT an error, so
+     the alert red (#8B0E04) never touches this chart. */
+  --fp-series-incl: #004A64;  /* including Chilean equities — deep teal */
+  --fp-series-excl: #B07A12;  /* excluding Chilean equities — bronze */
+
+  /* R13.R2 owner review §§ 15-19 — the High Water Market reference line. A
+     QUIET NEUTRAL, deliberately: the line orients the reader against the
+     maximum observed value and must stay subordinate to the series it
+     references, so it is drawn dashed in slate rather than in any series
+     colour. It is NEVER the alert red — a portfolio below its own high is a
+     normal state, not an error. */
+  --fp-hwm:         #5B6770;  /* slate — subordinate reference */
 
   /* R13.9 — Alternatives event-type colors (doc 07 §§ 7.4, 8; the
      --news-src-* precedent). LIGHT THEME = the LITERAL source-legend colours
@@ -574,15 +629,49 @@
   --news-src-cmf:   #6FA8C4;
   --news-src-bc:    #C0AA5A;
 
-  /* R13.7 — allocation-slice identity colors, lightened for the dark surface */
-  --fp-slice-1:     #4FA0BC;
-  --fp-slice-2:     #4FB0E0;
-  --fp-slice-3:     #5FAE72;
-  --fp-slice-4:     #D0A045;
-  --fp-slice-5:     #9AA4AD;
-  --fp-slice-6:     #8CA8D8;
-  --fp-slice-7:     #4FA8A8;
-  --fp-slice-8:     #C0AA5A;
+  /* R13.7 — allocation-slice identity colors, lightened for the dark surface.
+     Each dark entry is the lightened rendering of the SAME light slot, so a
+     slot keeps its identity across the theme change; the deep navies and
+     forest greens are illegible against the dark card at their light values,
+     so they are raised rather than inverted. Separation is re-measured in this
+     theme independently — a palette that only separates in light is a failing
+     palette (see paletteContrast.ts's slotDistance). */
+  --fp-slice-1:     #4FA0BC;  /* deep teal */
+  --fp-slice-2:     #D0A045;  /* bronze */
+  --fp-slice-3:     #5FAE72;  /* deep green */
+  --fp-slice-4:     #4FB0E0;  /* institutional blue */
+  --fp-slice-5:     #4E9B7E;  /* forest */
+  --fp-slice-6:     #7AD5CB;  /* aqua */
+  --fp-slice-7:     #8A97C8;  /* slate blue */
+  --fp-slice-8:     #9EDCEC;  /* light cyan */
+  --fp-slice-9:     #9AA4AD;  /* slate */
+  --fp-slice-10:    #4A7FB8;  /* deep navy */
+  --fp-slice-11:    #93B3DE;  /* muted institutional blue */
+  --fp-slice-12:    #8CB863;  /* olive */
+
+  /* R13.R2 § 14 — the alternative palette on the dark surface, same twelve
+     colours in the `spectrum` sequence. (`oceanic` is withdrawn — see the
+     light-theme note.) */
+  --fp-spectrum-1:  #D0A045;  /* bronze */
+  --fp-spectrum-2:  #4E9B7E;  /* forest */
+  --fp-spectrum-3:  #93B3DE;  /* muted institutional blue */
+  --fp-spectrum-4:  #5FAE72;  /* deep green */
+  --fp-spectrum-5:  #7AD5CB;  /* aqua */
+  --fp-spectrum-6:  #4FA0BC;  /* deep teal */
+  --fp-spectrum-7:  #8CB863;  /* olive */
+  --fp-spectrum-8:  #8A97C8;  /* slate blue */
+  --fp-spectrum-9:  #9EDCEC;  /* light cyan */
+  --fp-spectrum-10: #9AA4AD;  /* slate */
+  --fp-spectrum-11: #4A7FB8;  /* deep navy */
+  --fp-spectrum-12: #4FB0E0;  /* institutional blue */
+
+  /* R13.R2 § 17 — evolution series, lightened for the dark surface. The
+     teal/bronze separation is preserved; the pair is still blue vs orange. */
+  --fp-series-incl: #4FA0BC;
+  --fp-series-excl: #D0A045;
+
+  /* High Water Market reference on the dark surface — same subordinate role. */
+  --fp-hwm:         #9AA4AD;
 
   /* R13.9 — Alternatives event colors on dark: DERIVATIVE TINTS of the same
      source hues (never presented as the raw source fill — the light theme
@@ -639,6 +728,61 @@
     font-family: var(--font-sans);
     font-size: var(--fs-meta);
     color: var(--meta-fg);
+  }
+
+  /* ── Footnote / source / disclosure band (R13.R2F5.1 § A) ───────────────
+     Owner review, second pass, REJECTING the first implementation of this
+     class: "the text EXTENDS to the right. But it should start from the left
+     (where source currently is)."
+
+     THIS IS A LEFT-ORIGIN READING FLOW, NOT A PACKING PROBLEM. The first
+     attempt read the original complaint ("too much white space unused to the
+     right") as an instruction to fill the width, and made this a WRAPPING FLEX
+     ROW so consecutive notes would sit side by side. That did use the width —
+     by giving the reader three different left edges to find:
+
+         Source: RESUMEN workbook        Weekly source history · 102 points …
+         Contributions and withdrawals are excluded …
+
+     Every logical block must instead begin at ONE left edge — the same edge the
+     source line starts at — and extend rightward from there:
+
+         Source: RESUMEN workbook
+         Weekly source history · 102 points · 23-08-2024 — 31-07-2026
+         Contributions and withdrawals are excluded …
+
+     So: a plain vertical stack, and the width is used by LINE LENGTH rather
+     than by columns.
+
+     R13.R2F5.2 — AND THE LINE IS BOUNDED BY ITS CARD, NOT BY A NUMBER. The
+     first stacked version kept a 110ch measure (≈605px at the 11px meta size),
+     which was a large improvement on the 52-65ch caps it replaced but still
+     wrapped the Evolution disclosure into three or four short lines with the
+     better part of a thousand pixels empty beside them — the owner's remaining
+     defect. A fixed character measure cannot be right here, because these runs
+     appear in containers from a 5fr allocation column to a full-page footer:
+     the same number is generous in one and needlessly tight in the other.
+
+     The container IS the measure now. `max-width: 100%` states that
+     explicitly rather than by omission, and `min-width: 0` keeps a long
+     unbroken token from widening the page. Where the owner wants a shorter
+     line, the answer is a narrower CARD, not a cap that silently disagrees
+     with the layout it sits in.
+
+     Apply it to a GROUP of notes; the children need no measure class of their
+     own, and must not carry one (a child cap silently wins over this one).
+     Do NOT put a horizontal flex row inside a group: that is what creates the
+     second starting column this class exists to remove. Type, colour and
+     hierarchy are untouched — this sets layout and measure only. */
+  .nv-notes {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    row-gap: 0.25rem;
+  }
+  .nv-notes > * {
+    min-width: 0;
+    max-width: 100%;
   }
 
   .ui-page-title {
@@ -810,6 +954,113 @@
     transition-duration: var(--dur-nav);
     transition-timing-function: var(--ease-primary);
   }
+
+  /* ── Button hover microinteraction (R13.R2F2) ────────────────────────────
+     A single, restrained "pop up" on every REAL enabled clickable control —
+     implemented once, here, rather than per component (there is no shared
+     Button primitive in this codebase). Reuses the same hover tokens
+     `.nv-transition` uses (`--dur-hover` / `--ease-primary`) — no new
+     duration, no new easing.
+
+     Scoped to `button`, `[role='button']` and NAVIGATION ANCHORS: informational
+     pills and badges, plain text, prose/table hyperlinks, and focusable SVG
+     elements (the allocation donut's slices, chart data points) are excluded
+     by construction — not by a denylist. `:not(:disabled)` and
+     `:not([aria-disabled='true'])` exclude a disabled control outright: no
+     lift and no pointer cursor on something that cannot be activated.
+
+     R13.R2F3 §§ 9-14 — WHY `nav a` WAS ADDED. The R13.R2F2 rule reached no
+     navigation at all, because every rail item is a Next `<Link>`, i.e. a
+     plain `<a>` — the top application rail (Overview · Markets · Analysis ·
+     Macro · Earnings · Portfolio · Structured Notes · Settings), the
+     secondary rail, and the Family Portfolio subnav (Summary · Holdings ·
+     Weekly Changes · Alternatives · Admin) alike. The fix is the ELEMENT that
+     already means "navigation": an `<a>` inside a `<nav>` is a navigation
+     control by definition, while an inline textual hyperlink in prose, a
+     table cell or a footnote never is — so this widens the contract exactly
+     as far as the semantics do and no further. Descendant, not child, so the
+     mobile drawer's nested groups are covered too. `<nav>` membership is not
+     an authorization signal: what appears in a rail is still decided by the
+     server-filtered entitlement that builds it, and Admin is no more visible
+     for being styled by a shared rule.
+
+     This declares its OWN full `transition-property` list — the same
+     colour properties `.nv-transition` animates, PLUS `transform` — rather
+     than adding `transform` to `.nv-transition` itself, which stays
+     colour-only because it is used app-wide on many non-button elements.
+     Doing it this way means a button that also carries `.nv-transition`
+     never risks losing its colour transition to a specificity fight over
+     the shared `transition-property` value — this rule's selector
+     (`button:not(...):not(...)`) is already more specific than a single
+     class, so it always wins that fight outright, and it wins with the
+     FULL list, not a shorter one.
+
+     THE TWO DECLARATIONS ARE SPLIT ON PURPOSE (R13.R2F2, Opus integration
+     fix). The cursor applies to every enabled control without exception. The
+     transition does NOT apply to a control that already opted into
+     `.nv-transition-state` — the app's slower 260ms state choreography
+     (`--dur-state`, and a property list that also carries `width`), used by
+     the shared `Switch` track, among others. Overriding that here would have
+     silently retimed a shared primitive outside this module's scope and
+     dropped `width` from its list. `.nv-transition-state` already animates
+     `transform`, so those controls still ease their lift — on their own
+     declared timing, which is the point. */
+  button:not(:disabled):not([aria-disabled='true']),
+  [role='button']:not([aria-disabled='true']),
+  nav a:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
+  button:not(:disabled):not([aria-disabled='true']):not(.nv-transition-state),
+  [role='button']:not([aria-disabled='true']):not(.nv-transition-state),
+  nav a:not([aria-disabled='true']):not(.nv-transition-state) {
+    transition-property: transform, color, background-color, border-color, box-shadow, opacity;
+    transition-duration: var(--dur-hover);
+    transition-timing-function: var(--ease-primary);
+  }
+
+  /* `hover: hover` — touch devices report no true hover, so this never
+     produces a sticky post-tap "lift" there, and hover is never load-bearing
+     for functionality (the cursor above, and each control's own colour/
+     selected state, communicate the affordance regardless of input type). */
+  @media (hover: hover) {
+    button:not(:disabled):not([aria-disabled='true']):hover,
+    [role='button']:not([aria-disabled='true']):hover,
+    nav a:not([aria-disabled='true']):hover {
+      transform: translateY(-1px);
+    }
+
+    /* THE ONE EXCEPTION: the already-selected segment of a SLIDING-INDICATOR
+       control. Its label sits directly over `.nv-indicator` — a separate,
+       absolutely-positioned sibling that JS moves and that does NOT travel
+       with the button's own transform — so lifting the selected label alone
+       would visibly peel it off the pill beneath it. Every OTHER option in
+       the same control still lifts (the owner wants these responding), and
+       the selected one stays obviously selected either way: this suppresses
+       position only, never colour or weight.
+         The exception is keyed to the INDICATOR, not to selectedness in
+       general (Opus integration fix). `[role='radio']` is exactly
+       `SegmentedControl` — the portfolio scope selector the owner cited —
+       and the `:has(> .nv-indicator)` clause covers the remaining rails
+       (SecondaryNav) structurally. An ordinary toggle that merely reports
+       `aria-pressed` and has NO indicator under it — the privacy toggle, the
+       theme and language toggles, Charting's metric chips, Compare's legend
+       — is deliberately NOT excluded: it has nothing to peel away from, and
+       suppressing its lift in one state only would make the same control
+       behave two different ways. */
+    button[role='radio'][aria-checked='true']:hover,
+    :has(> .nv-indicator) > button[aria-checked='true']:hover,
+    :has(> .nv-indicator) > button[aria-pressed='true']:hover,
+    :has(> .nv-indicator) > button[aria-selected='true']:hover,
+    /* …and the same for a rail's CURRENT anchor. All three nav rails
+       (PrimaryNav, SecondaryNav, FamilyPortfolioNav) put the indicator span
+       and their links as direct children of one `<nav>` and mark the active
+       one `aria-current="page"`, so this is the same structural test, not a
+       second convention. Inactive rail items still lift. */
+    :has(> .nv-indicator) > a[aria-current]:hover {
+      transform: none;
+    }
+  }
+
   /* Overlay appearance */
   .nv-pop {
     animation: nvPop var(--dur-pop) var(--ease-primary) both;
@@ -1055,6 +1306,19 @@ body {
     transform: none !important;
     opacity: 1 !important;
   }
+
+  /* Button hover microinteraction (R13.R2F2) — the lift itself is motion, so
+     it is removed outright, not merely shortened; the surrounding
+     `*, *::before, *::after` rule above already collapses its transition to
+     .01ms, but a translated FINAL position is still a positional change, so
+     it needs its own override. The hover affordance survives through
+     non-motion styling: `cursor: pointer` and each control's own colour/
+     selected state are untouched by this block. Unlayered (this whole
+     media block sits outside `@layer components`), so it wins over the
+     layered hover rule regardless of specificity. */
+  button:hover, [role='button']:hover, nav a:hover {
+    transform: none !important;
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -1082,6 +1346,17 @@ body {
 ───────────────────────────────────────────────────────────────────────────── */
 @media print {
   .no-print { display: none !important; }
+
+  /* R13.R2F2 — INTERACTION NEVER REACHES PAPER. A print job has no hover
+     state, so the lift above cannot fire here anyway; this states the
+     contract explicitly rather than leaving it to that implicit guarantee,
+     and it also neutralises the case where a browser renders print preview
+     from a live view whose pointer is still resting on a control. Cursor
+     styling is meaningless on paper and is simply not carried over. */
+  button, [role='button'], nav a {
+    transform: none !important;
+    transition: none !important;
+  }
 
   html, body {
     height: auto !important;
@@ -1115,7 +1390,374 @@ body {
   [style*="height"] { height: auto !important; max-height: none !important; }
   .overflow-y-auto, .overflow-auto, .overflow-x-auto { overflow: visible !important; }
 
-  @page { margin: 12mm; }
+  /* R13.R2C § 22 — A4 PORTRAIT, explicitly. `size` was previously unset, so the
+     sheet took whatever the print dialog defaulted to and a composition tuned
+     for A4 could land on Letter. 12mm keeps the usable width at 186mm. */
+  @page { size: A4 portrait; margin: 12mm; }
+
+  /* ── The Family Portfolio one-pager (§§ 21-25) ────────────────────────────
+     A deliberate print composition, not the screen with its chrome hidden.
+     Everything here is print-scoped, so none of it can affect the screen.
+
+     R13.R2F §§ 22-23 — THE SHEET IS COMPOSED TO FILL ONE A4 PAGE.
+     A4 portrait at 12mm margins leaves 186 × 273mm of paper. The sheet claims
+     258mm of that as a column — deliberately short of the full measure, so a
+     print dialog set to margins wider than ours cannot tip a one-page sheet
+     into spilling a near-empty second page — which puts the provenance rule at
+     the FOOT of the page instead of wherever the content happened to stop.
+     Exactly one element is elastic — the evolution chart:
+     a Main sheet carries Weekly Notes and two bases and the chart settles at
+     its 42mm minimum; a personal sheet carries neither and the chart takes the
+     slack up to 88mm. So both land on one page at the same type sizes, rather
+     than one of them being shrunk to fit or the other trailing a third of a
+     page of white. */
+  .nv-print-sheet {
+    width: 100%;
+    min-height: 258mm;
+    color: #111111;
+    font-size: 9.5pt;
+    line-height: 1.35;
+
+    /* R13.R2F § 23 — PAPER IS ALWAYS THE LIGHT THEME.
+       Every other colour on the sheet is pinned to a print grey, but the
+       allocation ring's slice fills resolve through the `--fp-*` custom
+       properties — so a reader who printed while the app was in DARK mode got
+       the dark palette (lighter, lower-contrast tints, tuned for a #151E25
+       card) laid onto white stock. That is a fidelity defect, not a stylistic
+       preference: those tints were validated for contrast against the DARK
+       card, and paper is the light one.
+       These are re-declarations for print, NOT new values — each is byte-for-
+       byte the `:root` light value above, which is the set the perceptual audit
+       (`paletteContrast.ts`, MIN_SLICE_CONTRAST / MIN_ADJACENT / MIN_ALL_PAIRS)
+       measures against a light surface. A test pins the two lists together, so
+       this block cannot silently drift away from the audited palette. */
+    --fp-slice-1:     #004A64;
+    --fp-slice-2:     #B07A12;
+    --fp-slice-3:     #1A6630;
+    --fp-slice-4:     #0E7FB8;
+    --fp-slice-5:     #003F2D;
+    --fp-slice-6:     #60C5BA;
+    --fp-slice-7:     #546292;
+    --fp-slice-8:     #88CBDF;
+    --fp-slice-9:     #5B6770;
+    --fp-slice-10:    #00355F;
+    --fp-slice-11:    #7399C6;
+    --fp-slice-12:    #679146;
+    --fp-spectrum-1:  #B07A12;
+    --fp-spectrum-2:  #003F2D;
+    --fp-spectrum-3:  #7399C6;
+    --fp-spectrum-4:  #1A6630;
+    --fp-spectrum-5:  #60C5BA;
+    --fp-spectrum-6:  #004A64;
+    --fp-spectrum-7:  #679146;
+    --fp-spectrum-8:  #546292;
+    --fp-spectrum-9:  #88CBDF;
+    --fp-spectrum-10: #5B6770;
+    --fp-spectrum-11: #00355F;
+    --fp-spectrum-12: #0E7FB8;
+    --fp-series-incl: #004A64;
+    --fp-series-excl: #B07A12;
+    --fp-hwm:         #5B6770;
+  }
+  /* The column itself is declared on the COMPOUND selector on purpose. The
+     sheet also carries `.print-only`, whose `display: block` lives in a later
+     `@media print` block and would otherwise win the tie on source order and
+     silently flatten the layout — taking the pinned footer and the elastic
+     chart with it. Two classes beat one at any position in the file. */
+  .nv-print-sheet.print-only {
+    display: flex;
+    flex-direction: column;
+  }
+  /* A section head that carries a figure on its right (the evolution band). */
+  .nv-print-sheet .nv-print-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8mm;
+    border-bottom: 0.5pt solid #b4b4b4;
+    padding-bottom: 1.2mm;
+    margin-bottom: 2mm;
+  }
+  .nv-print-sheet .nv-print-head .nv-print-h2 {
+    border-bottom: 0;
+    padding-bottom: 0;
+    margin-bottom: 0;
+  }
+  .nv-print-sheet .nv-print-head .nv-print-meta { text-align: right; }
+  /* Masthead: identity left, the focal figure right, on ONE band. */
+  .nv-print-sheet .nv-print-masthead {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 10mm;
+    border-bottom: 1.2pt solid #444444;
+    padding-bottom: 2.5mm;
+    margin-bottom: 5mm;
+  }
+  .nv-print-sheet .nv-print-ident { min-width: 0; }
+  .nv-print-sheet .nv-print-heroblock { text-align: right; white-space: nowrap; }
+  .nv-print-sheet .nv-print-eyebrow {
+    font-size: 7.5pt;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #555555;
+  }
+  .nv-print-sheet .nv-print-title {
+    font-size: 17pt;
+    font-weight: 650;
+    line-height: 1.15;
+  }
+  .nv-print-sheet .nv-print-meta { font-size: 8pt; color: #555555; }
+  /* INK, NOT THEME. Two shared utilities reach the sheet from the components it
+     reuses — `MaskedAmount`'s `—` for a withheld figure and the allocation
+     legend's names and weights — and both read `--foreground`/`--muted-fg`,
+     which under a DARK theme are near-white. Printed from dark mode they would
+     be white on white: an unavailable figure and half the allocation key would
+     simply vanish from the page. Pinned to the sheet's own greys, ahead of the
+     gain/loss pair below so a toned figure still wins. */
+  .nv-print-sheet .text-foreground { color: #111111 !important; }
+  .nv-print-sheet .text-muted-fg { color: #666666 !important; }
+  /* The focal figure. Set as a block so its caption sits directly beneath it
+     rather than on the same line, and tight-leaded so the masthead stays one
+     band deep. */
+  .nv-print-sheet .nv-print-hero-value {
+    display: block;
+    font-size: 25pt;
+    font-weight: 650;
+    line-height: 1.1;
+  }
+  /* The rhythm between tiers. 4mm plus a rule reads as a deliberate break
+     without spending page height a Main sheet — the fuller of the two — needs
+     for its figures. */
+  .nv-print-sheet .nv-print-block {
+    margin-bottom: 4mm;
+    break-inside: avoid;
+  }
+  /* Every section opens on a ruled label, so the reader can see the tiers of
+     the sheet before reading a single figure. */
+  .nv-print-sheet .nv-print-h2 {
+    font-size: 8pt;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #222222;
+    border-bottom: 0.5pt solid #b4b4b4;
+    padding-bottom: 1.2mm;
+    margin-bottom: 2mm;
+  }
+  .nv-print-sheet .nv-print-h3 {
+    font-size: 7.5pt;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #666666;
+    margin-bottom: 1mm;
+  }
+  .nv-print-sheet .nv-print-cols-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8mm;
+    align-items: start;
+  }
+  /* THE PERFORMANCE BAND IS TWO COLUMNS, NOT FOUR. Every row in it is a
+     label/value pair, and Main's labels carry their basis in full ("Portfolio
+     incl. Chilean equities · P&L"). Four columns left each pair ~40mm and
+     wrapped every label onto three lines; two give it ~89mm and it sits on
+     one. Main fills 2 × 2 — Portfolio · Markets, then the two bases. */
+  .nv-print-sheet .nv-print-cols-perf {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4mm 8mm;
+    align-items: start;
+  }
+  /* A PERSONAL SHEET HAS ONE SUPPORTING GROUP, NOT TWO. Left in a 2 × 2 grid
+     it would leave a quarter of the band visibly empty and read as a Main
+     sheet with a hole in it, so the odd block spans the measure and lays its
+     figures out side by side instead. Fires only at exactly three blocks —
+     Main has four and is untouched. */
+  .nv-print-sheet .nv-print-cols-perf > :nth-child(3):last-child {
+    grid-column: 1 / -1;
+  }
+  .nv-print-sheet .nv-print-cols-perf > :nth-child(3):last-child .nv-print-dl {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(45mm, 1fr));
+    column-gap: 8mm;
+  }
+  /* Label quiet, figure loud: the pair sits on one baseline, the label sets a
+     size down in a softer ink and the value keeps the body size and weight, so
+     a column reads as a column of figures rather than a column of words. */
+  .nv-print-sheet .nv-print-dl > div,
+  .nv-print-sheet .nv-print-ledger > div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4mm;
+    padding: 0.5mm 0;
+    border-bottom: 0.3pt solid #e4e4e4;
+    break-inside: avoid;
+  }
+  .nv-print-sheet .nv-print-dl dt,
+  .nv-print-sheet .nv-print-ledger dt {
+    font-size: 8pt;
+    color: #444444;
+    min-width: 0;
+  }
+  .nv-print-sheet .nv-print-dl dd,
+  .nv-print-sheet .nv-print-ledger dd {
+    font-weight: 550;
+    white-space: nowrap;
+  }
+  .nv-print-sheet .nv-print-ledger > div { border-bottom: 0.4pt solid #d6d6d6; }
+  /* The weekly change is the ledger's conclusion, not a fourth balance. */
+  .nv-print-sheet .nv-print-ledger > .nv-print-total {
+    border-bottom: 0;
+    border-top: 0.8pt solid #666666;
+    margin-top: 0.8mm;
+    padding-top: 1.4mm;
+  }
+  .nv-print-sheet .nv-print-total dt { color: #111111; font-weight: 700; }
+  .nv-print-sheet .nv-print-total dd { font-size: 10.5pt; font-weight: 650; }
+  /* Commentary in two columns: at the full 186mm measure a line runs past 100
+     characters, which is a paragraph a reader stops tracking. Notes may split
+     across the column boundary — that is ordinary in print — but never leave a
+     single line stranded. */
+  .nv-print-sheet .nv-print-notelist {
+    columns: 2;
+    column-gap: 8mm;
+    orphans: 2;
+    widows: 2;
+  }
+  .nv-print-sheet .nv-print-note {
+    margin: 0 0 2mm 0;
+    padding-left: 2.5mm;
+    border-left: 1pt solid #888888;
+    font-size: 9pt;
+    line-height: 1.4;
+    white-space: pre-wrap;
+  }
+  /* Notes are the one region whose length is not known in advance. If a week
+     runs long it splits rather than jumping whole to a second page and leaving
+     the rest of the sheet stranded behind it — which is what `break-inside:
+     avoid` on every other block is there to prevent. Declared after
+     `.nv-print-block` deliberately: it overrides it. */
+  .nv-print-sheet .nv-print-notes { break-inside: auto; }
+  /* THE EVOLUTION BAND IS THE SHEET'S ELASTIC ELEMENT (see the sheet rule).
+     The chart takes whatever height the page has left, between a 42mm floor —
+     below which a year of weekly observations stops being readable — and an
+     88mm ceiling, because a time series stretched much past 2:1 starts
+     overstating its own volatility. Any slack beyond that stays below the
+     chart's disclosure line, above the pinned footer. */
+  .nv-print-sheet .nv-print-evo-block {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+  }
+  /* R13.R2F1 § C — THE SVG IS NO LONGER THE FLEX ITEM. A relative wrapper now
+     carries the elastic sizing (42-88mm), because the y-axis value labels are
+     real HTML positioned against it — SVG text would stretch unreadably inside
+     a `preserveAspectRatio="none"` box. The svg simply fills that wrapper, so
+     the `flex` / `min-height` / `max-height` that used to live here have moved
+     with the role; leaving them would be inert at best and, if the wrapper ever
+     sized below 42mm, would fight `height: 100%`. */
+  /* R13.R2F5.1 — ORDINARY RESPONSIVE-SVG SIZING, AND NOTHING ELSE. The chart
+     fills the measure and takes its height from its own 720 : 200 viewBox. Both
+     dimensions are specified, so the browser never falls back to intrinsic
+     replaced-element sizing — which is exactly what the previous pass hit when
+     it removed `width: 100%` and tried to size the svg with absolute offsets
+     instead (CSS 2.1 §§ 10.3.8 / 10.6.5 size a replaced element from its
+     intrinsic dimensions and ignore the over-constrained `right`/`bottom`).
+
+     Do NOT reintroduce a height here, a flex basis on the wrapper, or a
+     min/max height: the whole point is that the wrapper's height IS this
+     element's height, which is what keeps the HTML y-axis value labels locked
+     to the ticks they name. */
+  .nv-print-sheet .nv-print-evo {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  /* The x-axis date labels are SVG text now (same viewBox as the baseline, so
+     they cannot drift from it). Their fill is pinned for the same reason the
+     path and line rules exist: print from a dark theme must not carry a dark
+     theme's ink onto white stock. */
+  .nv-print-sheet .nv-print-evo text {
+    fill: #555555 !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  /* The allocation ring, on paper. `print-color-adjust` is inherited, and the
+     legend's colour chip is a BACKGROUND — which a browser drops from a print
+     job by default, leaving the ring's key blank. The legend also sets at
+     `text-xs`, which against a 12px print root would land near 6.75pt; it is
+     brought up to the sheet's own label size instead. */
+  .nv-print-sheet .nv-print-alloc {
+    display: flex;
+    justify-content: center;
+    padding: 1mm 0;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .nv-print-sheet .nv-print-alloc li { font-size: 8pt; line-height: 1.3; }
+  /* The separator between two slices is the page ground itself
+     (`stroke: var(--surface)`), and the ring's labels sit in a halo of the
+     same. Under a dark theme that ground is near-black, which on white stock
+     draws a heavy outline around every slice and every label. On paper the
+     ground is the paper. The slice FILLS are deliberately untouched. */
+  .nv-print-sheet .nv-print-alloc svg path { stroke: #ffffff !important; }
+  .nv-print-sheet .nv-print-alloc svg text { stroke: #ffffff !important; }
+  .nv-print-sheet .nv-print-foot {
+    margin-top: auto;
+    border-top: 0.8pt solid #888888;
+    padding-top: 2mm;
+  }
+  .nv-print-sheet .nv-print-foot .nv-print-meta { font-size: 7.5pt; }
+  .nv-print-sheet .nv-print-foot .nv-print-meta + .nv-print-meta { margin-top: 0.8mm; }
+  /* GRAYSCALE IS A SUPPORTED OUTPUT, NOT A DEGRADED ONE. Nothing on this sheet
+     carries meaning by colour alone, so a mono printer loses no information:
+     a gain and a loss print in the palette's green and red but each also
+     carries its own +/− sign; the reference line is told from the series by
+     its dash pattern and its weight, not by its grey; the allocation key names
+     every slice beside its chip; and chart text drops to a neutral ink so it
+     stays legible over any slice of any palette. */
+  .nv-print-sheet svg text { fill: #444444 !important; }
+
+  /* R13.R2 PASS 4 § 3 — GAINS PRINT GREEN, LOSSES PRINT RED.
+     The approved palette's LIGHT values, pinned literally rather than read
+     through `var(--positive)`/`var(--negative)`: a reader printing while the app
+     is in dark mode would otherwise get the dark-theme pair (#3EA464/#D05050),
+     which is tuned for a dark backdrop and prints washed out on white. These are
+     the same two tokens, at their light-theme values, so nothing new enters the
+     palette. `print-color-adjust: exact` is required or browsers drop the colour
+     from a print job by default. Neutral figures — levels, and NET FLOWS, which
+     are capital movements and neither a gain nor a loss — keep the body colour
+     and are simply never given these classes. */
+  .nv-print-sheet .nv-print-pos {
+    color: #1a6630 !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .nv-print-sheet .nv-print-neg {
+    color: #a34a3d !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* Same reasoning for the sheet's own evolution chart: its stroke reads
+     `var(--fp-series-incl)` and its reference line `var(--fp-hwm)`, which under
+     a DARK theme resolve to the light-backdrop pair (#4FA0BC / #9AA4AD) and
+     print washed out on white. Pinned to those tokens' light-theme values — the
+     same two approved colours, at the values meant for a light ground. */
+  .nv-print-sheet .nv-print-evo path {
+    stroke: #004a64 !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .nv-print-sheet .nv-print-evo line {
+    stroke: #5b6770 !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
 }
 
 /* Utility: only render when printing (e.g. a tearsheet footer). */

@@ -12,9 +12,13 @@
 // HONESTY RULES, ENFORCED HERE:
 //   * a null value renders as `—`, never 0 (doc 02 § 9) — `formatUsd` owns
 //     that rendering and this component never coalesces;
-//   * `Difference` is the NMI-derived `thisWeek − previousWeek` computed at
-//     parse time — this component never recomputes it, and a row where either
-//     side was unavailable shows `—`;
+//   * `Difference` is DERIVED FROM THE TWO FIGURES DISPLAYED BESIDE IT —
+//     `This Week − Previous Week`, through the shared `difference.ts`
+//     invariant, so the arithmetic on screen is internally consistent by
+//     construction. The publication's persisted figure is a cross-check only
+//     and can never override it; a genuine disagreement is FLAGGED on the cell
+//     rather than silently resolved. A row where either side was unavailable
+//     shows `—`, never 0 and never the persisted figure standing in;
 //   * a column whose source date is unknown is headed without a date — never
 //     with one inferred from a neighbouring publication.
 //
@@ -25,6 +29,7 @@
 import { Fragment, useState } from 'react'
 import { useLang } from '@/components/providers/LangProvider'
 import { PrivacyValue } from '@/components/fable/PrivacyValue'
+import { resolveDisplayedDifference } from '@/lib/familyPortfolio/difference'
 import { formatUsd, formatIsoDateLabel } from '@/lib/formatters'
 import type { FamilyPortfolioSnapshotRow } from '@/lib/data/familyPortfolio'
 
@@ -57,9 +62,22 @@ function rowClasses(rowType: string): string {
   }
 }
 
-function amountCell(value: number | null, masked: boolean, extra = '') {
+function amountCell(value: number | null, masked: boolean, extra = '', warning?: string) {
   return (
     <td className={`${CELL} text-right ui-number whitespace-nowrap ${extra}`}>
+      {/* A reconciliation anomaly is marked NEXT TO the figure, never by
+          recolouring it: the Difference's own +/- colour carries a different
+          meaning, and an ordinary negative week is not a warning state. The
+          marker is a glyph plus screen-reader text plus a `title`, so the
+          signal never rests on colour alone. */}
+      {warning !== undefined && (
+        <>
+          <span aria-hidden className="mr-1" style={{ color: 'var(--warning)' }} title={warning}>
+            ⚑
+          </span>
+          <span className="sr-only">{warning}</span>
+        </>
+      )}
       {value === null ? (
         <span className="text-muted-fg">—</span>
       ) : (
@@ -102,8 +120,13 @@ export function HierarchicalTable({ rows, dates, masked }: HierarchicalTableProp
     const children = childrenOf.get(row.rowKey) ?? []
     const isCollapsed = collapsed.has(row.rowKey)
     const label = lang === 'es' ? row.labelEs : (row.labelEn ?? row.labelEs)
+    // THE shared invariant: the Difference shown is the subtraction of the two
+    // figures shown beside it, never the persisted cross-check figure. Today
+    // the two always agree (every row of all 102 published weeks); when they
+    // ever do not, the arithmetic is displayed and the row is flagged.
+    const diff = resolveDisplayedDifference(row.value, row.previousValue, row.difference)
     const diffColor =
-      row.difference === null ? '' : row.difference >= 0 ? 'text-positive' : 'text-negative'
+      diff.displayed === null ? '' : diff.displayed >= 0 ? 'text-positive' : 'text-negative'
 
     return (
       <Fragment key={row.rowKey}>
@@ -142,7 +165,12 @@ export function HierarchicalTable({ rows, dates, masked }: HierarchicalTableProp
           {amountCell(row.beginningOfYearValue, masked)}
           {amountCell(row.previousValue, masked)}
           {amountCell(row.value, masked)}
-          {amountCell(row.difference, masked, diffColor)}
+          {amountCell(
+            diff.displayed,
+            masked,
+            diffColor,
+            diff.status === 'mismatch' ? t.fp.portfolio.differenceMismatch : undefined,
+          )}
         </tr>
         {!isCollapsed && children.map((child) => renderRow(child))}
       </Fragment>
