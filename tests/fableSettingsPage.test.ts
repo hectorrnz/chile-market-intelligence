@@ -416,8 +416,18 @@ describe('R9.2 · scope restraint', () => {
   })
 
   test('59. no migration or generated database-type change', () => {
-    const migrations = readdirSync(join(ROOT, 'supabase/migrations'))
+    // The invariant is that THE SETTINGS PAGE PHASE persisted nothing — the
+    // `/settings` surface is a read-only console over existing endpoints. The
+    // filename filter is a proxy for that; R13.R2's Family Portfolio
+    // presentation-settings migration matches the word "settings" while being
+    // an entirely different subject (a global allocation-display record owned
+    // by the Family Portfolio module, guarded by its own pgTAP suite), so it is
+    // named as the one admitted exception rather than loosening the pattern.
+    const ADMITTED = '20260812000000_family_portfolio_presentation_settings.sql'
+    const migrations = readdirSync(join(ROOT, 'supabase/migrations')).filter((f) => f !== ADMITTED)
     assert.equal(migrations.filter((f) => /settings|account|preference/i.test(f)).length, 0)
+    // The load-bearing half, unchanged: no file of THIS phase references a
+    // migration or the generated database types.
     assert.doesNotMatch(BOTH, /supabase\/migrations|database\.types/)
   })
 
@@ -1395,7 +1405,31 @@ describe('R9.5 · the surface is one integrated product', () => {
     // The shell scrolls <main>; TopBar and SecondaryNav are flex siblings ABOVE
     // it, not fixed/sticky overlays, so an in-page anchor can never land under
     // the chrome. Locked here because a later `sticky` on either would break it.
-    assert.match(code(APP_SHELL), /<main className="flex-1 overflow-y-auto/)
+    //
+    // The scroll container is identified by its CLASS TOKENS, never by their
+    // order or adjacency. `flex-1 min-h-0 overflow-y-auto` states exactly the
+    // same requirement as `flex-1 overflow-y-auto` — `min-h-0` is the standard
+    // flex-shrink fix a scrolling flex child needs — but the previous
+    // `/<main className="flex-1 overflow-y-auto/` regex required the two tokens
+    // to be adjacent and so failed on a correct shell. The requirement below is
+    // unchanged and no weaker: <main> must still fill the shell AND be the
+    // element that scrolls.
+    const mainEl = /<main\b[^>]*\sclassName="([^"]*)"/.exec(code(APP_SHELL))
+    assert.ok(mainEl, 'AppShell must render a <main> element carrying a className')
+    assert.equal(
+      (code(APP_SHELL).match(/<main\b/g) ?? []).length,
+      1,
+      'exactly one <main> — otherwise this assertion could pass on the wrong element',
+    )
+    const mainClasses = mainEl[1].split(/\s+/).filter(Boolean)
+    assert.ok(
+      mainClasses.includes('flex-1'),
+      `<main> must fill the remaining shell height; classes were: ${mainEl[1]}`,
+    )
+    assert.ok(
+      mainClasses.includes('overflow-y-auto'),
+      `<main> must be the page scroll container; classes were: ${mainEl[1]}`,
+    )
     for (const [name, src] of [['TopBar', TOP_BAR], ['SecondaryNav', SECONDARY_NAV]] as const) {
       assert.doesNotMatch(code(src), /\b(fixed|sticky)\s/, `${name} must not overlay the scroll container`)
     }

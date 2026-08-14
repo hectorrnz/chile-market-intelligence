@@ -1,0 +1,242 @@
+name: R13 Family Portfolio DB Validation
+
+# R13.1.1A — the EXECUTABLE half of the Family Portfolio entitlement validation.
+#
+# The local Windows development machine has no Docker, no psql and no local
+# Supabase stack, so the R13.1 migration's constraints, SECURITY DEFINER
+# functions, privilege grants and RLS policies could only be inspected
+# statically. This workflow closes that gap: it stands up an ISOLATED, DISPOSABLE
+# Supabase stack on a GitHub-hosted runner, applies the FULL migration chain from
+# a clean database, and executes the pgTAP suite against real PostgreSQL.
+#
+# HERMETIC BY DESIGN — it uses NO repository secret, NO production Supabase
+# project, NO production database password and NO production API key. The local
+# stack mints its own throwaway credentials inside the runner; they are never
+# printed and never leave it. Nothing here can reach production.
+#
+# CREATING THIS WORKFLOW IS NOT VALIDATION. R13.1.1 stays incomplete until this
+# workflow has actually RUN and PASSED on the committed branch.
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - 'feat/portfolio-r13'
+      - 'feat/portfolio-r13-**'
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+      - 'supabase/tests/**'
+      - 'supabase/config.toml'
+      - 'src/lib/portfolioAccess/**'
+      - 'src/lib/supabase/database.types.ts'
+      - 'src/lib/auth/**'
+      - 'scripts/admin/**'
+      - 'tests/familyPortfolioEntitlements.test.ts'
+      - '.github/workflows/r13-family-portfolio-db-validation.yml'
+
+# Read-only: this workflow never commits, never pushes, never comments.
+permissions:
+  contents: read
+
+concurrency:
+  group: r13-db-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # PINNED. Never `latest` and never a floating tag: an unpinned CLI would change
+  # the meaning of a passing run without any commit in this repository.
+  # Matches the `supabase` devDependency in package.json.
+  SUPABASE_CLI_VERSION: '2.108.0'
+
+jobs:
+  database-validation:
+    name: Isolated PostgreSQL entitlement validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout the exact commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      # ── Port hardening ──────────────────────────────────────────────────
+      # Run 31401352496 failed before Supabase started, with Docker unable to
+      # bind host port 54322 ("address already in use"). It was NOT a race with
+      # the sibling pull_request run: that run was on a DIFFERENT hosted runner
+      # VM and completed all of its own validation successfully, and concurrent
+      # push/PR pairs have started this stack cleanly on every other commit. The
+      # collision was therefore runner-local. Its owning process was not
+      # captured, so the exact cause is not established — but the Supabase host
+      # ports are fixed (supabase/config.toml: api 54321, db 54322) and sit in
+      # the range Linux draws ephemeral source ports from, which makes a
+      # transient local allocation the most plausible candidate.
+      #
+      # Reserving the range stops the kernel from NEWLY handing these ports out
+      # as ephemeral source ports later in the job. It does not, and cannot,
+      # evict a socket that already holds one — hence the diagnostics and the
+      # single bounded retry further down.
+      - name: Reserve the local Supabase ports from the ephemeral range
+        run: |
+          # Hardening, not a gate: if the runner refuses the sysctl this must
+          # warn and continue, never block the database validation itself.
+          set +e
+          echo "ephemeral port range : $(sysctl -n net.ipv4.ip_local_port_range 2>/dev/null || echo '<unreadable>')"
+          before="$(sysctl -n net.ipv4.ip_local_reserved_ports 2>/dev/null || true)"
+          echo "reserved ports before: '${before}'"
+
+          want='54320-54330'
+          # Preserve whatever the runner image already reserves — never replace it.
+          case ",${before}," in
+            *",${want},"*) merged="${before}" ;;
+            *)             merged="${before:+${before},}${want}" ;;
+          esac
+
+          sudo sysctl -w "net.ipv4.ip_local_reserved_ports=${merged}" \
+            || echo "::warning::Could not reserve ${want}; the bounded start retry remains the safety net."
+          echo "reserved ports after : $(sysctl -n net.ipv4.ip_local_reserved_ports 2>/dev/null || echo '<unreadable>')"
+          exit 0
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies from the lockfile
+        run: npm ci
+
+      - name: Install the pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      - name: Confirm the CLI version is the pinned one
+        run: |
+          set -euo pipefail
+          actual="$(supabase --version)"
+          echo "supabase CLI: ${actual}"
+          if [ "${actual}" != "${SUPABASE_CLI_VERSION}" ]; then
+            echo "::error::Expected pinned Supabase CLI ${SUPABASE_CLI_VERSION}, got ${actual}"
+            exit 1
+          fi
+
+      - name: Confirm no linked project or secret is present
+        run: |
+          set -euo pipefail
+          # A linked-project reference or a committed .env would mean this run
+          # could touch something real. Fail closed before starting anything.
+          if [ -d supabase/.temp ]; then
+            echo "::error::supabase/.temp is present — this repository must never be linked in CI"; exit 1
+          fi
+          if grep -qiE '^\s*project_id\s*=\s*"[a-z]{20}"' supabase/config.toml; then
+            echo "::error::supabase/config.toml appears to reference a real Supabase project ref"; exit 1
+          fi
+          echo "OK: no linked project, no committed environment file."
+
+      # Diagnostic only — never fails the job, never kills anything. If a
+      # runner-local collision recurs, this is the evidence that identifies the
+      # owner, which run 31401352496 did not capture.
+      - name: Record port diagnostics before starting Supabase
+        run: |
+          set +e
+          echo "== listening sockets on 54321/54322 =="
+          sudo ss -ltnp 2>/dev/null | grep -E ':(54321|54322)\b' || echo "  none listening"
+          echo "== all TCP sockets (incl. established/ephemeral) on 54321/54322 =="
+          sudo ss -tanp 2>/dev/null | grep -E ':(54321|54322)\b' || echo "  none"
+          echo "== UDP sockets on 54321/54322 =="
+          sudo ss -uanp 2>/dev/null | grep -E ':(54321|54322)\b' || echo "  none"
+          echo "== lsof =="
+          if command -v lsof >/dev/null 2>&1; then
+            sudo lsof -nP -iTCP:54321 -iTCP:54322 2>/dev/null || echo "  no match"
+          else
+            echo "  lsof not installed"
+          fi
+          echo "== containers already publishing ports =="
+          docker ps --format '{{.Names}}  {{.Ports}}' 2>/dev/null || echo "  docker ps unavailable"
+          exit 0
+
+      # ONE bounded retry, around the STACK STARTUP ONLY. Migrations, pgTAP and
+      # every regression suite below are never retried — a real database failure
+      # must still fail this job on its first and only attempt. A second startup
+      # failure fails the job normally, and the first failure is always printed.
+      - name: Start the isolated local Supabase stack
+        run: |
+          # GitHub invokes this with `bash -e`. The retry must inspect a
+          # non-zero exit itself, so errexit is disabled DELIBERATELY here and
+          # every failure path below exits explicitly instead.
+          set +e
+          set -u -o pipefail
+
+          echo "::group::Supabase start — attempt 1 of 2"
+          supabase start --ignore-health-check
+          rc=$?
+          echo "::endgroup::"
+
+          if [ "${rc}" -eq 0 ]; then
+            echo "SUPABASE START: succeeded on ATTEMPT 1."
+            exit 0
+          fi
+
+          echo "::warning::Supabase start attempt 1 failed (exit ${rc}) — capturing diagnostics, then retrying once."
+          echo "== post-failure socket diagnostics for 54321/54322 =="
+          sudo ss -tanp 2>/dev/null | grep -E ':(54321|54322)\b' || echo "  none"
+          sudo lsof -nP -iTCP:54321 -iTCP:54322 2>/dev/null || echo "  lsof: no match"
+
+          # Tears down ONLY this project's own stack (scoped by supabase/config.toml
+          # in this working directory). No unrelated container is touched.
+          echo "== stopping this workflow's own partial stack =="
+          supabase stop --no-backup || true
+          sleep 15
+
+          echo "::group::Supabase start — attempt 2 of 2"
+          supabase start --ignore-health-check
+          rc2=$?
+          echo "::endgroup::"
+
+          if [ "${rc2}" -eq 0 ]; then
+            echo "SUPABASE START: attempt 1 FAILED, succeeded on ATTEMPT 2 (transient bind conflict)."
+            exit 0
+          fi
+
+          echo "::error::Supabase failed to start on both attempts (attempt 1 exit ${rc}, attempt 2 exit ${rc2})."
+          exit 1
+
+      # `db reset` drops and recreates the local database, then applies EVERY
+      # migration in supabase/migrations in order. This is what proves the full
+      # chain applies from clean — and it is where the R13.1 migration's own
+      # `do $$ … raise exception` postcondition blocks execute for real,
+      # including the in-database parity truth table.
+      - name: Apply the full migration chain from a clean database
+        run: supabase db reset --debug
+
+      # Runs EVERY file under supabase/tests/database — the R13.1 entitlement
+      # suite and the R13.R1 evolution-history suite alike.
+      - name: Execute the pgTAP suites
+        run: supabase test db
+
+      # Advisory: surfaces missing RLS, mutable search_path and similar issues.
+      # Non-blocking because it also flags pre-existing findings outside R13's
+      # scope; the pgTAP suite above is the blocking gate.
+      - name: Lint the database (advisory)
+        continue-on-error: true
+        run: supabase db lint --level warning
+
+      # Both halves of the SQL <-> TypeScript parity contract must agree. The SQL
+      # half executed during `db reset`; this is the TypeScript half.
+      - name: Run the TypeScript entitlement suite (parity, other half)
+        run: node --test "tests/familyPortfolioEntitlements.test.ts"
+
+      - name: Run access-control and profile regression suites
+        run: |
+          node --test "tests/accessControl.test.ts"
+          node --test "tests/userProfilesRls.test.ts"
+          node --test "tests/supabaseSchema.test.ts"
+
+      # `always()` so a failure above still tears the stack down. Nothing is
+      # dumped, uploaded, or retained: no artifact, no database export.
+      - name: Stop and clean the local stack
+        if: always()
+        run: supabase stop --no-backup

@@ -28,6 +28,13 @@ export interface NavGroup {
   key: NavGroupKey
   /** Primary destination — used as the group pill's own link. */
   href: string
+  /**
+   * Extra path prefixes that resolve to this group for active-state and page
+   * title, WITHOUT becoming a navigable destination. R13.R1 § 2 uses this to
+   * retire the legacy `/portfolio` module from navigation while keeping the
+   * route itself reachable and correctly titled until a later cleanup stage.
+   */
+  matchPrefixes?: string[]
   icon: string
   label: (t: Translation) => string
   children?: NavChild[]
@@ -77,8 +84,14 @@ export const navGroups: NavGroup[] = [
     label: (t) => t.nav.earnings,
   },
   {
+    // R13.R1 § 2 — the R13 Family Portfolio module IS the Portfolio experience
+    // now. The legacy `/portfolio` module is NOT deleted (later cleanup owns
+    // that); it is simply no longer linked from navigation, and `matchPrefixes`
+    // keeps it resolving to this group so a bookmarked legacy URL still renders
+    // with its correct title instead of falling through to the app name.
     key: 'portfolio',
-    href: '/portfolio',
+    href: '/family-portfolio',
+    matchPrefixes: ['/portfolio'],
     icon: 'portfolio',
     label: (t) => t.nav.portfolio,
   },
@@ -113,7 +126,7 @@ function matchesPrefix(pathname: string, prefix: string): boolean {
 /** All path candidates a group is reachable from — its own href plus every child's href/matchPrefixes. */
 function groupCandidates(group: NavGroup): string[] {
   const childHrefs = group.children?.flatMap((c) => [c.href, ...(c.matchPrefixes ?? [])]) ?? []
-  return [group.href, ...childHrefs]
+  return [group.href, ...(group.matchPrefixes ?? []), ...childHrefs]
 }
 
 /** Resolves which top-level nav group a pathname belongs to (longest-prefix match wins). */

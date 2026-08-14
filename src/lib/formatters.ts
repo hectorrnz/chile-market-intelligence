@@ -144,6 +144,113 @@ export function formatSourceDate(isoDate: string): string {
   return `${day}-${month}`
 }
 
+/**
+ * R13.6 — Family Portfolio USD amount: Chilean-convention grouping (periods as
+ * thousands, comma as decimal), whole dollars by default, `—` for a value that
+ * is genuinely unavailable. The currency itself is labelled by the surrounding
+ * table ("Values in USD"), never appended per cell.
+ */
+export function formatUsd(value: number | null | undefined, decimals = 0): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
+  return value.toLocaleString('es-CL', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })
+}
+
+/**
+ * R13.R2F4 § 2 — a Family Portfolio USD amount at CHART-AXIS length: one
+ * decimal and a millions suffix, `145.470.441` → `145,5M`.
+ *
+ * Why this exists rather than `formatUsd`: a printed y-axis label is read for
+ * MAGNITUDE, not for the cent. Eleven grouped digits force a wide reserved
+ * gutter (20mm of a 186mm measure before this change), crowd the plot, and
+ * still give the reader nothing the shorter form does not. Every value on one
+ * axis renders through this single function, so the three labels stay directly
+ * comparable.
+ *
+ * Chilean convention throughout, exactly as every other figure in this app:
+ * the comma IS the decimal separator (`145,5M`, not `145.5M`) — the units are
+ * abbreviated, the locale is not.
+ *
+ * Below a million the abbreviation would destroy resolution (three ticks all
+ * reading `0,3M`), so a small figure falls back to the plain grouped amount.
+ * Unavailable stays `—`, never `0M`.
+ */
+export function formatUsdCompactM(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
+  if (Math.abs(value) < 1_000_000) return formatUsd(value)
+  return `${formatUsd(value / 1_000_000, 1)}M`
+}
+
+/**
+ * R13.7 — an UNSIGNED percentage from a ratio (0.423 → "42,3%"), for
+ * allocation weights where a "+" sign would misread as a change figure.
+ * Unavailable stays an em dash, never 0%.
+ */
+export function formatWeightPct(weight: number | null | undefined, decimals = 1): string {
+  if (weight === null || weight === undefined || !Number.isFinite(weight)) return '—'
+  return `${(weight * 100).toLocaleString('es-CL', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })}%`
+}
+
+/**
+ * R13.7 — a SIGNED percentage from a RATIO (0.0123 → "+1,23%"), for
+ * source-provided returns and benchmark variations stored as ratios.
+ * Unavailable stays an em dash, never 0%.
+ */
+export function formatRatioPct(ratio: number | null | undefined, decimals = 2): string {
+  if (ratio === null || ratio === undefined || !Number.isFinite(ratio)) return '—'
+  return formatPercent(ratio * 100, decimals)
+}
+
+export interface CalendarParts {
+  year: number
+  month: number
+  day: number
+}
+
+/**
+ * The calendar parts of a bare `YYYY-MM-DD` (or `YYYY-MM`, which resolves to
+ * the first of the month) string, read DIRECTLY off the string.
+ *
+ * Same rule as `formatSourceDate`/`formatIsoDateLabel`, extracted so a caller
+ * that needs the individual parts (a chart axis, a tooltip) can obey it too:
+ * `new Date("2026-08-07")` is an *instant* at UTC midnight, so the local
+ * getters (`getDate()`, `getMonth()`) return the PRIOR day in every negative
+ * UTC offset — 6 August in Chile. A publication date is a calendar date, not
+ * an instant; no viewer's timezone may shift it.
+ *
+ * Returns null for anything that is not a bare calendar date, so the caller
+ * decides what to do with a real instant rather than being handed a guess.
+ */
+export function calendarPartsOf(value: string): CalendarParts | null {
+  const m = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(value)
+  if (!m) return null
+  const year = Number(m[1])
+  const month = Number(m[2])
+  const day = m[3] === undefined ? 1 : Number(m[3])
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null
+  return { year, month, day }
+}
+
+/**
+ * R13.6 — a DATE-ONLY ISO string ("2026-08-13") as `DD-MM-YYYY`, read directly
+ * off the string. Same rule as `formatSourceDate`: a date-only value is never
+ * run through `new Date()`, which parses it as UTC midnight and can render the
+ * prior day in Chile's negative-UTC-offset timezone. Used for published-week
+ * labels, where the year matters across a multi-year selector.
+ */
+export function formatIsoDateLabel(isoDate: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate)
+  if (!m) return isoDate
+  const [, y, mo, d] = m
+  if (Number(mo) < 1 || Number(mo) > 12 || Number(d) < 1 || Number(d) > 31) return isoDate
+  return `${d}-${mo}-${y}`
+}
+
 /** Format ISO date string as DD MMM YYYY (es-CL short month). */
 export function formatDate(isoDate: string): string {
   return new Date(isoDate).toLocaleDateString('es-CL', {

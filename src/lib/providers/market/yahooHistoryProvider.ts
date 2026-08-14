@@ -117,3 +117,91 @@ export async function getYahooStockHistory(
     return { ok: false, reason: `Yahoo Finance history fetch failed: ${msg.slice(0, 200)}` }
   }
 }
+
+// ---------------------------------------------------------------------------
+// R13.7 — symbol-direct daily closes for the One Pager benchmarks
+// ---------------------------------------------------------------------------
+
+export interface DailyClose {
+  /** ISO date, YYYY-MM-DD. */
+  date: string
+  close: number
+}
+
+export interface SymbolDailyCloses {
+  symbol: string
+  /** The venue's quote currency as Yahoo reports it, or null when absent. */
+  quoteCurrency: string | null
+  closes: DailyClose[]
+}
+
+/**
+ * R13.7 — daily closing bars for an ARBITRARY Yahoo symbol over [from, to].
+ *
+ * Deliberately in this module rather than a parallel one (doc 06 § 4.7 forbids
+ * a second market-data architecture): same client, same timeout, same
+ * filler-bar stripping as the ticker-mapped path above. Unlike that path,
+ * the symbol is the caller's responsibility — the ONLY caller population is
+ * the One Pager benchmark resolver and its discovery script, both of which are
+ * gated by `onePagerBenchmarks.ts`'s verified/candidate discipline. This is
+ * NOT a general bypass of the ticker map for equities.
+ *
+ * The quote currency is captured from the chart metadata because the
+ * verification protocol (doc 06 § 4.3) must CONFIRM it, never assume it.
+ */
+export async function getYahooDailyCloses(
+  symbol: string,
+  from: Date,
+  to: Date,
+): Promise<ProviderResult<SymbolDailyCloses>> {
+  try {
+    const YahooFinance = (await import('yahoo-finance2')).default
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const yf = new (YahooFinance as any)({ suppressNotices: ['yahooSurvey'] })
+    const chartPromise = yf.chart(
+      symbol,
+      { period1: from, period2: to, interval: '1d' },
+      { validateResult: false },
+    )
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Yahoo Finance chart request timed out')), TIMEOUT_MS),
+    )
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result: any = await Promise.race([chartPromise, timeoutPromise])
+    const rawQuotes: RawChartQuote[] = Array.isArray(result?.quotes) ? result.quotes : []
+    const quoteCurrency: string | null =
+      typeof result?.meta?.currency === 'string' && result.meta.currency.length > 0
+        ? result.meta.currency
+        : null
+
+    const bars: Array<{ date: string; close: number; volume: number | null }> = []
+    for (const q of rawQuotes) {
+      if (q.close == null || q.date == null) continue
+      const d = q.date instanceof Date ? q.date : new Date(q.date)
+      if (Number.isNaN(d.getTime())) continue
+      if (!Number.isFinite(q.close)) continue
+      bars.push({ date: d.toISOString().slice(0, 10), close: q.close, volume: q.volume ?? null })
+    }
+
+    // Same zero-volume repeated-close filler removal as the ticker path — a
+    // carried-forward placeholder bar must never masquerade as a real weekly
+    // close for a benchmark either.
+    const sessions = stripNonTradingFillers(bars)
+
+    return {
+      ok: true,
+      data: {
+        symbol,
+        quoteCurrency,
+        closes: sessions.map((s) => ({ date: s.date, close: s.close as number })),
+      },
+      source: SOURCE,
+      // An empty (but successful) series has no honest as-of; the caller sees
+      // the empty `closes` and treats the instrument as unavailable.
+      lastUpdated: sessions.length > 0 ? sessions[sessions.length - 1].date : '',
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { ok: false, reason: `Yahoo Finance symbol history fetch failed: ${msg.slice(0, 200)}` }
+  }
+}

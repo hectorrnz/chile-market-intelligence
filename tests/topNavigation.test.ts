@@ -28,11 +28,25 @@ describe('navGroups — every existing route stays reachable', () => {
     const hrefs = navGroups.flatMap((g) => [g.href, ...(g.children ?? []).map((c) => c.href)])
     const expected = [
       '/', '/stocks', '/stocks', '/watchlist', '/compare', '/compare', '/chart-builder',
-      '/macro', '/macro', '/macro/calendar', '/earnings', '/portfolio', '/structured-notes',
+      '/macro', '/macro', '/macro/calendar', '/earnings',
+      // R13.R1 § 2 — the R13 module IS the Portfolio experience now. The legacy
+      // `/portfolio` module is NOT deleted, only unlinked; it stays reachable by
+      // URL and keeps its title through the group's `matchPrefixes` (asserted
+      // below), until a later cleanup stage removes it.
+      '/family-portfolio', '/structured-notes',
       // R9.2 — /settings is now the canonical Settings destination.
       '/settings',
     ]
     assert.deepEqual(hrefs.sort(), expected.sort())
+  })
+
+  test('R13.R1 § 2 — the legacy /portfolio route stays reachable and titled, but unlinked', () => {
+    const hrefs = navGroups.flatMap((g) => [g.href, ...(g.children ?? []).map((c) => c.href)])
+    assert.ok(!hrefs.includes('/portfolio'), 'nothing links to the legacy module')
+    assert.equal(resolveActiveGroup('/portfolio')?.key, 'portfolio')
+    assert.equal(getPageTitle('/portfolio', 'en', dict.en), dict.en.nav.portfolio)
+    assert.equal(resolveActiveGroup('/family-portfolio')?.key, 'portfolio')
+    assert.equal(resolveActiveGroup('/family-portfolio/weekly-changes')?.key, 'portfolio')
   })
 
   test('Settings is newly discoverable in nav (it was reachable only by direct URL before)', () => {

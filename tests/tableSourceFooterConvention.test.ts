@@ -32,6 +32,10 @@ const PAGES_WITH_TABLES = [
   'src/app/macro/page.tsx',
   'src/app/structured-notes/page.tsx',
   'src/app/structured-notes/[id]/page.tsx',
+  // R13.5/R13.6/R13.7 — Family Portfolio table-bearing pages.
+  'src/app/family-portfolio/admin/page.tsx',
+  'src/app/family-portfolio/portfolio/page.tsx',
+  'src/app/family-portfolio/page.tsx',
 ]
 
 describe('every table-bearing page renders its source via TableSourceFooter', () => {

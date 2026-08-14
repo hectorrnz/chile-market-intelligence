@@ -10,6 +10,13 @@ import { useLang } from '@/components/providers/LangProvider'
 interface KpiHeroMini {
   label: string
   value: string
+  /**
+   * True when the mini carries a MONETARY value rather than a percentage. It is
+   * then masked by the hero's OWN `privacyMasked` state — deliberately not a
+   * second flag the caller could set inconsistently, so a hero cannot end up
+   * hiding its headline amount while printing another amount underneath it.
+   */
+  sensitive?: boolean
 }
 
 interface KpiHeroProps {
@@ -70,7 +77,9 @@ export function KpiHero({
           {minis.map((m) => (
             <div key={m.label} className="flex flex-col">
               <span className="ui-meta text-muted-fg">{m.label}</span>
-              <span className="ui-number text-sm text-foreground">{m.value}</span>
+              <span className="ui-number text-sm text-foreground">
+                {m.sensitive ? <PrivacyValue masked={privacyMasked}>{m.value}</PrivacyValue> : m.value}
+              </span>
             </div>
           ))}
         </div>

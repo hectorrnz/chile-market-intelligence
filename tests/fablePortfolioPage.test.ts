@@ -889,7 +889,17 @@ describe('Phase 5H — scope held', () => {
   })
 
   it('adds no CSS — globals.css declares no portfolio-specific rule', () => {
-    assert.ok(!/portfolio/i.test(read('src/app/globals.css')))
+    // The invariant is that PHASE 5H (the legacy `/portfolio` page redesign)
+    // introduced no CSS of its own. It was originally expressed as "the word
+    // portfolio appears nowhere in globals.css", which held only while no
+    // later stage documented a token in prose. R13.R2 added Family Portfolio
+    // palette and series tokens whose COMMENTS say "portfolio"; that is not a
+    // rule, and reading it as one would make the guard fire on documentation.
+    // Comments are therefore stripped before the check, so what is asserted is
+    // the real thing: no selector, class or custom property names a portfolio.
+    const css = read('src/app/globals.css').replace(/\/\*[\s\S]*?\*\//g, '')
+    assert.ok(!/portfolio/i.test(css),
+      'no CSS selector, class or custom property may be portfolio-specific')
   })
 
   it('redesigns no page outside its own phase', () => {
