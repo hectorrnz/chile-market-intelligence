@@ -968,6 +968,135 @@ export function reconcileChildren(nodes: readonly ChangeNode[], parentRowKey: st
     unavailableChildCount: 0,
   }
 }
+// ---------------------------------------------------------------------------
+// 8b · The CONTRIBUTION FRONTIER (R13.R3C)
+// ---------------------------------------------------------------------------
+
+/** A value-carrying descendant, with the label containers it was reached through. */
+export interface ContributionChild {
+  node: ChangeNode
+  /**
+   * The valueless label containers descended through to reach this node, outer
+   * → inner. Empty when the node is a direct child. Rendered as a grouping
+   * label; never as a value, because these rows genuinely carry none.
+   */
+  groupPath: string[]
+}
+
+/**
+ * The shallowest set of VALUE-CARRYING descendants that tiles a node.
+ *
+ * `childrenOf` returns the structural direct children, which is right for the
+ * audit table but wrong for a contribution breakdown wherever the source puts
+ * a valueless label between a parent and its real constituents. Main's
+ * `Inmobiliario` is exactly that shape: its six direct children are
+ * `sociedad_header` rows that carry no figure of their own (the source keeps
+ * the money on the individual assets beneath them), so a direct-child
+ * breakdown would show six unavailable rows and could never reconcile.
+ *
+ * So this applies the rule `deriveDrivers` already applies at the root — skip
+ * aggregates, DESCEND label containers, take everything else — one level down
+ * instead of from the top. That makes the frontier a non-overlapping tiling of
+ * the parent by the same argument, and it keeps one rule for "what are the
+ * components of this node" across the whole surface rather than two that could
+ * disagree.
+ *
+ * A container is not discarded: it is carried on `groupPath` so the breakdown
+ * can still say which sociedad an asset sits in. Its value is NEVER synthesised
+ * by summing its children — the source does not publish one, and a derived
+ * subtotal presented beside real ones would be a different kind of number
+ * wearing the same styling.
+ *
+ * Like `childrenOf`, a `sociedad_total` redirects to its header's constituents:
+ * the parser keeps them on the HEADER, with the total as their sibling.
+ */
+export function contributionChildren(
+  nodes: readonly ChangeNode[],
+  parentRowKey: string,
+): ContributionChild[] {
+  const byParent = new Map<string | null, ChangeNode[]>()
+  for (const n of nodes) {
+    const list = byParent.get(n.parentRowKey)
+    if (list) list.push(n)
+    else byParent.set(n.parentRowKey, [n])
+  }
+  const kidsOf = (key: string | null) => (byParent.get(key) ?? []).slice().sort(byDisplayOrder)
+
+  const parent = nodes.find((n) => n.rowKey === parentRowKey) ?? null
+  const effectiveParentKey =
+    parent !== null && parent.rowType === 'sociedad_total' && parent.parentRowKey !== null
+      ? parent.parentRowKey
+      : parentRowKey
+
+  const out: ContributionChild[] = []
+  const visit = (key: string, groupPath: string[], guard: number) => {
+    if (guard > 32) return // structural cycle guard; cannot recurse forever
+    for (const n of kidsOf(key)) {
+      if (AGGREGATE_ROW_TYPES.has(n.rowType)) continue
+      if (CONTAINER_ROW_TYPES.has(n.rowType)) {
+        visit(n.rowKey, [...groupPath, n.labelEs], guard + 1)
+        continue
+      }
+      out.push({ node: n, groupPath })
+    }
+  }
+  visit(effectiveParentKey, [], 0)
+  return out
+}
+
+/** True when a node has a published decomposition — the ONLY thing that earns a drill affordance. */
+export function isContributionDrillable(nodes: readonly ChangeNode[], rowKey: string): boolean {
+  return contributionChildren(nodes, rowKey).length > 0
+}
+
+/**
+ * The frontier's changes against the parent's own change, inside the § 6d
+ * tolerance — the invariant a breakdown must satisfy before it is shown.
+ *
+ * Identical in spirit to `reconcileChildren`, over the frontier instead of the
+ * structural children. A breach is a RESIDUAL, reported and rendered, never
+ * absorbed into the largest component and never closed by dropping a row; an
+ * unavailable component makes the sum indeterminate rather than smaller.
+ */
+export function reconcileContribution(
+  nodes: readonly ChangeNode[],
+  parentRowKey: string,
+): ChildReconciliation {
+  const parent = nodes.find((n) => n.rowKey === parentRowKey) ?? null
+  const children = contributionChildren(nodes, parentRowKey).map((c) => c.node)
+  const tolerance = reconciliationTolerance(parent?.previousValue ?? null)
+
+  const unavailableChildCount = children.filter(
+    (c) => c.status !== 'ok' || !finite(c.weeklyValueChange),
+  ).length
+  if (
+    parent === null ||
+    !finite(parent.weeklyValueChange) ||
+    children.length === 0 ||
+    unavailableChildCount > 0
+  ) {
+    return {
+      status: 'unavailable',
+      parentChange: parent?.weeklyValueChange ?? null,
+      childSum: null,
+      residual: null,
+      tolerance,
+      unavailableChildCount,
+    }
+  }
+
+  const childSum = children.reduce((a, c) => a + (c.weeklyValueChange as number), 0)
+  const residual = (parent.weeklyValueChange as number) - childSum
+  return {
+    status: Math.abs(residual) <= tolerance ? 'ok' : 'residual',
+    parentChange: parent.weeklyValueChange,
+    childSum,
+    residual,
+    tolerance,
+    unavailableChildCount: 0,
+  }
+}
+
 
 /**
  * One level of the drill-down chart. At the root the bars are the derived

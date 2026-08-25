@@ -291,7 +291,9 @@ describe('R13.R2F3 §§ 20-21 · the printed axes', () => {
     assert.equal(formatUsdCompactM(Number.NaN), '—')
     // And it is reached ONLY through MaskedAmount, so the mask still applies.
     const masked = read('src/components/familyPortfolio/MaskedAmount.tsx')
-    assert.match(masked, /compact \? formatUsdCompactM\(value\) : formatUsd\(value, decimals\)/)
+    // R13.R3C.2 added a third branch (the contributors chart's whole-unit
+    // form); the PRINT axis still reaches `formatUsdCompactM` on `compact`.
+    assert.match(masked, /:\s*compact\s*\?\s*formatUsdCompactM\(value\)/)
     assert.match(masked, /<PrivacyValue masked=\{masked\}/)
     assert.ok(
       !/formatUsdCompactM/.test(PRINT_CODE),

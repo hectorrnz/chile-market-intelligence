@@ -5,35 +5,108 @@
 //
 // SECTION ORDER IS THE CONTRACT'S (§ 6h), verbatim:
 //   1. page header, portfolio selector, published-week selector
-//   2. total-level weekly metrics
+//   2. total-level weekly metrics  (R13.R3C.4 — the hero alone; see below)
 //   3. total-level flow and investment-result reconciliation
-//   4. Drivers of Weekly Portfolio Value Change (waterfall)
+//   4. RETIRED — see below
 //   5. Largest Weekly Value Increases / Largest Weekly Value Decreases
 //   6. Weekly Value Change by Portfolio Hierarchy
 //   7. full changes table
-//   8. historical weekly-change trend
+//   8. RETIRED — see below
 //   9. freshness, publication status, reconciliation status, source notes,
 //      and the persistent methodology note
+//
+// ── R13.R3C.2 · THE PAGE IS TWO REGIONS NOW, AND ITEM 8 IS GONE ───────────
+//
+// The contract's ORDER is unchanged — every surviving section still renders
+// in its § 6h position — but items 2 and 3 now sit in ONE row (the week's
+// change, the week's result, the week's reconciliation) and items 5 and 6 in
+// the next (the movers listed, beside the same movers drawn). Compressing
+// them exposed how much they repeated, so each block was given one job and
+// the duplicated figures were removed rather than tiled; the row's own
+// comment records which figure went where and why two of them legitimately
+// remain in two places.
+//
+// ── R13.R3C.4 · WHAT THIS PAGE IS FOR, ENFORCED ───────────────────────────
+//
+// Every block on this page is about ONE selected week. Two things that were
+// not are gone, on the owner's product decision:
+//
+//   · The *Total-level weekly metrics* card (part of § 6h item 2) carried YTD
+//     P&L and YTD RETURN — year-to-date figures under a weekly heading, which
+//     invited the year to be read as the week. Summary already reports both,
+//     over a period the reader picks. Its other two lines, weekly P&L and net
+//     flows, were terms of the reconciliation beside it and now live there
+//     once. Item 2 survives as the hero: the week's change, as an amount and
+//     as a rate.
+//   · The IMPLIED-vs-PUBLISHED pair in the reconciliation. Still computed on
+//     every request and still reported as a verdict in item 9 — but no longer
+//     printed as two adjacent dollar amounts, which read as a discrepancy to
+//     anyone not already reconciling. A real mismatch is caught before
+//     publication, by the parser, in the administrator's upload review.
+//
+// Both apply to Main and to every personal portfolio: this is ONE page, and
+// the scope selector only changes which rows it is handed.
+//
+// § 6h item 8, *Historical Weekly Value Change*, is retired: it plotted a
+// series ACROSS weeks on a page whose every other block is about the one week
+// selected above, and Portfolio Evolution on Summary answers that question
+// better and on a flow-adjusted basis. No calculation changed with it — the
+// route still returns `trend`.
+//
+// ── R13.R3B.1 · ITEM 4 IS RETIRED FROM THIS PAGE ──────────────────────────
+//
+// § 6h item 4 was "Drivers of Weekly Portfolio Value Change (waterfall)". On
+// the owner's product decision it no longer earns its space HERE: measured on
+// the real book, one week moves this portfolio by a fraction of a percent, so
+// five of seven drivers drew under a pixel and the card taught the reader
+// almost nothing. The decomposition itself was not the problem — the WINDOW
+// was — so R13.R3B moved it to the Summary tab over 3M / YTD / 1Y / ALL, where
+// the same drivers are an order of magnitude more legible.
+//
+// The contract's numbering is kept as-is rather than re-flowed: renumbering
+// would misstate § 6h, and a gap that says WHY is more useful to the next
+// reader than a tidy sequence that hides the change.
+//
+// WHAT STAYED. Everything item 4 was built on. The driver decomposition is
+// still computed here from the same locked functions and still reported — as
+// the DRIVER RECONCILIATION in the status section (item 9), which is a real
+// data-quality property of the week whether or not anything is drawn. What is
+// gone is the drawing, and the personal-scope "driver view" rail that only
+// ever chose the drawing's tiling; the hierarchy section already drills a
+// personal scope by sociedad, which is what that rail defaulted to.
+//
+// ── R13.R3C · ITEM 6 IS THE SAME SYSTEM AS SUMMARY NOW ────────────────────
+//
+// *Weekly Value Change by Portfolio Hierarchy* keeps its § 6g title, its
+// subject and its reconciliation, and swaps its presentation for the shared
+// Contributors and Detractors system: one zero-centred, magnitude-ranked bar
+// chart (`ContributionChart`) and one breakdown popup
+// (`ContributionBreakdownModal`), both the very components the Summary card
+// renders. The in-place breadcrumb drill is gone — depth now happens inside
+// the popup, where the parent and its reconciliation stay on screen the whole
+// way down — and personal scopes gain a SUBJECT rail (Combined Portfolio /
+// one sociedad), which is a different control from the R13.R3B.1 tiling rail
+// it visually replaces.
 //
 // ONE WEEK SELECTION DRIVES EVERYTHING (doc 07 § 6b): a single (scope, asOf)
 // fetch feeds every section; no component holds its own week.
 //
 // NO FINANCIAL SEMANTICS LIVE IN THIS FILE. Every figure comes from the API
-// response or from the LOCKED pure Stage-8 module — drilling the hierarchy,
-// switching the personal driver view, and toggling cash all call the same
-// pure functions the server route calls (`deriveDrivers` / `buildWaterfall` /
-// `rankWeeklyChanges` / `buildHierarchyLevel` / `buildFullChangesTable`),
+// response or from a pure module — the hierarchy, the cash toggle and the
+// contributors chart all call the same pure functions the server route calls
+// (`deriveDrivers` / `buildWaterfall` / `rankWeeklyChanges` /
+// `contributionChildren` / `buildContributionSet` / `buildFullChangesTable`),
 // over only the rows RLS already released to this caller. The client is
 // presentation, never protection and never a second calculator.
 //
 // PRIVACY: every dollar amount renders through `MaskedAmount` / a
-// privacy-masked `KpiHero`; the waterfall and the trend chart are replaced
-// WHOLE while masked (their positions/axes encode absolute levels — the
-// Stage-7 evolution-chart precedent); hierarchy bars keep only RELATIVE
-// extents (the allocation-donut precedent) with their dollar labels masked.
-// Percentages follow the app's existing visible-percentage policy.
+// privacy-masked `KpiHero`; hierarchy bars keep only RELATIVE extents (the
+// allocation-donut precedent) with their dollar labels masked. Percentages
+// follow the app's existing visible-percentage policy. (The whole-chart
+// privacy replacement this page used to carry went with item 8: no surface
+// here plots absolute LEVELS any more.)
 
-import { Fragment, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useLang } from '@/components/providers/LangProvider'
 import { PageHeader } from '@/components/fable/PageHeader'
@@ -42,7 +115,7 @@ import { GlassSurface } from '@/components/fable/GlassSurface'
 import { KpiHero } from '@/components/fable/KpiHero'
 import { TableCard } from '@/components/fable/TableCard'
 import { SegmentedControl } from '@/components/fable/SegmentedControl'
-import { PrivacyToggle, PrivacyValue } from '@/components/fable/PrivacyValue'
+import { PrivacyToggle } from '@/components/fable/PrivacyValue'
 import { usePrivacyMode } from '@/components/fable/usePrivacyMode'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -51,23 +124,29 @@ import { useFamilyPortfolio } from '@/components/familyPortfolio/FamilyPortfolio
 import { WeekSelector } from '@/components/familyPortfolio/WeekSelector'
 import { MaskedAmount } from '@/components/familyPortfolio/MaskedAmount'
 import { ReconciliationStatus, type ReconciliationDisplayState } from '@/components/familyPortfolio/ReconciliationStatus'
-import { ValueChangeWaterfall } from '@/components/familyPortfolio/ValueChangeWaterfall'
-import { DivergingBarChart, type DivergingBarDatum } from '@/components/familyPortfolio/DivergingBarChart'
-import { LineChart } from '@/components/charts/LineChart'
-import { formatUsd, formatRatioPct, formatIsoDateLabel } from '@/lib/formatters'
+import { ContributionChart } from '@/components/familyPortfolio/ContributionChart'
+import { ContributionBreakdownModal } from '@/components/familyPortfolio/ContributionBreakdownModal'
+import { formatUsd, formatRatioPct, formatChangePct, formatIsoDateLabel } from '@/lib/formatters'
 import { dict, type Translation } from '@/lib/i18n'
 import {
   breadcrumbFor,
   buildFullChangesTable,
-  buildHierarchyLevel,
   buildWaterfall,
-  childrenOf,
+  contributionChildren,
   deriveDrivers,
   rankWeeklyChanges,
   type ChangeNode,
   type DriverGrouping,
   type NodeUnavailableReason,
 } from '@/lib/familyPortfolio/weeklyChanges'
+import { buildContributionSet, contributionAxis } from '@/lib/familyPortfolio/contributionChart'
+import { omittedZeroSentence } from '@/lib/familyPortfolio/contributionLabels'
+import {
+  COMBINED_SUBJECT,
+  derivePortfolioSubjects,
+  resolveSubject,
+  subjectLabelOverrides,
+} from '@/lib/familyPortfolio/portfolioSubject'
 import {
   fetchFamilyPortfolioWeeklyChanges,
   type WeeklyChangesResponse,
@@ -81,9 +160,13 @@ interface FetchSlot {
   data: WeeklyChangesResponse | null
 }
 
-// The waterfall's synthetic step labels, in BOTH languages (the pure module
-// stores labelEs/labelEn per step and the renderer picks by language) — the
-// same shape the server route bakes in, sourced from the same dictionary.
+// The synthetic opening/closing/residual step labels `buildWaterfall` needs,
+// in BOTH languages, from the same dictionary the server route reads.
+//
+// R13.R3B.1 — these are no longer DRAWN on this page: nothing here renders the
+// steps. They are still required because the driver reconciliation reported in
+// the status section is derived from the same locked `buildWaterfall` call,
+// and that function labels its steps whether or not a caller shows them.
 const STEP_LABELS = {
   opening: {
     es: dict.es.fp.weeklyChanges.previousValueLabel,
@@ -97,6 +180,16 @@ const STEP_LABELS = {
     es: dict.es.fp.weeklyChanges.residualStep,
     en: dict.en.fp.weeklyChanges.residualStep,
   },
+} as const
+
+/**
+ * The contributors chart's residual label, from the SHARED namespace both this
+ * page and the Summary card read — so the same remainder is named the same way
+ * on both surfaces. Period-neutral, unlike `STEP_LABELS` above.
+ */
+const RESIDUAL_LABEL = {
+  es: dict.es.fp.contrib.residual,
+  en: dict.en.fp.contrib.residual,
 } as const
 
 function nodeLabel(n: ChangeNode, lang: 'en' | 'es'): string {
@@ -149,6 +242,9 @@ function structuralRowClasses(rowType: string): string {
  * `as_of_date` option value.
  */
 const WEEKLY_DEFAULT = 'weekly'
+
+/** Main's labels are the source's own; a stable empty map keeps the memo cheap. */
+const NO_OVERRIDES: ReadonlyMap<string, string> = new Map()
 
 const TH = 'py-2.5 px-3 first:pl-4 last:pr-4 ui-table-header text-muted-fg sticky top-0 bg-surface z-10'
 const CELL = 'py-2 px-3 first:pl-4 last:pr-4'
@@ -241,11 +337,16 @@ function RankedPanel({
                   <td className={`${CELL} text-right ui-number whitespace-nowrap`}>
                     <MaskedAmount value={n.currentValue} masked={masked} />
                   </td>
+                  {/* The same two change columns, under the same rule, so the
+                      ranked panels and the full listing can never disagree
+                      about how a week with no movement is written. (A ranked
+                      row is a mover by construction, so in practice neither
+                      dashes here — the shared rule is what keeps it that way.) */}
                   <td className={`${CELL} text-right ui-number whitespace-nowrap ${changeColor(n.weeklyValueChange)}`}>
-                    <MaskedAmount value={n.weeklyValueChange} masked={masked} signed />
+                    <MaskedAmount value={n.weeklyValueChange} masked={masked} signed zeroDash />
                   </td>
                   <td className={`${CELL} text-right ui-number whitespace-nowrap ${changeColor(n.ownPctChange)}`}>
-                    {formatRatioPct(n.ownPctChange)}
+                    {formatChangePct(n.ownPctChange)}
                   </td>
                 </tr>
               )
@@ -288,10 +389,18 @@ function WeeklyChangesPageInner() {
   const requestKey = `${activeScope ?? ''}|${asOf ?? 'latest'}|${compareFrom ?? 'weekly'}`
   const [slot, setSlot] = useState<FetchSlot | null>(null)
 
-  /** Personal-scope waterfall driver view (doc 07 § 6e). Main is fixed. */
-  const [grouping, setGrouping] = useState<DriverGrouping>('sociedad')
+  // R13.R3B.1 — the personal-scope "driver view" rail (By Sociedad / By Asset
+  // Class) is GONE with the waterfall it tiled. R13.R3C adds a different
+  // control in its place: a SUBJECT rail (Combined Portfolio / one sociedad),
+  // which chooses whose value change the card describes rather than at what
+  // grain a single total is tiled.
   const [includeCash, setIncludeCash] = useState(false)
-  const [drillKey, setDrillKey] = useState<string | null>(null)
+  // R13.R3C — the in-place breadcrumb drill is replaced by the shared
+  // breakdown popup, so the page holds only which component is open, not a
+  // path. Depth now lives inside the modal, where the parent and its
+  // reconciliation stay on screen the whole way down.
+  const [subjectKey, setSubjectKey] = useState<string>(COMBINED_SUBJECT)
+  const [openKey, setOpenKey] = useState<string | null>(null)
   const fullTableRef = useRef<HTMLDivElement | null>(null)
 
   // Render-time previous-value pattern (the codebase's standing rule — never
@@ -300,7 +409,6 @@ function WeeklyChangesPageInner() {
   const [prevScope, setPrevScope] = useState(activeScope)
   if (prevScope !== activeScope) {
     setPrevScope(activeScope)
-    setGrouping('sociedad')
     setIncludeCash(false)
     // A custom range belongs to the scope it was chosen in; carrying it across
     // could name a week the new scope has not published.
@@ -309,7 +417,10 @@ function WeeklyChangesPageInner() {
   const [prevRequestKey, setPrevRequestKey] = useState(requestKey)
   if (prevRequestKey !== requestKey) {
     setPrevRequestKey(requestKey)
-    setDrillKey(null)
+    // A subject key names a row of THIS scope's hierarchy and an open popup
+    // describes THIS comparison; neither survives a new request.
+    setSubjectKey(COMBINED_SUBJECT)
+    setOpenKey(null)
   }
 
   useEffect(() => {
@@ -355,35 +466,71 @@ function WeeklyChangesPageInner() {
   const flowRecon = data?.flowReconciliation ?? null
 
   // ── Every derived figure below comes from the LOCKED pure module ──────────
-  const waterfallGrouping: DriverGrouping = isMain ? 'top_level' : grouping
-  const waterfallDrivers = useMemo(() => deriveDrivers(nodes, waterfallGrouping), [nodes, waterfallGrouping])
-  const waterfall = useMemo(
-    () => (total ? buildWaterfall(total, waterfallDrivers, STEP_LABELS) : null),
-    [total, waterfallDrivers],
-  )
   const ranked = useMemo(() => rankWeeklyChanges(nodes, { excludeCash: !includeCash }), [nodes, includeCash])
   // § 6g fixes the drill hierarchy per scope kind: Main tiles by its top-level
   // rows; a personal scope drills Sociedad → Asset Class → Subasset → Asset.
   const hierarchyGrouping: DriverGrouping = isMain ? 'top_level' : 'sociedad'
   const hierarchyDrivers = useMemo(() => deriveDrivers(nodes, hierarchyGrouping), [nodes, hierarchyGrouping])
-  const level = useMemo(
-    () => buildHierarchyLevel(nodes, hierarchyDrivers, drillKey),
-    [nodes, hierarchyDrivers, drillKey],
+  // ── R13.R3B.1 · ONE DRIVER SET, REPORTED AS A RECONCILIATION ─────────────
+  //
+  // The retired waterfall derived its own driver list because a personal scope
+  // could re-tile it (top-level for Main, or the rail's sociedad/asset-class
+  // choice). With the rail gone that list is identical to the hierarchy's, so
+  // the page now derives ONE set and reuses it: the same `buildWaterfall` the
+  // route calls still answers whether the week's drivers reconcile to the
+  // published total, which the status section reports. Nothing is drawn from
+  // it — the decomposition itself now lives on Summary over a real period.
+  const driverReconciliation = useMemo(
+    () => (total ? buildWaterfall(total, hierarchyDrivers, STEP_LABELS) : null),
+    [total, hierarchyDrivers],
   )
   const fullRows = useMemo(() => buildFullChangesTable(nodes), [nodes])
 
-  const bars: DivergingBarDatum[] = level.bars.map((n) => ({
-    key: n.rowKey,
-    label: nodeLabel(n, lang),
-    value: n.weeklyValueChange,
-    impact: n.impactOnPortfolioValue,
-    available: n.status === 'ok',
-    reasonText: reasonText(n.unavailableReason, w),
-    // The SAME pure drill semantics the level itself uses — a sociedad total
-    // drills into its sociedad's constituents even though its own structural
-    // child list is empty (R13.8 D4).
-    drillable: childrenOf(nodes, n.rowKey).length > 0,
-  }))
+  // ── R13.R3C · the same Contributors and Detractors system as Summary ──────
+  //
+  // Identical modules, identical component, identical popup — only the window
+  // differs: Summary compares two endpoints of a chosen period, this page
+  // compares the two weeks the reader selected above. A measure drawn one way
+  // here and another way there would be two measures wearing one name.
+  const subjects = useMemo(
+    () => derivePortfolioSubjects(nodes, hierarchyDrivers),
+    [nodes, hierarchyDrivers],
+  )
+  const safeSubjectKey = subjects.some((s) => s.key === subjectKey) ? subjectKey : COMBINED_SUBJECT
+  const resolvedSubject = useMemo(
+    () => resolveSubject(nodes, hierarchyDrivers, total, safeSubjectKey),
+    [nodes, hierarchyDrivers, total, safeSubjectKey],
+  )
+  const contributionSet = useMemo(
+    () =>
+      buildContributionSet({
+        openingValue: resolvedSubject.state === 'lifecycle_gap' ? null : resolvedSubject.openingValue,
+        closingValue: resolvedSubject.state === 'lifecycle_gap' ? null : resolvedSubject.closingValue,
+        components: resolvedSubject.components,
+        isDrillable: (key) => contributionChildren(nodes, key).length > 0,
+        residualLabel: RESIDUAL_LABEL,
+      }),
+    [resolvedSubject, nodes],
+  )
+  const contributionAxisScale = useMemo(
+    () => contributionAxis(contributionSet.items.map((i) => i.value)),
+    [contributionSet],
+  )
+  // R13.R3C.2 — one display-name map for the pills, the bars, the x-axis, the
+  // tooltip, the omission footnote and the popup heading. Main gets none: its
+  // components are asset classes and individual holdings whose labels belong to
+  // the source, and title-casing a shouted brand there would rewrite a real
+  // published name.
+  const labelOverrides = useMemo(
+    () => (isMain ? NO_OVERRIDES : subjectLabelOverrides(subjects, lang)),
+    [isMain, subjects, lang],
+  )
+  const omittedNote = omittedZeroSentence(
+    contributionSet.omittedZero,
+    lang,
+    { template: t.fp.contrib.zeroOmittedNames, more: t.fp.contrib.zeroOmittedMore },
+    labelOverrides,
+  )
 
   function selectScope(next: string) {
     router.replace(`/family-portfolio/weekly-changes?scope=${encodeURIComponent(next)}`, { scroll: false })
@@ -532,131 +679,154 @@ function WeeklyChangesPageInner() {
               </div>
             )}
 
-            {/* ── § 6h item 2 · total-level weekly metrics ─────────────────── */}
-            <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-4 items-start">
-              <KpiHero
-                label={w.weeklyValueChange}
-                value={total.weeklyValueChange}
-                formatValue={(v) => (v > 0 ? `+${formatUsd(v)}` : formatUsd(v))}
-                privacyMasked={masked}
-                countUp
-                changeValue={total.weeklyReturn}
-                changeLabel={`${formatRatioPct(total.weeklyReturn)} ${o.weeklyReturn}`}
-                minis={[
-                  {
-                    label: w.currentValueLabel,
-                    value: formatUsd(total.currentValue),
-                    sensitive: total.currentValue != null,
-                  },
-                  {
-                    label: w.previousValueLabel,
-                    value: formatUsd(total.previousValue),
-                    sensitive: total.previousValue != null,
-                  },
-                  { label: o.ytdReturn, value: formatRatioPct(total.ytdReturn) },
-                ]}
-              />
-              <GlassSurface variant="card" className="p-4 flex flex-col gap-2">
-                <h2 className="ui-label text-muted-fg">{w.totalsTitle}</h2>
-                <dl className="flex flex-col gap-1.5">
-                  {(
-                    [
-                      { label: o.weeklyReturn, ratio: total.weeklyReturn },
-                      { label: o.weeklyProfit, amount: total.weeklyProfit },
-                      { label: o.flow, amount: total.flow },
-                      { label: o.ytdReturn, ratio: total.ytdReturn },
-                      { label: o.ytdProfit, amount: total.ytdProfit },
-                    ] as Array<{ label: string; amount?: number | null; ratio?: number | null }>
-                  ).map((r) => (
-                    <div key={r.label} className="flex items-baseline justify-between gap-3 text-xs">
-                      <dt className="text-muted-fg min-w-0 truncate">{r.label}</dt>
-                      <dd className="ui-number text-foreground shrink-0">
-                        {r.ratio !== undefined ? (
-                          <span className={changeColor(r.ratio)}>{formatRatioPct(r.ratio)}</span>
-                        ) : (
-                          <MaskedAmount value={r.amount ?? null} masked={masked} signed />
-                        )}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              </GlassSurface>
-            </div>
+            {/* ── § 6h items 2–3 · ONE COMBINED WEEKLY BLOCK ─────────────────
+                This row began as THREE cards — a hero, a *Total-level weekly
+                metrics* list, and the reconciliation. The metrics card is
+                deleted, and items 2 and 3 are now ONE card split by a vertical
+                rule, both on the owner's product decision.
 
-            {/* ── § 6h item 3 · flow / investment-result reconciliation ────── */}
-            {flowRecon && (
-              <GlassSurface variant="card" className="p-4 flex flex-col gap-2">
-                <h2 className="ui-label text-muted-fg">{w.flowReconTitle}</h2>
-                <dl className="flex flex-col gap-1.5 max-w-xl">
-                  {(
-                    [
-                      { label: w.previousValueLabel, value: flowRecon.previousValue, signed: false },
-                      { label: o.flow, value: flowRecon.flow, signed: true },
-                      { label: o.weeklyProfit, value: flowRecon.profit, signed: true },
-                      { label: w.impliedCurrent, value: flowRecon.expectedCurrent, signed: false, divider: true },
-                      { label: w.publishedCurrent, value: flowRecon.actualCurrent, signed: false },
-                    ] as Array<{ label: string; value: number | null; signed: boolean; divider?: boolean }>
-                  ).map((r) => (
-                    <div
-                      key={r.label}
-                      className={`flex items-baseline justify-between gap-3 text-xs ${r.divider ? 'border-t border-border pt-1.5' : ''}`}
-                    >
-                      <dt className="text-muted-fg min-w-0 truncate">{r.label}</dt>
-                      <dd className="ui-number text-foreground shrink-0">
-                        <MaskedAmount value={r.value} masked={masked} signed={r.signed} />
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-                <ReconciliationStatus
-                  state={displayState(flowRecon.status)}
-                  residual={flowRecon.residual}
-                  masked={masked}
+                The split is the point: the two halves answer different
+                questions and repeat nothing.
+
+                  LEFT — THE LEDGER. How the week got from one value to the
+                  other, read top to bottom: opening value, the money the book
+                  MADE, the money that MOVED IN OR OUT, closing value. Opening
+                  and closing are set larger than the two movements between
+                  them; they are the week's endpoints, and the two middle rows
+                  are what happened in between.
+
+                  RIGHT — THE HEADLINE. The same week as one figure: the value
+                  change, and the rate it represents.
+
+                NOTHING ELSE JOINS THEM, deliberately. Every other total-level
+                figure this page could add is either already a ledger row or
+                derivable from one by eye — the change IS ending − opening, and
+                IS ALSO P&L + flows — so a fifth or sixth summary number would
+                be exactly the wall of repeated figures this block exists to
+                avoid. The deleted metrics card's YTD P&L and YTD RETURN were
+                not folded in here for a different reason: they are
+                year-to-date figures on a page whose every other block is about
+                the ONE week selected above, so they invited the year to be
+                read as the week. Summary reports both, over a period the
+                reader chooses.
+
+                The hero's two minis went the same way: opening and closing
+                value are rows 1 and 4 of the ledger beside them.
+
+                DOM ORDER IS THE CONTRACT'S — § 6h item 2, then item 3 — and
+                the headline is placed right at xl with `order`. That also
+                gives the stacked layout the better reading: the figure first,
+                then the ledger that explains it. Nothing in the block is
+                focusable, so the visual and DOM orders cannot diverge for a
+                keyboard or a screen reader.
+
+                ── THE IMPLIED-vs-PUBLISHED CROSS-CHECK IS NO LONGER DRAWN ──
+
+                It is still COMPUTED, on every request, unchanged:
+                `reconcileFlowAndProfit` is untouched, the route still returns
+                it, and its verdict is still reported in the status section
+                (item 9). What is gone is printing `implied` and `published`
+                as two adjacent dollar figures — to a reader who is not already
+                reconciling, two near-identical amounts read as a discrepancy
+                even when they agree to the cent.
+
+                The place to CATCH a real mismatch is before publication, and
+                the parser already does: a stated weekly profit that does not
+                equal `this week − previous week − flow` cannot bind its basis
+                (`ambiguous_performance_basis`, blocking) or is reported as
+                `performance_definition_mismatch` (warning), and an unreadable
+                flow cell fails the week closed (`flow_cell_unreadable`). All
+                three surface in the administrator's upload review before a
+                byte is published. (The Resumen parser owns those checks; this
+                page neither parses nor re-checks anything.)
+
+                A residual that survives all that — the previous PUBLISHED week
+                differing from the workbook's own previous column — still says
+                so here, in one line, without printing the second figure. */}
+            <GlassSurface variant="card" className="p-4 xl:p-5">
+              <div className="grid grid-cols-1 xl:grid-cols-[1fr_minmax(0,0.8fr)] gap-4 xl:gap-0">
+                {/* § 6h item 2 · THE HEADLINE — placed RIGHT at xl, and first in
+                    the stack below it, which is the better reading order there:
+                    the figure, then the ledger that explains it. */}
+                <KpiHero
+                  bare
+                  className="xl:order-2 justify-center border-b border-border pb-4 xl:border-b-0 xl:border-l xl:pb-0 xl:pl-6"
+                  label={w.weeklyValueChange}
+                  value={total.weeklyValueChange}
+                  formatValue={(v) => (v > 0 ? `+${formatUsd(v)}` : formatUsd(v))}
+                  privacyMasked={masked}
+                  countUp
+                  changeValue={total.weeklyReturn}
+                  changeLabel={`${formatRatioPct(total.weeklyReturn)} ${o.weeklyReturn}`}
                 />
-                <p className="ui-meta text-muted-fg">{w.flowReconNote}</p>
-              </GlassSurface>
-            )}
 
-            {/* ── § 6h item 4 · the waterfall (exact § 6e title) ───────────── */}
-            <GlassSurface variant="card" className="p-4 flex flex-col gap-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="ui-label text-muted-fg">{w.waterfallTitle}</h2>
-                {!isMain && (
-                  <SegmentedControl
-                    options={[
-                      { value: 'sociedad', label: w.groupBySociedad },
-                      { value: 'asset_class', label: w.groupByAssetClass },
-                    ]}
-                    value={grouping === 'asset_class' ? 'asset_class' : 'sociedad'}
-                    onChange={(v) => setGrouping(v as DriverGrouping)}
-                    ariaLabel={w.groupingSelector}
-                    remeasureToken={lang}
-                  />
+                {/* § 6h item 3 · THE LEDGER — flow / investment-result
+                    reconciliation, read top to bottom. */}
+                {flowRecon && (
+                <div className="xl:order-1 flex flex-col gap-2 min-w-0 xl:pr-6">
+                  <h2 className="ui-label text-muted-fg">{w.flowReconTitle}</h2>
+                  <dl className="flex flex-col gap-1.5">
+                    {(
+                      [
+                        { label: w.previousValueLabel, value: flowRecon.previousValue, signed: false, strong: true },
+                        { label: o.weeklyProfit, value: flowRecon.profit, signed: true },
+                        { label: w.flowLabel, value: flowRecon.flow, signed: true },
+                        { label: w.endingValueLabel, value: flowRecon.actualCurrent, signed: false, strong: true, divider: true },
+                      ] as Array<{
+                        label: string
+                        value: number | null
+                        signed: boolean
+                        strong?: boolean
+                        divider?: boolean
+                      }>
+                    ).map((r) => (
+                      <div
+                        key={r.label}
+                        className={`flex items-baseline justify-between gap-3 ${r.strong ? 'text-sm' : 'text-xs'} ${r.divider ? 'border-t border-border pt-1.5' : ''}`}
+                      >
+                        <dt className={`min-w-0 truncate ${r.strong ? 'text-foreground' : 'text-muted-fg'}`}>
+                          {r.label}
+                        </dt>
+                        {/* The week's ENDPOINTS carry the emphasis; the two
+                            movements between them stay quiet, so the eye reads
+                            "from here, to here" before it reads how. */}
+                        <dd className={`ui-number shrink-0 text-foreground ${r.strong ? 'text-base font-semibold' : ''}`}>
+                          <MaskedAmount value={r.value} masked={masked} signed={r.signed} />
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <p className="ui-meta text-muted-fg">{w.flowReconNote}</p>
+                  {/* Never on a week that reconciles, and never a second amount:
+                      an equation whose printed terms do not sum must say so, or
+                      the note above it becomes a claim the card disproves. */}
+                  {flowRecon.status === 'residual' && (
+                    <p className="ui-meta text-warning">{w.flowReconResidual}</p>
+                  )}
+                </div>
                 )}
-              </div>
-              {waterfall && waterfall.status !== 'unavailable' ? (
-                <>
-                  <ValueChangeWaterfall waterfall={waterfall} masked={masked} lang={lang} />
-                  <ReconciliationStatus
-                    state={displayState(waterfall.status)}
-                    residual={waterfall.residual}
-                    unavailableCount={waterfall.unavailableDriverCount}
-                    unavailableNoun={w.unavailableDrivers}
-                    masked={masked}
-                  />
-                </>
-              ) : (
-                <AsyncState kind="unavailable" />
-              )}
-              {/* R13.R2F5.1 § A — `.nv-notes` stacks the source line and the
-                  waterfall note at ONE left origin, each at a 110ch measure. */}
-              <div className="nv-notes">
-                <TableSourceFooter source={t.fp.portfolio.source} asOf={pub.publishedAt} />
-                <p className="ui-meta text-muted-fg">{w.waterfallNote}</p>
               </div>
             </GlassSurface>
 
-            {/* ── § 6h item 5 · ranked panels + cash toggle + View All ─────── */}
+            {/* ── § 6h item 4 · RETIRED (R13.R3B.1) ─────────────────────────
+                The Drivers waterfall stood here. It now lives on the Summary
+                tab over 3M / YTD / 1Y / ALL, beside Portfolio Evolution — the
+                same decomposition, from the same locked functions, over a
+                window wide enough for the drivers to be legible.
+
+                Nothing replaces it here: the week's largest increases and
+                decreases (item 5, below) already rank the same movers, and the
+                driver reconciliation this card used to carry is reported in
+                the status section (item 9). Adding a second waterfall would
+                duplicate Summary, which is exactly what the move avoided. */}
+
+            {/* ── § 6h item 5 · ranked panels + cash toggle + View All ───────
+                R13.R3C.2 visual pass — the wrapper below closes after the
+                movers/chart grid: the toggle, its notes and the panels they
+                govern hold together at a tighter gap than the page's 16px
+                section rhythm, so the toolbar reads as the head of the region
+                below rather than a stray band between two regions. */}
+            <div className="flex flex-col gap-2.5">
             <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <label className="flex items-center gap-2 text-xs text-foreground">
@@ -697,7 +867,30 @@ function WeeklyChangesPageInner() {
                 {includeCash && <p className="ui-meta text-muted-fg">{w.cashIncludedNote}</p>}
                 <p className="ui-meta text-muted-fg">{w.rankNote}</p>
               </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+            </div>
+
+            {/* ── § 6h items 5–6 · the movers, and the chart that ranks them ──
+                R13.R3C.2 — increases OVER decreases in one column, with the
+                hierarchy chart beside them. The two panels are the same week's
+                movers listed by name and figure; the chart is that same week
+                ranked and drawn. Side by side they check each other: the
+                tallest bar should be the first row of the increases panel, and
+                the deepest the first row of the decreases. Stacked vertically,
+                as they were, the reader had to remember one to read the other.
+
+                R13.R3C.4 — THE TWO SIDES NOW END LEVEL. The row was
+                `items-start`, so each column took its own natural height and
+                the chart stopped wherever its 240px plot ran out — usually
+                well above the decreases table, leaving a ragged step down the
+                middle of the page and a plot smaller than the space it had.
+                The row stretches now, and the slack lands in the PLOT
+                (`fill`), not in padding under it: the taller side governs, the
+                bars get every pixel the movers block spends, and the reader
+                compares two blocks that share one baseline. Below xl the grid
+                is one column, each card takes its own height, and `fill`
+                falls back to the same 240px floor it always drew at. */}
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] gap-4 items-stretch">
+              <div className="flex flex-col gap-4 min-w-0">
                 <RankedPanel
                   title={w.increasesTitle}
                   rows={ranked.increases}
@@ -717,94 +910,106 @@ function WeeklyChangesPageInner() {
                   publishedAt={pub.publishedAt}
                 />
               </div>
-            </div>
 
-            {/* ── § 6h item 6 · hierarchy drill-down (exact § 6g title) ────── */}
-            <GlassSurface variant="card" className="p-4 flex flex-col gap-3">
-              <h2 className="ui-label text-muted-fg">{w.hierarchyTitle}</h2>
-              {/* The § 4.2 name of what each bar shows: the node's share of
-                  the portfolio's dollar move — a value change, never a return. */}
-              <p className="ui-meta text-muted-fg">{w.contribution}</p>
-              <nav aria-label={w.breadcrumbLabel} className="flex flex-wrap items-center gap-1.5 text-xs">
-                {drillKey === null ? (
-                  <span aria-current="page" className="text-foreground font-medium">
-                    {w.hierarchyRootLabel}
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setDrillKey(null)}
-                    className="text-muted-fg hover:text-foreground nv-transition"
-                  >
-                    {w.hierarchyRootLabel}
-                  </button>
-                )}
-                {level.breadcrumb.map((crumb, i) => {
-                  const last = i === level.breadcrumb.length - 1
-                  return (
-                    <Fragment key={crumb.rowKey}>
-                      <span aria-hidden className="text-muted-fg">
-                        ›
-                      </span>
-                      {last ? (
-                        <span aria-current="page" className="text-foreground font-medium">
-                          {nodeLabel(crumb, lang)}
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setDrillKey(crumb.rowKey)}
-                          className="text-muted-fg hover:text-foreground nv-transition"
-                        >
-                          {nodeLabel(crumb, lang)}
-                        </button>
-                      )}
-                    </Fragment>
-                  )
-                })}
-                {drillKey !== null && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setDrillKey(
-                        level.breadcrumb.length > 1 ? level.breadcrumb[level.breadcrumb.length - 2].rowKey : null,
-                      )
-                    }
-                    className="ml-2 border border-border rounded-full px-2.5 py-0.5 text-muted-fg hover:text-foreground hover:bg-surface-2 nv-transition"
-                  >
-                    ← {w.backUp}
-                  </button>
-                )}
-              </nav>
-              <DivergingBarChart bars={bars} masked={masked} onDrill={(key) => setDrillKey(key)} emptyText={w.hierarchyEmpty} />
-              {level.reconciliation && (
-                <div className="flex flex-col gap-1">
-                  <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
-                    <span className="text-muted-fg">
-                      {w.parentChange}:{' '}
-                      <MaskedAmount value={level.reconciliation.parentChange} masked={masked} signed />
-                    </span>
-                    <span className="text-muted-fg">
-                      {w.childSum}: <MaskedAmount value={level.reconciliation.childSum} masked={masked} signed />
-                    </span>
-                  </div>
-                  <ReconciliationStatus
-                    state={displayState(level.reconciliation.status)}
-                    residual={level.reconciliation.residual}
-                    unavailableCount={level.reconciliation.unavailableChildCount}
-                    unavailableNoun={w.unavailableChildren}
-                    masked={masked}
+              {/* ── § 6h item 6 · hierarchy drill-down (exact § 6g title) ──── */}
+              <GlassSurface variant="card" className="p-4 flex flex-col gap-3 min-w-0 h-full">
+              {/* Title and its § 4.2 measure note read as ONE header unit —
+                  tighter to each other than to the controls and chart below. */}
+              <div className="flex flex-col gap-1">
+                <h2 className="ui-label text-muted-fg">{w.hierarchyTitle}</h2>
+                {/* The § 4.2 name of what each bar shows: the node's share of
+                    the portfolio's dollar move — a value change, never a return. */}
+                <p className="ui-meta text-muted-fg">{w.contribution}</p>
+              </div>
+              {/* Only a personal book has sociedades to choose between; Main's
+                  components are asset classes and it gets no subject rail. */}
+              {!isMain && subjects.length > 1 && (
+                <div className="max-w-full overflow-x-auto nv-scrollbar-hidden">
+                  <SegmentedControl
+                    options={subjects.map((s) => ({
+                      value: s.key,
+                      label:
+                        s.key === COMBINED_SUBJECT
+                          ? t.fp.overview.vwfSubjectCombined
+                          : (labelOverrides.get(s.key) ?? s.key),
+                    }))}
+                    value={safeSubjectKey}
+                    onChange={(v) => setSubjectKey(v)}
+                    ariaLabel={t.fp.overview.vwfSubjectSelector}
+                    remeasureToken={`${lang}|${activeScope ?? ''}`}
                   />
                 </div>
               )}
+
+              <div className="flex-1 min-h-0 flex flex-col">
+              {resolvedSubject.state === 'lifecycle_gap' ? (
+                <AsyncState
+                  kind="empty"
+                  message={
+                    safeSubjectKey === COMBINED_SUBJECT
+                      ? t.fp.overview.vwfTotalRowLifecycle
+                      : t.fp.overview.vwfSubjectLifecycle
+                  }
+                />
+              ) : resolvedSubject.state === 'no_decomposition' ? (
+                <AsyncState kind="empty" message={t.fp.contrib.noDecomposition} />
+              ) : (
+                <ContributionChart
+                  set={contributionSet}
+                  axis={contributionAxisScale}
+                  masked={masked}
+                  onSelect={(key) => setOpenKey(key)}
+                  emptyText={w.hierarchyEmpty}
+                  ariaLabel={w.hierarchyTitle}
+                  labelOverrides={labelOverrides}
+                  fill
+                />
+              )}
+              </div>
+
+              {/* The set's own reconciliation against the subject it tiles.
+                  Stated in words: a chart of changes has no closing column
+                  whose landing point could state it geometrically. A hairline
+                  sets the verdict band apart from the plot above it — the same
+                  device the Summary card uses ahead of its own notes. */}
+              {contributionSet.status !== 'unavailable' && (
+                <div
+                  className="flex flex-col gap-1 pt-2.5"
+                  style={{ borderTop: '1px solid var(--nv-line)' }}
+                >
+                  <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
+                    <span className="text-muted-fg">
+                      {w.parentChange}: <MaskedAmount value={contributionSet.netChange} masked={masked} signed />
+                    </span>
+                  </div>
+                  <ReconciliationStatus
+                    state={displayState(
+                      contributionSet.unavailable.length > 0
+                        ? 'unavailable'
+                        : contributionSet.status === 'complete'
+                          ? 'ok'
+                          : 'residual',
+                    )}
+                    residual={contributionSet.residual}
+                    unavailableCount={contributionSet.unavailable.length}
+                    unavailableNoun={w.unavailableChildren}
+                    masked={masked}
+                  />
+                  {/* Named, never counted: an entity that did not move is a
+                      finding, and the same names the bars would have carried. */}
+                  {omittedNote !== null && <p className="ui-meta text-muted-fg">{omittedNote}</p>}
+                </div>
+              )}
               <TableSourceFooter source={t.fp.portfolio.source} asOf={pub.publishedAt} />
-            </GlassSurface>
+              </GlassSurface>
+            </div>
+            </div>
 
             {/* ── § 6h item 7 · full changes table ─────────────────────────── */}
             <div ref={fullTableRef}>
               <TableCard
                 title={w.fullTableTitle}
-                minWidth={860}
+                minWidth={760}
                 maxHeight={640}
                 footer={
                   // R13.R2F5.1 § A — `.nv-notes` stacks the source line and the
@@ -812,6 +1017,7 @@ function WeeklyChangesPageInner() {
                   <div className="nv-notes">
                     <TableSourceFooter source={t.fp.portfolio.source} asOf={pub.publishedAt} />
                     <p className="ui-meta text-muted-fg">{w.fullTableNote}</p>
+                    <p className="ui-meta text-muted-fg">{w.zeroDashNote}</p>
                     {!includeCash && <p className="ui-meta text-muted-fg">{w.fullTableCashNote}</p>}
                   </div>
                 }
@@ -825,62 +1031,74 @@ function WeeklyChangesPageInner() {
                           {t.fp.portfolio.valuesInUsd}
                         </span>
                       </th>
-                      <th className={`${TH} text-right`} scope="col">
+                      <th className={`${TH} text-center`} scope="col">
                         <span className="block">{t.fp.portfolio.colPrev}</span>
                         <span className="block ui-number font-normal normal-case tracking-normal">
                           {formatIsoDateLabel(prevPub.asOfDate)}
                         </span>
                       </th>
-                      <th className={`${TH} text-right`} scope="col">
+                      <th className={`${TH} text-center`} scope="col">
                         <span className="block">{t.fp.portfolio.colThis}</span>
                         <span className="block ui-number font-normal normal-case tracking-normal">
                           {formatIsoDateLabel(pub.asOfDate)}
                         </span>
                       </th>
-                      <th className={`${TH} text-right`} scope="col">
+                      <th className={`${TH} text-center`} scope="col">
                         {w.weeklyValueChange}
                       </th>
-                      <th className={`${TH} text-right`} scope="col">
+                      <th className={`${TH} text-center`} scope="col">
                         {w.ownPctChange}
                       </th>
-                      <th className={`${TH} text-right`} scope="col">
+                      <th className={`${TH} text-center`} scope="col">
                         {w.impactOnPortfolio}
-                      </th>
-                      <th className={`${TH} text-left`} scope="col">
-                        {w.statusColumn}
                       </th>
                     </tr>
                   </thead>
                   <tbody>
                     {fullRows.map((n) => (
                       <tr key={n.rowKey} className={`border-b border-border ${structuralRowClasses(n.rowType)}`}>
+                        {/* The hierarchy column stays LEFT-aligned and is the
+                            one exception to the centring: its indent IS the
+                            tree, and a centred row loses the depth it encodes. */}
                         <td className={`${CELL} text-left`}>
                           <span className="block truncate max-w-[18rem]" style={{ paddingLeft: n.depth * 14 }} title={nodeLabel(n, lang)}>
                             {nodeLabel(n, lang)}
                           </span>
-                        </td>
-                        <td className={`${CELL} text-right ui-number whitespace-nowrap`}>
-                          <MaskedAmount value={n.previousValue} masked={masked} />
-                        </td>
-                        <td className={`${CELL} text-right ui-number whitespace-nowrap`}>
-                          <MaskedAmount value={n.currentValue} masked={masked} />
-                        </td>
-                        <td className={`${CELL} text-right ui-number whitespace-nowrap ${changeColor(n.weeklyValueChange)}`}>
-                          <MaskedAmount value={n.weeklyValueChange} masked={masked} signed />
-                        </td>
-                        <td className={`${CELL} text-right ui-number whitespace-nowrap ${changeColor(n.ownPctChange)}`}>
-                          {formatRatioPct(n.ownPctChange)}
-                        </td>
-                        <td className={`${CELL} text-right ui-number whitespace-nowrap`}>
-                          {formatRatioPct(n.impactOnPortfolioValue)}
-                        </td>
-                        <td className={`${CELL} text-left`}>
+                          {/* R13.R3C.4 — the retired Status column's content, in
+                              the one place it can go without a column of its
+                              own. It is not decoration: a row the source could
+                              not compare must SAY why, or an em dash in the
+                              value cells is indistinguishable from a bug. */}
                           {n.status !== 'ok' && (
-                            <span className="ui-meta text-muted-fg">
+                            <span
+                              className="block ui-meta text-muted-fg truncate max-w-[18rem]"
+                              style={{ paddingLeft: n.depth * 14 }}
+                            >
                               {w.statusUnavailable}
                               {reasonText(n.unavailableReason, w) ? ` — ${reasonText(n.unavailableReason, w)}` : ''}
                             </span>
                           )}
+                        </td>
+                        <td className={`${CELL} text-center ui-number whitespace-nowrap`}>
+                          <MaskedAmount value={n.previousValue} masked={masked} />
+                        </td>
+                        <td className={`${CELL} text-center ui-number whitespace-nowrap`}>
+                          <MaskedAmount value={n.currentValue} masked={masked} />
+                        </td>
+                        {/* R13.R3C.4 — the three CHANGE columns dash when they
+                            print as zero. Most rows of a full weekly listing do
+                            not move, and a column of `0` / `0,00%` buries the
+                            handful that did. The two VALUE columns above keep
+                            their numbers: a holding worth exactly nothing is a
+                            real level, not an absence. */}
+                        <td className={`${CELL} text-center ui-number whitespace-nowrap ${changeColor(n.weeklyValueChange)}`}>
+                          <MaskedAmount value={n.weeklyValueChange} masked={masked} signed zeroDash />
+                        </td>
+                        <td className={`${CELL} text-center ui-number whitespace-nowrap ${changeColor(n.ownPctChange)}`}>
+                          {formatChangePct(n.ownPctChange)}
+                        </td>
+                        <td className={`${CELL} text-center ui-number whitespace-nowrap`}>
+                          {formatChangePct(n.impactOnPortfolioValue)}
                         </td>
                       </tr>
                     ))}
@@ -889,27 +1107,18 @@ function WeeklyChangesPageInner() {
               </TableCard>
             </div>
 
-            {/* ── § 6h item 8 · historical weekly-change trend ─────────────── */}
-            <GlassSurface variant="card" className="p-4 flex flex-col gap-2">
-              <h2 className="ui-label text-muted-fg">{w.trendTitle}</h2>
-              {(data.trend ?? []).length < 2 ? (
-                <AsyncState kind="empty" message={o.evolutionEmpty} />
-              ) : masked ? (
-                // Axis labels and tooltips carry raw amounts — privacy mode
-                // replaces the WHOLE chart (Stage-7 evolution precedent).
-                <PrivacyValue masked className="block py-10 text-center">
-                  {null}
-                </PrivacyValue>
-              ) : (
-                <LineChart data={data.trend ?? []} height={200} valueFormatter={(v) => formatUsd(v)} />
-              )}
-              {/* R13.R2F5.1 § A — `.nv-notes` stacks the source line and the
-                  trend note at ONE left origin, each at a 110ch measure. */}
-              <div className="nv-notes">
-                <TableSourceFooter source={t.fp.portfolio.source} asOf={pub.publishedAt} />
-                <p className="ui-meta text-muted-fg">{w.trendNote}</p>
-              </div>
-            </GlassSurface>
+            {/* ── § 6h item 8 · RETIRED (R13.R3C.2) ─────────────────────────
+                *Historical Weekly Value Change* stood here: one point per
+                published week, each week's change against its own predecessor.
+                Removed on the owner's product decision. It answered a question
+                the page is not for — how the week-to-week change has behaved
+                over time — which Portfolio Evolution on Summary answers better
+                and over a properly flow-adjusted series, while this page is
+                about ONE selected week and what moved inside it.
+
+                Nothing else went with it: the route still returns `trend` and
+                no calculation changed. What is gone is a chart whose own
+                subject was a different one from every other block around it. */}
 
             {/* ── § 6h item 9 · freshness, statuses, sources, methodology ──── */}
             <GlassSurface variant="card" className="p-4 flex flex-col gap-3">
@@ -932,13 +1141,18 @@ function WeeklyChangesPageInner() {
                 </span>
               </div>
               <div className="flex flex-col gap-1">
-                {waterfall && (
+                {/* R13.R3B.1 — this is where the retired card's reconciliation
+                    survives. It answers a question about the WEEK'S DATA, not
+                    about a chart: do the week's asset-level changes account for
+                    the published total? That stays worth reporting whether or
+                    not anything is drawn from them. */}
+                {driverReconciliation && (
                   <div className="flex flex-wrap items-center gap-x-2 text-xs">
-                    <span className="text-muted-fg">{w.waterfallStatusLabel}:</span>
+                    <span className="text-muted-fg">{w.driverStatusLabel}:</span>
                     <ReconciliationStatus
-                      state={displayState(waterfall.status)}
-                      residual={waterfall.residual}
-                      unavailableCount={waterfall.unavailableDriverCount}
+                      state={displayState(driverReconciliation.status)}
+                      residual={driverReconciliation.residual}
+                      unavailableCount={driverReconciliation.unavailableDriverCount}
                       unavailableNoun={w.unavailableDrivers}
                       masked={masked}
                     />
@@ -961,7 +1175,7 @@ function WeeklyChangesPageInner() {
               <div className="flex flex-col gap-1 border-t border-border pt-2">
                 <h3 className="ui-label text-muted-fg">{w.methodologyTitle}</h3>
                 <ul className="flex flex-col gap-1 list-disc pl-4">
-                  {[w.methodologyLevel, w.methodologyPair, w.methodologyImpact, w.methodologyWaterfall, w.methodologyCash].map(
+                  {[w.methodologyLevel, w.methodologyPair, w.methodologyImpact, w.methodologyDrivers, w.methodologyCash].map(
                     (item) => (
                       <li key={item} className="ui-meta text-muted-fg">
                         {item}
@@ -976,6 +1190,21 @@ function WeeklyChangesPageInner() {
           <AsyncState kind="unavailable" />
         )}
       </MemberGate>
+
+      {/* Mounted as a sibling at the bottom of the page tree, the established
+          overlay pattern. `ModalShell` renders nothing while closed. */}
+      <ContributionBreakdownModal
+        open={openKey !== null}
+        onClose={() => setOpenKey(null)}
+        nodes={nodes}
+        rowKey={openKey}
+        masked={masked}
+        periodLabel={
+          pub && prevPub ? `${formatIsoDateLabel(prevPub.asOfDate)} — ${formatIsoDateLabel(pub.asOfDate)}` : ''
+        }
+        residualLabel={RESIDUAL_LABEL}
+        labelOverrides={labelOverrides}
+      />
     </div>
   )
 }

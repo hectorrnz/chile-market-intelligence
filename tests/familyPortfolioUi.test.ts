@@ -40,10 +40,14 @@ const DATA_HELPER = 'src/lib/data/familyPortfolio.ts'
 const MASKED_AMOUNT = 'src/components/familyPortfolio/MaskedAmount.tsx'
 const DONUT = 'src/components/familyPortfolio/AllocationDonut.tsx'
 const FRESHNESS = 'src/components/familyPortfolio/DualFreshnessBadge.tsx'
-// R13.8 additions.
-const WATERFALL = 'src/components/familyPortfolio/ValueChangeWaterfall.tsx'
-const DIVERGING = 'src/components/familyPortfolio/DivergingBarChart.tsx'
+// R13.8 additions. R13.R3C retired `ValueChangeWaterfall` and
+// `DivergingBarChart` — both superseded by the shared Contributors and
+// Detractors system, which joins this list in their place so the module's
+// privacy, hex-colour and no-toLocaleString hygiene applies to it too.
 const RECON_STATUS = 'src/components/familyPortfolio/ReconciliationStatus.tsx'
+const CONTRIB_CHART = 'src/components/familyPortfolio/ContributionChart.tsx'
+const CONTRIB_MODAL = 'src/components/familyPortfolio/ContributionBreakdownModal.tsx'
+const PERIOD_CARD = 'src/components/familyPortfolio/PeriodValueChangeCard.tsx'
 
 // R13.R2 additions — the recomposed Summary's presentation components. They
 // join CLIENT_FILES so the module's privacy, hex-colour and no-toLocaleString
@@ -60,7 +64,7 @@ const CLIENT_FILES = [
   LAYOUT, OVERVIEW_PAGE, PORTFOLIO_PAGE, WEEKLY_PAGE, ALTERNATIVES_PAGE,
   PROVIDER, NAV, GATE, TABLE, WEEK_SELECTOR, DATA_HELPER,
   MASKED_AMOUNT, DONUT, FRESHNESS,
-  WATERFALL, DIVERGING, RECON_STATUS,
+  RECON_STATUS, CONTRIB_CHART, CONTRIB_MODAL, PERIOD_CARD,
   STRIP, SNAPSHOT_CARD, ALLOC_PANEL, ALLOC_SETTINGS, EVO_CHART,
 ]
 
@@ -466,8 +470,19 @@ describe('R13.6 · portfolio page', () => {
       (src.match(new RegExp(`\\b${name}\\b`, 'g')) ?? []).length
     assert.equal(occurrences(maskedCode, 'formatUsd'), 2, 'formatUsd: one import + one call site')
     assert.equal(occurrences(maskedCode, 'formatUsdCompactM'), 2, 'formatUsdCompactM: one import + one call site')
+    // R13.R3C.2 — THREE formatters now, still ONE guarded chain: the full
+    // grouped amount, the print-axis form (`145,5M`) and the
+    // contributors-chart form (`5M` / `-98K`). Adding a fourth without routing
+    // it through this ternary would fail the occurrence counts above.
+    assert.equal(
+      occurrences(maskedCode, 'formatUsdCompactUnit'),
+      2,
+      'formatUsdCompactUnit: one import + one call site',
+    )
+    assert.match(maskedAmount, /compact === 'unit'\s*\?\s*formatUsdCompactUnit\(value, compactUnit\)/)
+    assert.match(maskedAmount, /:\s*compact\s*\?\s*formatUsdCompactM\(value\)/)
+    assert.match(maskedAmount, /:\s*formatUsd\(value, decimals\)/)
     // R13.8: the single call site also carries the optional signed prefix.
-    assert.match(maskedAmount, /const amount = compact \? formatUsdCompactM\(value\) : formatUsd\(value, decimals\)/)
     assert.match(maskedAmount, /const text = `\$\{signed && value > 0 \? '\+' : ''\}\$\{amount\}`/)
     assert.match(maskedAmount, /<PrivacyValue masked=\{masked\}[^>]*>\s*\{text\}/)
     assert.match(maskedAmount, />—</)

@@ -118,7 +118,7 @@ export function WeeklySnapshotCard({
           const anchor = i === anchorIdx
           const diff = row.isDifference === true
           // Sign colour on a signed change figure in text — the standing app
-          // convention (see DivergingBarChart), applied to Difference only.
+          // convention shared with the contributors chart, applied to Difference only.
           const diffColor =
             row.value !== null && Number.isFinite(row.value)
               ? row.value > 0

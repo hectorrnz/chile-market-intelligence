@@ -1102,8 +1102,22 @@ describe('R13.R2 · regression', () => {
       assert.ok(wc.includes(`export function ${fn}`), `${fn} must still exist`)
     }
     assert.match(wc, /export type NodeLifecycle = 'ongoing' \| 'new_position' \| 'exited_position'/)
-    // R13.R3 owns the waterfall redesign — not started here.
-    assert.ok(!/R13\.R3/.test(read(PAGE)))
+
+    // R13.R3B — THE OWNER MOVED THE WATERFALL ONTO SUMMARY, so the original
+    // proxy here ("the string R13.R3 never appears on the Summary page") is
+    // now false BY INSTRUCTION and has been replaced by the property it was
+    // really standing in for: Summary may HOST the waterfall, but it must
+    // never grow a second copy of its arithmetic. The card composes; the page
+    // imports no weekly-change calculation of its own.
+    const page = read(PAGE)
+    assert.match(page, /<PeriodValueChangeCard/)
+    assert.ok(
+      !/from '@\/lib\/familyPortfolio\/weeklyChanges'/.test(page),
+      'the Summary page must not import the weekly-change calculators directly',
+    )
+    for (const fn of ['buildWaterfall(', 'deriveDrivers(', 'buildChangeNodes(']) {
+      assert.ok(!page.includes(fn), `the Summary page must not call ${fn}`)
+    }
   })
 
   test('the R13.R1.1 parser contract is untouched', () => {

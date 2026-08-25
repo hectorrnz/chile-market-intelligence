@@ -157,6 +157,10 @@ import { WeeklySnapshotCard, type SnapshotRow } from '@/components/familyPortfol
 import { AllocationPanel } from '@/components/familyPortfolio/AllocationPanel'
 import { AllocationSettingsDialog } from '@/components/familyPortfolio/AllocationSettingsDialog'
 import { PortfolioValueHero } from '@/components/familyPortfolio/PortfolioValueHero'
+// R13.R3B — the Summary value-change waterfall that stands beside Portfolio
+// Evolution. It owns its own period rail and its own fetch; the page passes
+// only the resolved scope, the privacy flag and the shared source string.
+import { PeriodValueChangeCard } from '@/components/familyPortfolio/PeriodValueChangeCard'
 import { SettingsGearButton } from '@/components/familyPortfolio/SettingsGearButton'
 import {
   WeeklyNotesPanel,
@@ -1326,7 +1330,30 @@ function SummaryPageInner() {
               </TableCard>
             </div>
 
-            {/* ── 4 · Portfolio evolution ───────────────────────────────── */}
+            {/* ── 4 · Portfolio evolution | Portfolio value change ────────
+                R13.R3B — TWO CHART CARDS, SIDE BY SIDE, ONE ROW.
+
+                They are deliberately a PAIR, and the pairing is the point:
+                the left card plots the flow-adjusted VALUE PATH over a period
+                and the right card decomposes the ACTUAL VALUE CHANGE over one
+                — the same portfolio, the same kind of window, the shape of the
+                move beside the reasons for it. Each names its own basis in its
+                own chip, because over the same window the two report different
+                numbers by construction (the left has external capital removed,
+                the right has not) and a reader must never take one for the
+                other.
+
+                Side by side from xl (the breakpoint the rest of this page
+                already splits on); stacked, full width, in the same reading
+                order below it. The grid stretches both cards to the row height
+                so neither reads as the subordinate of the other — the owner
+                asked for similar height and visual weight, and equal-height
+                cells are how that is guaranteed rather than approximated.
+
+                The evolution card below is UNCHANGED — it is only wrapped, so
+                the diff stays reviewable; its inner indentation is deliberately
+                left as it was rather than re-flowing four hundred lines. */}
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
             <GlassSurface
               variant="card"
               as="section"
@@ -1730,6 +1757,12 @@ function SummaryPageInner() {
                 )}
               </div>
             </GlassSurface>
+              <PeriodValueChangeCard
+                scope={activeScope}
+                masked={masked}
+                source={t.fp.portfolio.source}
+              />
+            </div>
 
             {/* ── 5 · Provenance / freshness / disclosure ──────────────────
                 Complete but quiet: a rule-separated page footer, not a card. */}

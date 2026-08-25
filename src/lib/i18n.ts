@@ -165,6 +165,32 @@ export const dict = {
         collapseRow:  'Collapse rows under',
         source:       'RESUMEN workbook',
       },
+      // R13.R3C — the Contributors and Detractors chart and its breakdown popup
+      // are rendered by BOTH the Summary card and the Weekly Changes hierarchy
+      // card, so their vocabulary lives in one shared namespace. A string that
+      // names a period ("this week", "over the year") would be false on one of
+      // the two surfaces and is therefore absent by construction.
+      contrib: {
+        componentLabel:      'Component',
+        contributionLabel:   'Contribution to value change',
+        shareOfChange:       'Share of value change',
+        // A share of a zero net change is unanswerable, not 0 %.
+        shareUnavailable:    'Not applicable',
+        residual:            'Unattributed remainder',
+        drillInto:           'Break down',
+        parentContribution:  'Selected component',
+        componentUnavailable: 'No published figure',
+        chartEmpty:          'No component of this selection moved over the period.',
+        noDecomposition:     'The source publishes no components beneath this selection.',
+        reconcileExact:      'The components shown account for this change exactly, within rounding tolerance.',
+        reconcileResidual:   'The components shown do not fully account for this change; the difference is plotted as an explicit unattributed remainder rather than absorbed into a component.',
+        reconcileIndeterminate:
+          'At least one component has no published figure for this period, so the components cannot be summed. Nothing is treated as zero.',
+        zeroOmittedNames:    'Not plotted because they did not move over this period: {names}.',
+        zeroOmittedMore:     'and {n} more',
+        newPositionsNote:
+          '{n} plotted component(s) were not published at the opening date, so their opening value is read as zero. That is the usual source of an unattributed remainder over a long period.',
+      },
       overview: {
         heroLabel:        'Total portfolio value',
         weeklyReturn:     'Weekly Return',
@@ -376,6 +402,61 @@ export const dict = {
           'A weekly value history has not been published for this portfolio yet. Only the Main portfolio carries the two-year weekly series.',
         evoTableAlternative: 'Observations as a table',
 
+        // ── R13.R3B · SUMMARY VALUE-CHANGE WATERFALL ────────────────────────
+        // The Summary card standing beside Portfolio Evolution. It answers a
+        // DIFFERENT question from its neighbour and the vocabulary keeps them
+        // apart: Evolution plots a FLOW-ADJUSTED analytical path (external
+        // capital removed), while this decomposes the ACTUAL published change
+        // in portfolio value between two real published weeks — which contains
+        // whatever capital moved. Neither is an investment return.
+        //
+        // The period rail and its five labels are the Evolution card's own
+        // (`evoPeriodLabel`, `evoPeriod1M/3M/YTD/1Y/ALL`), reused deliberately
+        // so two controls sitting side by side can never name the same span
+        // differently.
+        vwfTitle:          'Contributors and Detractors of Portfolio Value Change',
+        // The counterpart to `evoFlowAdjustedChip`, and the reason both cards
+        // can sit together without being read as the same figure.
+        vwfActualChip:     'Actual value change · Contributions & withdrawals included',
+        vwfChangeLabel:    'Portfolio Value Change',
+        // The waterfall's own opening and closing step labels. The Weekly
+        // Changes page says "Previous Week" / "This Week"; over a one-year
+        // range those words would be false, so the Summary card names the
+        // endpoints by their ROLE and prints the two real dates beneath.
+        vwfOpeningLabel:   'Opening Portfolio Value',
+        vwfClosingLabel:   'Closing Portfolio Value',
+        vwfWindowLabel:    'Compared weeks',
+        vwfWeeksSuffix:    'published weeks in range',
+        vwfNote:
+          'Each bar is the change in a hierarchy row\'s own published value between the two weeks shown. Net flows and profit are not separate components — the asset-level changes already contain their effects. Actual Portfolio Value Change = Weekly P&L + Net Flows; this is a value-change decomposition, not an investment-return attribution.',
+        vwfTruncated:      'The record begins after this period would start, so the comparison opens on the earliest published week.',
+        vwfSingleWeek:     'This period holds a single published week, so there is no earlier endpoint to compare against.',
+        vwfNoPublications: 'No week has been published for this portfolio yet.',
+        vwfUnavailable:    'A value-change decomposition is not available for this portfolio and period.',
+        vwfEarliestWeek:   'The opening endpoint is the earliest published week, which has no predecessor of its own.',
+        // ── FOUND IN THE HOSTED BOOK, NOT HYPOTHETICAL ──────────────────────
+        // Pablo's performance block is bound to `total_mas_staten_capital_ltd`,
+        // a row that did not exist in 2024-08-23's publication — Staten Capital
+        // was added to his structure later. Over ALL, the locked module's own
+        // new-position rule (R13.R1.1 § 14) therefore reads that opening value
+        // as a STRUCTURAL ZERO, which is correct for a position that was not
+        // held and false for a portfolio that was. Left alone it would print an
+        // opening portfolio value of nothing and a change equal to his entire
+        // current book. So the period is withheld instead: fail closed, name
+        // the gap, and let a shorter period — where both endpoints carry the
+        // row — answer the question honestly.
+        vwfTotalRowLifecycle:
+          'The row this portfolio\'s total is bound to does not exist in both endpoints of this period, so its opening value would be a structural zero rather than a portfolio value. The decomposition is withheld rather than stated on a total the source cannot support across this span; a shorter period compares two weeks that both carry the row.',
+
+        // ── R13.R3C · the personal-scope subject rail ────────────────────────
+        // The sociedad names are NEVER written here: they are read out of the
+        // published hierarchy at render time, so a sociedad added or renamed in
+        // the source cannot leave a stale label behind in this file.
+        vwfSubjectSelector: 'Portfolio subject',
+        vwfSubjectCombined: 'Combined Portfolio',
+        vwfSubjectLifecycle:
+          'This entity is not present in both endpoints of the selected period, so its opening value would be a structural zero rather than a portfolio value. A shorter period compares two weeks that both carry it.',
+
         // ── Owner review §§ 15-20 — the High Water Market reference ──────────
         // THE VISIBLE TERM IS THE OWNER'S, verbatim: "High Water Market". It is
         // NOT silently corrected to "High Water Mark", "Peak Portfolio Value" or
@@ -477,7 +558,6 @@ export const dict = {
         lifecycleNote:      'A position held in only one of the two weeks is compared against zero — established because a published snapshot contains every row the portfolio held that week.',
         reclassTitle:       'Possible reclassifications',
         reclassNote:        'The same name left one grouping and appeared under another. Shown for review — the two are never merged, and each keeps its own value change.',
-        totalsTitle:        'Total-level weekly metrics',
         weeklyValueChange:  'Weekly Value Change',
         contribution:       'Contribution to Weekly Portfolio Value Change',
         impactOnPortfolio:  'Impact on Portfolio Value',
@@ -485,22 +565,17 @@ export const dict = {
         currentValueLabel:  'This Week Portfolio Value',
         previousValueLabel: 'Previous Week Portfolio Value',
         flowReconTitle:     'Flow and investment-result reconciliation',
-        flowReconNote:      'Source-provided identity at the portfolio total: Previous Portfolio Value + Net Flows + Weekly Profit / Loss = This Week Portfolio Value.',
-        impliedCurrent:     'Implied This Week Value',
-        publishedCurrent:   'Published This Week Value',
+        flowLabel:          'Weekly Net Flows',
+        endingValueLabel:   'Ending Week Portfolio Value',
+        flowReconNote:      'Source-provided identity at the portfolio total: Previous Week Portfolio Value + Weekly P&L + Weekly Net Flows = Ending Week Portfolio Value.',
+        flowReconResidual:  'The source’s stated parts do not sum exactly to the published closing value — see the reconciliation status below.',
         residual:           'Residual',
         residualStep:       'Reconciliation Residual',
         unavailableChildren: 'row(s) unavailable at this level',
         reconciled:         'Reconciled',
         partiallyReconciled: 'Partially reconciled',
         reconciliationUnavailable: 'Reconciliation unavailable',
-        waterfallTitle:     'Drivers of Weekly Portfolio Value Change',
-        waterfallNote:      'Drivers are asset-level weekly value changes derived from the published hierarchy. Net flows and profit are not separate bars — the asset-level changes already contain their effects.',
-        waterfallListFallback: 'One or more drivers are unavailable, so cumulative positions cannot be drawn; the steps are listed instead.',
         unavailableDrivers: 'driver(s) unavailable',
-        groupBySociedad:    'By Sociedad',
-        groupByAssetClass:  'By Asset Class',
-        groupingSelector:   'Driver view',
         increasesTitle:     'Largest Weekly Value Increases',
         decreasesTitle:     'Largest Weekly Value Decreases',
         noIncreases:        'No qualifying increases in the selected week.',
@@ -512,34 +587,32 @@ export const dict = {
         cashIncludedNote:   'Caja y Equivalentes is currently included in the rankings.',
         viewAll:            'View All Changes',
         hierarchyTitle:     'Weekly Value Change by Portfolio Hierarchy',
-        hierarchyRootLabel: 'Portfolio',
-        breadcrumbLabel:    'Hierarchy level',
-        drillInto:          'View the rows inside',
-        backUp:             'Up one level',
-        childSum:           'Sum of children',
         parentChange:       'Parent change',
         hierarchyEmpty:     'No rows at this level.',
         fullTableTitle:     'All Weekly Value Changes',
         fullTableNote:      'Complete listing of every hierarchy row in published order — subtotal and total rows are structural and are never summed with their constituents.',
         fullTableCashNote:  'This listing includes Caja y Equivalentes; the ranked panels above exclude it unless toggled.',
-        statusColumn:       'Status',
         statusUnavailable:  'Unavailable',
+        zeroDashNote:       'In the change columns, “-” means the row did not move this week and “—” means the two weeks could not be compared.',
         reasonMissingCurrent:  'No published value in the selected week.',
         reasonMissingPrevious: 'No published value in the previous published week.',
         reasonMissingBoth:     'No published value in either week.',
         reasonCurrencyMismatch: 'The row\'s currency differs between the two weeks; changes are never netted across currencies.',
-        trendTitle:         'Historical Weekly Value Change',
-        trendNote:          'Each point is the portfolio\'s value change versus its immediately preceding published week. Missing weeks remain gaps — nothing is interpolated, carried forward, or zero-filled.',
         statusTitle:        'Publication & reconciliation status',
         publishedAtLabel:   'Published',
-        waterfallStatusLabel: 'Drivers waterfall',
+        // R13.R3B.1 — the waterfall this labelled was retired from Weekly
+        // Changes; the reconciliation it reported was not, because it is a
+        // property of the WEEK'S DATA (do the asset-level changes account
+        // for the published total?) rather than of a chart. Renamed to say
+        // what it now measures instead of naming a card that no longer exists.
+        driverStatusLabel:  'Driver reconciliation',
         flowStatusLabel:    'Flow / investment-result identity',
         noPreviousWeek:     'This is the earliest published week — no prior published observation exists, so weekly-change analysis is unavailable for it. Select a later week to compare.',
         methodologyTitle:   'Methodology',
         methodologyLevel:   'Below the portfolio total, every figure on this page is a dollar weekly value change, not a return contribution — the source provides no per-asset flows, so per-asset returns are not derivable.',
         methodologyPair:    'Previous Week is the immediately preceding published week, not necessarily seven calendar days earlier; NMI recomputes each change from the two published snapshots, never from the workbook\'s own difference column.',
         methodologyImpact:  'Impact on Portfolio Value is a row\'s dollar change divided by the previous week\'s portfolio total. It does not measure the row\'s own return.',
-        methodologyWaterfall: 'The waterfall\'s drivers are asset-level value changes only; net flows and profit are not added as bars because the asset-level changes already contain their effects.',
+        methodologyDrivers: 'Driver reconciliation compares the week\'s asset-level value changes against the published portfolio total; net flows and profit are not separate components because the asset-level changes already contain their effects.',
         methodologyCash:    'Caja y Equivalentes is excluded from the ranked lists by default because it absorbs deposits and withdrawals before they are deployed; a visible toggle can include it.',
       },
     },
@@ -1712,6 +1785,26 @@ export const dict = {
         collapseRow:  'Contraer filas bajo',
         source:       'Planilla RESUMEN',
       },
+      contrib: {
+        componentLabel:      'Componente',
+        contributionLabel:   'Aporte a la variación de valor',
+        shareOfChange:       'Participación en la variación',
+        shareUnavailable:    'No aplica',
+        residual:            'Remanente no atribuido',
+        drillInto:           'Desglosar',
+        parentContribution:  'Componente seleccionado',
+        componentUnavailable: 'Sin cifra publicada',
+        chartEmpty:          'Ningún componente de esta selección varió en el período.',
+        noDecomposition:     'La fuente no publica componentes bajo esta selección.',
+        reconcileExact:      'Los componentes mostrados explican exactamente esta variación, dentro de la tolerancia de redondeo.',
+        reconcileResidual:   'Los componentes mostrados no explican por completo esta variación; la diferencia se grafica como un remanente no atribuido explícito, en lugar de absorberse en un componente.',
+        reconcileIndeterminate:
+          'Al menos un componente no tiene cifra publicada para este período, por lo que los componentes no pueden sumarse. Nada se trata como cero.',
+        zeroOmittedNames:    'No se grafican porque no variaron en este período: {names}.',
+        zeroOmittedMore:     'y {n} más',
+        newPositionsNote:
+          '{n} componente(s) graficados no estaban publicados en la fecha inicial, por lo que su valor inicial se lee como cero. Ésa es la causa habitual de un remanente no atribuido en un período largo.',
+      },
       overview: {
         heroLabel:        'Valor total del portafolio',
         weeklyReturn:     'Retorno de la Semana',
@@ -1836,6 +1929,36 @@ export const dict = {
           'Aún no se ha publicado un historial semanal de valor para este portafolio. Solo el Portafolio Principal cuenta con la serie semanal de dos años.',
         evoTableAlternative: 'Observaciones como tabla',
 
+        // ── R13.R3B · CASCADA DE VARIACIÓN DE VALOR EN RESUMEN ──────────────
+        // Mismo criterio que en inglés: esta tarjeta y Evolución del Portafolio
+        // responden preguntas distintas y el vocabulario las mantiene
+        // separadas. El riel de períodos reutiliza las etiquetas de Evolución.
+        vwfTitle:          'Contribuidores y Detractores de la Variación de Valor del Portafolio',
+        vwfActualChip:     'Variación de valor efectiva · Incluye aportes y retiros',
+        vwfChangeLabel:    'Variación de Valor del Portafolio',
+        vwfOpeningLabel:   'Valor Inicial del Portafolio',
+        vwfClosingLabel:   'Valor Final del Portafolio',
+        vwfWindowLabel:    'Semanas comparadas',
+        vwfWeeksSuffix:    'semanas publicadas en el rango',
+        vwfNote:
+          'Cada barra es la variación del valor publicado de una fila de la jerarquía entre las dos semanas mostradas. Los flujos netos y la utilidad no son componentes separados: las variaciones a nivel de activo ya contienen sus efectos. Variación Efectiva de Valor del Portafolio = Utilidad/Pérdida Semanal + Flujos Netos; esto es una descomposición de variación de valor, no una atribución de retorno de inversión.',
+        vwfTruncated:      'El registro comienza después del inicio de este período, por lo que la comparación abre en la semana publicada más antigua.',
+        vwfSingleWeek:     'Este período contiene una sola semana publicada, por lo que no existe un extremo anterior con el cual comparar.',
+        vwfNoPublications: 'Aún no se ha publicado ninguna semana para este portafolio.',
+        vwfUnavailable:    'No hay una descomposición de variación de valor disponible para este portafolio y período.',
+        vwfEarliestWeek:   'El extremo inicial es la semana publicada más antigua, que no tiene una semana previa propia.',
+        // Ver la nota en inglés: caso real detectado en el libro publicado.
+        vwfTotalRowLifecycle:
+          'La fila a la que está vinculado el total de este portafolio no existe en ambos extremos de este período, por lo que su valor inicial sería un cero estructural y no un valor de portafolio. La descomposición se retiene en lugar de afirmarse sobre un total que la fuente no puede sostener en este tramo; un período más corto compara dos semanas que sí contienen la fila.',
+
+        // R13.R3C — riel de sujeto para los portafolios personales. Los nombres
+        // de las sociedades NUNCA se escriben aquí: se leen de la jerarquía
+        // publicada en cada render.
+        vwfSubjectSelector: 'Sujeto del portafolio',
+        vwfSubjectCombined: 'Portafolio Combinado',
+        vwfSubjectLifecycle:
+          'Esta entidad no está presente en ambos extremos del período seleccionado, por lo que su valor inicial sería un cero estructural y no un valor de portafolio. Un período más corto compara dos semanas que sí la contienen.',
+
         // Owner review §§ 15-20. THE TERM IS LEFT IN ENGLISH ON PURPOSE, and the
         // choice is deliberate rather than an untranslated string: the owner
         // fixed "High Water Market" as the visible name, it is a proper term of
@@ -1912,7 +2035,6 @@ export const dict = {
         lifecycleNote:      'Una posición mantenida en solo una de las dos semanas se compara contra cero — establecido porque una instantánea publicada contiene todas las filas que el portafolio tenía esa semana.',
         reclassTitle:       'Posibles reclasificaciones',
         reclassNote:        'El mismo nombre salió de una agrupación y apareció bajo otra. Se muestra para revisión — nunca se fusionan, y cada uno conserva su propia variación de valor.',
-        totalsTitle:        'Métricas semanales a nivel del total',
         weeklyValueChange:  'Variación de Valor Semanal',
         contribution:       'Contribución a la Variación de Valor Semanal del Portafolio',
         impactOnPortfolio:  'Impacto en el Valor del Portafolio',
@@ -1920,22 +2042,17 @@ export const dict = {
         currentValueLabel:  'Valor del Portafolio Esta Semana',
         previousValueLabel: 'Valor del Portafolio Semana Anterior',
         flowReconTitle:     'Conciliación de flujos y resultado de inversión',
-        flowReconNote:      'Identidad provista por la fuente al total del portafolio: Valor Anterior del Portafolio + Flujos Netos + Utilidad de la Semana = Valor del Portafolio Esta Semana.',
-        impliedCurrent:     'Valor implícito de Esta Semana',
-        publishedCurrent:   'Valor publicado de Esta Semana',
+        flowLabel:          'Flujos Netos Semanales',
+        endingValueLabel:   'Valor del Portafolio al Cierre',
+        flowReconNote:      'Identidad provista por la fuente al total del portafolio: Valor del Portafolio Semana Anterior + P&L Semanal + Flujos Netos Semanales = Valor del Portafolio al Cierre.',
+        flowReconResidual:  'Las partes declaradas por la fuente no suman exactamente el valor de cierre publicado — vea el estado de conciliación más abajo.',
         residual:           'Residuo',
         residualStep:       'Residuo de Conciliación',
         unavailableChildren: 'fila(s) no disponible(s) en este nivel',
         reconciled:         'Conciliado',
         partiallyReconciled: 'Parcialmente conciliado',
         reconciliationUnavailable: 'Conciliación no disponible',
-        waterfallTitle:     'Factores de la Variación de Valor Semanal del Portafolio',
-        waterfallNote:      'Los factores son variaciones de valor semanales a nivel de activos, derivadas de la jerarquía publicada. Los flujos netos y la utilidad no son barras separadas — las variaciones a nivel de activos ya contienen sus efectos.',
-        waterfallListFallback: 'Uno o más factores no están disponibles, por lo que las posiciones acumuladas no pueden dibujarse; los pasos se listan en su lugar.',
         unavailableDrivers: 'factor(es) no disponible(s)',
-        groupBySociedad:    'Por Sociedad',
-        groupByAssetClass:  'Por Clase de Activo',
-        groupingSelector:   'Vista de factores',
         increasesTitle:     'Mayores Aumentos de Valor Semanal',
         decreasesTitle:     'Mayores Disminuciones de Valor Semanal',
         noIncreases:        'Sin aumentos que califiquen en la semana seleccionada.',
@@ -1947,34 +2064,29 @@ export const dict = {
         cashIncludedNote:   'Caja y Equivalentes está actualmente incluida en los rankings.',
         viewAll:            'Ver Todas las Variaciones',
         hierarchyTitle:     'Variación de Valor Semanal por Jerarquía del Portafolio',
-        hierarchyRootLabel: 'Portafolio',
-        breadcrumbLabel:    'Nivel de jerarquía',
-        drillInto:          'Ver las filas dentro de',
-        backUp:             'Subir un nivel',
-        childSum:           'Suma de los hijos',
         parentChange:       'Variación del padre',
         hierarchyEmpty:     'Sin filas en este nivel.',
         fullTableTitle:     'Todas las Variaciones de Valor Semanal',
         fullTableNote:      'Listado completo de cada fila de la jerarquía en el orden publicado — las filas de subtotal y total son estructurales y nunca se suman con sus componentes.',
         fullTableCashNote:  'Este listado incluye Caja y Equivalentes; los paneles de ranking anteriores la excluyen salvo que se active la opción.',
-        statusColumn:       'Estado',
         statusUnavailable:  'No disponible',
+        zeroDashNote:       'En las columnas de variación, “-” significa que la fila no varió esta semana y “—” que las dos semanas no pudieron compararse.',
         reasonMissingCurrent:  'Sin valor publicado en la semana seleccionada.',
         reasonMissingPrevious: 'Sin valor publicado en la semana publicada anterior.',
         reasonMissingBoth:     'Sin valor publicado en ninguna de las dos semanas.',
         reasonCurrencyMismatch: 'La moneda de la fila difiere entre las dos semanas; las variaciones nunca se netean entre monedas.',
-        trendTitle:         'Variación de Valor Semanal Histórica',
-        trendNote:          'Cada punto es la variación de valor del portafolio respecto de su semana publicada inmediatamente anterior. Las semanas faltantes quedan como brechas — nada se interpola, se arrastra ni se completa con ceros.',
         statusTitle:        'Estado de publicación y conciliación',
         publishedAtLabel:   'Publicado',
-        waterfallStatusLabel: 'Cascada de factores',
+        // Ver la nota en inglés: la cascada fue retirada de Cambios
+        // Semanales; la conciliación que reportaba permanece.
+        driverStatusLabel:  'Conciliación de factores',
         flowStatusLabel:    'Identidad de flujos / resultado de inversión',
         noPreviousWeek:     'Esta es la semana publicada más antigua — no existe una observación publicada previa, por lo que el análisis de cambios semanales no está disponible para ella. Seleccione una semana posterior para comparar.',
         methodologyTitle:   'Metodología',
         methodologyLevel:   'Bajo el total del portafolio, cada cifra de esta página es una variación de valor semanal en dólares, no una contribución al retorno — la fuente no provee flujos por activo, por lo que los retornos por activo no son derivables.',
         methodologyPair:    'La Semana Anterior es la semana publicada inmediatamente anterior, no necesariamente siete días calendario antes; NMI recalcula cada variación a partir de los dos cierres publicados, nunca desde la columna de diferencias de la propia planilla.',
         methodologyImpact:  'El Impacto en el Valor del Portafolio es la variación en dólares de una fila dividida por el total del portafolio de la semana anterior. No mide el retorno propio de la fila.',
-        methodologyWaterfall: 'Los factores de la cascada son solo variaciones de valor a nivel de activos; los flujos netos y la utilidad no se agregan como barras porque las variaciones a nivel de activos ya contienen sus efectos.',
+        methodologyDrivers: 'La conciliación de factores compara las variaciones de valor a nivel de activos de la semana con el total publicado del portafolio; los flujos netos y la utilidad no son componentes separados porque las variaciones a nivel de activos ya contienen sus efectos.',
         methodologyCash:    'Caja y Equivalentes se excluye de las listas de ranking por defecto porque absorbe aportes y retiros antes de ser desplegados; una opción visible permite incluirla.',
       },
     },

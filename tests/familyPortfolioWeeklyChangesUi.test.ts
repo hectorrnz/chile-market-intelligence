@@ -17,27 +17,34 @@ import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { dict } from '../src/lib/i18n.ts'
+import { formatChangePct, formatRatioPct, roundsToZeroAt } from '../src/lib/formatters.ts'
+import { weeklyProfit } from '../src/lib/familyPortfolio/resumen/performance.ts'
+import { reconcileFlowAndProfit } from '../src/lib/familyPortfolio/weeklyChanges.ts'
 
 const ROOT = join(import.meta.dirname, '..')
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
 
 const PAGE = 'src/app/family-portfolio/weekly-changes/page.tsx'
 const ROUTE = 'src/app/api/family-portfolio/weekly-changes/[scope]/route.ts'
-const WATERFALL = 'src/components/familyPortfolio/ValueChangeWaterfall.tsx'
-const DIVERGING = 'src/components/familyPortfolio/DivergingBarChart.tsx'
+// R13.R3C — `ValueChangeWaterfall` and `DivergingBarChart` are both retired.
+// The shared Contributors and Detractors pair replaces them on this page AND
+// on Summary, which is the property most of this file now guards: ONE chart,
+// ONE popup, rendered by both surfaces.
+const CONTRIB = 'src/components/familyPortfolio/ContributionChart.tsx'
+const MODAL = 'src/components/familyPortfolio/ContributionBreakdownModal.tsx'
 const RECON = 'src/components/familyPortfolio/ReconciliationStatus.tsx'
 const DATA_HELPER = 'src/lib/data/familyPortfolio.ts'
 const PURE_MODULE = 'src/lib/familyPortfolio/weeklyChanges.ts'
 
-const STAGE8_UI_FILES = [PAGE, WATERFALL, DIVERGING, RECON]
+const STAGE8_UI_FILES = [PAGE, CONTRIB, MODAL, RECON]
 
 /** Strips comments so hygiene regexes cannot be tripped by prose. */
 const codeOf = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
 
 const page = read(PAGE)
 const route = read(ROUTE)
-const waterfall = read(WATERFALL)
-const diverging = read(DIVERGING)
+const contrib = read(CONTRIB)
+const modal = read(MODAL)
 const recon = read(RECON)
 const wEn = dict.en.fp.weeklyChanges
 const wEs = dict.es.fp.weeklyChanges
@@ -47,19 +54,27 @@ const wEs = dict.es.fp.weeklyChanges
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('R13.8 · § 6h page order', () => {
-  test('all nine sections render, in the contract order', () => {
+  test('every surviving section renders, in the contract order', () => {
     // Each marker is the section's own i18n title reference (or its anchor
     // component for item 1), so the assertion tracks the REAL render order.
+    //
+    // R13.R3B.1 — § 6h ITEM 4 IS ABSENT ON PURPOSE. The Drivers waterfall was
+    // retired from this page and now lives on Summary over 3M / YTD / 1Y /
+    // ALL; the section below asserts it is genuinely gone rather than merely
+    // moved down. Every other item keeps its contract position.
     const markers = [
       'WeekSelector', // 1 · header, portfolio selector, week selector
-      'w.totalsTitle', // 2 · total-level weekly metrics
+      // R13.R3C.4 — item 2 is the HERO alone: the *Total-level weekly metrics*
+      // card that used to follow it is deleted, so the hero's own label is the
+      // section's marker.
+      'w.weeklyValueChange', // 2 · total-level weekly metrics
       'w.flowReconTitle', // 3 · flow / investment-result reconciliation
-      'w.waterfallTitle', // 4 · Drivers of Weekly Portfolio Value Change
+      // 4 · RETIRED — see `R13.R3B.1 · the waterfall is retired from this page`
       'w.increasesTitle', // 5a · Largest Weekly Value Increases
       'w.decreasesTitle', // 5b · Largest Weekly Value Decreases
       'w.hierarchyTitle', // 6 · Weekly Value Change by Portfolio Hierarchy
       'w.fullTableTitle', // 7 · full changes table
-      'w.trendTitle', // 8 · historical weekly-change trend
+      // 8 · RETIRED (R13.R3C.2) — see `the historical trend chart is retired`
       'w.statusTitle', // 9 · freshness, statuses, sources
       'w.methodologyTitle', // 9 · persistent methodology note
     ]
@@ -86,7 +101,7 @@ describe('R13.8 · § 6h page order', () => {
     assert.match(body, /useEffect\(\(\) => \{[\s\S]*?\}, \[activeScope, asOf, compareFrom\]\)/)
     assert.equal((body.match(/useEffect\(/g) ?? []).length, 1, 'exactly one effect')
     // No component holds its own week: the chart/status components never fetch.
-    for (const rel of [WATERFALL, DIVERGING, RECON]) {
+    for (const rel of [CONTRIB, MODAL, RECON]) {
       assert.ok(!/fetch\(/.test(codeOf(read(rel))), `${rel} must not fetch`)
     }
   })
@@ -97,6 +112,87 @@ describe('R13.8 · § 6h page order', () => {
     assert.ok(!/nearest|closest|fallbackWeek/i.test(codeOf(page)))
     const helper = codeOf(read(DATA_HELPER))
     assert.ok(!/nearest|closest/i.test(helper), 'the data helper must not offer a nearest-week fallback')
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 1b · R13.R3B.1 — the waterfall is RETIRED from this page
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('R13.R3B.1 / R13.R3C · the waterfall is retired, everywhere', () => {
+  test('no waterfall survives ANYWHERE in the app — not the component, not the bridge', () => {
+    // R13.R3B.1 removed the waterfall from this page; R13.R3C removed it from
+    // Summary too, and with it the only two files that existed to draw one. The
+    // guard is therefore repo-wide rather than page-local: a waterfall cannot
+    // "come back" if nothing can build or render one.
+    for (const gone of [
+      'src/components/familyPortfolio/ValueChangeWaterfall.tsx',
+      'src/lib/familyPortfolio/valueChangeBridge.ts',
+      'src/components/familyPortfolio/DivergingBarChart.tsx',
+    ]) {
+      assert.ok(!existsSync(join(ROOT, gone)), `${gone} must be deleted, not merely unused`)
+    }
+    const code = codeOf(page)
+    assert.ok(!code.includes('ValueChangeWaterfall'), 'the component is not even imported')
+    assert.ok(!code.includes('buildBridge'), 'the bridge layout is not built here')
+    assert.ok(!code.includes('valueChangeBridge'), 'the bridge module is not imported here')
+    assert.ok(!code.includes('DivergingBarChart'), 'the retired horizontal chart is gone too')
+  })
+
+  test('nor is a second copy of the Summary card smuggled in instead', () => {
+    // Retiring a chart and then re-adding it under another name would defeat
+    // the point of the move; Summary owns this decomposition now.
+    const code = codeOf(page)
+    for (const forbidden of ['PeriodValueChangeCard', 'valueChangeRange', 'VALUE_CHANGE_PERIODS']) {
+      assert.ok(!code.includes(forbidden), `${forbidden} belongs to Summary, not here`)
+    }
+  })
+
+  test('the personal-scope driver-view rail went with it', () => {
+    const code = codeOf(page)
+    assert.ok(!code.includes('groupBySociedad'), 'the rail option labels are gone')
+    assert.ok(!code.includes('groupByAssetClass'))
+    assert.ok(!code.includes('groupingSelector'))
+    // …and the vocabulary went with the control, rather than lingering unused.
+    for (const key of ['waterfallTitle', 'waterfallNote', 'groupBySociedad', 'groupByAssetClass', 'groupingSelector']) {
+      assert.ok(!(key in wEn), `dead key ${key} must be removed from EN`)
+      assert.ok(!(key in wEs), `dead key ${key} must be removed from ES`)
+    }
+  })
+
+  test('the DRIVER RECONCILIATION survives — it describes the week, not a chart', () => {
+    const code = codeOf(page)
+    // Still derived from the very same locked function the route calls…
+    assert.match(code, /buildWaterfall\(total, hierarchyDrivers, STEP_LABELS\)/)
+    // …and still reported, under a name that no longer points at a card.
+    assert.match(code, /\{w\.driverStatusLabel\}/)
+    assert.match(code, /driverReconciliation\.status/)
+    assert.equal(wEn.driverStatusLabel, 'Driver reconciliation')
+    assert.equal(wEs.driverStatusLabel, 'Conciliación de factores')
+    assert.ok(!/waterfall/i.test(wEn.driverStatusLabel), 'the label must not name a retired card')
+    assert.ok(!/cascada/i.test(wEs.driverStatusLabel))
+  })
+
+  test('ONE driver set is derived, not two — the retired card had its own', () => {
+    const code = codeOf(page)
+    assert.equal((code.match(/deriveDrivers\(/g) ?? []).length, 1, 'exactly one driver derivation')
+    assert.ok(!code.includes('waterfallDrivers'), 'the card-specific driver list is gone')
+    assert.ok(!code.includes('waterfallGrouping'))
+  })
+
+  test('everything the owner asked to preserve is still on the page', () => {
+    for (const marker of [
+      'WeekSelector', // week selection
+      'compareFrom', // weekly vs custom comparison semantics
+      'w.increasesTitle', // Largest Weekly Value Increases
+      'w.decreasesTitle', // Largest Weekly Value Decreases
+      'w.hierarchyTitle', // change hierarchy
+      'w.fullTableTitle', // full changes table
+      'TableSourceFooter', // source / provenance
+      'w.methodologyTitle', // methodology
+    ]) {
+      assert.ok(page.includes(marker), `${marker} must survive the waterfall's removal`)
+    }
   })
 })
 
@@ -116,24 +212,162 @@ describe('R13.8 · § 4.2 vocabulary', () => {
     assert.equal(wEs.increasesTitle, 'Mayores Aumentos de Valor Semanal')
     assert.equal(wEn.decreasesTitle, 'Largest Weekly Value Decreases')
     assert.equal(wEs.decreasesTitle, 'Mayores Disminuciones de Valor Semanal')
-    assert.equal(wEn.waterfallTitle, 'Drivers of Weekly Portfolio Value Change')
-    assert.equal(wEs.waterfallTitle, 'Factores de la Variación de Valor Semanal del Portafolio')
+    // R13.R3B.1 — § 4.2's "Drivers of Weekly Portfolio Value Change" wording
+    // was the retired waterfall's title and went with it. Its successor on
+    // Summary is deliberately NOT that string: it spans a period, so it is
+    // period-neutral. Asserted in `portfolioR3bSummaryWaterfall`.
   })
 
   test('the page tab and hierarchy titles match the contract', () => {
     assert.equal(wEn.title, 'Weekly Changes')
     assert.equal(wEs.title, 'Cambios Semanales')
     assert.equal(wEn.hierarchyTitle, 'Weekly Value Change by Portfolio Hierarchy')
-    // The page renders the exact waterfall/hierarchy titles from the dict.
-    assert.match(page, /\{w\.waterfallTitle\}/)
+    // The page renders the exact hierarchy/ranked titles from the dict.
     assert.match(page, /\{w\.hierarchyTitle\}/)
     assert.match(page, /\{w\.increasesTitle\}|title=\{w\.increasesTitle\}/)
     assert.match(page, /title=\{w\.decreasesTitle\}/)
   })
 
   test('Impact on Portfolio Value renders under its own label, never as a return figure', () => {
+    // R13.R3C — the retired horizontal chart carried this as supporting text
+    // under each bar; the full changes table still carries it, under the same
+    // label, which is what this rule has always been about.
     assert.match(page, /\{w\.impactOnPortfolio\}/)
-    assert.match(diverging, /\{w\.impactOnPortfolio\}/)
+    // R13.R3C.4 — through the weekly-change formatter now, which differs from
+    // `formatRatioPct` in exactly one way: a figure that PRINTS as zero prints
+    // a dash instead. The measure and its label are unchanged.
+    assert.match(page, /formatChangePct\(n\.impactOnPortfolioValue\)/)
+  })
+
+  test('R13.R3C.4 — every CHANGE column dashes when it would print zero; the VALUE columns keep their numbers', () => {
+    // Three states, three marks, and none of them a fabricated zero:
+    //   prints as zero → "-"   the row did not move this week
+    //   null / ±∞      → "—"   the two weeks could not be compared
+    //   anything else  → the number, sign and all
+    assert.equal(formatChangePct(0), '-')
+    assert.equal(formatChangePct(-0), '-')
+    // The test is on the RENDERED figure, not the raw number: at two decimals
+    // `0` and `0,000004` are the same `0,00%` on screen, so dashing one while
+    // printing the other would claim a difference the column cannot show.
+    assert.equal(formatChangePct(0.00004), '-')
+    assert.equal(formatChangePct(-0.00004), '-')
+    assert.equal(formatChangePct(0.0000499), '-')
+    // …and the first figure that DOES survive rounding keeps its number.
+    assert.equal(formatChangePct(0.00005), formatRatioPct(0.00005))
+    assert.notEqual(formatChangePct(0.00005), '-')
+    // Unavailable stays the em dash — a different mark for a different state.
+    assert.equal(formatChangePct(null), formatRatioPct(null))
+    assert.equal(formatChangePct(undefined), '—')
+    assert.equal(formatChangePct(Number.NaN), '—')
+    assert.equal(formatChangePct(Number.POSITIVE_INFINITY), '—')
+    // Ordinary values are untouched, sign and all.
+    for (const r of [0.0123, -0.0456, 1, -1]) {
+      assert.equal(formatChangePct(r), formatRatioPct(r))
+    }
+    // `roundsToZeroAt` is the one rule behind both the percentage and the
+    // amount, so the two can never drift into different ideas of "zero".
+    assert.equal(roundsToZeroAt(0.4, 0), true)
+    assert.equal(roundsToZeroAt(-0.4, 0), true)
+    assert.equal(roundsToZeroAt(0.5, 0), false)
+    assert.equal(roundsToZeroAt(0.004, 2), true)
+    assert.equal(roundsToZeroAt(0.005, 2), false)
+
+    // In the page: all THREE change columns of the full listing dash, and so do
+    // the ranked panels' two — one rule, so the two tables cannot disagree.
+    assert.equal((page.match(/signed zeroDash/g) ?? []).length, 2, 'both value-change columns')
+    assert.equal((page.match(/formatChangePct\(n\./g) ?? []).length, 3, 'both own % columns + impact')
+    // A LEVEL is never dashed: a holding worth exactly nothing is a real state,
+    // and dashing it would collide with "could not be compared".
+    assert.ok(
+      !/value=\{n\.(previousValue|currentValue)\} masked=\{masked\}[^/]*zeroDash/.test(page),
+      'the previous/this-week value columns must keep their numbers',
+    )
+    // And the reader is told which mark means what.
+    for (const lang of [dict.en, dict.es]) {
+      assert.ok('zeroDashNote' in lang.fp.weeklyChanges)
+      assert.ok(!('impactZeroNote' in lang.fp.weeklyChanges), 'the impact-only wording is retired')
+    }
+    assert.match(page, /\{w\.zeroDashNote\}/)
+  })
+
+  test('R13.R3C.4 — the zero dash lives in the ONE guarded renderer, and shows through the mask', () => {
+    // Putting it in `MaskedAmount` is what stops one table dashing a zero while
+    // another prints it — and keeps the dash on the single guarded path rather
+    // than a call site formatting an amount for itself.
+    const amount = read('src/components/familyPortfolio/MaskedAmount.tsx')
+    assert.match(amount, /zeroDash\?: boolean/)
+    assert.match(amount, /if \(zeroDash && roundsToZeroAt\(value, compact \? 1 : decimals\)\)/)
+    // The dash is returned BEFORE the mask, deliberately: "this row did not
+    // move" is not a figure, and the module already makes it public — the
+    // contributors chart keeps relative bar extents visible while masked, and
+    // the omitted-zero footnote NAMES the entities that did not move.
+    const dashAt = amount.indexOf('zeroDash && roundsToZeroAt')
+    const maskAt = amount.indexOf('<PrivacyValue')
+    assert.ok(dashAt > 0 && maskAt > dashAt, 'the dash short-circuits ahead of the mask')
+    // No table cell formats an amount for itself — every one still goes
+    // through `MaskedAmount` (the hero's guarded `formatValue` is covered by
+    // its own test above).
+    const table = page.slice(page.indexOf('§ 6h item 7'))
+    assert.ok(!table.includes('formatUsd('), 'the full listing must not format an amount itself')
+  })
+
+  test('R13.R3C.4 — the Status column is gone, and its content is not', () => {
+    // The column was one word plus a reason for a handful of rows and an empty
+    // cell for every other. Removing it is right; losing the REASON would not
+    // be — an em dash in the value cells is indistinguishable from a bug
+    // without it — so it moved under the row's own hierarchy label.
+    for (const lang of [dict.en, dict.es]) {
+      assert.ok(!('statusColumn' in lang.fp.weeklyChanges), 'the dead column header is retired')
+      assert.ok('statusUnavailable' in lang.fp.weeklyChanges, 'the state itself still has a name')
+    }
+    const table = page.slice(page.indexOf('§ 6h item 7'))
+    assert.ok(!table.includes('w.statusColumn'), 'no Status header renders')
+    assert.match(table, /\{w\.statusUnavailable\}/)
+    assert.match(table, /reasonText\(n\.unavailableReason, w\)/)
+    // Six columns now, header and body agreeing — one fewer than before.
+    assert.equal((table.match(/<th className=\{`\$\{TH\}/g) ?? []).length, 6)
+    assert.equal((table.match(/<td className=\{`\$\{CELL\}/g) ?? []).length, 6)
+    // Every numeric column is centred; the hierarchy column keeps its left
+    // origin, because its indent IS the tree and centring would destroy it.
+    assert.equal((table.match(/\$\{TH\} text-center/g) ?? []).length, 5)
+    assert.equal((table.match(/\$\{CELL\} text-center/g) ?? []).length, 5)
+    assert.equal((table.match(/\$\{TH\} text-left/g) ?? []).length, 1)
+    assert.equal((table.match(/\$\{CELL\} text-left/g) ?? []).length, 1)
+    // One fewer column, so the card's dense-table minimum comes down with it.
+    assert.match(page, /minWidth=\{760\}/)
+  })
+
+  test('R13.R3C.4 — Main and every personal portfolio get the SAME block and the SAME table', () => {
+    // The page is one page; the scope selector only changes which rows it is
+    // handed. Neither the combined block nor the full table may branch on the
+    // scope, or the two would drift into two different weekly pages.
+    const block = page.slice(page.indexOf('items 2–3'), page.indexOf('§ 6h items 5–6'))
+    const table = page.slice(page.indexOf('§ 6h item 7'))
+    for (const [name, region] of [['the combined block', block], ['the full table', table]] as const) {
+      assert.ok(!region.includes('isMain'), `${name} must not branch on the scope`)
+      assert.ok(!region.includes('activeScope'), `${name} must not read the scope directly`)
+    }
+    // The one control that IS scope-aware stays where it belongs: the subject
+    // rail inside the hierarchy card, which only a personal book has.
+    const hierarchy = page.slice(page.indexOf('§ 6h items 5–6'), page.indexOf('§ 6h item 7'))
+    assert.match(hierarchy, /!isMain && subjects\.length > 1/)
+  })
+
+  test('R13.R3C.4 — the hero renders BARE inside the combined card, never a nested material', () => {
+    // Two stacked glass surfaces are forbidden outright by the material rules,
+    // so the hero drops its own card rather than the page copying its innards.
+    const hero = read('src/components/fable/KpiHero.tsx')
+    assert.match(hero, /bare\?: boolean/)
+    assert.match(hero, /const Surface = bare \? BareSurface : GlassSurface/)
+    assert.match(hero, /function BareSurface\(/)
+    // Declared at module scope — the project's React-Compiler rule, and it also
+    // keeps the count-up from restarting on every render.
+    assert.ok(!/const BareSurface = \(/.test(hero), 'BareSurface must not be defined inside render')
+    // Everything else about the hero is identical in both placements: one
+    // element tree, one privacy path, one count-up.
+    assert.equal((hero.match(/<PrivacyValue/g) ?? []).length, 2, 'headline + minis, as before')
+    assert.equal((hero.match(/useCountUp\(/g) ?? []).length, 1)
+    assert.equal((hero.match(/return \(/g) ?? []).length, 1, 'one render path, not a forked copy')
   })
 
   test('the hierarchy chart is captioned with the § 4.2 contribution term — a value change, not a return', () => {
@@ -190,24 +424,42 @@ describe('R13.8 · § 4.3 forbidden vocabulary', () => {
 
 describe('R13.8 · calculation boundary', () => {
   test('the page derives every figure through the LOCKED pure module', () => {
-    for (const fn of ['deriveDrivers(', 'buildWaterfall(', 'rankWeeklyChanges(', 'buildHierarchyLevel(', 'buildFullChangesTable(']) {
-      assert.ok(page.includes(fn), `the page must call ${fn} from the pure module`)
+    // R13.R3C — `buildHierarchyLevel` went with the in-place breadcrumb drill;
+    // the frontier pair that replaced it lives in the SAME pure module, so the
+    // property (no figure is computed on the page) is unchanged.
+    for (const fn of [
+      'deriveDrivers(',
+      'buildWaterfall(',
+      'rankWeeklyChanges(',
+      'contributionChildren(',
+      'buildContributionSet(',
+      'buildFullChangesTable(',
+    ]) {
+      assert.ok(page.includes(fn), `the page must call ${fn} from a pure module`)
     }
     assert.match(page, /from '@\/lib\/familyPortfolio\/weeklyChanges'/)
+    assert.match(page, /from '@\/lib\/familyPortfolio\/contributionChart'/)
   })
 
   test('the chart components never recalculate a financial value', () => {
-    // Type-only module imports; no summing, no accumulation, no recomputation.
-    assert.match(waterfall, /import type \{[^}]*\} from '@\/lib\/familyPortfolio\/weeklyChanges'/)
+    // The chart imports a SHAPE, never a calculation: its only value binding
+    // from the calculation layer is nothing at all — `ContributionSet` and
+    // `ContributionAxis` arrive as types.
+    assert.match(contrib, /import type \{[^}]*\} from '@\/lib\/familyPortfolio\/contributionChart'/)
+    assert.ok(
+      !/import \{[^}]*\} from '@\/lib\/familyPortfolio\/(weeklyChanges|contributionChart)'/.test(codeOf(contrib)),
+      'the chart must not import a value binding from a calculation module',
+    )
     for (const [rel, src] of [
-      [WATERFALL, waterfall],
-      [DIVERGING, diverging],
+      [CONTRIB, contrib],
+      [MODAL, modal],
       [RECON, recon],
     ] as const) {
       const code = codeOf(src)
       assert.ok(!/\.reduce\(/.test(code), `${rel} must not aggregate values`)
       assert.ok(!/\+=/.test(code), `${rel} must not accumulate values`)
       assert.ok(!/currentValue\s*-\s*previousValue/.test(code), `${rel} must not recompute a change`)
+      assert.ok(!/\.sort\(/.test(code), `${rel} must not order the set itself`)
     }
   })
 
@@ -228,9 +480,15 @@ describe('R13.8 · calculation boundary', () => {
     assert.match(page, /prefers-reduced-motion: reduce/)
   })
 
-  test('the hierarchy chart consumes the module level — parentage is never rebuilt from labels', () => {
-    assert.match(page, /buildHierarchyLevel\(nodes, hierarchyDrivers, drillKey\)/)
-    assert.ok(!/parent/i.test(codeOf(diverging)), 'DivergingBarChart must hold no parentage model of its own')
+  test('the hierarchy chart consumes the module frontier — parentage is never rebuilt from labels', () => {
+    // The components of the chosen subject come from the pure module, and the
+    // popup asks the SAME function again one level down.
+    assert.match(page, /resolveSubject\(nodes, hierarchyDrivers, total, safeSubjectKey\)/)
+    assert.match(modal, /contributionChildren\(nodes, parentRowKey\)/)
+    assert.ok(
+      !/parentRowKey ===|labelEs ===|\.depth ===/.test(codeOf(contrib)),
+      'ContributionChart must hold no parentage model of its own',
+    )
     // § 6g fixes the drill tiling per scope kind.
     assert.match(page, /isMain \? 'top_level' : 'sociedad'/)
   })
@@ -256,9 +514,12 @@ describe('R13.8 · cash toggle', () => {
     assert.match(page, /\{w\.cashIncludedNote\}/)
   })
 
-  test('a scope switch resets the cash toggle and the personal driver view', () => {
+  test('a scope switch resets the cash toggle', () => {
     assert.match(page, /setIncludeCash\(false\)/)
-    assert.match(page, /setGrouping\('sociedad'\)/)
+    // R13.R3B.1 — there is no personal "driver view" state left to reset: the
+    // rail was the retired waterfall's own tiling control, and the hierarchy
+    // drill has always been fixed at sociedad for a personal scope (§ 6g).
+    assert.ok(!/setGrouping|useState<DriverGrouping>/.test(codeOf(page)))
   })
 })
 
@@ -334,21 +595,40 @@ describe('R13.8 · honest states', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('R13.8 · privacy', () => {
-  test('the waterfall replaces the WHOLE chart while masked — before any bar exists', () => {
-    const maskGate = waterfall.indexOf('if (masked)')
-    const firstBar = waterfall.indexOf('<ul')
-    assert.ok(maskGate >= 0 && firstBar >= 0 && maskGate < firstBar,
-      'the masked return must precede all bar rendering')
-    assert.match(waterfall, /PrivacyValue masked/)
+  test('the contributors chart keeps only RELATIVE extents while masked — every amount is withheld', () => {
+    // R13.R3C — the retired bridge blanked its whole plot because its bars
+    // floated at absolute cumulative LEVELS. These bars all start at zero and
+    // encode a magnitude relative to the axis maximum, which is the
+    // allocation-donut / diverging-bar precedent the standing privacy policy
+    // already permits. What must NOT survive masking is any absolute amount:
+    // the axis gutter is withheld outright, and every other figure is routed
+    // through `MaskedAmount`, which fails closed on its own.
+    assert.match(contrib, /masked \? null : <MaskedAmount value=\{tick\}/)
+    assert.match(contrib, /<MaskedAmount\s+value=\{active\.value\}\s+masked=\{masked\}/)
+    assert.match(contrib, /<MaskedAmount value=\{bar\.value\} masked=\{masked\}/)
+    // …and no unmasked amount reaches the DOM by another route.
+    assert.ok(
+      !/formatUsd\(|formatUsdCompactM\(/.test(codeOf(contrib)),
+      'the chart must never format an amount itself — that would bypass the mask',
+    )
   })
 
-  test('the trend chart mounts only while unmasked — masked renders the privacy block instead', () => {
-    const trendBlock = page.slice(page.indexOf('w.trendTitle'))
-    const maskGate = trendBlock.indexOf('masked ? (')
-    const chart = trendBlock.indexOf('<LineChart')
-    assert.ok(maskGate >= 0 && chart >= 0 && maskGate < chart,
-      'LineChart must sit in the unmasked arm of the privacy ternary')
-    assert.match(trendBlock, /PrivacyValue masked/)
+  test('R13.R3C.2 — the historical trend chart is retired, and its privacy path went with it', () => {
+    // § 6h item 8 plotted a series ACROSS weeks on a page about ONE week, and
+    // Portfolio Evolution answers that question on a flow-adjusted basis. It
+    // is the only surface here that ever plotted absolute LEVELS, which is why
+    // it needed a whole-chart privacy replacement; both are gone together.
+    assert.ok(!page.includes('<LineChart'), 'no line chart survives on this page')
+    assert.ok(!/from '@\/components\/charts\/LineChart'/.test(page), 'and it is not imported either')
+    assert.ok(!page.includes('trendTitle') && !page.includes('trendNote'))
+    for (const lang of [dict.en, dict.es]) {
+      assert.ok(
+        !('trendTitle' in lang.fp.weeklyChanges) && !('trendNote' in lang.fp.weeklyChanges),
+        'the dead trend copy is removed from the dictionary, not left orphaned',
+      )
+    }
+    // Nothing upstream changed: the route still publishes the series.
+    assert.match(route, /trend/)
   })
 
   test('every raw formatUsd call in the page sits in a guarded context', () => {
@@ -359,16 +639,137 @@ describe('R13.8 · privacy', () => {
         `unguarded amount formatter in page: ${line.trim()}`,
       )
     }
-    // The two monetary hero minis are bound to the hero's own privacy state.
-    assert.match(page, /value: formatUsd\(total\.currentValue\),\s*\n\s*sensitive: total\.currentValue != null/)
-    assert.match(page, /value: formatUsd\(total\.previousValue\),\s*\n\s*sensitive: total\.previousValue != null/)
+    // R13.R3C.4 — THE HERO HAS NO MINIS ANY MORE. Opening and closing value
+    // are rows 1 and 4 of the ledger beside it, so the hero was printing the
+    // same two amounts a card away from where they do work. What is left is
+    // the headline amount, still bound to the hero's own privacy state.
+    assert.ok(!/minis=\{/.test(page), 'the hero states no amount the ledger already states')
     assert.match(page, /privacyMasked=\{masked\}/)
+  })
+
+  test('R13.R3C.4 — the ledger reads opening → made → moved → closing, and states nothing else', () => {
+    const ledger = page.slice(page.indexOf('{w.flowReconTitle}'), page.indexOf('item 4 · RETIRED'))
+    assert.ok(ledger.length > 0, 'the reconciliation card exists')
+    const order = ['w.previousValueLabel', 'o.weeklyProfit', 'w.flowLabel', 'w.endingValueLabel']
+    let cursor = -1
+    for (const marker of order) {
+      const at = ledger.indexOf(marker)
+      assert.ok(at >= 0, `${marker} is a row of the ledger`)
+      assert.ok(at > cursor, `${marker} must follow the previous ledger row`)
+      cursor = at
+    }
+    // Exactly four rows, with the closing line set off as the SUM of the three
+    // above it rather than a fifth term.
+    assert.equal((ledger.match(/\{ label: [wo]\./g) ?? []).length, 4)
+    assert.equal((ledger.match(/divider: true/g) ?? []).length, 1)
+    // Every ledger amount goes through the mask; none through formatUsd.
+    assert.ok(!ledger.includes('formatUsd('), 'the ledger never formats an amount itself')
+    assert.equal((ledger.match(/<MaskedAmount value=\{r\.value\}/g) ?? []).length, 1)
+
+    // THE YEAR IS NOT ON THIS PAGE. Both YTD figures went with the metrics
+    // card; Summary reports them over a period the reader chooses.
+    const body = page.slice(page.indexOf('function WeeklyChangesPageInner'))
+    for (const dead of ['o.ytdProfit', 'o.ytdReturn', 'w.totalsTitle']) {
+      assert.ok(!body.includes(dead), `${dead} must not render on the weekly page`)
+    }
+    // And the dead copy is removed from the dictionary, never left orphaned.
+    for (const lang of [dict.en, dict.es]) {
+      for (const dead of ['totalsTitle', 'impliedCurrent', 'publishedCurrent']) {
+        assert.ok(!(dead in lang.fp.weeklyChanges), `fp.weeklyChanges.${dead} is retired`)
+      }
+      for (const live of ['flowLabel', 'endingValueLabel', 'flowReconResidual']) {
+        assert.ok(live in lang.fp.weeklyChanges, `fp.weeklyChanges.${live} must exist`)
+      }
+    }
+  })
+
+  test('R13.R3C.4 — implied-vs-published is still COMPUTED, only no longer drawn here', () => {
+    // The removal is presentational. Nothing upstream may quietly stop checking
+    // the identity because the card stopped printing it.
+    assert.match(route, /reconcileFlowAndProfit\(/)
+    assert.match(route, /flowReconciliation/)
+    assert.match(page, /const flowRecon = data\?\.flowReconciliation \?\? null/)
+    // The two figures are gone from the CARD…
+    const ledger = page.slice(page.indexOf('{w.flowReconTitle}'), page.indexOf('item 4 · RETIRED'))
+    assert.ok(!/expectedCurrent/.test(ledger), 'the implied value is no longer printed')
+    // …and the verdict still reaches the reader in the status section, beside
+    // the driver reconciliation — so a real residual can never go silent.
+    const status = page.slice(page.indexOf('{w.statusTitle}'))
+    assert.match(status, /state=\{displayState\(flowRecon\.status\)\}/)
+    // A residual also says so on the card itself — one line, and no second
+    // amount, so the note above it can never assert an identity the rows deny.
+    assert.match(page, /flowRecon\.status === 'residual'/)
+    assert.match(page, /\{w\.flowReconResidual\}/)
+  })
+
+  test('R13.R3C.4 — a mismatch is caught at UPLOAD, which is why the card need not print it', () => {
+    // The identity the card stopped drawing and the identity the parser checks
+    // on every upload are ONE identity, rearranged — so removing the display
+    // removes nothing from the guarantee.
+    //
+    //   parser:  stated profit  ≟  this − previous − flow
+    //   card:    previous + flow + profit  ≟  published
+    //
+    // Proved here on real arithmetic rather than asserted in prose.
+    const previous = 145_836_553
+    const flow = 250_000
+    const published = 147_120_884
+    const statedProfit = weeklyProfit(published, previous, flow)
+    assert.equal(statedProfit, published - previous - flow)
+    const clean = reconcileFlowAndProfit({
+      previousValue: previous,
+      currentValue: published,
+      flow,
+      weeklyProfit: statedProfit,
+      weeklyValueChange: published - previous,
+      weeklyReturn: null,
+      ytdProfit: null,
+      ytdReturn: null,
+    } as never)
+    assert.equal(clean.status, 'ok', 'a workbook the parser accepts reconciles at read time')
+    assert.equal(clean.residual, 0)
+
+    // And a workbook whose stated profit disagrees is exactly what the runtime
+    // would have shown as an implied/published gap — the same number, caught a
+    // step earlier.
+    const wrong = reconcileFlowAndProfit({
+      previousValue: previous,
+      currentValue: published,
+      flow,
+      weeklyProfit: (statedProfit as number) - 1_000_000,
+      weeklyValueChange: published - previous,
+      weeklyReturn: null,
+      ytdProfit: null,
+      ytdReturn: null,
+    } as never)
+    assert.equal(wrong.status, 'residual')
+    assert.equal(wrong.residual, 1_000_000)
+
+    // The upload path that catches it first: the parser recomputes the profit
+    // against each candidate total, refuses to bind a block it cannot
+    // reconcile, and reports a disagreement it can.
+    const parser = read('src/lib/familyPortfolio/resumen/parseResumen.ts')
+    assert.match(parser, /weeklyProfit\(bound\.value, bound\.previousValue, block\.flow \?\? 0\)/)
+    for (const code of [
+      'ambiguous_performance_basis', // blocking — no candidate reconciles
+      'performance_definition_mismatch', // warning — the bound one disagrees
+      'flow_cell_unreadable', // blocking — the flow term cannot be read
+    ]) {
+      assert.ok(parser.includes(code), `${code} must still be reported by the parser`)
+    }
+    // …and the administrator sees it before publishing: findings are listed
+    // with their severity, and each cross-check is chipped agrees/mismatch.
+    const admin = read('src/app/family-portfolio/admin/page.tsx')
+    assert.match(admin, /review\.findings\.map/)
+    assert.match(admin, /f\.severity === 'warning' \? a\.warning/)
+    assert.match(admin, /review\.performance\.map/)
+    assert.match(admin, /p\.agrees \? a\.agrees : a\.mismatch/)
   })
 
   test('the chart/status components render amounts only through MaskedAmount', () => {
     for (const [rel, src] of [
-      [WATERFALL, waterfall],
-      [DIVERGING, diverging],
+      [CONTRIB, contrib],
+      [MODAL, modal],
       [RECON, recon],
     ] as const) {
       assert.ok(!codeOf(src).includes('formatUsd'), `${rel} must not format an amount itself`)
@@ -409,9 +810,11 @@ describe('R13.8 · reconciliation display', () => {
     assert.match(recon, /aria-hidden/)
   })
 
-  test('the waterfall card, hierarchy level, flow identity and status section all surface it', () => {
+  test('the flow identity, the contributors set and the status section all surface it', () => {
     const uses = page.match(/<ReconciliationStatus/g) ?? []
-    assert.ok(uses.length >= 4, 'flow card, waterfall card, hierarchy level, and status section')
+    // R13.R3B.1 retired the waterfall card's own copy; R13.R3C's contributors
+    // set reports its reconciliation through the same component.
+    assert.ok(uses.length >= 3, 'flow card, contributors set, and status section')
   })
 })
 
@@ -419,28 +822,39 @@ describe('R13.8 · reconciliation display', () => {
 // 10 · Hierarchy drill-down UI (§ 6g)
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('R13.8 · hierarchy drill-down', () => {
-  test('breadcrumbs are a navigation landmark with a current-page marker and a back control', () => {
-    assert.match(page, /<nav aria-label=\{w\.breadcrumbLabel\}/)
-    assert.match(page, /aria-current="page"/)
-    assert.match(page, /\{w\.backUp\}/)
-    assert.match(page, /level\.breadcrumb\[level\.breadcrumb\.length - 2\]\.rowKey : null/)
+describe('R13.R3C · hierarchy drill-down is a popup, not a breadcrumb', () => {
+  test('depth lives in the modal — the in-place breadcrumb drill is gone', () => {
+    const code = codeOf(page)
+    assert.ok(!code.includes('drillKey'), 'the page no longer holds a drill path')
+    assert.ok(!code.includes('buildHierarchyLevel'), 'nor the level builder that served it')
+    assert.match(page, /<ContributionBreakdownModal/)
+    // The parent and its reconciliation stay on screen while the reader
+    // descends, which is the whole reason depth moved inside the overlay.
+    assert.match(modal, /\{c\.parentContribution\}/)
+    assert.match(modal, /aria-expanded=\{isOpen\}/)
+    assert.match(modal, /<BreakdownLevel/)
   })
 
-  test('bars extend from a drawn common zero axis — right for positive, left for negative', () => {
-    assert.match(diverging, /left: '50%'/)
-    assert.match(diverging, /negative \? `\$\{50 - half\}%` : '50%'/)
+  test('bars extend from a drawn common zero axis — up for positive, down for negative', () => {
+    assert.match(contrib, /const zeroTop = topPct\(0\)/)
+    assert.match(contrib, /const top = positive \? topPct\(bar\.value\) : zeroTop/)
+    assert.match(contrib, /const bottom = positive \? zeroTop : topPct\(bar\.value\)/)
+    // Zero is a DRAWN gridline, stronger than the rest, because every bar is
+    // anchored to it.
+    assert.match(contrib, /tick === 0 \? 'var\(--border-strong\)' : 'var\(--chart-grid\)'/)
   })
 
-  test('a drillable bar is a real button; unavailable children carry visible text, not a bar', () => {
-    assert.match(diverging, /<button/)
-    assert.match(diverging, /aria-label=\{`\$\{w\.drillInto\} \$\{bar\.label\}`\}/)
-    assert.match(diverging, /\{w\.statusUnavailable\}/)
-    assert.match(diverging, /bar\.available && bar\.value !== null/)
+  test('a bar the source can decompose is a real button; a leaf gets no affordance', () => {
+    assert.match(contrib, /const interactive = bar\.drillable && bar\.rowKey !== null/)
+    assert.match(contrib, /interactive \? \(\s*<button/)
+    assert.match(contrib, /aria-label=\{`\$\{c\.drillInto\} \$\{label\}`\}/)
+    // `drillable` is decided by the pure module, never by the chart.
+    assert.match(page, /isDrillable: \(key\) => contributionChildren\(nodes, key\)\.length > 0/)
   })
 
-  test('a new (scope, week) request resets the drill position', () => {
-    assert.match(page, /setDrillKey\(null\)/)
+  test('a new (scope, week) request resets the subject and closes the popup', () => {
+    assert.match(page, /setSubjectKey\(COMBINED_SUBJECT\)/)
+    assert.match(page, /setOpenKey\(null\)/)
     assert.match(page, /prevRequestKey !== requestKey/)
   })
 })
@@ -451,24 +865,71 @@ describe('R13.8 · hierarchy drill-down', () => {
 
 describe('R13.8 · responsive & accessibility', () => {
   test('layout grids carry responsive prefixes; dense tables scroll inside their card', () => {
-    assert.match(page, /grid-cols-1 lg:grid-cols-2/)
-    assert.match(page, /grid-cols-1 lg:grid-cols-\[1\.4fr_1fr\]/)
-    assert.match(page, /minWidth=\{860\}/)
+    // R13.R3C.2 — two regions, both responsive. R13.R3C.4 narrowed the
+    // information row to TWO blocks, so it collapses 2 → 1 and no longer needs
+    // an md step; the movers/chart row still collapses 2 → 1, and at xl its two
+    // sides now end level (`items-stretch`) instead of each taking its own
+    // natural height.
+    // R13.R3C.4 — items 2–3 are ONE card split by a rule, so the top region's
+    // grid is now internal to it and collapses 2 → 1 at the same breakpoint;
+    // the movers/chart row still collapses 2 → 1 and ends level at xl.
+    assert.match(page, /grid-cols-1 xl:grid-cols-\[1fr_minmax\(0,0\.8fr\)\] gap-4 xl:gap-0/)
+    assert.match(page, /grid-cols-1 xl:grid-cols-\[minmax\(0,1fr\)_minmax\(0,1\.15fr\)\] gap-4 items-stretch/)
+    assert.match(page, /minWidth=\{760\}/)
     assert.match(page, /maxHeight=\{640\}/)
     assert.match(read(PAGE), /minWidth=\{560\}/)
   })
 
-  test('the chart row grids collapse their label column below sm', () => {
-    for (const src of [waterfall, diverging]) {
-      assert.match(src, /grid-cols-\[minmax\(0,9rem\)_1fr_auto\] sm:grid-cols-\[minmax\(0,13rem\)_1fr_auto\]/)
-    }
+  test('R13.R3C.4 — the divider is VERTICAL on a wide card and horizontal once it stacks', () => {
+    // One rule, two orientations, chosen by the same breakpoint that decides
+    // whether the block is two columns at all — so it can never be a vertical
+    // line across a stacked layout, or a horizontal one splitting two columns.
+    assert.match(page, /border-b border-border pb-4 xl:border-b-0 xl:border-l xl:pb-0 xl:pl-6/)
+    assert.match(page, /xl:order-1 flex flex-col gap-2 min-w-0 xl:pr-6/)
+    // The ledger is LEFT and the headline RIGHT at xl, while DOM order stays
+    // the contract's (item 2, then item 3) — see the block's own comment.
+    assert.match(page, /xl:order-2/)
   })
 
-  test('controls wrap; headings are semantic; charts are real-text lists', () => {
+  test('the contributors chart narrows its axis gutter below sm', () => {
+    // Columns, not rows: on a narrow viewport the value gutter is what gives
+    // way first, before the plot itself has to scroll.
+    // R13.R3C.2 — the gutter narrowed one step (w-14/sm:w-16 → w-12/sm:w-14)
+    // once its labels became the compact one-unit form, and the reclaimed
+    // width went to the plot. THREE places must stay in sync: the tick span,
+    // the bars container's left offset, and the x-axis spacer.
+    assert.equal((contrib.match(/w-12 sm:w-14/g) ?? []).length, 2, 'tick span + x-axis spacer')
+    assert.match(contrib, /left-12 sm:left-14/)
+  })
+
+  test('R13.R3C — the chart scrolls inside its own card rather than compressing its columns', () => {
+    // Below a readable column width the honest behaviour is the project's
+    // dense-chart convention — scroll within the card on a computed minimum —
+    // never squeezing every column into a sliver. The minimum is derived from
+    // the bar COUNT, so a two-bar chart never scrolls and a twelve-bar one
+    // always can.
+    assert.match(contrib, /overflow-x-auto/)
+    assert.match(contrib, /const MIN_COLUMN_PX = \d+/)
+    assert.match(contrib, /minWidth: Math\.max\(1, n\) \* MIN_COLUMN_PX/)
+    // A one-CSS-pixel visibility floor that does not scale with plot height.
+    assert.match(contrib, /const MIN_BAR_PX = 1/)
+    assert.match(contrib, /`max\(\$\{MIN_BAR_PX\}px, \$\{bottom - top\}%\)`/)
+  })
+
+  test('controls wrap; headings are semantic; the chart has a real-text route', () => {
     assert.match(page, /flex-wrap/)
-    assert.ok((page.match(/<h2 className="ui-label/g) ?? []).length >= 6)
-    assert.match(waterfall, /role="list"/)
-    assert.match(diverging, /role="list"/)
+    // Three fewer card headings than the original page: the R13.R3B.1
+    // waterfall's, the R13.R3C.2 historical trend's, and the R13.R3C.4 metrics
+    // card's. What carries a heading now is the ledger, the hierarchy and the
+    // status block; the hero labels itself.
+    assert.equal((page.match(/<h2 className="ui-label/g) ?? []).length, 3)
+    // R13.R3C — the chart is columns, so its non-visual route is a real table
+    // of the same figures rather than a list of rows. The popup stays a list.
+    // The table is WRAPPED, not itself `sr-only` — see the regression guard in
+    // `portfolioR3cContributors.test.ts`; an unwrapped one widened the page.
+    assert.match(contrib, /<div className="sr-only">\s*<table>/)
+    assert.match(contrib, /<caption>\{ariaLabel\}<\/caption>/)
+    assert.match(modal, /role="list"/)
   })
 
   test('no new Date, no hardcoded hex, no animation library in any Stage-8 UI file', () => {
@@ -549,7 +1010,7 @@ describe('R13.8 · route and boundaries', () => {
 
 describe('R13.8 · methodology & i18n', () => {
   test('the methodology note is persistent — all five statements always render, never a tooltip', () => {
-    assert.match(page, /\[w\.methodologyLevel, w\.methodologyPair, w\.methodologyImpact, w\.methodologyWaterfall, w\.methodologyCash\]/)
+    assert.match(page, /\[w\.methodologyLevel, w\.methodologyPair, w\.methodologyImpact, w\.methodologyDrivers, w\.methodologyCash\]/)
     // Rendered as list items in the flow of section 9 — not inside a title.
     assert.ok(!/title=\{w\.methodology/.test(page))
   })
@@ -557,10 +1018,16 @@ describe('R13.8 · methodology & i18n', () => {
   test('the methodology covers the documented distinctions in both languages', () => {
     assert.match(wEn.methodologyPair, /immediately preceding published week/)
     assert.match(wEn.methodologyImpact, /^Impact on Portfolio Value/)
-    assert.match(wEn.methodologyWaterfall, /not added as bars/)
+    // R13.R3B.1 — the methodological point survived the waterfall's removal,
+    // restated without the chart vocabulary it no longer has: the flow and
+    // profit effects are already inside the asset-level changes, so they are
+    // not separate COMPONENTS (they used to be "not separate BARS").
+    assert.match(wEn.methodologyDrivers, /not separate components/)
+    assert.ok(!/bar/i.test(wEn.methodologyDrivers), 'no chart vocabulary left in the methodology')
     assert.match(wEn.methodologyCash, /excluded from the ranked lists by default/)
     assert.match(wEs.methodologyPair, /semana publicada inmediatamente anterior/)
-    assert.match(wEs.methodologyWaterfall, /no se agregan como barras/)
+    assert.match(wEs.methodologyDrivers, /no son componentes separados/)
+    assert.ok(!/barra/i.test(wEs.methodologyDrivers))
   })
 
   test('EN and ES weeklyChanges dictionaries carry identical key sets', () => {
@@ -570,7 +1037,7 @@ describe('R13.8 · methodology & i18n', () => {
   test('no hardcoded user-facing English strings in the Stage-8 components', () => {
     // Every visible label flows through `t.fp.weeklyChanges` / shared keys;
     // literal JSX text is limited to punctuation and glyphs.
-    for (const src of [waterfall, diverging, recon]) {
+    for (const src of [contrib, modal, recon]) {
       assert.ok(!/>\s*[A-Z][a-z]+ [a-z]+/.test(codeOf(src).replace(/className="[^"]*"/g, '')),
         'component JSX must not embed English sentences')
     }

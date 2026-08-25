@@ -184,6 +184,63 @@ export function formatUsdCompactM(value: number | null | undefined): string {
 }
 
 /**
+ * R13.R3C.2 — a Family Portfolio USD amount at CONTRIBUTION-CHART length: a
+ * whole number and a magnitude suffix, `5.200.000` → `5M`, `-98.400` → `-98K`.
+ *
+ * Distinct from `formatUsdCompactM`, and both are kept. That one is the PRINT
+ * axis's form: one decimal, always millions, so three stacked labels on a
+ * portfolio-level axis stay directly comparable. This one is the SCREEN
+ * contributors chart's: a component's change spans four orders of magnitude
+ * across periods and subjects, so a fixed millions unit would print `0,1M` for
+ * a real mover, and a decimal on a `2M` gridline is noise. Unit follows the
+ * value; no decimals at either unit.
+ *
+ * Chilean convention as everywhere else — the grouping separator is the dot
+ * (`1.234M`) and the units are abbreviated, not the locale.
+ *
+ * The unit is chosen from the value AFTER rounding, so `999.600` reads `1M`
+ * rather than the `1.000K` a threshold-first test would produce. Unavailable
+ * stays `—`, never `0`.
+ */
+export function formatUsdCompactUnit(value: number | null | undefined, unit?: CompactUnit): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
+  // Zero is zero at every magnitude. `0M` on the one gridline every bar is
+  // anchored to would be noise at best and a scale claim at worst.
+  if (value === 0) return '0'
+  const abs = Math.abs(value)
+  // Round half AWAY FROM ZERO, so -1,5M and +1,5M print the same magnitude —
+  // `Math.round` breaks ties toward +∞ and would print -1M beside +2M.
+  const round = (v: number) => Math.sign(v) * Math.round(Math.abs(v))
+  const chosen: CompactUnit = unit ?? (abs >= 999_500 ? 'M' : abs >= 999.5 ? 'K' : 'ones')
+  if (chosen === 'M') return `${formatUsd(round(value / 1_000_000))}M`
+  if (chosen === 'K') return `${formatUsd(round(value / 1_000))}K`
+  return formatUsd(round(value))
+}
+
+export type CompactUnit = 'M' | 'K' | 'ones'
+
+/**
+ * R13.R3C.2 — the ONE unit a whole axis should be read in, chosen from its
+ * gridline interval.
+ *
+ * A per-value unit is right for a lone figure and wrong for a column of them.
+ * Measured on the real book: an axis stepping by 500.000 produced the ticks
+ * `-500K · 0 · 500K · 1M · 2M` — the last two are 1.000.000 and 1.500.000, so
+ * a reader sees the interval double at the top of the scale when it has not
+ * changed at all. Rounding to whole units is the owner's rule; a uniform unit
+ * is what makes that rule safe on an axis.
+ *
+ * The unit comes from the STEP, not from the largest value, because every tick
+ * is a multiple of the step — so no tick can round to zero in the chosen unit.
+ */
+export function compactUnitForStep(step: number): CompactUnit {
+  if (!Number.isFinite(step) || step <= 0) return 'ones'
+  if (step >= 1_000_000) return 'M'
+  if (step >= 1_000) return 'K'
+  return 'ones'
+}
+
+/**
  * R13.7 — an UNSIGNED percentage from a ratio (0.423 → "42,3%"), for
  * allocation weights where a "+" sign would misread as a change figure.
  * Unavailable stays an em dash, never 0%.
@@ -203,6 +260,46 @@ export function formatWeightPct(weight: number | null | undefined, decimals = 1)
  */
 export function formatRatioPct(ratio: number | null | undefined, decimals = 2): string {
   if (ratio === null || ratio === undefined || !Number.isFinite(ratio)) return '—'
+  return formatPercent(ratio * 100, decimals)
+}
+
+/**
+ * Does this figure PRINT as zero at the precision it will be rendered with?
+ *
+ * The test is on the rendered form, not on the raw number, because that is the
+ * only thing a reader can see: at two decimals `0` and `0,000004` are the same
+ * `0,00%`, and a rule that dashed one while printing the other would draw a
+ * distinction the column cannot show.
+ */
+export function roundsToZeroAt(value: number, decimals: number): boolean {
+  const factor = Math.pow(10, Math.max(0, Math.min(12, Math.trunc(decimals))))
+  // `Math.round(-0.4)` is `-0`, and `-0 === 0`, so a small negative is caught.
+  return Math.round(value * factor) === 0
+}
+
+/**
+ * R13.R3C.4 — a WEEKLY CHANGE percentage, with a no-movement dash.
+ *
+ * A weekly-changes table lists every hierarchy row in published order, and most
+ * of them do not move in a given week. Rendered as `0,00%` those rows are a
+ * column of identical noise that buries the handful that did move; rendered as
+ * `-` they read as "nothing here", which is exactly what they are.
+ *
+ * The dash is driven by `roundsToZeroAt`, so it covers both a true zero and a
+ * figure too small to show at this precision — the two are indistinguishable on
+ * screen, and printing one as a number and the other as a dash would claim a
+ * difference the reader cannot verify. The underlying amount is untouched and
+ * still rendered in the row's own value column.
+ *
+ * Unavailable keeps the em dash `formatRatioPct` already returns, so "did not
+ * move" and "could not be compared" stay two visibly different marks.
+ *
+ * NOT for a headline rate: a weekly return of `0,00%` is a real answer to a
+ * question the reader asked, so the hero keeps `formatRatioPct`.
+ */
+export function formatChangePct(ratio: number | null | undefined, decimals = 2): string {
+  if (ratio === null || ratio === undefined || !Number.isFinite(ratio)) return '—'
+  if (roundsToZeroAt(ratio * 100, decimals)) return '-'
   return formatPercent(ratio * 100, decimals)
 }
 

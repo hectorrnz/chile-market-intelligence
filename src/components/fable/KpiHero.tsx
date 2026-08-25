@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import { GlassSurface } from './GlassSurface'
 import { Sparkline, type SparklineTone } from './Sparkline'
 import { ChangeIndicator } from './ChangeIndicator'
@@ -34,6 +35,15 @@ interface KpiHeroProps {
   countUp?: boolean
   /** Divider-separated mini stats under the hero value (e.g. MTD/YTD/Since inception). */
   minis?: KpiHeroMini[]
+  /**
+   * R13.R3C.4 — render WITHOUT the card surface, as a plain block.
+   *
+   * For a hero that is one half of a larger card rather than a card of its own:
+   * a nested `GlassSurface` would stack two blurs, which the material rules
+   * forbid outright. Everything else about the hero is identical, so the two
+   * placements can never drift into two different heroes.
+   */
+  bare?: boolean
   className?: string
 }
 
@@ -45,7 +55,7 @@ interface KpiHeroProps {
 export function KpiHero({
   label, value, formatValue, changeValue, changeLabel,
   sparklineData, sparklineTone = 'neutral', sparklineSummary,
-  source, asOf, privacyMasked = false, countUp = false, minis, className = '',
+  source, asOf, privacyMasked = false, countUp = false, minis, bare = false, className = '',
 }: KpiHeroProps) {
   const { t } = useLang()
   const numeric = typeof value === 'number' ? value : null
@@ -60,8 +70,10 @@ export function KpiHero({
           ? formatValue(countUp ? animated : numeric!)
           : String(countUp ? animated : numeric)
 
+  const Surface = bare ? BareSurface : GlassSurface
+
   return (
-    <GlassSurface variant="card" className={`p-5 flex flex-col gap-2 ${className}`}>
+    <Surface variant="card" className={`${bare ? '' : 'p-5 '}flex flex-col gap-2 ${className}`}>
       <span className="ui-label text-muted-fg">{label}</span>
       <div className="flex items-baseline gap-3 flex-wrap">
         <PrivacyValue masked={privacyMasked}>
@@ -90,6 +102,16 @@ export function KpiHero({
           {asOf ? ` ${t.common.asOf} ${asOf}` : ''}
         </span>
       )}
-    </GlassSurface>
+    </Surface>
   )
+}
+
+/**
+ * The `bare` stand-in for `GlassSurface`: same call signature, no material.
+ * Declared at module scope, never inside render — the project's React-Compiler
+ * rule, and it also keeps the element identity stable across re-renders so the
+ * count-up animation is not restarted by a remount.
+ */
+function BareSurface({ className, children }: { variant?: string; className?: string; children: ReactNode }) {
+  return <div className={className}>{children}</div>
 }
