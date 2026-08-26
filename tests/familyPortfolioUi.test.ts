@@ -59,6 +59,25 @@ const ALLOC_PANEL = 'src/components/familyPortfolio/AllocationPanel.tsx'
 const ALLOC_SETTINGS = 'src/components/familyPortfolio/AllocationSettingsDialog.tsx'
 const EVO_CHART = 'src/components/familyPortfolio/PortfolioEvolutionChart.tsx'
 
+// R13.R4A additions — Alternatives became three views over one publication, so
+// the sub-module's own shell, shared state and presentation components join
+// CLIENT_FILES and inherit the module's privacy, hex-colour and
+// no-toLocaleString hygiene from the day they ship. `EventTimeline` was retired
+// in the same pass: its month-banded list is superseded by the Cash Flows
+// ledger table, and its chip/label/legend helpers moved to the chrome module,
+// which takes its place here.
+const ALT_LAYOUT = 'src/app/family-portfolio/alternatives/layout.tsx'
+const ALT_HOLDINGS = 'src/app/family-portfolio/alternatives/holdings/page.tsx'
+const ALT_CASHFLOWS = 'src/app/family-portfolio/alternatives/cash-flows/page.tsx'
+const ALT_PROVIDER = 'src/components/familyPortfolio/AlternativesProvider.tsx'
+const ALT_SUBNAV = 'src/components/familyPortfolio/AlternativesSubnav.tsx'
+const ALT_FILTERS = 'src/components/familyPortfolio/AlternativesFilters.tsx'
+const ALT_CHROME = 'src/components/familyPortfolio/AlternativesEventChrome.tsx'
+const ALT_CHART = 'src/components/familyPortfolio/AlternativesCashFlowChart.tsx'
+// R13.R4A.1 — the two drill-down dialogs join the module's client surface, so
+// they inherit its privacy, hex-colour and no-inline-formatting hygiene.
+const ALT_DRILLDOWNS = 'src/components/familyPortfolio/AlternativesDrilldowns.tsx'
+
 /** Every CLIENT file the module ships — pages, components, the fetch helper. */
 const CLIENT_FILES = [
   LAYOUT, OVERVIEW_PAGE, PORTFOLIO_PAGE, WEEKLY_PAGE, ALTERNATIVES_PAGE,
@@ -66,6 +85,8 @@ const CLIENT_FILES = [
   MASKED_AMOUNT, DONUT, FRESHNESS,
   RECON_STATUS, CONTRIB_CHART, CONTRIB_MODAL, PERIOD_CARD,
   STRIP, SNAPSHOT_CARD, ALLOC_PANEL, ALLOC_SETTINGS, EVO_CHART,
+  ALT_LAYOUT, ALT_HOLDINGS, ALT_CASHFLOWS,
+  ALT_PROVIDER, ALT_SUBNAV, ALT_FILTERS, ALT_CHROME, ALT_CHART, ALT_DRILLDOWNS,
 ]
 
 /** Strips comments so hygiene regexes cannot be tripped by prose. */
@@ -103,14 +124,18 @@ describe('R13.6 · module shell', () => {
   test('every member surface is now a real implementation behind the member gate', () => {
     // R13.7 graduated the Overview; R13.8 graduated Weekly Changes; R13.9
     // graduated Alternatives — no placeholder page remains.
-    const alternatives = read(ALTERNATIVES_PAGE)
-    assert.match(alternatives, /fetchFamilyPortfolioAlternatives/,
-      'Alternatives is now the real Stage-9 page')
-    assert.match(alternatives, /MemberGate/)
-    assert.ok(!alternatives.includes('kind="unavailable"'),
-      'the Stage-9 placeholder state is gone')
-    assert.ok(!/fetchFamilyPortfolioSnapshot|HierarchicalTable/.test(alternatives),
-      'Alternatives renders its own model, never the snapshot table')
+    // R13.R4A — Alternatives is three views over one publication, so the fetch
+    // and the member gate live in its own sub-module shell, once, rather than
+    // being repeated in each view.
+    assert.match(read(ALT_PROVIDER), /fetchFamilyPortfolioAlternatives/,
+      'Alternatives fetches its real read model')
+    assert.match(read(ALT_LAYOUT), /MemberGate/)
+    for (const rel of [ALTERNATIVES_PAGE, ALT_HOLDINGS, ALT_CASHFLOWS, ALT_LAYOUT]) {
+      const src = read(rel)
+      assert.ok(!src.includes('kind="unavailable"'), `${rel}: the placeholder state is gone`)
+      assert.ok(!/fetchFamilyPortfolioSnapshot|HierarchicalTable/.test(src),
+        `${rel}: Alternatives renders its own model, never the snapshot table`)
+    }
     const overview = read(OVERVIEW_PAGE)
     // R13.R2 § 10 — the Summary serves the caller's own personal portfolio as
     // well as Main, so the scope is DERIVED from the entitled list rather than

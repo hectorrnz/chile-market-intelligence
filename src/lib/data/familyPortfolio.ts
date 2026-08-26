@@ -517,6 +517,10 @@ import type {
   AlternativesEventRead,
   AlternativesGroup,
   AlternativesHoldingRead,
+  CurrencyAnnualCashFlow,
+  CurrencyCashFlow,
+  CurrencyPosition,
+  TimelineCoverage,
 } from '@/lib/familyPortfolio/alternativesView'
 
 export type AlternativesViewState = 'ok' | 'empty' | 'no_publication'
@@ -536,6 +540,16 @@ export interface FamilyPortfolioAlternativesResponse {
   /** Per-(category, currency) groups — NEVER a cross-currency total. */
   groups?: AlternativesGroup[]
   eventSummary?: { total: number; byType: Record<string, number>; unclassified: number }
+  /**
+   * R13.R4A — the Dashboard's summaries, derived server-side by the same pure
+   * functions the pages re-run when a filter narrows the view. Each is keyed by
+   * currency and none blends two of them.
+   */
+  positions?: CurrencyPosition[]
+  cashFlows?: CurrencyCashFlow[]
+  annualCashFlows?: CurrencyAnnualCashFlow[]
+  /** How much of the book the event timeline covers — a disclosure, not a metric. */
+  coverage?: TimelineCoverage
 }
 
 export function fetchFamilyPortfolioAlternatives(): Promise<

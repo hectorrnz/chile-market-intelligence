@@ -41,7 +41,12 @@ const PORTFOLIO_TAB = [
   'src/app/family-portfolio/page.tsx',
   'src/app/family-portfolio/portfolio/page.tsx',
   'src/app/family-portfolio/weekly-changes/page.tsx',
+  // R13.R4A split Alternatives into three views. § C says to treat the tab as
+  // ONE surface, so all three join the band conventions — a note packed
+  // differently on one of them is exactly the drift this section exists to stop.
   'src/app/family-portfolio/alternatives/page.tsx',
+  'src/app/family-portfolio/alternatives/holdings/page.tsx',
+  'src/app/family-portfolio/alternatives/cash-flows/page.tsx',
 ] as const
 
 // ═══════════════════════════════════════════════════════════════════════════

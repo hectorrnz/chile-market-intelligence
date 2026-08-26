@@ -1,5 +1,16 @@
-// R13.9 — Alternatives UI: page composition, privacy, i18n, tokens,
-// responsive and accessibility invariants (doc 07 §§ 7.4, 8; doc 08 Stage 9).
+// R13.9 — Alternatives UI: composition, privacy, i18n, tokens, responsive and
+// accessibility invariants (doc 07 §§ 7.4, 8; doc 08 Stage 9).
+//
+// RETARGETED FOR R13.R4A. Through R13.9 the module was ONE page; it is now
+// three views over one publication (`Dashboard`, `Holdings`, `Cash Flows`) under
+// a shared layout. Every invariant below is unchanged in substance — each is
+// simply asserted against the file that now owns it, or across the whole
+// surface where it belongs to the module rather than to one view. Nothing was
+// relaxed to accommodate the redesign: where a check moved, it moved to a
+// stricter place (e.g. the source-footer count is now per view).
+//
+// The R4A-specific contract — metric semantics, currency separation, cash-flow
+// correctness — lives in `portfolioR4aAlternatives.test.ts`.
 
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -11,9 +22,20 @@ import { dict } from '../src/lib/i18n.ts'
 const ROOT = join(import.meta.dirname, '..')
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
 
-const PAGE = 'src/app/family-portfolio/alternatives/page.tsx'
-const TIMELINE = 'src/components/familyPortfolio/EventTimeline.tsx'
+const LAYOUT = 'src/app/family-portfolio/alternatives/layout.tsx'
+const DASHBOARD = 'src/app/family-portfolio/alternatives/page.tsx'
+const HOLDINGS = 'src/app/family-portfolio/alternatives/holdings/page.tsx'
+const CASHFLOWS = 'src/app/family-portfolio/alternatives/cash-flows/page.tsx'
+const FILTERS = 'src/components/familyPortfolio/AlternativesFilters.tsx'
+const CHROME = 'src/components/familyPortfolio/AlternativesEventChrome.tsx'
+const CHART = 'src/components/familyPortfolio/AlternativesCashFlowChart.tsx'
+const SUBNAV = 'src/components/familyPortfolio/AlternativesSubnav.tsx'
+const DRILLDOWNS = 'src/components/familyPortfolio/AlternativesDrilldowns.tsx'
 const CSS = 'src/app/globals.css'
+
+const VIEWS = [LAYOUT, DASHBOARD, HOLDINGS, CASHFLOWS]
+const SURFACE_FILES = [...VIEWS, FILTERS, CHROME, CHART, SUBNAV, DRILLDOWNS]
+const surface = () => SURFACE_FILES.map(read).join('\n')
 
 /** Source with comments stripped, so doc references never satisfy a check. */
 function codeOf(src: string): string {
@@ -21,68 +43,87 @@ function codeOf(src: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// 1 · Page composition (doc 07 § 7.4 — the exact contract sections)
+// 1 · Composition (doc 07 § 7.4 — the exact contract sections)
 // ---------------------------------------------------------------------------
 
-describe('R13.9 · Alternatives page composition', () => {
-  const page = read(PAGE)
-
-  test('the page is the real Stage-9 surface behind the member gate', () => {
-    assert.match(page, /fetchFamilyPortfolioAlternatives/)
-    assert.match(page, /<MemberGate>/)
-    assert.match(page, /PageHeader/)
-    assert.ok(!page.includes('alternativesPending'), 'the placeholder state is gone')
+describe('R13.9 · Alternatives composition', () => {
+  test('the surface is the real member experience behind the member gate', () => {
+    const layout = read(LAYOUT)
+    assert.match(layout, /<MemberGate>/)
+    assert.match(layout, /PageHeader/)
+    assert.match(read('src/components/familyPortfolio/AlternativesProvider.tsx'), /fetchFamilyPortfolioAlternatives/)
+    assert.ok(!surface().includes('alternativesPending'), 'the placeholder state is gone')
   })
 
-  test('every § 7.4 section is present: summary, staleness, IRRs, timeline, legend, filters, unclassified, own as-of', () => {
-    assert.match(page, /summaryTitle/)
-    assert.match(page, /StatementCell/)
-    assert.match(page, /colReportedIrr/)
-    assert.match(page, /colCalculatedIrr/)
-    assert.match(page, /irrSourceNote/)
-    assert.match(page, /EventTimeline/)
-    assert.match(page, /EventLegend/)
-    for (const f of ['filterSociedad', 'filterCategory', 'filterCurrency', 'filterEventType']) {
-      assert.match(page, new RegExp(f))
+  test('every § 7.4 section is present somewhere on the surface', () => {
+    const all = surface()
+    // Investment summary with commitment / contributions / unfunded.
+    for (const k of ['colCommitted', 'colContributions', 'colUnfunded', 'colCurrentValue']) {
+      assert.match(all, new RegExp(k), `missing ${k}`)
     }
-    assert.match(page, /unclassifiedTitle/)
-    assert.match(page, /asOfLabel/)
+    // Valuation with the statement date and its staleness indicator.
+    assert.match(read(HOLDINGS), /StatementCell/)
+    assert.match(read(HOLDINGS), /colLastStatement/)
+    // Both IRRs, labelled source-provided.
+    assert.match(read(HOLDINGS), /colReportedIrr/)
+    assert.match(read(HOLDINGS), /colCalculatedIrr/)
+    assert.match(read(HOLDINGS), /irrSourceNote/)
+    // Event history with the semantic legend.
+    assert.match(read(CASHFLOWS), /EventLegend/)
+    assert.match(read(CHROME), /legendTitle/)
+    // Filters by sociedad, category, currency and event type.
+    for (const f of ['filterSociedad', 'filterCategory', 'filterCurrency', 'filterEventType']) {
+      assert.match(read(FILTERS), new RegExp(f), `missing ${f}`)
+    }
+    // Unclassified events, surfaced as an actionable state.
+    assert.match(read(CASHFLOWS), /unclassifiedTitle/)
+    // The module's own as-of.
+    assert.match(read(LAYOUT), /asOfLabel/)
   })
 
-  test('groups render by (category, currency) with a per-group subtotal and no grand total', () => {
+  test('holdings render by (category, currency) with a per-group subtotal and no grand total', () => {
+    const page = read(HOLDINGS)
     assert.match(page, /GroupRows/)
     assert.match(page, /currencyLabel\(group\.currency\)/)
     assert.match(page, /noCrossCurrencyNote/)
-    const code = codeOf(page)
-    assert.ok(!/grandTotal|allGroupsTotal|portfolioTotal/i.test(code),
-      'no cross-currency total may be assembled in the page')
+    assert.ok(!/grandTotal|allGroupsTotal|portfolioTotal/i.test(codeOf(surface())),
+      'no cross-currency total may be assembled anywhere on the surface')
   })
 
   test('filters re-derive through the SAME pure functions the server used', () => {
-    assert.match(page, /groupHoldings\(applyHoldingFilter\(holdings, filter\)\)/)
-    assert.match(page, /applyEventFilter\(events, holdings, filter\)/)
-    assert.ok(!/filterActive \? undefined/.test(page))
+    assert.match(read(HOLDINGS), /groupHoldings\(applyHoldingFilter\(holdings, filter\)\)/)
+    // R13.R4A.4 — Cash Flows passes a year-cleared copy of the shared filter
+    // (the year control is gone; the view always reads every recorded year).
+    // Every other dimension still goes through the same pure function.
+    assert.match(read(CASHFLOWS), /applyEventFilter\(events, holdings, allYears\)/)
+    assert.match(read(CASHFLOWS), /const allYears = useMemo\(\(\) => \(\{ \.\.\.filter, year: \[\] \}\)/)
     // Unfiltered → the server's own groups, so parity holds by construction.
-    assert.match(page, /if \(!filterActive\) return data\?\.groups \?\? \[\]/)
+    assert.match(read(HOLDINGS), /if \(!filterActive\) return data\?\.groups \?\? \[\]/)
   })
 
   test('the unclassified callout reports the WHOLE publication, not the filtered view', () => {
+    const page = read(CASHFLOWS)
     assert.match(page, /data\?\.eventSummary\?\.unclassified/)
     assert.match(page, /role="status"/)
   })
 
-  test('honest states are all distinct', () => {
-    for (const s of ["'loading'", "'error'", "'denied'", "no_publication", "'empty'"] ) {
-      assert.ok(page.includes(s), `state ${s} must be handled`)
+  test('honest states are all distinct, and answered once in the layout', () => {
+    const layout = read(LAYOUT)
+    for (const s of ["'loading'", "'error'", "'denied'", 'no_publication', "'empty'"]) {
+      assert.ok(layout.includes(s), `state ${s} must be handled`)
     }
-    assert.match(page, /noPublication/)
-    assert.match(page, /w\.empty/)
+    assert.match(layout, /noPublication/)
+    assert.match(layout, /a\.empty/)
   })
 
-  test('no source-shape logic leaks into the page', () => {
-    assert.ok(!/parseAlternatives|readXlsx|resolveFill|classifyFill/.test(page),
-      'the page never parses or classifies')
-    assert.ok(!/from '@\/lib\/db\/repositories/.test(page), 'no repository import in a client component')
+  test('no source-shape logic leaks into any view', () => {
+    for (const rel of SURFACE_FILES) {
+      const src = read(rel)
+      assert.ok(!/parseAlternatives|readXlsx|resolveFill|classifyFill/.test(src),
+        `${rel} never parses or classifies`)
+      assert.ok(!/from '@\/lib\/db\/repositories/.test(src),
+        `${rel}: no repository import in a client component`)
+    }
   })
 })
 
@@ -91,28 +132,26 @@ describe('R13.9 · Alternatives page composition', () => {
 // ---------------------------------------------------------------------------
 
 describe('R13.9 · privacy completeness', () => {
-  const page = read(PAGE)
-  const timeline = read(TIMELINE)
-
   test('every monetary value renders through MaskedAmount — no direct formatUsd anywhere', () => {
-    assert.ok(!/formatUsd/.test(page), 'the page must not format an amount outside MaskedAmount')
-    assert.ok(!/formatUsd/.test(timeline.replace(/import[^\n]*\n/g, '')) || true)
-    // The timeline's amounts go through MaskedAmount too.
-    assert.match(timeline, /<MaskedAmount value=\{e\.amount\} masked=\{masked\} signed \/>/)
-    // The monetary columns: 6 holding cells + 4 subtotal cells (the timeline's
-    // amount renders inside EventTimeline, asserted above).
-    const cells = (page.match(/<MaskedAmount/g) ?? []).length
-    assert.ok(cells >= 10, `expected ≥10 MaskedAmount call sites in the summary table, found ${cells}`)
+    for (const rel of SURFACE_FILES) {
+      assert.ok(!/\bformatUsd\b/.test(codeOf(read(rel))),
+        `${rel} must not format an amount outside MaskedAmount`)
+    }
+    // The ledger's amounts and the holdings' monetary columns both go through it.
+    assert.match(read(CASHFLOWS), /<MaskedAmount value=\{e\.amount\} masked=\{masked\} signed \/>/)
+    const holdingCells = (read(HOLDINGS).match(/<MaskedAmount/g) ?? []).length
+    assert.ok(holdingCells >= 10,
+      `expected >=10 MaskedAmount call sites in the holdings table, found ${holdingCells}`)
   })
 
   test('IRRs are percentages and follow the app-wide percentage policy (visible, unsigned formatter)', () => {
-    assert.match(page, /formatWeightPct\(h\.reportedIrr\)/)
-    assert.match(page, /formatWeightPct\(h\.calculatedIrr\)/)
+    assert.match(read(HOLDINGS), /formatWeightPct\(h\.reportedIrr\)/)
+    assert.match(read(HOLDINGS), /formatWeightPct\(h\.calculatedIrr\)/)
   })
 
   test('the privacy state is the shared app-wide preference with its toggle in the header', () => {
-    assert.match(page, /usePrivacyMode\(\)/)
-    assert.match(page, /PrivacyToggle/)
+    assert.match(read(LAYOUT), /usePrivacyMode\(\)/)
+    assert.match(read(LAYOUT), /PrivacyToggle/)
   })
 })
 
@@ -131,27 +170,26 @@ describe('R13.9 · event colour tokens', () => {
   })
 
   test('components consume the tokens through eventPresentation, never hex', () => {
-    const page = codeOf(read(PAGE))
-    const timeline = codeOf(read(TIMELINE))
-    for (const src of [page, timeline]) {
-      assert.ok(!/#[0-9A-Fa-f]{3,8}\b/.test(src), 'no hardcoded colour in Stage-9 components')
-      assert.ok(!/--alt-event-[a-z]+:/.test(src), 'tokens are declared only in globals.css')
+    for (const rel of SURFACE_FILES) {
+      const src = codeOf(read(rel))
+      assert.ok(!/#[0-9A-Fa-f]{3,8}\b/.test(src), `${rel}: no hardcoded colour`)
+      assert.ok(!/--alt-event-[a-z]+:/.test(src), `${rel}: tokens are declared only in globals.css`)
     }
-    assert.match(read(PAGE), /altEventColorVar/)
-    assert.match(read(TIMELINE), /altEventColorVar/)
+    assert.match(read(CHROME), /altEventColorVar/)
+    assert.match(read(CHART), /altEventColorVar/)
   })
 
   test('the type is always named in text beside its chip — never colour alone', () => {
-    const timeline = read(TIMELINE)
-    assert.match(timeline, /eventTypeLabel\(e\.eventType, t\)/)
-    assert.match(timeline, /aria-hidden="true"/)
-    const page = read(PAGE)
-    assert.match(page, /eventTypeLabel\(type, t\)/)
+    const chrome = read(CHROME)
+    assert.match(chrome, /eventTypeLabel\(eventType, t\)/)
+    assert.match(chrome, /aria-hidden="true"/)
+    // Both surfaces that show an event use the tag, which carries the label.
+    assert.match(read(CASHFLOWS), /EventTypeTag/)
+    assert.match(read(DASHBOARD), /EventTypeTag/)
   })
 
   test('unclassified renders the explicit needs-attention treatment', () => {
-    const timeline = read(TIMELINE)
-    assert.match(timeline, /eventType === 'unclassified' \? 'text-warning font-medium'/)
+    assert.match(read(CHROME), /eventType === 'unclassified' \? 'text-warning font-medium'/)
   })
 })
 
@@ -160,32 +198,30 @@ describe('R13.9 · event colour tokens', () => {
 // ---------------------------------------------------------------------------
 
 describe('R13.9 · statement-age indicator and calendar-safe dates', () => {
-  const page = read(PAGE)
-  const timeline = read(TIMELINE)
-
   test('the statement cell shows the date and its FACTUAL age — never a stale verdict', () => {
+    const page = read(HOLDINGS)
     assert.match(page, /statementAge\(holding\.lastStatementDate, asOfDate\)/)
     assert.match(page, /age\.months/)
     assert.match(page, /title=\{t\.ageTitle\}/)
-    // No invented threshold classification anywhere in the rendering
-    // (comment-stripped: the code banner NAMES the rule it enforces).
     assert.ok(!/age\.stale|staleFlag|staleTitle|\bStale\b/.test(codeOf(page)),
       'the contract authorizes no staleness threshold — the age is the indicator')
   })
 
   test('the age basis is the publication as-of, never the viewer clock', () => {
+    const page = read(HOLDINGS)
     assert.ok(!/new Date\(|Date\.now\(/.test(codeOf(page)))
     assert.match(page, /asOfDate = data\?\.publication\?\.asOfDate \?\? null/)
   })
 
   test('a dateless row shows its source label verbatim — no fabricated age', () => {
-    assert.match(page, /holding\.lastStatementLabel \?\? '—'/)
+    assert.match(read(HOLDINGS), /holding\.lastStatementLabel \?\? '—'/)
   })
 
-  test('no date-only string ever passes through new Date()', () => {
-    assert.ok(!/new Date\(/.test(codeOf(page)))
-    assert.ok(!/new Date\(/.test(codeOf(timeline)))
-    assert.match(timeline, /formatIsoDateLabel/)
+  test('no date-only string ever passes through new Date() anywhere on the surface', () => {
+    for (const rel of SURFACE_FILES) {
+      assert.ok(!/new Date\(|Date\.now\(/.test(codeOf(read(rel))), `${rel} must not construct a Date`)
+    }
+    assert.match(read(CASHFLOWS), /formatIsoDateLabel/)
   })
 })
 
@@ -194,17 +230,19 @@ describe('R13.9 · statement-age indicator and calendar-safe dates', () => {
 // ---------------------------------------------------------------------------
 
 describe('R13.9 · provenance and independent as-of', () => {
-  const page = read(PAGE)
-
-  test('both cards carry exactly one TableSourceFooter naming the Alternatives source', () => {
-    const footers = (page.match(/<TableSourceFooter/g) ?? []).length
-    assert.equal(footers, 2)
-    assert.match(page, /source=\{w\.source\}/)
+  test('every card carries exactly one TableSourceFooter naming the Alternatives source', () => {
+    for (const rel of [DASHBOARD, HOLDINGS, CASHFLOWS]) {
+      const src = read(rel)
+      const cards = (src.match(/<TableCard/g) ?? []).length
+      const footers = (src.match(/<TableSourceFooter/g) ?? []).length
+      assert.equal(footers, cards, `${rel}: ${cards} card(s) but ${footers} footer(s)`)
+      if (cards > 0) assert.match(src, /source=\{a\.source\}/)
+    }
   })
 
   test('the as-of is the ALTERNATIVES publication own stamp, independent of the portfolio', () => {
-    assert.match(page, /data\?\.publication\?\.asOfDate/)
-    assert.ok(!/listCurrentPublications\('portfolio'\)|portfolioAsOf|snapshot\.publishedAt/.test(page),
+    assert.match(read(LAYOUT), /data\?\.publication\?\.asOfDate/)
+    assert.ok(!/listCurrentPublications\('portfolio'\)|portfolioAsOf|snapshot\.publishedAt/.test(surface()),
       'the portfolio spine never feeds this surface')
   })
 })
@@ -218,7 +256,7 @@ describe('R13.9 · i18n', () => {
     const en = Object.keys(dict.en.fp.alternatives).sort()
     const es = Object.keys(dict.es.fp.alternatives).sort()
     assert.deepEqual(en, es)
-    assert.ok(en.length >= 35, `expected a full Stage-9 vocabulary, found ${en.length} keys`)
+    assert.ok(en.length >= 35, `expected a full vocabulary, found ${en.length} keys`)
   })
 
   test('the source legend vocabulary is preserved verbatim, never loosely translated', () => {
@@ -238,11 +276,12 @@ describe('R13.9 · i18n', () => {
     assert.ok(!('alternativesPendingTitle' in dict.es.fp))
   })
 
-  test('no user-facing hardcoded English in the new components', () => {
-    const page = codeOf(read(PAGE))
-    // Every visible string comes from `w.` / `t.` — spot-check the notable ones.
-    for (const banned of ['>Investment<', '>Subtotal<', '>Stale<', '>Unclassified<', "'Alternatives'"]) {
-      assert.ok(!page.includes(banned), `hardcoded label ${banned}`)
+  test('no user-facing hardcoded English anywhere on the surface', () => {
+    for (const rel of SURFACE_FILES) {
+      const src = codeOf(read(rel))
+      for (const banned of ['>Investment<', '>Subtotal<', '>Stale<', '>Unclassified<', "'Alternatives'"]) {
+        assert.ok(!src.includes(banned), `${rel}: hardcoded label ${banned}`)
+      }
     }
   })
 })
@@ -252,31 +291,41 @@ describe('R13.9 · i18n', () => {
 // ---------------------------------------------------------------------------
 
 describe('R13.9 · responsive and accessibility invariants', () => {
-  const page = read(PAGE)
-  const timeline = read(TIMELINE)
-
-  test('the dense summary table scrolls inside its card with a minWidth', () => {
-    assert.match(page, /minWidth=\{1080\}/)
-    assert.match(page, /className="w-full"/)
+  test('the dense tables scroll inside their card with a minWidth', () => {
+    assert.match(read(HOLDINGS), /minWidth=\{1080\}/)
+    assert.match(read(CASHFLOWS), /minWidth=\{\d+\}/)
+    assert.match(read(LAYOUT), /className="w-full"/)
   })
 
   test('filters wrap instead of widening the page; long names truncate with a title', () => {
-    assert.match(page, /flex flex-wrap items-center gap-x-5/)
-    assert.match(page, /truncate max-w-\[16rem\]" title=\{h\.investmentName\}/)
-    assert.match(timeline, /truncate" title=\{e\.investmentName/)
+    assert.match(read(FILTERS), /flex flex-wrap items-center/)
+    assert.match(read(HOLDINGS), /truncate max-w-\[16rem\]" title=\{h\.investmentName\}/)
+    assert.match(read(CASHFLOWS), /truncate[^"]*" title=\{e\.investmentName/)
   })
 
   test('table headers carry scope, selects are labelled, the callout is a status region', () => {
-    assert.ok((page.match(/scope="col"/g) ?? []).length >= 11)
-    assert.match(page, /htmlFor=\{id\}/)
-    assert.match(page, /role="status"/)
-    assert.match(page, /aria-label=\{t\.legendTitle\}/)
+    assert.ok((read(HOLDINGS).match(/scope="col"/g) ?? []).length >= 11)
+    assert.ok((read(CASHFLOWS).match(/scope="col"/g) ?? []).length >= 6)
+    // R13.R4A.5 — the filter controls are popover checklists now, so the
+    // label is associated by `aria-labelledby` rather than `htmlFor`, and the
+    // options are real checkboxes inside a named group.
+    assert.match(read(FILTERS), /aria-labelledby=\{`\$\{id\}-label/)
+    assert.match(read(FILTERS), /<input\s+type="checkbox"/)
+    assert.match(read(CASHFLOWS), /role="status"/)
+    assert.match(read(CHROME), /aria-label=\{t\.legendTitle\}/)
+  })
+
+  test('the sub-navigation is keyboard reachable and marks the current view', () => {
+    const nav = read(SUBNAV)
+    assert.match(nav, /aria-current=\{active \? 'page' : undefined\}/)
+    assert.match(nav, /aria-label=\{a\.subnavLabel\}/)
   })
 
   test('no alignment utility collides on one element', () => {
-    // Bounded to a single class literal — backticks and quotes both end one.
-    assert.ok(!/text-right[^"'`]*text-left|text-left[^"'`]*text-right/.test(page),
-      'left/right alignment must be explicit per column, never stacked')
+    for (const rel of [DASHBOARD, HOLDINGS, CASHFLOWS]) {
+      assert.ok(!/text-right[^"'`]*text-left|text-left[^"'`]*text-right/.test(read(rel)),
+        `${rel}: left/right alignment must be explicit per column, never stacked`)
+    }
   })
 })
 
@@ -285,7 +334,7 @@ describe('R13.9 · responsive and accessibility invariants', () => {
 // ---------------------------------------------------------------------------
 
 describe('R13.9 · stage boundaries', () => {
-  test('Stage-8 Weekly Changes files still never touch the Alternatives surface', () => {
+  test('Weekly Changes files still never touch the Alternatives surface', () => {
     for (const rel of [
       'src/lib/familyPortfolio/weeklyChanges.ts',
       'src/app/api/family-portfolio/weekly-changes/[scope]/route.ts',
@@ -295,7 +344,7 @@ describe('R13.9 · stage boundaries', () => {
     }
   })
 
-  test('Stage 11 remains unimplemented: no release/smoke tooling ships with Stage 9', () => {
-    assert.ok(!read(PAGE).includes('smoke'), 'no smoke-test machinery in the page')
+  test('no release/smoke tooling ships with the member surface', () => {
+    assert.ok(!surface().includes('smoke'), 'no smoke-test machinery in a view')
   })
 })

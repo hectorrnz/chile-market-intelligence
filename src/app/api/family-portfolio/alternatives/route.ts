@@ -34,8 +34,12 @@ import { guardPrivateApi } from '@/lib/auth/apiGuard'
 import { getFamilyPortfolioEntitlement } from '@/lib/portfolioAccess/getEntitlement'
 import { canReadScope } from '@/lib/portfolioAccess/entitlements'
 import {
+  annualCashFlows,
+  currencyCashFlows,
+  currencyPositions,
   groupHoldings,
   summarizeEvents,
+  timelineCoverage,
 } from '@/lib/familyPortfolio/alternativesView'
 import {
   listCurrentPublications,
@@ -105,6 +109,13 @@ export async function GET() {
       /** Per-(category, currency) groups — NEVER a cross-currency total. */
       groups: groupHoldings(holdings),
       eventSummary: summarizeEvents(events),
+      // R13.R4A — the Dashboard's summaries. Every one is keyed by currency
+      // and none blends two; `coverage` is the honest disclosure that the
+      // event timeline does not cover every holding.
+      positions: currencyPositions(holdings),
+      cashFlows: currencyCashFlows(events),
+      annualCashFlows: annualCashFlows(events),
+      coverage: timelineCoverage(holdings, events),
     },
     { headers: NO_STORE },
   )

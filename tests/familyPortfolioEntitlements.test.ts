@@ -912,23 +912,38 @@ describe('existing behaviour is unchanged', () => {
       }
     }
     walkPages(pageRoot)
+    // R13.R4A widened Alternatives from one page into THREE VIEWS over one
+    // publication, under their own nested layout. The enumeration stays exact —
+    // that is the point of it — so a genuinely new surface still has to be
+    // declared here deliberately rather than appearing unnoticed.
     assert.deepEqual(pages.sort(), [
       '/admin/page.tsx',
+      '/alternatives/cash-flows/page.tsx',
+      '/alternatives/holdings/page.tsx',
+      '/alternatives/layout.tsx',
       '/alternatives/page.tsx',
       '/layout.tsx',
       '/page.tsx',
       '/portfolio/page.tsx',
       '/weekly-changes/page.tsx',
-    ], 'the page tree must be exactly the Stage-6 shell — no early later-stage surface')
+    ], 'the page tree must be exactly the declared member surface — no early later-stage surface')
 
-    // R13.9 graduated Alternatives — the last member surface. Its page now
-    // renders the real Stage-9 experience through its own read model, never
-    // the snapshot table of another stage.
+    // R13.9 graduated Alternatives — the last member surface. It renders the
+    // real experience through its OWN read model, never the snapshot table of
+    // another stage. Since R13.R4A the single fetch lives in the sub-module
+    // provider that the nested layout mounts, so all three views share it.
     {
-      const src = read('src/app/family-portfolio/alternatives/page.tsx')
-      assert.match(src, /fetchFamilyPortfolioAlternatives/)
-      assert.ok(!/fetchFamilyPortfolioSnapshot|HierarchicalTable|Waterfall/.test(src),
-        'Alternatives must not render another stage\'s surface')
+      const provider = read('src/components/familyPortfolio/AlternativesProvider.tsx')
+      assert.match(provider, /fetchFamilyPortfolioAlternatives/)
+      for (const rel of [
+        'src/app/family-portfolio/alternatives/layout.tsx',
+        'src/app/family-portfolio/alternatives/page.tsx',
+        'src/app/family-portfolio/alternatives/holdings/page.tsx',
+        'src/app/family-portfolio/alternatives/cash-flows/page.tsx',
+      ]) {
+        assert.ok(!/fetchFamilyPortfolioSnapshot|HierarchicalTable|Waterfall/.test(read(rel)),
+          `${rel} must not render another stage's surface`)
+      }
     }
 
     const apiRoot = join(ROOT, 'src/app/api/family-portfolio')

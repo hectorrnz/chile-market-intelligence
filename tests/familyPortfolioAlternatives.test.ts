@@ -214,9 +214,15 @@ describe('R13.9 · statement age', () => {
     assert.deepEqual(Object.keys(result!), ['months'], 'the age carries ONLY the observation')
     const src = codeOf(read('src/lib/familyPortfolio/alternativesView.ts'))
     assert.ok(!/stale|fresh|aging/i.test(src), 'no normative freshness vocabulary in the model')
+    // R13.R4A — the surface is three views plus their shared chrome; the
+    // statement age is rendered by Holdings, but the prohibition covers all of
+    // them so a verdict cannot reappear on another view.
     for (const rel of [
+      'src/app/family-portfolio/alternatives/layout.tsx',
       'src/app/family-portfolio/alternatives/page.tsx',
-      'src/components/familyPortfolio/EventTimeline.tsx',
+      'src/app/family-portfolio/alternatives/holdings/page.tsx',
+      'src/app/family-portfolio/alternatives/cash-flows/page.tsx',
+      'src/components/familyPortfolio/AlternativesEventChrome.tsx',
     ]) {
       assert.ok(!/\bstale\b|staleFlag|STALE_MONTHS/i.test(codeOf(read(rel))),
         `${rel} must not render a staleness verdict`)
@@ -260,29 +266,29 @@ describe('R13.9 · filters', () => {
   })
 
   test('sociedad/category/currency narrow holdings; event type never does', () => {
-    assert.equal(applyHoldingFilter(HOLDINGS, { ...EMPTY_FILTER, sociedad: 'SOC-A' }).length, 2)
-    assert.equal(applyHoldingFilter(HOLDINGS, { ...EMPTY_FILTER, category: 'Real Assets' }).length, 2)
-    assert.equal(applyHoldingFilter(HOLDINGS, { ...EMPTY_FILTER, currency: 'euros' }).length, 1)
-    assert.equal(applyHoldingFilter(HOLDINGS, { ...EMPTY_FILTER, eventType: 'aporte' }).length, 4)
+    assert.equal(applyHoldingFilter(HOLDINGS, { ...EMPTY_FILTER, sociedad: ['SOC-A'] }).length, 2)
+    assert.equal(applyHoldingFilter(HOLDINGS, { ...EMPTY_FILTER, category: ['Real Assets'] }).length, 2)
+    assert.equal(applyHoldingFilter(HOLDINGS, { ...EMPTY_FILTER, currency: ['euros'] }).length, 1)
+    assert.equal(applyHoldingFilter(HOLDINGS, { ...EMPTY_FILTER, eventType: ['aporte'] }).length, 4)
   })
 
   test('event sociedad/category resolve through the holding link, never a name match', () => {
-    const bySoc = applyEventFilter(EVENTS, HOLDINGS, { ...EMPTY_FILTER, sociedad: 'SOC-A' })
+    const bySoc = applyEventFilter(EVENTS, HOLDINGS, { ...EMPTY_FILTER, sociedad: ['SOC-A'] })
     assert.deepEqual(bySoc.map((e) => e.holdingId), ['h1', 'h1', 'h3'])
-    const byCat = applyEventFilter(EVENTS, HOLDINGS, { ...EMPTY_FILTER, category: 'Real Assets' })
+    const byCat = applyEventFilter(EVENTS, HOLDINGS, { ...EMPTY_FILTER, category: ['Real Assets'] })
     assert.deepEqual(byCat.map((e) => e.holdingId).sort(), ['h3', 'h4'])
   })
 
   test('an event with no holding link is excluded by sociedad/category filters — never guessed in', () => {
-    const bySoc = applyEventFilter(EVENTS, HOLDINGS, { ...EMPTY_FILTER, sociedad: 'SOC-A' })
+    const bySoc = applyEventFilter(EVENTS, HOLDINGS, { ...EMPTY_FILTER, sociedad: ['SOC-A'] })
     assert.ok(!bySoc.some((e) => e.holdingId === null))
     // But it survives dimensions it carries itself.
-    const byType = applyEventFilter(EVENTS, HOLDINGS, { ...EMPTY_FILTER, eventType: 'dividendo' })
+    const byType = applyEventFilter(EVENTS, HOLDINGS, { ...EMPTY_FILTER, eventType: ['dividendo'] })
     assert.ok(byType.some((e) => e.holdingId === null))
   })
 
   test('filtering a grouped view re-derives subtotals over the SAME pure path', () => {
-    const narrowed = groupHoldings(applyHoldingFilter(HOLDINGS, { ...EMPTY_FILTER, sociedad: 'SOC-A' }))
+    const narrowed = groupHoldings(applyHoldingFilter(HOLDINGS, { ...EMPTY_FILTER, sociedad: ['SOC-A'] }))
     const pd = narrowed.find((g) => g.category === 'Private Debt')!
     assert.equal(pd.subtotal.currentValue.value, 65)
     assert.equal(pd.holdings.length, 1)
@@ -321,7 +327,7 @@ describe('R13.9 · event timeline', () => {
     const summary = summarizeEvents(EVENTS)
     assert.equal(summary.unclassified, 1)
     assert.equal(summary.byType['aporte'], 1)
-    const filtered = applyEventFilter(EVENTS, HOLDINGS, { ...EMPTY_FILTER, eventType: 'unclassified' })
+    const filtered = applyEventFilter(EVENTS, HOLDINGS, { ...EMPTY_FILTER, eventType: ['unclassified'] })
     assert.equal(filtered.length, 1)
     assert.equal(filtered[0].amount, -7)
   })
@@ -417,8 +423,12 @@ describe('R13.9 · SAN ROQUE release control', () => {
       'src/lib/familyPortfolio/alternativesView.ts',
       'src/lib/familyPortfolio/alternatives/eventPresentation.ts',
       'src/app/api/family-portfolio/alternatives/route.ts',
+      'src/app/family-portfolio/alternatives/layout.tsx',
       'src/app/family-portfolio/alternatives/page.tsx',
-      'src/components/familyPortfolio/EventTimeline.tsx',
+      'src/app/family-portfolio/alternatives/holdings/page.tsx',
+      'src/app/family-portfolio/alternatives/cash-flows/page.tsx',
+      'src/components/familyPortfolio/AlternativesEventChrome.tsx',
+      'src/components/familyPortfolio/AlternativesFilters.tsx',
       'src/lib/db/repositories/familyPortfolioReadRepository.ts',
       'src/lib/i18n.ts',
     ]) {

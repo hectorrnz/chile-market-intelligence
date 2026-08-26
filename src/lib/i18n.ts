@@ -98,7 +98,11 @@ export const dict = {
       alternatives: {
         title:            'Alternatives',
         source:           'Alternatives workbook',
-        asOfLabel:        'Alternatives as of',
+        // R13.R4A.3 — was "Alternatives as of", which sat beside a title
+        // reading "Alternatives" under a rail whose active pill reads
+        // "Alternatives": the word landed three times on one entry. The header
+        // keeps the date and drops the third repetition.
+        asOfLabel:        'As of',
         summaryTitle:     'Investment Summary',
         timelineTitle:    'Event History',
         legendTitle:      'Event legend',
@@ -114,10 +118,25 @@ export const dict = {
         filterCategory:   'Category',
         filterCurrency:   'Currency',
         filterEventType:  'Event type',
-        allSociedades:    'All sociedades',
-        allCategories:    'All categories',
-        allCurrencies:    'All currencies',
-        allEventTypes:    'All event types',
+        // R13.R4A.4 — the control's own label already names the field, so the
+        // option no longer repeats it: "Sociedad: All", not "Sociedad: All
+        // sociedades". Kept as five keys rather than one shared string because
+        // Spanish agrees with the noun the option stands for — Todas for the
+        // feminine fields, Todos for the masculine ones — and collapsing them
+        // would trade a grammatical error for a saved line.
+        allSociedades:    'All',
+        allCategories:    'All',
+        allCurrencies:    'All',
+        allEventTypes:    'All',
+        // R13.R4A.5 — the same five-key split, for the same reason, one step
+        // further: with the dimensions now multi-select the closed control has
+        // a third state to name, and "2 selected" agrees in Spanish with the
+        // noun it elides — seleccionadas for the feminine fields, seleccionados
+        // for the masculine ones. `{n}` is the count.
+        selectedSociedades:  '{n} selected',
+        selectedCategories:  '{n} selected',
+        selectedCurrencies:  '{n} selected',
+        selectedEventTypes:  '{n} selected',
         colInvestment:    'Investment',
         colSociedad:      'Sociedad',
         colCommitted:     'Committed',
@@ -135,12 +154,113 @@ export const dict = {
         noCrossCurrencyNote: 'Amounts are denominated in each group’s own currency. No cross-currency total exists — the source provides none.',
         holdingsWord:     'holdings',
         eventsWord:       'events',
-        monthsAbbrev:     'mo. since statement',
+        // R13.R4A — trimmed from "mo. since statement". Measured: the long form
+        // drove the Last-statement column to 236px and the whole 11-column
+        // table to 1747px, so it scrolled inside its card even at 1728. The
+        // meaning is not lost — the column is headed "Last statement", the
+        // figure follows that row's own date, and `ageTitle` states the full
+        // definition on hover.
+        monthsAbbrev:     'mo.',
         ageTitle:         'Whole months between the statement date and this publication’s as-of date',
         unclassifiedTitle: 'Unclassified events',
         unclassifiedBody: 'Cash flows whose source colour did not resolve to the legend. They appear in the timeline marked “Unclassified” and require administrator classification — a type is never assigned automatically.',
         noPublication:    'No Alternatives publication exists yet.',
         empty:            'The current Alternatives publication contains no holdings.',
+        // ── R13.R4A — the three-view LP module ──────────────────────────────
+        navDashboard:     'Dashboard',
+        navHoldings:      'Holdings',
+        navCashFlows:     'Cash Flows',
+        subnavLabel:      'Alternatives views',
+        // Dashboard — position block (master data)
+        positionTitle:    'Position',
+        kpiCurrentValue:  'Current value',
+        kpiCommitted:     'Commitments',
+        kpiContributed:   'Contributed capital',
+        kpiUnfunded:      'Unfunded commitment',
+        kpiInvestments:   'Investments',
+        kpiHoldings:      'Holdings',
+        kpiSociedades:    'Sociedades',
+        fundingLabel:     'Commitment drawn',
+        fundingUnavailable: 'Not enough source data to show how much of the commitment has been drawn.',
+        // Dashboard — cash-flow block (event timeline)
+        cashFlowTitle:    'Observed cash flow',
+        kpiCalls:         'Capital calls',
+        kpiDistributions: 'Distributions',
+        kpiNetFlow:       'Net cash flow',
+        kpiUnclassifiedAmount: 'Unclassified',
+        annualTitle:      'Cash flow by year',
+        recentTitle:      'Recent activity',
+        // R13.R4A.3 — the feed now sits beside the secondary currency cards,
+        // so it says outright that it is not scoped to them.
+        recentAllCurrencies: 'Every currency in the book, newest first.',
+        recentViewAll:    'View full activity history',
+        coverageLabel:    'Timeline coverage',
+        windowLabel:      'Recorded window',
+        // The disclosures that make the two blocks safe to read together.
+        basisNote:        'Position figures come from the workbook’s master-data columns, as of each investment’s own last statement. Cash-flow figures come from the workbook’s event timeline, which records movements only within the window shown. They answer different questions and are not two views of one number.',
+        noRatioNote:      'Contributed capital and distributions are drawn from those two different parts of the source and do not reconcile line for line, so NMI publishes no ratio built from both — no DPI, TVPI, RVPI or MOIC. IRR is shown only where the workbook itself provides it.',
+        coverageNote:     '{withEvents} of {total} holdings carry recorded events. The remaining {without} hold a real position with no movement inside the recorded window — an absence of record, never a zero.',
+        coverageCompleteNote: 'Every holding carries at least one recorded event.',
+        // Cash Flows view
+        cashFlowsTitle:   'Cash flow history',
+        colDate:          'Date',
+        colEvent:         'Event',
+        colAmount:        'Amount',
+        colCurrency:      'Currency',
+        cashFlowsEmpty:   'No cash-flow events match the selected filters.',
+        // Distinct from the line above, and deliberately so: the Dashboard
+        // applies no filters, so "nothing matches your filters" would name a
+        // cause that does not exist. This states the real one — the source
+        // records no movement in this currency inside its window.
+        noRecordedEvents: 'The source records no cash-flow events in this currency.',
+        signNote:         'Amounts carry the source’s own signs: capital calls are negative (cash out to the fund), distributions and dividends positive (cash in).',
+        // Holdings view
+        holdingsTitle:    'Holdings',
+        // ── R13.R4A.1 — period selection and the two drill-downs ────────────
+        // Every year offered is a year the source records; there is no
+        // generated range, so the selector can never resolve to an empty view.
+        filterYear:       'Year',
+        allYears:         'All',
+        selectedYears:    '{n} selected',
+        monthlyTitle:     'Monthly flow',
+        annualFlowTitle:  'Flow by year',
+        // Shown under a chart whose columns are clickable. Not a promise that
+        // every column opens — a column the source records nothing in does not.
+        chartClickHint:   'Select a column to see the movements behind it.',
+        noFlowInPeriod:   'The source records no cash flow in this period.',
+        noMovementRecorded: 'No movement recorded',
+        periodCallsLabel: 'Calls',
+        periodDistLabel:  'Distributions',
+        // Month drill-down
+        breakdownTitle:   'Movements',
+        breakdownEmpty:   'The source records no movements in this period.',
+        breakdownCount:   '{n} recorded movements',
+        // Commitment-drawn drill-down
+        undrawnTitle:     'Undrawn commitments',
+        undrawnOpen:      'View undrawn holdings',
+        undrawnEmpty:     'No holding in this currency reports an undrawn commitment.',
+        undrawnListedTotal: 'Total of the holdings listed',
+        undrawnCount:     '{n} of {total} holdings carry an undrawn commitment.',
+        // ── R13.R4A.2 — the three categories, each named for what it counts ──
+        // The population is partitioned on the source's own Unfunded column and
+        // the three counts always sum to the currency's holdings, so the reader
+        // can verify the split rather than infer it.
+        undrawnWithLabel:      'With undrawn commitment',
+        undrawnFullyDrawnLabel: 'Fully drawn',
+        undrawnUnreportedLabel: 'Unfunded not reported',
+        undrawnPopulationLabel: 'Holdings in this currency',
+        undrawnUnreportedNote: 'Neither drawn nor undrawn. The source reports no unfunded figure for these holdings, and NMI never reconstructs one from commitments minus contributions — doing so would have assigned two of them an unfunded amount of zero, which reads as fully drawn.',
+        undrawnSourceNote: 'Undrawn is the workbook’s own “Unfunded” column, read verbatim — never derived from commitments minus contributions.',
+        // The two figures on this surface come from DIFFERENT columns over
+        // different rows, which is exactly how the count below the bar came to
+        // be misread. Both surfaces now say which basis they are on.
+        drawnBasis:       'Calculated from {n} of {total} holdings',
+        drawnBasisTitle:  'The percentage is computed only from the holdings reporting BOTH a commitment and contributed capital. It is not a count of holdings that are drawn.',
+        // R13.R4A.3 — the same point, now with the two counts IN it. Stated
+        // abstractly it left the reader to work out why "calculated from 34 of
+        // 38" and "6 unfunded not reported" do not add up; with both figures
+        // named beside their own column the arithmetic stops being a puzzle.
+        drawnBasisNote:   'Two different columns. The percentage is calculated from {drawn} of {total} holdings — the ones reporting both a commitment and contributed capital. This breakdown reads the source’s own Unfunded column instead, which {unreported} of {total} holdings do not report. Different columns, so the holdings each one leaves out are different too.',
       },
       portfolio: {
         title:        'Holdings',
@@ -1719,7 +1839,7 @@ export const dict = {
       alternatives: {
         title:            'Alternativos',
         source:           'Planilla Alternatives',
-        asOfLabel:        'Alternativos al',
+        asOfLabel:        'Al',
         summaryTitle:     'Resumen de Inversiones',
         timelineTitle:    'Historial de Eventos',
         legendTitle:      'Leyenda de eventos',
@@ -1734,10 +1854,14 @@ export const dict = {
         filterCategory:   'Categoría',
         filterCurrency:   'Moneda',
         filterEventType:  'Tipo de evento',
-        allSociedades:    'Todas las sociedades',
-        allCategories:    'Todas las categorías',
-        allCurrencies:    'Todas las monedas',
-        allEventTypes:    'Todos los tipos',
+        allSociedades:    'Todas',
+        allCategories:    'Todas',
+        allCurrencies:    'Todas',
+        allEventTypes:    'Todos',
+        selectedSociedades:  '{n} seleccionadas',
+        selectedCategories:  '{n} seleccionadas',
+        selectedCurrencies:  '{n} seleccionadas',
+        selectedEventTypes:  '{n} seleccionados',
         colInvestment:    'Inversión',
         colSociedad:      'Sociedad',
         colCommitted:     'Comprometido',
@@ -1755,12 +1879,85 @@ export const dict = {
         noCrossCurrencyNote: 'Los montos están denominados en la moneda propia de cada grupo. No existe un total entre monedas — la fuente no provee ninguno.',
         holdingsWord:     'inversiones',
         eventsWord:       'eventos',
-        monthsAbbrev:     'm. desde el statement',
+        monthsAbbrev:     'm.',
         ageTitle:         'Meses completos entre la fecha del statement y la fecha de corte de esta publicación',
         unclassifiedTitle: 'Eventos sin clasificar',
         unclassifiedBody: 'Flujos cuyo color de origen no resolvió contra la leyenda. Aparecen en el historial marcados como «Sin clasificar» y requieren clasificación del administrador — nunca se les asigna un tipo automáticamente.',
         noPublication:    'Aún no existe una publicación de Alternativos.',
         empty:            'La publicación actual de Alternativos no contiene inversiones.',
+        // ── R13.R4A — el módulo LP de tres vistas ───────────────────────────
+        navDashboard:     'Panel',
+        navHoldings:      'Inversiones',
+        navCashFlows:     'Flujos de Caja',
+        subnavLabel:      'Vistas de Alternativos',
+        // Panel — bloque de posición (datos maestros)
+        positionTitle:    'Posición',
+        kpiCurrentValue:  'Valor actual',
+        kpiCommitted:     'Compromisos',
+        kpiContributed:   'Capital aportado',
+        kpiUnfunded:      'Compromiso por desembolsar',
+        kpiInvestments:   'Inversiones',
+        kpiHoldings:      'Posiciones',
+        kpiSociedades:    'Sociedades',
+        fundingLabel:     'Compromiso desembolsado',
+        fundingUnavailable: 'No hay datos de origen suficientes para mostrar qué parte del compromiso se ha desembolsado.',
+        // Panel — bloque de flujos (historial de eventos)
+        cashFlowTitle:    'Flujos de caja observados',
+        kpiCalls:         'Aportes de capital',
+        kpiDistributions: 'Distribuciones',
+        kpiNetFlow:       'Flujo de caja neto',
+        kpiUnclassifiedAmount: 'Sin clasificar',
+        annualTitle:      'Flujos de caja por año',
+        recentTitle:      'Actividad reciente',
+        recentAllCurrencies: 'Todas las monedas del libro, de la más reciente a la más antigua.',
+        recentViewAll:    'Ver historial completo de actividad',
+        coverageLabel:    'Cobertura del historial',
+        windowLabel:      'Ventana registrada',
+        // Las divulgaciones que hacen seguro leer ambos bloques juntos.
+        basisNote:        'Las cifras de posición provienen de las columnas de datos maestros de la planilla, a la fecha del último statement de cada inversión. Las cifras de flujo provienen del historial de eventos de la planilla, que registra movimientos solo dentro de la ventana mostrada. Responden preguntas distintas y no son dos vistas de un mismo número.',
+        noRatioNote:      'El capital aportado y las distribuciones provienen de esas dos partes distintas de la fuente y no cuadran línea por línea, por lo que NMI no publica ningún ratio construido con ambas — ni DPI, ni TVPI, ni RVPI, ni MOIC. La TIR se muestra solo donde la propia planilla la provee.',
+        coverageNote:     '{withEvents} de {total} inversiones tienen eventos registrados. Las {without} restantes mantienen una posición real sin movimientos dentro de la ventana registrada — ausencia de registro, nunca un cero.',
+        coverageCompleteNote: 'Todas las inversiones tienen al menos un evento registrado.',
+        // Vista de flujos de caja
+        cashFlowsTitle:   'Historial de flujos de caja',
+        colDate:          'Fecha',
+        colEvent:         'Evento',
+        colAmount:        'Monto',
+        colCurrency:      'Moneda',
+        cashFlowsEmpty:   'No hay flujos de caja para los filtros seleccionados.',
+        noRecordedEvents: 'La fuente no registra flujos de caja en esta moneda.',
+        signNote:         'Los montos conservan los signos propios de la fuente: los aportes de capital son negativos (salida de caja hacia el fondo) y las distribuciones y dividendos positivos (entrada de caja).',
+        // Vista de inversiones
+        holdingsTitle:    'Inversiones',
+        // ── R13.R4A.1 — selección de período y los dos detalles ─────────────
+        filterYear:       'Año',
+        allYears:         'Todos',
+        selectedYears:    '{n} seleccionados',
+        monthlyTitle:     'Flujo mensual',
+        annualFlowTitle:  'Flujo por año',
+        chartClickHint:   'Seleccione una columna para ver los movimientos que la componen.',
+        noFlowInPeriod:   'La fuente no registra flujos de caja en este período.',
+        noMovementRecorded: 'Sin movimientos registrados',
+        periodCallsLabel: 'Aportes',
+        periodDistLabel:  'Distribuciones',
+        breakdownTitle:   'Movimientos',
+        breakdownEmpty:   'La fuente no registra movimientos en este período.',
+        breakdownCount:   '{n} movimientos registrados',
+        undrawnTitle:     'Compromisos por desembolsar',
+        undrawnOpen:      'Ver posiciones por desembolsar',
+        undrawnEmpty:     'Ninguna posición en esta moneda informa compromiso por desembolsar.',
+        undrawnListedTotal: 'Total de las posiciones listadas',
+        undrawnCount:     '{n} de {total} posiciones tienen compromiso por desembolsar.',
+        // ── R13.R4A.2 — las tres categorías, cada una nombrada por lo que cuenta ──
+        undrawnWithLabel:      'Con compromiso por desembolsar',
+        undrawnFullyDrawnLabel: 'Íntegramente desembolsadas',
+        undrawnUnreportedLabel: 'Sin cifra por desembolsar informada',
+        undrawnPopulationLabel: 'Posiciones en esta moneda',
+        undrawnUnreportedNote: 'Ni desembolsadas ni por desembolsar. La fuente no informa cifra por desembolsar para estas posiciones, y NMI nunca la reconstruye a partir de comprometido menos contribuciones — hacerlo les habría asignado a dos de ellas un monto de cero, que se lee como íntegramente desembolsadas.',
+        undrawnSourceNote: 'Por desembolsar es la columna “Unfunded” de la propia planilla, leída textualmente — nunca derivada de comprometido menos contribuciones.',
+        drawnBasis:       'Calculado sobre {n} de {total} posiciones',
+        drawnBasisTitle:  'El porcentaje se calcula solo con las posiciones que informan TANTO el compromiso COMO el capital contribuido. No es un conteo de posiciones desembolsadas.',
+        drawnBasisNote:   'Son dos columnas distintas. El porcentaje se calcula sobre {drawn} de {total} posiciones — las que informan tanto el compromiso como el capital contribuido. Este desglose lee en cambio la columna “Unfunded” de la propia fuente, que {unreported} de {total} posiciones no informan. Son columnas distintas, por lo que las posiciones que cada una excluye también difieren.',
       },
       portfolio: {
         title:        'Posiciones',
