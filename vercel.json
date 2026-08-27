@@ -6,6 +6,10 @@
       "schedule": "30 12 * * 1-5"
     },
     {
+      "path": "/api/cron/ingest-fred-macro",
+      "schedule": "50 12 * * 1-5"
+    },
+    {
       "path": "/api/cron/check-ingestion-health",
       "schedule": "45 13 * * 1-5"
     },

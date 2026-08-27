@@ -5,6 +5,7 @@ import { useLang } from '@/components/providers/LangProvider'
 import { formatChartValue } from '@/lib/formatters'
 import { ChartTooltip } from '@/components/fable/chart/ChartTooltip'
 import { formatTemplate } from '@/components/fable/chart/chartA11y'
+import { calendarSpanDays, formatAxisDate, formatChartTooltipDate } from '@/lib/charts/dateAxis'
 
 interface DataPoint {
   date: string
@@ -27,12 +28,6 @@ interface LineChartProps {
   primaryLabel?: string
   /** Optional event markers rendered on the x-axis baseline. */
   markers?: ChartMarker[]
-}
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
-function parseDate(s: string): Date {
-  return new Date(s.length === 7 ? `${s}-01` : s)
 }
 
 export function LineChart({
@@ -110,23 +105,12 @@ export function LineChart({
     return v.toFixed(2)
   }
 
-  const first = parseDate(data[0].date)
-  const last = parseDate(data[data.length - 1].date)
-  const spanDays = (last.getTime() - first.getTime()) / 86_400_000
-
-  const formatX = (s: string) => {
-    const d = parseDate(s)
-    const mon = MONTHS[d.getMonth()]
-    const yy = String(d.getFullYear()).slice(2)
-    if (spanDays <= 31) return `${d.getDate()} ${mon}`
-    return `${mon} '${yy}`
-  }
-  const formatTooltipDate = (s: string) => {
-    const d = parseDate(s)
-    const mon = MONTHS[d.getMonth()]
-    if (spanDays <= 400) return `${d.getDate()} ${mon} ${d.getFullYear()}`
-    return `${mon} ${d.getFullYear()}`
-  }
+  // Calendar-date semantics, shared by the axis and the tooltip so they can
+  // never disagree, and immune to the viewer's timezone — a 2026-08-07
+  // publication reads "7 Aug" everywhere (see `dateAxis.ts`).
+  const spanDays = calendarSpanDays(data[0].date, data[data.length - 1].date)
+  const formatX = (s: string) => formatAxisDate(s, spanDays)
+  const formatTooltipDate = (s: string) => formatChartTooltipDate(s, spanDays)
   const fmtVal = (v: number) => (valueFormatter ? valueFormatter(v) : formatChartValue(v, unit))
 
   const isPositive = data[data.length - 1].value >= data[0].value

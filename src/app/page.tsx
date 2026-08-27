@@ -78,8 +78,16 @@ import { useGlobalRefresh } from '@/components/providers/useGlobalRefresh'
 import { fetchStockSnapshots, fetchSectorPerformance, fetchIndexPerformance } from '@/lib/data/marketData'
 import type { StockSnapshot, SectorSnapshot, IndexSnapshot } from '@/lib/providers/market/types'
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
-import { formatCLP, formatPct, formatMacroValue, formatMacroChange, changeColor, formatNewsTimestamp } from '@/lib/formatters'
-import { valuePositions, calculatePortfolioTotals, type LatestPrice, type PortfolioTotals } from '@/lib/portfolio/valuation'
+import { formatCLP, formatPct, formatRatioPct, formatMacroValue, formatMacroChange, changeColor, formatNewsTimestamp } from '@/lib/formatters'
+import { activeScope } from '@/lib/familyPortfolio/portfolioScopeRoutes'
+// R13.R5B § 3 — the Overview's portfolio card reads THE canonical Main
+// Portfolio read model, the same one the Summary hero reads. See the card.
+import { MaskedAmount } from '@/components/familyPortfolio/MaskedAmount'
+import {
+  fetchFamilyPortfolioScopes,
+  fetchFamilyPortfolioOverview,
+  type FamilyPortfolioOverviewResponse,
+} from '@/lib/data/familyPortfolio'
 import type { MacroIndicator, ChileanRate } from '@/types'
 import type { WatchlistItemRow } from '@/lib/db/repositories/watchlistRepository'
 import type { StructuredNote } from '@/lib/structuredNotes/types'
@@ -151,15 +159,24 @@ function HomeCard({ title, right, footer, children, className = '', style }: {
 }
 
 /** Divider-separated hero mini stat. Private amounts pass `masked`; public stats don't. */
-function SnapshotStat({ label, value, masked, tone }: { label: string; value: string; masked?: boolean; tone?: string }) {
+function SnapshotStat({
+  label,
+  value,
+  masked,
+  tone,
+  // R13.R5C.1 § 1 — opt-in size step. Defaults to the size every existing
+  // caller already renders, so the Portfolio card can be lifted on its own
+  // without restyling the Structured Notes and Actions cards beside it.
+  valueClass = 'text-sm',
+}: { label: string; value: string; masked?: boolean; tone?: string; valueClass?: string }) {
   return (
     <div className="flex flex-col min-w-0">
       <span className="ui-meta text-muted-fg">{label}</span>
       {masked === undefined ? (
-        <span className="ui-number text-sm text-foreground">{value}</span>
+        <span className={`ui-number ${valueClass} text-foreground`}>{value}</span>
       ) : (
-        <PrivacyValue masked={masked} className="ui-number text-sm">
-          <span className="ui-number text-sm" style={tone ? { color: tone } : undefined}>{value}</span>
+        <PrivacyValue masked={masked} className={`ui-number ${valueClass}`}>
+          <span className={`ui-number ${valueClass}`} style={tone ? { color: tone } : undefined}>{value}</span>
         </PrivacyValue>
       )}
     </div>
@@ -208,26 +225,17 @@ function ddmm(iso: string): string {
   return `${iso.slice(8, 10)}/${iso.slice(5, 7)}`
 }
 
-// ── Portfolio snapshot types (mirrors the /api/portfolios/[id] payload the
-// Portfolio page reads; only the fields Home consumes are declared) ──────────
-
-interface PfPositionLite {
-  ticker: string
-  quantity: number
-  averageCost: number | null
-  costCurrency: string
-  sector: string | null
-  latestPrice: number | null
-}
-
-interface PfDetailLite {
-  positions: PfPositionLite[]
-  totals: PortfolioTotals
-  cashSummary: { netCashBalance: number } | null
-  realizedPnl: { totalRealizedPnl: number } | null
-}
-
 type ModuleState = 'loading' | 'ready' | 'error' | 'unavailable'
+
+/**
+ * R13.R5B § 3 — the Overview portfolio card's resolution state.
+ *
+ * `denied` is an authorization ANSWER and is kept distinct from `error`, the
+ * same split `AlternativesProvider` and `FamilyPortfolioProvider` make: an
+ * account with no portfolio entitlement has not suffered a failure, and the two
+ * must not render as one another.
+ */
+type FpCardState = 'loading' | 'ready' | 'denied' | 'error'
 
 // ── Ingestion health (same sanitized shape Settings reads from /api/health/ingestion) ──
 
@@ -271,26 +279,23 @@ const RISK_DOT: Record<string, string> = {
 // ── Pure fetchers (module scope, no setState) — every state write lands in a
 // `.then` callback inside the effect/handler, per the React Compiler rules. ──
 
-/** Same endpoints /portfolio reads: list → default portfolio → detail. Null = failed. */
-async function fetchPortfolioSnapshot(signal?: AbortSignal): Promise<PfDetailLite | null> {
-  try {
-    const listRes = await fetch('/api/portfolios', { cache: 'no-store', signal })
-    if (!listRes.ok) return null
-    const listJson = await listRes.json()
-    const pf = listJson.portfolios?.[0]
-    if (!pf) return null
-    const detailRes = await fetch(`/api/portfolios/${pf.id}`, { cache: 'no-store', signal })
-    if (!detailRes.ok) return null
-    const json = await detailRes.json()
-    return {
-      positions: json.positions ?? [],
-      totals: json.totals,
-      cashSummary: json.cashSummary ?? null,
-      realizedPnl: json.realizedPnl ?? null,
-    }
-  } catch {
-    return null
-  }
+/**
+ * R13.R5B § 3 — resolve the caller's own portfolio scope exactly the way the
+ * Summary does, so the two surfaces can never describe different portfolios:
+ * `alternatives` is not a portfolio scope, and the first entitled scope is the
+ * one the Summary defaults to when no `?scope=` is given.
+ *
+ * Returns null when the caller holds no portfolio scope — a real answer, not a
+ * failure, and the caller renders it as such.
+ *
+ * R13.R5C.4 — it now DELEGATES to the module's one derivation rather than
+ * repeating it, so "the two surfaces cannot describe different portfolios" is a
+ * structural fact instead of two identical expressions that have to be kept in
+ * step. `null` for the request: this card has no scope selector, so it always
+ * asks for the Summary's own no-`?scope=` default.
+ */
+function firstPortfolioScope(scopes: readonly { id: string }[]): string | null {
+  return activeScope(null, scopes)
 }
 
 type BookResult =
@@ -401,19 +406,63 @@ export default function HomePage() {
     return () => { mounted = false }
   }, [])
 
-  // ── Portfolio snapshot — the SAME endpoints and valuation helpers the
-  // Portfolio page uses (list → detail; live overlay via valuePositions +
-  // calculatePortfolioTotals). No value is derived differently from /portfolio.
-  const [pfDetail, setPfDetail] = useState<PfDetailLite | null>(null)
-  const [pfState, setPfState] = useState<ModuleState>('loading')
+  // ── Portfolio snapshot — THE CANONICAL MAIN PORTFOLIO READ MODEL ──────────
+  //
+  // R13.R5B § 3 — this card used to read `/api/portfolios` → `/api/portfolios/
+  // [id]`: the Phase 6C/6D positions tracker, a per-user list of hand-entered
+  // quantities and average costs priced in CLP. That is a different product
+  // from the portfolio this platform now reports. It was measured against the
+  // current publication during this repair: the tracker held two manually
+  // entered Chilean positions in CLP while the published Main portfolio was
+  // orders of magnitude larger and denominated in USD, and the card even linked
+  // to `/portfolio` — a route R13 deliberately removed from navigation. A
+  // reader on the Overview was being shown a figure with no relationship to the
+  // portfolio the rest of the app reports.
+  //
+  // It now reads the SAME endpoint the Summary hero reads, for the SAME scope
+  // the Summary would default to, and displays only fields that endpoint
+  // publishes. Nothing is recomputed here: no total is summed, no return is
+  // derived, no number is copied across from another surface. If the canonical
+  // source cannot be read the card says so — there is no fallback to the
+  // tracker, and no invented value.
+  //
+  // The legacy module itself is untouched: `/portfolio`, `/api/portfolios` and
+  // the valuation helpers all still exist and still work. Retiring them is
+  // legacy cleanup, which this pass is explicitly not doing.
+  const [fpScope, setFpScope] = useState<string | null>(null)
+  const [fpData, setFpData] = useState<FamilyPortfolioOverviewResponse | null>(null)
+  const [fpState, setFpState] = useState<FpCardState>('loading')
 
   useEffect(() => {
-    const controller = new AbortController()
-    fetchPortfolioSnapshot(controller.signal).then((detail) => {
-      if (controller.signal.aborted) return
-      if (detail) { setPfDetail(detail); setPfState('ready') } else { setPfState('error') }
-    })
-    return () => controller.abort()
+    let cancelled = false
+    ;(async () => {
+      const scopesResult = await fetchFamilyPortfolioScopes()
+      if (cancelled) return
+      if (!scopesResult.ok) {
+        // 401/403 are authorization answers; anything else is a real failure.
+        setFpState(
+          scopesResult.status === 401 || scopesResult.status === 403 ? 'denied' : 'error',
+        )
+        return
+      }
+      const scope = firstPortfolioScope(scopesResult.data.scopes)
+      if (scope === null) {
+        setFpState('denied')
+        return
+      }
+      const overview = await fetchFamilyPortfolioOverview(scope)
+      if (cancelled) return
+      if (!overview.ok) {
+        setFpState(overview.status === 401 || overview.status === 403 ? 'denied' : 'error')
+        return
+      }
+      setFpScope(scope)
+      setFpData(overview.data)
+      setFpState('ready')
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   // ── Structured Notes book snapshot — the same dashboard payload the
@@ -601,35 +650,11 @@ export default function HomePage() {
     setOrder(ids)
   }
 
-  // ── Portfolio display totals — byte-identical logic to the Portfolio page's
-  // own `displayed` memo: overlay the shared live snapshot through the SAME
-  // valuation helpers, so Home and /portfolio can never disagree.
-  const pfTotals = useMemo<PortfolioTotals | null>(() => {
-    if (!pfDetail) return null
-    if (!live) return pfDetail.totals
-    const pricesByTicker = new Map<string, LatestPrice>(
-      pfDetail.positions.map((p) => {
-        const lv = live.stocks[p.ticker]
-        return [p.ticker.toUpperCase(), { price: lv?.price ?? p.latestPrice, currency: 'CLP' }]
-      }),
-    )
-    const valued = valuePositions(
-      pfDetail.positions.map((p) => ({
-        ticker: p.ticker,
-        quantity: p.quantity,
-        averageCost: p.averageCost,
-        costCurrency: p.costCurrency,
-        sector: p.sector,
-      })),
-      pricesByTicker,
-    )
-    return calculatePortfolioTotals(valued)
-  }, [pfDetail, live])
-
-  // R12 — per-instrument live gating over the portfolio's own position tickers.
-  const pfPriceStatus: DataSourceStatus = live
-    ? overlayStatus(stockOverlayCoverage(live.stocks, (pfDetail?.positions ?? []).map(p => p.ticker)), 'persisted')
-    : 'persisted'
+  // R13.R5B § 3 — the published hero, read verbatim. A publication that exists
+  // but carries no hero leaves these null, and every one of them renders as an
+  // em dash through the shared guarded path rather than as a zero.
+  const fpHero = fpData?.hero ?? null
+  const fpPublication = fpData?.publication ?? null
 
   // ── Structured Notes derived snapshot values (same client-side derivations
   // the /structured-notes page makes over the same payload) ──────────────────
@@ -801,51 +826,94 @@ export default function HomePage() {
       <Reveal delayMs={80}>
         <div className="flex flex-wrap items-stretch gap-4">
 
-          {/* Portfolio snapshot — existing calculations, masked amounts. */}
+          {/* Portfolio snapshot — the canonical Main Portfolio publication.
+              See the fetch effect above for why this no longer reads the
+              legacy positions tracker. Every figure here is a field the
+              Summary hero reads from the same response for the same scope. */}
           <GlassSurface variant="card" as="section" className="p-5 flex flex-col gap-2" style={FABLE_HERO}>
             <div className="flex items-center justify-between gap-2">
-              <h2 className="ui-label text-muted-fg">{t.portfolio.tag}</h2>
-              <div className="flex items-center gap-2">
-                {pfState === 'ready' && <MarketDataSourceBadge status={pfPriceStatus} />}
-                <Link href="/portfolio" className="text-xs text-primary hover:underline whitespace-nowrap">{t.nav.portfolio} →</Link>
-              </div>
+              <h2 className="ui-label text-muted-fg">{t.fp.tag}</h2>
+              <Link href="/family-portfolio" className="text-xs text-primary hover:underline whitespace-nowrap">{t.nav.portfolio} →</Link>
             </div>
-            {pfState === 'loading' && <AsyncState kind="loading" message={t.common.loading} />}
-            {pfState === 'error' && <AsyncState kind="error" />}
-            {pfState === 'ready' && pfTotals && pfDetail && (
-              pfDetail.positions.length === 0 ? (
-                <p className="text-xs text-muted-fg py-4">
-                  <Link href="/portfolio" className="text-primary hover:underline">{t.home.pfEmpty}</Link>
-                </p>
+            {fpState === 'loading' && <AsyncState kind="loading" message={t.common.loading} />}
+            {fpState === 'error' && <AsyncState kind="error" message={t.fp.accessError} />}
+            {/* An account with no portfolio entitlement is told so plainly. No
+                figure, no placeholder zero, nothing about a portfolio it may
+                not see. */}
+            {fpState === 'denied' && <AsyncState kind="empty" message={t.fp.noAccess} />}
+            {fpState === 'ready' && (
+              fpPublication === null ? (
+                <AsyncState kind="empty" message={t.fp.portfolio.noPublication} />
               ) : (
                 <>
                   <div className="flex items-baseline gap-3 flex-wrap">
-                    <PrivacyValue masked={masked}>
-                      <span className="ui-kpi-hero text-foreground">{formatCLP(pfTotals.totalMarketValue)}</span>
-                    </PrivacyValue>
+                    {/* R13.R5C.1 § 1 — marked `US$` and rendered one step
+                        above the KPI hero. This card's whole subject is this
+                        one figure; nothing else on it competes, and the unit
+                        is the one thing a reader could get wrong by a factor
+                        of ~950 in a Chilean frame of reference. */}
+                    <MaskedAmount
+                      value={fpHero?.totalValue ?? null}
+                      masked={masked}
+                      currency
+                      className="ui-number ui-kpi-hero-lg text-foreground"
+                    />
+                    {/* The period is NAMED. "+0,12% Return" beside a portfolio
+                        value could be read as the week, the month or the year;
+                        the read model's field is the WEEKLY return, so the
+                        label says so and matches the P&L beneath it. */}
                     <ChangeIndicator
-                      value={pfTotals.totalUnrealizedPnLPct}
-                      label={pfTotals.totalUnrealizedPnLPct != null ? `${formatPct(pfTotals.totalUnrealizedPnLPct)} ${t.portfolio.vsCostBasis}` : undefined}
+                      value={fpHero?.weeklyReturn ?? null}
+                      label={
+                        fpHero?.weeklyReturn != null
+                          ? `${formatRatioPct(fpHero.weeklyReturn)} ${t.fp.overview.weeklyReturn}`
+                          : undefined
+                      }
                     />
                   </div>
+                  {/* The basis is stated only where it is TRUE: Main is the one
+                      scope with a Chilean-equities split to name.
+
+                      ONE AS-OF PER SURFACE — the publication date is carried by
+                      the footer below and deliberately not repeated here. */}
+                  {fpScope === 'main' && (
+                    <p className="ui-meta text-muted-fg">{t.fp.overview.aumBasis}</p>
+                  )}
                   <div className="flex flex-wrap gap-x-5 gap-y-2 pt-2" style={{ borderTop: '1px solid var(--nv-line)' }}>
-                    <SnapshotStat
-                      label={t.portfolio.unrealizedPnL}
-                      value={pfTotals.totalUnrealizedPnL != null ? formatCLP(pfTotals.totalUnrealizedPnL) : '—'}
-                      masked={masked}
-                      tone={pfTotals.totalUnrealizedPnL == null ? undefined : pfTotals.totalUnrealizedPnL >= 0 ? 'var(--positive)' : 'var(--negative)'}
-                    />
-                    <SnapshotStat label={t.portfolio.totalCostBasis} value={formatCLP(pfTotals.totalCostBasis)} masked={masked} />
-                    {pfDetail.cashSummary && (
-                      <SnapshotStat label={t.portfolio.cashBalance} value={formatCLP(pfDetail.cashSummary.netCashBalance)} masked={masked} />
-                    )}
-                    {pfDetail.realizedPnl && (
-                      <SnapshotStat label={t.portfolio.realizedPnL} value={formatCLP(pfDetail.realizedPnl.totalRealizedPnl)} masked={masked} />
-                    )}
-                    <SnapshotStat label={t.portfolio.positionCount} value={String(pfTotals.positionCount)} />
+                    {/* Portfolio money — the module's one guarded renderer, so
+                        the Overview obeys the privacy mask exactly as the
+                        Summary does. */}
+                    <div className="flex flex-col min-w-0">
+                      <span className="ui-meta text-muted-fg">{t.fp.overview.weeklyProfit}</span>
+                      <MaskedAmount
+                        value={fpHero?.weeklyDifference ?? null}
+                        masked={masked}
+                        signed
+                        className="ui-number ui-card-value text-foreground"
+                      />
+                    </div>
+                    {/* Returns are ratios, never masked — the module's standing
+                        policy (see MaskedAmount's header). */}
+                    <SnapshotStat label={t.fp.overview.ytdReturn} value={formatRatioPct(fpHero?.ytdReturn ?? null)} valueClass="ui-card-value" />
+                    {/* R13.R5C.1 § 1.5 — the one addition to this card. It is
+                        not filler: it completes the weekly/YTD pair the card
+                        already half-states (weekly return + weekly P&L + YTD
+                        return), it is masked money like the weekly P&L beside
+                        it, and it is READ from the same canonical hero as
+                        every other figure here rather than computed. */}
+                    <div className="flex flex-col min-w-0">
+                      <span className="ui-meta text-muted-fg">{t.fp.overview.ytdProfit}</span>
+                      <MaskedAmount
+                        value={fpHero?.ytdProfit ?? null}
+                        masked={masked}
+                        signed
+                        className="ui-number ui-card-value text-foreground"
+                      />
+                    </div>
+                    <SnapshotStat label={t.fp.portfolio.revisionShort} value={String(fpPublication.revision)} valueClass="ui-card-value" />
                   </div>
                   <div className="mt-auto pt-1">
-                    <TableSourceFooter source={t.portfolio.source} asOf={live?.lastUpdated ?? null} />
+                    <TableSourceFooter source={t.fp.portfolio.source} asOf={fpPublication.asOfDate} />
                   </div>
                 </>
               )

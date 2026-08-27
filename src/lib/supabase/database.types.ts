@@ -545,13 +545,28 @@ export interface Database {
           metadata?: Json
         }
       }
+      // R13.1 — reconciled against the verified migration chain:
+      //   20260701000000_auth_watchlist_foundation.sql  → id, email, display_name,
+      //                                                    role, preferences, created_at, updated_at
+      //   20260701120000_username_password_auth.sql     → username (citext)
+      //   20260806000000_family_portfolio_entitlements.sql → portfolio_principal
+      // `avatar_url` was removed: no migration in the chain creates it and no
+      // source file outside this declaration referenced it. `role` and
+      // `preferences` were missing and are restored.
+      // `role` and `portfolio_principal` are intentionally ABSENT from Insert
+      // and Update: 20260730000000 revokes every write privilege on this table
+      // from `authenticated`, and both columns are written only by the
+      // service-role paths (scripts/admin/provisionUser.ts,
+      // src/lib/portfolioAccess/assignPrincipal.ts), which cast their payloads.
       user_profiles: {
         Row: {
           id: string
           username: string | null
           email: string | null
           display_name: string | null
-          avatar_url: string | null
+          role: string
+          preferences: Json
+          portfolio_principal: string | null
           created_at: string
           updated_at: string
         }
@@ -560,13 +575,123 @@ export interface Database {
           username?: string | null
           email?: string | null
           display_name?: string | null
-          avatar_url?: string | null
+          preferences?: Json
         }
         Update: {
           username?: string | null
           email?: string | null
           display_name?: string | null
-          avatar_url?: string | null
+          preferences?: Json
+        }
+      }
+      // R13.1 — immutable audit of administrative Family Portfolio access
+      // changes. Service-role writes only (no insert/update/delete policy
+      // exists); administrators may read.
+      //
+      // R13.2 drift correction: R13.1.1A amended the migration to make
+      // `actor_user_id` NULLABLE and to add `actor_kind`, so that the one-time
+      // service-authorized bootstrap — which has no application actor — is
+      // recorded honestly instead of naming the target as its own actor. This
+      // declaration was not updated at the time. Typing `actor_user_id` as
+      // non-null made TypeScript assert a value that is genuinely null on every
+      // bootstrap row.
+      family_portfolio_access_audit: {
+        Row: {
+          id: string
+          target_user_id: string
+          actor_user_id: string | null
+          actor_kind: string
+          field_changed: string
+          previous_value: string | null
+          new_value: string | null
+          changed_at: string
+        }
+        Insert: {
+          target_user_id: string
+          actor_user_id?: string | null
+          actor_kind?: string
+          field_changed: string
+          previous_value?: string | null
+          new_value?: string | null
+        }
+        Update: {
+          previous_value?: string | null
+          new_value?: string | null
+        }
+      }
+      // R13.2 — Family Portfolio source-workbook uploads (doc 05 section 5.1).
+      // Provenance only: opaque storage key, digest, size, status, dates. No
+      // financial value and no cell content is ever stored here.
+      //
+      // Service-role writes only — there is no insert/update/delete policy for
+      // `authenticated` — so every mutating field is deliberately ABSENT from
+      // Insert/Update below, mirroring how `user_profiles.role` is handled.
+      portfolio_source_uploads: {
+        Row: {
+          id: string
+          upload_kind: string
+          storage_object_path: string
+          original_filename: string
+          file_sha256: string
+          file_size_bytes: number
+          uploaded_by: string
+          uploaded_at: string
+          parser_version: string
+          status: string
+          detected_as_of_date: string | null
+          confirmed_as_of_date: string | null
+          date_override_note: string | null
+          metadata: Json
+        }
+        Insert: {
+          id?: string
+          upload_kind: string
+          storage_object_path: string
+          original_filename: string
+          file_sha256: string
+          file_size_bytes: number
+          uploaded_by: string
+          parser_version: string
+          status?: string
+          detected_as_of_date?: string | null
+          metadata?: Json
+        }
+        Update: {
+          status?: string
+          detected_as_of_date?: string | null
+          confirmed_as_of_date?: string | null
+          date_override_note?: string | null
+          metadata?: Json
+        }
+      }
+      // R13.2 — structured validation findings (doc 05 section 5.5).
+      // `detail` is a CODE-DERIVED message, never a raw cell value or amount.
+      portfolio_upload_findings: {
+        Row: {
+          id: string
+          upload_id: string
+          severity: string
+          code: string
+          scope: string | null
+          source_sheet: string | null
+          source_cell: string | null
+          row_label: string | null
+          detail: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          upload_id: string
+          severity: string
+          code: string
+          scope?: string | null
+          source_sheet?: string | null
+          source_cell?: string | null
+          row_label?: string | null
+          detail: string
+        }
+        Update: {
+          detail?: string
         }
       }
       watchlists: {
@@ -1273,6 +1398,10 @@ export type CmfFilingRow = Database['public']['Tables']['cmf_filings']['Row']
 export type DocumentRow = Database['public']['Tables']['documents']['Row']
 export type IngestionRunRow = Database['public']['Tables']['ingestion_runs']['Row']
 export type UserProfileRow = Database['public']['Tables']['user_profiles']['Row']
+export type PortfolioSourceUploadRow = Database['public']['Tables']['portfolio_source_uploads']['Row']
+export type PortfolioUploadFindingRow = Database['public']['Tables']['portfolio_upload_findings']['Row']
+export type FamilyPortfolioAccessAuditRow =
+  Database['public']['Tables']['family_portfolio_access_audit']['Row']
 export type WatchlistRow = Database['public']['Tables']['watchlists']['Row']
 export type WatchlistItemRow = Database['public']['Tables']['watchlist_items']['Row']
 export type PortfolioRow = Database['public']['Tables']['portfolios']['Row']

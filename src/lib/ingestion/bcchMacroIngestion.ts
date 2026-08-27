@@ -8,7 +8,7 @@
 // The CLI script (scripts/ingest/bcchMacro.ts) remains separate to avoid pulling
 // Next.js env/module machinery into the CLI context.
 
-import { transformSeries } from '../providers/transforms.ts'
+import { transformSeries, requiredFetchStart, earliestIso } from '../providers/transforms.ts'
 import { fetchBcchSeries, isBcchConfigured } from '../providers/bcchClient.ts'
 import { getEnabledBcchSeries } from '../../config/macroSeries.ts'
 import { bcchSeriesManualMap } from '../../config/bcchSeriesManualMap.ts'
@@ -19,7 +19,11 @@ export const INGESTION_VERSION = '5D.0'
 
 const BATCH_SIZE = 500
 const INTER_REQUEST_DELAY_MS = 150
-// Extra history fetched before rangeFrom so yoy transforms have a year-ago base.
+// Baseline extra history fetched before rangeFrom. A FLOOR, not the whole
+// rule: R13.R5F derives each series' real horizon from its own store window
+// plus its transform's lookback (`requiredFetchStart`), because this constant
+// is measured from today while MONTHLY_INCREMENTAL_DAYS_BACK reaches further
+// back — see YEAR_AGO_MAX_DRIFT_DAYS in transforms.ts.
 const EXTRA_YEARS_CONTEXT = 1
 // Monthly series publish observations DATED 4-8 weeks in the past (May's IPC
 // arrives in June with observation_date 2026-05-01), so the default 14-day
@@ -223,7 +227,22 @@ export async function runBcchMacroIngestion(opts: IngestionOptions): Promise<Ing
     const sourceName  = manualEntry?.sourceName ?? null
     const seriesCode  = def.providerSeriesCode!
 
-    const res = await fetchBcchSeries(seriesCode, { firstDate: fetchFrom, lastDate: rangeTo })
+    // See MONTHLY_INCREMENTAL_DAYS_BACK above — a monthly print's observation
+    // date lags publication by more than the default incremental window.
+    const seriesRangeFrom = opts.mode === 'incremental' && def.frequency === 'monthly'
+      ? daysAgoIso(MONTHLY_INCREMENTAL_DAYS_BACK)
+      : rangeFrom
+
+    // R13.R5F § 1A — same defect as the FRED twin: reach back far enough for
+    // THIS series' transform at the oldest storable date. `imacec-anual` is a
+    // monthly yoy series and was exposed to exactly the wrong-base substitution
+    // that corrupted CPI y/y. Never narrows the range.
+    const seriesFetchFrom = earliestIso(
+      fetchFrom,
+      requiredFetchStart(seriesRangeFrom, def.transformation, def.frequency),
+    )
+
+    const res = await fetchBcchSeries(seriesCode, { firstDate: seriesFetchFrom, lastDate: rangeTo })
     if (!res.ok) {
       indicatorsFailed.push(def.manualKey)
       errorMessages.push(`${def.manualKey}: ${res.reason}`)
@@ -236,12 +255,6 @@ export async function runBcchMacroIngestion(opts: IngestionOptions): Promise<Ing
     const transformed = transformSeries(res.data, def.transformation)
     const isDerived   = def.transformation !== 'none'
     const fetchedAt   = new Date().toISOString()
-
-    // See MONTHLY_INCREMENTAL_DAYS_BACK above — a monthly print's observation
-    // date lags publication by more than the default incremental window.
-    const seriesRangeFrom = opts.mode === 'incremental' && def.frequency === 'monthly'
-      ? daysAgoIso(MONTHLY_INCREMENTAL_DAYS_BACK)
-      : rangeFrom
 
     const insertRows: MacroObservationInsert[] = transformed
       .filter(p => p.value != null && p.date >= seriesRangeFrom && p.date <= rangeTo)

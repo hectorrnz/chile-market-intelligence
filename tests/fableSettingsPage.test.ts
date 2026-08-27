@@ -416,8 +416,18 @@ describe('R9.2 · scope restraint', () => {
   })
 
   test('59. no migration or generated database-type change', () => {
-    const migrations = readdirSync(join(ROOT, 'supabase/migrations'))
+    // The invariant is that THE SETTINGS PAGE PHASE persisted nothing — the
+    // `/settings` surface is a read-only console over existing endpoints. The
+    // filename filter is a proxy for that; R13.R2's Family Portfolio
+    // presentation-settings migration matches the word "settings" while being
+    // an entirely different subject (a global allocation-display record owned
+    // by the Family Portfolio module, guarded by its own pgTAP suite), so it is
+    // named as the one admitted exception rather than loosening the pattern.
+    const ADMITTED = '20260812000000_family_portfolio_presentation_settings.sql'
+    const migrations = readdirSync(join(ROOT, 'supabase/migrations')).filter((f) => f !== ADMITTED)
     assert.equal(migrations.filter((f) => /settings|account|preference/i.test(f)).length, 0)
+    // The load-bearing half, unchanged: no file of THIS phase references a
+    // migration or the generated database types.
     assert.doesNotMatch(BOTH, /supabase\/migrations|database\.types/)
   })
 
@@ -1395,7 +1405,31 @@ describe('R9.5 · the surface is one integrated product', () => {
     // The shell scrolls <main>; TopBar and SecondaryNav are flex siblings ABOVE
     // it, not fixed/sticky overlays, so an in-page anchor can never land under
     // the chrome. Locked here because a later `sticky` on either would break it.
-    assert.match(code(APP_SHELL), /<main className="flex-1 overflow-y-auto/)
+    //
+    // The scroll container is identified by its CLASS TOKENS, never by their
+    // order or adjacency. `flex-1 min-h-0 overflow-y-auto` states exactly the
+    // same requirement as `flex-1 overflow-y-auto` — `min-h-0` is the standard
+    // flex-shrink fix a scrolling flex child needs — but the previous
+    // `/<main className="flex-1 overflow-y-auto/` regex required the two tokens
+    // to be adjacent and so failed on a correct shell. The requirement below is
+    // unchanged and no weaker: <main> must still fill the shell AND be the
+    // element that scrolls.
+    const mainEl = /<main\b[^>]*\sclassName="([^"]*)"/.exec(code(APP_SHELL))
+    assert.ok(mainEl, 'AppShell must render a <main> element carrying a className')
+    assert.equal(
+      (code(APP_SHELL).match(/<main\b/g) ?? []).length,
+      1,
+      'exactly one <main> — otherwise this assertion could pass on the wrong element',
+    )
+    const mainClasses = mainEl[1].split(/\s+/).filter(Boolean)
+    assert.ok(
+      mainClasses.includes('flex-1'),
+      `<main> must fill the remaining shell height; classes were: ${mainEl[1]}`,
+    )
+    assert.ok(
+      mainClasses.includes('overflow-y-auto'),
+      `<main> must be the page scroll container; classes were: ${mainEl[1]}`,
+    )
     for (const [name, src] of [['TopBar', TOP_BAR], ['SecondaryNav', SECONDARY_NAV]] as const) {
       assert.doesNotMatch(code(src), /\b(fixed|sticky)\s/, `${name} must not overlay the scroll container`)
     }
@@ -1617,15 +1651,20 @@ describe('R9.6 · Home and Portfolio consumers', () => {
     // portfolio-derived amount on Home masks through the ONE shared boundary".
     // Guarded in depth by tests/fableHomePage.test.ts; pinned here so this
     // suite's consumer inventory stays truthful.
+    //
+    // R13.R5B § 3 SUPERSEDES the R10 wording again: the snapshot is no longer
+    // read from `/api/portfolios` (the legacy positions tracker) but from the
+    // canonical Main Portfolio publication, so the hero amount now masks
+    // through `MaskedAmount` — the Family Portfolio module's own guarded
+    // renderer, which wraps `PrivacyValue`. The enduring property is unchanged:
+    // every portfolio-derived amount on Home masks through ONE shared boundary.
     assert.match(HOME, /import \{ PrivacyValue \} from '@\/components\/fable\/PrivacyValue'/)
     assert.match(HOME, /import \{ usePrivacyMode \} from '@\/components\/fable\/usePrivacyMode'/)
-    assert.match(HOME, /\/api\/portfolios/)
-    // The hero amount renders inside the boundary, fed by the SAME valuation
-    // helpers the Portfolio page uses — never a second derivation.
-    const at = HOME.indexOf('formatCLP(pfTotals.totalMarketValue)')
+    assert.match(HOME, /import \{ MaskedAmount \} from '@\/components\/familyPortfolio\/MaskedAmount'/)
+    const at = HOME.indexOf('value={fpHero?.totalValue ?? null}')
     assert.ok(at > -1, 'the portfolio hero value must render')
-    assert.ok(HOME.slice(Math.max(0, at - 200), at).includes('<PrivacyValue masked={masked}>'))
-    assert.match(HOME, /valuePositions, calculatePortfolioTotals/)
+    assert.ok(HOME.slice(Math.max(0, at - 120), at).includes('<MaskedAmount'))
+    assert.ok(HOME.slice(at, at + 200).includes('masked={masked}'))
     // Public watchlist columns stay exactly the public ones, unmasked.
     assert.match(HOME, /formatCLP\(price\)/)
     assert.match(HOME, /\/api\/watchlists/)

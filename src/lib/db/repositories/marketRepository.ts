@@ -461,12 +461,56 @@ export async function getLatestSectorPerformance(
 
 export interface UpsertResult { inserted: number; updated: number; error?: string }
 
-function sanitizeUpsertError(e: unknown): string {
-  const msg = e instanceof Error ? e.message : String(e)
-  return msg
-    .replace(/eyJ[A-Za-z0-9_.\\-]{40,}/g, '***JWT***')
-    .replace(/key=[A-Za-z0-9_.\\-]{20,}/gi, 'key=***')
-    .slice(0, 300)
+/** Redact anything token-shaped before an error string is stored or returned. */
+function scrubSecrets(s: string): string {
+  return s
+    .replace(/eyJ[A-Za-z0-9_.\-]{40,}/g, '***JWT***')
+    .replace(/key=[A-Za-z0-9_.\-]{20,}/gi, 'key=***')
+}
+
+/**
+ * R13.R5F § 3 — the diagnostic fields worth keeping off a PostgREST error.
+ *
+ * An ALLOWLIST, not a filter: only these four are ever read, so a header,
+ * connection string, or token that happens to hang off the error object can
+ * never be serialized, today or after a client upgrade.
+ */
+const SAFE_ERROR_FIELDS = ['code', 'message', 'details', 'hint'] as const
+
+/**
+ * R13.R5F § 3 — render an upsert failure as a diagnosable one-line string.
+ *
+ * Supabase/PostgREST reject with a PLAIN OBJECT, not an Error. The previous
+ * `e instanceof Error ? e.message : String(e)` therefore collapsed every such
+ * failure to the literal `[object Object]` — which is exactly what was
+ * recorded when all 11 index rows failed to persist on 2026-08-27, leaving
+ * the real cause unrecoverable. Structured errors now keep their allowlisted
+ * fields; nothing else about the object is ever emitted.
+ *
+ * Diagnostic serialization only — no caller's success/failure semantics
+ * change, since every branch still returns a non-empty string.
+ */
+export function sanitizeUpsertError(e: unknown): string {
+  if (e instanceof Error) return scrubSecrets(e.message).slice(0, 300)
+  if (typeof e === 'string') return scrubSecrets(e).slice(0, 300)
+
+  if (typeof e === 'object' && e !== null) {
+    const src = e as Record<string, unknown>
+    const parts: string[] = []
+    for (const field of SAFE_ERROR_FIELDS) {
+      const v = src[field]
+      if (typeof v === 'string' && v.trim() !== '') parts.push(`${field}=${scrubSecrets(v.trim())}`)
+      else if (typeof v === 'number' && Number.isFinite(v)) parts.push(`${field}=${v}`)
+    }
+    // Deterministic: allowlist order, never key-enumeration order.
+    if (parts.length > 0) return parts.join(' | ').slice(0, 300)
+    // An object carrying none of the four is unrecognizable — say so rather
+    // than dump it or fall back to the useless "[object Object]".
+    return 'unrecognized error object'
+  }
+
+  if (e === null || e === undefined) return 'unknown error'
+  return scrubSecrets(String(e)).slice(0, 300)
 }
 
 export async function upsertStockSnapshots(

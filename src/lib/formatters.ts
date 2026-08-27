@@ -144,6 +144,303 @@ export function formatSourceDate(isoDate: string): string {
   return `${day}-${month}`
 }
 
+// ─── R13.R5C.2 · THE PORTFOLIO ZERO-DISPLAY CONTRACT ─────────────────────────
+//
+// Two marks, one rule, applied to every user-visible figure in the Portfolio
+// product:
+//
+//   ·  `-`  the value IS a number and that number is zero — "nothing here"
+//   ·  `—`  no value could be established — unavailable, unreadable, unsupported
+//
+// This is PRESENTATION ONLY. Nothing below converts a zero to null, and no
+// caller's arithmetic sees a mark: `formatUsd(0)` renders `-` while the 0 it was
+// given goes on summing, reconciling and driving chart geometry exactly as
+// before. A total of zero constituents still equals zero.
+//
+// WHY IT LIVES HERE. Every one of `formatUsd`, `formatRatioPct`,
+// `formatWeightPct` and `formatCount` is called ONLY from the Portfolio module
+// and the Overview's Portfolio card — verified across the whole of `src/`, and
+// asserted by `tests/portfolioR5c2ZeroDisplay.test.ts`. The rest of the app
+// formats money and percentages through `formatCLP` / `formatPct` /
+// `formatPercent`, which are untouched, so no market-data convention outside
+// Portfolio moves. Putting the rule in these four functions is therefore the
+// whole contract, rather than a condition repeated at ~60 call sites.
+//
+// THE ONE EXCEPTION: A CHART SCALE IS NOT A VALUE. `formatUsdCompactM` and
+// `formatUsdCompactUnit` are the axis forms and deliberately keep a numeric
+// zero — a contributors chart whose baseline gridline is labelled `-` between
+// `-2M` and `2M` is unreadable, and the mark would additionally be mistaken for
+// the minus sign beside it. They call `usdDigits` directly for the same reason.
+//
+// The zero test is on the RENDERED precision (`roundsToZeroAt`), never the raw
+// number: at two decimals `0` and `0,000004` are the same `0,00` on screen, and
+// dashing one while printing the other would claim a distinction the reader
+// cannot see.
+//
+// R13.R5C.3 — PRIVACY OUTRANKS BOTH MARKS, and that is deliberately NOT decided
+// here. These are pure string functions with no notion of who is looking; the
+// privacy gate belongs to the renderer, and `MaskedAmount` applies it FIRST, so
+// a masked amount reads `•••••` whether the figure behind it is zero, negative
+// or nine figures. `formatUsd(0)` returning `-` is therefore only ever what an
+// UNMASKED reader sees. Never move a mark ahead of the mask at a call site:
+// "there is nothing here" is itself a fact about the family's holdings.
+
+/** The value IS zero. */
+export const ZERO_MARK = '-'
+/** No value could be established. Never used for a zero. */
+export const UNAVAILABLE_MARK = '—'
+
+/** The grouped digits, with no zero rule — the axis forms and `formatUsd` share it. */
+function usdDigits(value: number, decimals: number): string {
+  return value.toLocaleString('es-CL', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })
+}
+
+/**
+ * R13.6 — Family Portfolio USD amount: Chilean-convention grouping (periods as
+ * thousands, comma as decimal), whole dollars by default, `—` for a value that
+ * is genuinely unavailable. The currency itself is labelled by the surrounding
+ * table ("Values in USD"), never appended per cell.
+ *
+ * R13.R5C.2 — a value that renders as zero renders `-` instead. See the
+ * contract note above.
+ */
+export function formatUsd(value: number | null | undefined, decimals = 0): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
+  if (roundsToZeroAt(value, decimals)) return ZERO_MARK
+  return usdDigits(value, decimals)
+}
+
+/**
+ * R13.R2F4 § 2 — a Family Portfolio USD amount at CHART-AXIS length: one
+ * decimal and a millions suffix, `145.470.441` → `145,5M`.
+ *
+ * Why this exists rather than `formatUsd`: a printed y-axis label is read for
+ * MAGNITUDE, not for the cent. Eleven grouped digits force a wide reserved
+ * gutter (20mm of a 186mm measure before this change), crowd the plot, and
+ * still give the reader nothing the shorter form does not. Every value on one
+ * axis renders through this single function, so the three labels stay directly
+ * comparable.
+ *
+ * Chilean convention throughout, exactly as every other figure in this app:
+ * the comma IS the decimal separator (`145,5M`, not `145.5M`) — the units are
+ * abbreviated, the locale is not.
+ *
+ * Below a million the abbreviation would destroy resolution (three ticks all
+ * reading `0,3M`), so a small figure falls back to the plain grouped amount.
+ * Unavailable stays `—`, never `0M`.
+ */
+export function formatUsdCompactM(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
+  // R13.R5C.2 — `usdDigits`, NOT `formatUsd`: this is the AXIS form, and a
+  // scale annotation is not a value. A `-` where the baseline label belongs
+  // would be read as a minus sign, not as zero.
+  if (Math.abs(value) < 1_000_000) return usdDigits(value, 0)
+  return `${usdDigits(value / 1_000_000, 1)}M`
+}
+
+/**
+ * R13.R3C.2 — a Family Portfolio USD amount at CONTRIBUTION-CHART length: a
+ * whole number and a magnitude suffix, `5.200.000` → `5M`, `-98.400` → `-98K`.
+ *
+ * Distinct from `formatUsdCompactM`, and both are kept. That one is the PRINT
+ * axis's form: one decimal, always millions, so three stacked labels on a
+ * portfolio-level axis stay directly comparable. This one is the SCREEN
+ * contributors chart's: a component's change spans four orders of magnitude
+ * across periods and subjects, so a fixed millions unit would print `0,1M` for
+ * a real mover, and a decimal on a `2M` gridline is noise. Unit follows the
+ * value; no decimals at either unit.
+ *
+ * Chilean convention as everywhere else — the grouping separator is the dot
+ * (`1.234M`) and the units are abbreviated, not the locale.
+ *
+ * The unit is chosen from the value AFTER rounding, so `999.600` reads `1M`
+ * rather than the `1.000K` a threshold-first test would produce. Unavailable
+ * stays `—`, never `0`.
+ */
+export function formatUsdCompactUnit(value: number | null | undefined, unit?: CompactUnit): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
+  // Zero is zero at every magnitude. `0M` on the one gridline every bar is
+  // anchored to would be noise at best and a scale claim at worst.
+  if (value === 0) return '0'
+  const abs = Math.abs(value)
+  // Round half AWAY FROM ZERO, so -1,5M and +1,5M print the same magnitude —
+  // `Math.round` breaks ties toward +∞ and would print -1M beside +2M.
+  const round = (v: number) => Math.sign(v) * Math.round(Math.abs(v))
+  const chosen: CompactUnit = unit ?? (abs >= 999_500 ? 'M' : abs >= 999.5 ? 'K' : 'ones')
+  // R13.R5C.2 — `usdDigits` for the same reason as `formatUsdCompactM`, plus a
+  // second one specific to this form: a real 400.000 forced to the `M` unit
+  // rounds to 0, and `formatUsd` would turn that into `-M`.
+  if (chosen === 'M') return `${usdDigits(round(value / 1_000_000), 0)}M`
+  if (chosen === 'K') return `${usdDigits(round(value / 1_000), 0)}K`
+  return usdDigits(round(value), 0)
+}
+
+export type CompactUnit = 'M' | 'K' | 'ones'
+
+/**
+ * R13.R3C.2 — the ONE unit a whole axis should be read in, chosen from its
+ * gridline interval.
+ *
+ * A per-value unit is right for a lone figure and wrong for a column of them.
+ * Measured on the real book: an axis stepping by 500.000 produced the ticks
+ * `-500K · 0 · 500K · 1M · 2M` — the last two are 1.000.000 and 1.500.000, so
+ * a reader sees the interval double at the top of the scale when it has not
+ * changed at all. Rounding to whole units is the owner's rule; a uniform unit
+ * is what makes that rule safe on an axis.
+ *
+ * The unit comes from the STEP, not from the largest value, because every tick
+ * is a multiple of the step — so no tick can round to zero in the chosen unit.
+ */
+export function compactUnitForStep(step: number): CompactUnit {
+  if (!Number.isFinite(step) || step <= 0) return 'ones'
+  if (step >= 1_000_000) return 'M'
+  if (step >= 1_000) return 'K'
+  return 'ones'
+}
+
+/**
+ * R13.7 — an UNSIGNED percentage from a ratio (0.423 → "42,3%"), for
+ * allocation weights where a "+" sign would misread as a change figure.
+ * Unavailable stays an em dash, never 0%.
+ */
+export function formatWeightPct(weight: number | null | undefined, decimals = 1): string {
+  if (weight === null || weight === undefined || !Number.isFinite(weight)) return '—'
+  // R13.R5C.2 — the Portfolio zero contract. A slice with no weight, or an
+  // IRR of exactly zero, reads `-`; the ratio itself is untouched and still
+  // drives the arc, the bar width and every sum.
+  if (roundsToZeroAt(weight * 100, decimals)) return ZERO_MARK
+  return `${(weight * 100).toLocaleString('es-CL', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })}%`
+}
+
+/**
+ * R13.7 — a SIGNED percentage from a RATIO (0.0123 → "+1,23%"), for
+ * source-provided returns and benchmark variations stored as ratios.
+ * Unavailable stays an em dash, never 0%.
+ */
+export function formatRatioPct(ratio: number | null | undefined, decimals = 2): string {
+  if (ratio === null || ratio === undefined || !Number.isFinite(ratio)) return '—'
+  // R13.R5C.2 — the Portfolio zero contract, now applied to EVERY percentage in
+  // the module rather than the change columns alone. This supersedes the
+  // R13.R3C.4 carve-out that kept a headline `0,00%`: the owner's rule is that
+  // a zero is a zero wherever it is shown. The ratio still drives colour,
+  // ordering and arithmetic unchanged.
+  if (roundsToZeroAt(ratio * 100, decimals)) return ZERO_MARK
+  return formatPercent(ratio * 100, decimals)
+}
+
+/**
+ * Does this figure PRINT as zero at the precision it will be rendered with?
+ *
+ * The test is on the rendered form, not on the raw number, because that is the
+ * only thing a reader can see: at two decimals `0` and `0,000004` are the same
+ * `0,00%`, and a rule that dashed one while printing the other would draw a
+ * distinction the column cannot show.
+ */
+export function roundsToZeroAt(value: number, decimals: number): boolean {
+  const factor = Math.pow(10, Math.max(0, Math.min(12, Math.trunc(decimals))))
+  // `Math.round(-0.4)` is `-0`, and `-0 === 0`, so a small negative is caught.
+  return Math.round(value * factor) === 0
+}
+
+/**
+ * R13.R3C.4 — a WEEKLY CHANGE percentage, with a no-movement dash.
+ *
+ * A weekly-changes table lists every hierarchy row in published order, and most
+ * of them do not move in a given week. Rendered as `0,00%` those rows are a
+ * column of identical noise that buries the handful that did move; rendered as
+ * `-` they read as "nothing here", which is exactly what they are.
+ *
+ * The dash is driven by `roundsToZeroAt`, so it covers both a true zero and a
+ * figure too small to show at this precision — the two are indistinguishable on
+ * screen, and printing one as a number and the other as a dash would claim a
+ * difference the reader cannot verify. The underlying amount is untouched and
+ * still rendered in the row's own value column.
+ *
+ * Unavailable keeps the em dash `formatRatioPct` already returns, so "did not
+ * move" and "could not be compared" stay two visibly different marks.
+ *
+ * R13.R5C.2 — CONVERGED WITH `formatRatioPct`, which now carries the same rule
+ * for every percentage in the Portfolio product. This is deliberately kept as a
+ * delegating alias rather than deleted: its call sites and its tests read as
+ * "the change column's percentage", which is still what they are, and one
+ * implementation is what stops the two drifting into different ideas of zero.
+ * The carve-out this function's original note described — a headline rate
+ * keeping `0,00%` — is gone at the owner's direction.
+ */
+export function formatChangePct(ratio: number | null | undefined, decimals = 2): string {
+  return formatRatioPct(ratio, decimals)
+}
+
+/**
+ * R13.R5C.2 — a Portfolio CARDINALITY standing in a value position: the number
+ * of holdings behind a subtotal, the number of rows a coverage figure was
+ * calculated from.
+ *
+ * It takes the same two marks as every other figure in the module, so a count
+ * of nothing reads `-` beside amounts that read `-` for the same reason.
+ *
+ * NOT for a cardinality inside a sentence ("calculated from 34 of 36 rows",
+ * "· 3 events"). There the number is a word in a clause, `-` would not be read
+ * as zero, and the sentence would break; those sites are audited and either
+ * guarded so zero cannot appear or read correctly as `0`.
+ */
+export function formatCount(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
+  if (Math.round(value) === 0) return ZERO_MARK
+  return usdDigits(Math.round(value), 0)
+}
+
+export interface CalendarParts {
+  year: number
+  month: number
+  day: number
+}
+
+/**
+ * The calendar parts of a bare `YYYY-MM-DD` (or `YYYY-MM`, which resolves to
+ * the first of the month) string, read DIRECTLY off the string.
+ *
+ * Same rule as `formatSourceDate`/`formatIsoDateLabel`, extracted so a caller
+ * that needs the individual parts (a chart axis, a tooltip) can obey it too:
+ * `new Date("2026-08-07")` is an *instant* at UTC midnight, so the local
+ * getters (`getDate()`, `getMonth()`) return the PRIOR day in every negative
+ * UTC offset — 6 August in Chile. A publication date is a calendar date, not
+ * an instant; no viewer's timezone may shift it.
+ *
+ * Returns null for anything that is not a bare calendar date, so the caller
+ * decides what to do with a real instant rather than being handed a guess.
+ */
+export function calendarPartsOf(value: string): CalendarParts | null {
+  const m = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(value)
+  if (!m) return null
+  const year = Number(m[1])
+  const month = Number(m[2])
+  const day = m[3] === undefined ? 1 : Number(m[3])
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null
+  return { year, month, day }
+}
+
+/**
+ * R13.6 — a DATE-ONLY ISO string ("2026-08-13") as `DD-MM-YYYY`, read directly
+ * off the string. Same rule as `formatSourceDate`: a date-only value is never
+ * run through `new Date()`, which parses it as UTC midnight and can render the
+ * prior day in Chile's negative-UTC-offset timezone. Used for published-week
+ * labels, where the year matters across a multi-year selector.
+ */
+export function formatIsoDateLabel(isoDate: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate)
+  if (!m) return isoDate
+  const [, y, mo, d] = m
+  if (Number(mo) < 1 || Number(mo) > 12 || Number(d) < 1 || Number(d) > 31) return isoDate
+  return `${d}-${mo}-${y}`
+}
+
 /** Format ISO date string as DD MMM YYYY (es-CL short month). */
 export function formatDate(isoDate: string): string {
   return new Date(isoDate).toLocaleDateString('es-CL', {

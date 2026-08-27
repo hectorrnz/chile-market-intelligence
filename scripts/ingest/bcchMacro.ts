@@ -23,6 +23,7 @@ import {
   INGESTION_VERSION, SOURCE_PROVIDER,
   type ObservationUpsertRow, type IndicatorResult,
 } from './bcchMacroCore.ts'
+import { requiredFetchStart, earliestIso } from '../../src/lib/providers/transforms.ts'
 import { fetchBcchSeries, isBcchConfigured } from '../../src/lib/providers/bcchClient.ts'
 import { getEnabledBcchSeries } from '../../src/config/macroSeries.ts'
 import { bcchSeriesManualMap } from '../../src/config/bcchSeriesManualMap.ts'
@@ -180,7 +181,16 @@ async function main() {
 
     process.stdout.write(`[bcch-ingest] ${def.manualKey} (${seriesCode}): fetching... `)
 
-    const res = await fetchBcchSeries(seriesCode, { firstDate: fetchFrom, lastDate: rangeTo })
+    // R13.R5F § 1A — derive the horizon from the store window and this
+    // series' transform lookback rather than a flat extra year, so a monthly
+    // yoy series (`imacec-anual`) always has its true prior-year base in the
+    // fetched data. Never narrows the range.
+    const seriesFetchFrom = earliestIso(
+      fetchFrom,
+      requiredFetchStart(rangeFrom, def.transformation, def.frequency),
+    )
+
+    const res = await fetchBcchSeries(seriesCode, { firstDate: seriesFetchFrom, lastDate: rangeTo })
     if (!res.ok) {
       console.log(`SKIP — ${res.reason}`)
       results.push({ manualKey: def.manualKey, fallbackStaticId: def.fallbackStaticId, seriesCode, rawCount: 0, storedCount: 0, skipped: true, reason: res.reason, rows: [] })

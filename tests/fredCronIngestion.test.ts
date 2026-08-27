@@ -118,12 +118,39 @@ describe('FRED cron route hygiene', () => {
     assert.ok(!/console\.log\(.*secret/i.test(src), 'must never log the secret value')
   })
 
-  it('vercel.json does NOT schedule the FRED cron (manual/reviewable only, per Phase 8D policy)', async () => {
+  // R13.R5C.1 § 4 — DELIBERATELY REVERSED. Phase 8D left this cron unscheduled
+  // "until stability is observed over time", nominally by the same policy as
+  // /api/cron/ingest-bcch-macro — but that route has been on a weekday schedule
+  // since Phase 5D, so the stated parity was never real. The consequence was
+  // found live: persisted FRED observations advanced only when someone ran the
+  // job by hand, the last such run was 2026-07-21, and six US series were
+  // reported stale for weeks. Stability HAS now been observed — FRED macro has
+  // been live since Phase 8D behind the same MacroProvider contract, the same
+  // plausibility bands and the same verified-series-only registry as its BCCh
+  // twin, on a keyless public endpoint. It gets its twin's cadence.
+  it('vercel.json schedules the FRED cron on its own weekday slot', async () => {
+    const fs = await import('node:fs')
+    const vercelJson = JSON.parse(
+      fs.readFileSync(new URL('../vercel.json', import.meta.url), 'utf8')
+    )
+    const crons: Array<{ path: string; schedule: string }> = vercelJson.crons ?? []
+    const fred = crons.find((c) => c.path === '/api/cron/ingest-fred-macro')
+    assert.ok(fred, 'FRED macro ingestion must be scheduled')
+    assert.match(fred!.schedule, /1-5$/, 'weekdays only, like the BCCh twin')
+    const bcch = crons.find((c) => c.path === '/api/cron/ingest-bcch-macro')
+    assert.notEqual(fred!.schedule, bcch!.schedule, 'the two must not contend for one window')
+  })
+
+  // The policy itself is NOT relaxed — it applies to the crons it was actually
+  // written for: the ones reading an undocumented HTML surface.
+  it('the undocumented-surface crons stay unscheduled', async () => {
     const fs = await import('node:fs')
     const vercelJson = JSON.parse(
       fs.readFileSync(new URL('../vercel.json', import.meta.url), 'utf8')
     )
     const paths: string[] = (vercelJson.crons ?? []).map((c: { path: string }) => c.path)
-    assert.ok(!paths.includes('/api/cron/ingest-fred-macro'), 'FRED cron must stay unscheduled this phase')
+    for (const p of ['/api/cron/financials/cmf-xbrl', '/api/cron/financials/yahoo', '/api/cron/financials/cmf-bank']) {
+      assert.ok(!paths.includes(p), p)
+    }
   })
 })

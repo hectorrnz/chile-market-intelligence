@@ -21,8 +21,8 @@
 
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync, readdirSync } from 'node:fs'
+import { join, sep } from 'node:path'
 
 const ROOT = join(import.meta.dirname, '..')
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
@@ -329,5 +329,265 @@ describe('shared components wrap instead of overflowing', () => {
     // drawer (Fable spec: right `min(390px,94vw)`) — still always narrower
     // than the viewport at any width, just via a different responsive unit.
     assert.match(read('src/components/ui/NotificationBell.tsx'), /w-\[min\(390px,94vw\)\]/)
+  })
+})
+
+// ─── R13.R5G · Family Portfolio responsive conventions ───────────────────────
+//
+// R13 built the Family Portfolio (Summary · Holdings · Weekly Changes ·
+// Alternatives Dashboard / Holdings / Cash Flows) after every convention above
+// was already established, so none of it was covered here. R13.R5 verified
+// these surfaces in the browser down to 390px; this block makes the class
+// recipes that produced that result impossible to revert silently.
+//
+// Source scans, not pixel snapshots — they assert the load-bearing recipe, never
+// a rendered measurement, so a legitimate visual change never has to fight them.
+
+const FP_DIRS = ['src/app/family-portfolio', 'src/components/familyPortfolio'] as const
+
+/** Every .tsx under the Family Portfolio, so a NEW surface is covered the day it lands. */
+function fpFiles(): string[] {
+  const out: string[] = []
+  for (const dir of FP_DIRS) {
+    for (const entry of readdirSync(join(ROOT, dir), { recursive: true }) as string[]) {
+      const rel = [dir, ...String(entry).split(sep)].join('/')
+      if (rel.endsWith('.tsx')) out.push(rel)
+    }
+  }
+  return out.sort()
+}
+
+const FP_SURFACES = {
+  summary: 'src/app/family-portfolio/page.tsx',
+  holdings: 'src/app/family-portfolio/portfolio/page.tsx',
+  weeklyChanges: 'src/app/family-portfolio/weekly-changes/page.tsx',
+  altDashboard: 'src/app/family-portfolio/alternatives/page.tsx',
+  altHoldings: 'src/app/family-portfolio/alternatives/holdings/page.tsx',
+  altCashFlows: 'src/app/family-portfolio/alternatives/cash-flows/page.tsx',
+  admin: 'src/app/family-portfolio/admin/page.tsx',
+} as const
+
+describe('Family Portfolio: every multi-column grid collapses to one column', () => {
+  // The single defect this whole convention exists to prevent (root cause #2 at
+  // the top of this file): a bare `grid-cols-3` that never collapses, so a
+  // three-column analytical row survives onto a phone and forces page-level
+  // horizontal scroll.
+  const GRID = /(.?)grid-cols-([A-Za-z0-9[\](),_%.-]+)/g
+
+  /** The class string a match sits inside — bounded by the nearest quote/backtick. */
+  function classWindow(src: string, at: number): string {
+    const before = src.slice(0, at)
+    const open = Math.max(before.lastIndexOf("'"), before.lastIndexOf('"'), before.lastIndexOf('`'))
+    const after = src.slice(at)
+    const ends = [after.indexOf("'"), after.indexOf('"'), after.indexOf('`')].filter((i) => i >= 0)
+    return src.slice(open + 1, at + Math.min(...ends))
+  }
+
+  const multiColumn = fpFiles().flatMap((rel) => {
+    const src = read(rel)
+    return [...src.matchAll(GRID)]
+      .filter((m) => m[2] !== '1')
+      .map((m) => ({
+        where: `${rel}:${src.slice(0, m.index).split('\n').length}`,
+        prefixChar: m[1],
+        cls: `grid-cols-${m[2]}`,
+        window: classWindow(src, m.index),
+      }))
+  })
+
+  test('the scan actually found the grids it is guarding (it cannot pass by finding nothing)', () => {
+    assert.ok(multiColumn.length >= 15, `expected the FP multi-column grids, found ${multiColumn.length}`)
+  })
+
+  test('every multi-column grid carries a responsive prefix', () => {
+    for (const g of multiColumn) {
+      assert.equal(g.prefixChar, ':', `${g.where}: bare "${g.cls}" never collapses — prefix it (sm:/lg:/xl:)`)
+    }
+  })
+
+  test('every multi-column grid declares a one-column base in the same class string', () => {
+    // A prefixed track with no base inherits whatever `grid` defaults to, which
+    // is one column today but is not stated — so the collapse would be
+    // accidental rather than declared. Each of these says it outright.
+    for (const g of multiColumn) {
+      assert.match(g.window, /(^|\s)grid-cols-1(\s|$)/, `${g.where}: "${g.cls}" has no grid-cols-1 base`)
+    }
+  })
+
+  test('no element is pinned to a fixed width — every w-[…] is a max-w/min-w bound', () => {
+    // A fixed-width cell or control is the other way a table forces the page
+    // wider than the viewport. The Family Portfolio uses `max-w-[…rem]` purely
+    // as a truncation ceiling on long labels (with `title` restating them).
+    for (const rel of fpFiles()) {
+      const src = read(rel)
+      for (const m of src.matchAll(/(.{0,4})\bw-\[([^\]]+)\]/g)) {
+        const line = src.slice(0, m.index).split('\n').length
+        assert.match(
+          m[1],
+          /(max-|min-)$/,
+          `${rel}:${line}: fixed w-[${m[2]}] — use max-w-/min-w- so the element can shrink`,
+        )
+      }
+    }
+  })
+})
+
+describe('Family Portfolio: dense tables scroll inside their own card', () => {
+  // Each floor is the width that table's own columns need. Locking the exact
+  // value keeps a change deliberate: widening a table without revisiting its
+  // floor is what puts a column off the right edge on a phone.
+  const FLOORS: { file: string; floors: number[] }[] = [
+    { file: FP_SURFACES.summary, floors: [760] },
+    { file: FP_SURFACES.holdings, floors: [760] },
+    { file: FP_SURFACES.weeklyChanges, floors: [560, 760] },
+    { file: FP_SURFACES.altHoldings, floors: [1080] },
+    { file: FP_SURFACES.altCashFlows, floors: [720] },
+    { file: FP_SURFACES.admin, floors: [720] },
+  ]
+
+  for (const { file, floors } of FLOORS) {
+    test(`${file} keeps its ${floors.join('/')}px table floor inside TableCard`, () => {
+      const src = read(file)
+      for (const w of floors) assert.ok(src.includes(`minWidth={${w}}`), `${file}: missing minWidth {${w}}`)
+      // The scroll stays TableCard's own container — never a page-level
+      // workaround that would move the scrollbar onto the document.
+      assert.doesNotMatch(src, /overflow-x-scroll/)
+    })
+  }
+
+  test('the Alternatives drilldown tables own their in-card scroll directly', () => {
+    // These render inside a DetailPanel rather than a TableCard, so they carry
+    // the same pairing themselves: a scroll container plus a table floor.
+    const src = read('src/components/familyPortfolio/AlternativesDrilldowns.tsx')
+    const wrappers = (src.match(/<div className="overflow-x-auto">/g) ?? []).length
+    const floors = (src.match(/min-w-\[520px\]/g) ?? []).length
+    assert.equal(wrappers, 3, 'every drilldown table sits in its own scroll container')
+    assert.equal(floors, wrappers, 'and each one carries a table floor')
+  })
+
+  test('long table labels truncate inside their cell instead of widening the row', () => {
+    for (const rel of [FP_SURFACES.weeklyChanges, FP_SURFACES.altHoldings, FP_SURFACES.altCashFlows]) {
+      assert.match(
+        read(rel),
+        /className="block truncate max-w-\[\d+rem\]" title=/,
+        `${rel}: a long label must truncate, with title restating it in full`,
+      )
+    }
+    // The hierarchy's own indented label cell shrinks rather than pushes.
+    assert.match(read('src/components/familyPortfolio/HierarchicalTable.tsx'), /flex items-center gap-1\.5 min-w-0/)
+  })
+
+  test('TableCard is still the component all of this trusts', () => {
+    const card = read('src/components/fable/TableCard.tsx')
+    assert.match(card, /overflow-x-auto/)
+    assert.match(card, /minWidth \? \{ minWidth \} : undefined/)
+  })
+})
+
+describe('Family Portfolio: no card is pinned to a fixed height', () => {
+  // Root cause #4 at the top of this file, in its Family Portfolio form. A
+  // stacked mobile card locked to an unrelated driver card's height is the bug
+  // the `--pin-h` convention was introduced to end; R13 avoids it by never
+  // pinning at all, which is simpler and cannot regress at a new breakpoint.
+  test('no measured-height pinning and no fixed page/card height anywhere', () => {
+    for (const rel of fpFiles()) {
+      const src = read(rel)
+      assert.doesNotMatch(src, /--pin-h/, `${rel}: height pinning must not return`)
+      assert.doesNotMatch(src, /\bh-\[\d+px\]/, `${rel}: fixed pixel card height`)
+    }
+  })
+
+  test('vertical containment is a scroll cap on the table, not a height on the card', () => {
+    // maxHeight caps the SCROLLPORT (TableCard pairs it with overflowY:auto),
+    // so the card keeps its natural height and the rows scroll inside it.
+    for (const rel of [FP_SURFACES.holdings, FP_SURFACES.weeklyChanges, FP_SURFACES.altHoldings, FP_SURFACES.altCashFlows]) {
+      assert.match(read(rel), /maxHeight=\{640\}/, `${rel}: a long table must cap and scroll in-card`)
+    }
+    const card = read('src/components/fable/TableCard.tsx')
+    assert.match(card, /maxHeight != null \? \{ maxHeight, overflowY: 'auto' \}/)
+  })
+
+  test('the only inline heights left are chart bar geometry, not layout', () => {
+    // A bar drawn at a computed height IS the drawing; anything else would be a
+    // layout lock. This keeps that distinction honest as new surfaces land.
+    const offenders: string[] = []
+    for (const rel of fpFiles()) {
+      if (rel.endsWith('Chart.tsx')) continue
+      const src = read(rel)
+      for (const m of src.matchAll(/style=\{\{\s*height:/g)) {
+        offenders.push(`${rel}:${src.slice(0, m.index).split('\n').length}`)
+      }
+    }
+    assert.deepEqual(offenders, [], 'inline height outside a chart component')
+  })
+})
+
+describe('Family Portfolio: charts and controls are viewport-safe', () => {
+  test('charts size themselves from their container, never a fixed pixel width', () => {
+    for (const rel of [
+      'src/components/familyPortfolio/PortfolioEvolutionChart.tsx',
+      'src/components/familyPortfolio/ContributionChart.tsx',
+    ]) {
+      assert.match(read(rel), /new ResizeObserver\(/, `${rel}: must measure its container`)
+    }
+    // The evolution chart redraws into a measured viewBox at 100% width, so it
+    // reflows rather than being scaled (which would shrink its axis text too).
+    const evo = read('src/components/familyPortfolio/PortfolioEvolutionChart.tsx')
+    assert.ok(evo.includes('viewBox={`0 0 ${w} ${height}`}'))
+    assert.ok(evo.includes('width="100%"'))
+    // The donut scales down with its column instead of setting the column width.
+    assert.ok(read('src/components/familyPortfolio/AllocationDonut.tsx').includes('shrink-0 max-w-full h-auto'))
+    // The cash-flow bars scroll inside the card when there are more periods than
+    // fit, and still fill it when there are fewer (`w-max min-w-full`).
+    const cf = read('src/components/familyPortfolio/AlternativesCashFlowChart.tsx')
+    assert.ok(cf.includes('overflow-x-auto nv-scrollbar-hidden'))
+    assert.ok(cf.includes('flex items-end gap-2 w-max min-w-full'))
+  })
+
+  test('the section rails scroll internally instead of forcing page overflow', () => {
+    for (const rel of [
+      'src/components/familyPortfolio/FamilyPortfolioNav.tsx',
+      'src/components/familyPortfolio/AlternativesSubnav.tsx',
+    ]) {
+      const src = read(rel)
+      assert.ok(src.includes('overflow-x-auto nv-scrollbar-hidden'), `${rel}: the rail must scroll itself`)
+      assert.ok(src.includes('shrink-0 whitespace-nowrap'), `${rel}: pills keep their label rather than compressing`)
+    }
+  })
+
+  test('the Alternatives filter bar wraps and its dropdown is capped to the viewport', () => {
+    const src = read('src/components/familyPortfolio/AlternativesFilters.tsx')
+    assert.ok(src.includes('flex flex-wrap items-center gap-x-4 gap-y-2 min-w-0'))
+    // A menu wider than the screen is unreachable — this one never can be.
+    assert.ok(src.includes('max-w-[min(18rem,calc(100vw-2rem))]'))
+    assert.ok(src.includes('min-w-0 truncate'))
+  })
+
+  test('the Summary header controls wrap and scroll rather than widening the page', () => {
+    const src = read(FP_SURFACES.summary)
+    assert.ok(src.includes('flex items-center gap-2 flex-wrap min-w-0 max-w-full'))
+    assert.ok((src.match(/max-w-full overflow-x-auto nv-scrollbar-hidden/g) ?? []).length >= 2)
+  })
+})
+
+describe('Family Portfolio: the corrected Weekly Performance basis grid stays mobile-safe', () => {
+  // R13.R5B aligned the two Weekly Performance rows so "excl. Chilean equities"
+  // begins at the same x in both. That fix introduced the only fixed-track grid
+  // in the strip — so it is also the one place a two-across measure could reach
+  // a phone. It stacks, and the stacking is what this asserts. (R5B's own test
+  // covers the alignment itself; this covers its responsive half.)
+  const STRIP = read('src/components/familyPortfolio/PerformanceMarketsStrip.tsx')
+
+  test('each per-basis track stacks to one column below lg', () => {
+    const tracks = [...STRIP.matchAll(/\d: '(grid-cols-1 lg:grid-cols-\d)'/g)].map((m) => m[1])
+    assert.ok(tracks.length >= 2, 'the basis tracks must be literal class strings Tailwind can scan')
+    for (const cls of tracks) assert.ok(cls.startsWith('grid-cols-1 '), `${cls} must stack below lg`)
+  })
+
+  test('alignment engages only where the grid exists, so every other row still flows', () => {
+    // Below lg the grid is one column and the two bases read one above the
+    // other — the same order the flow layout gives, never a squeeze.
+    assert.match(STRIP, /const aligned = columns > 1 && BASIS_COLUMNS\[columns\] !== undefined/)
+    assert.ok(STRIP.includes('flex flex-wrap ${'), 'the non-aligned rows keep the wrapping flow')
   })
 })

@@ -19,6 +19,27 @@ export interface MacroObservationInput {
 export interface MacroHealthInput {
   latestRun: IngestionRunInput | null
   observations: MacroObservationInput[]
+  /**
+   * R13.R5C.1 § 4 — the indicators an ingestion pipeline actually WRITES.
+   *
+   * `macro_indicators` is a reference table covering every indicator the app
+   * displays, which is a strictly larger set than the one it persists: some
+   * are resolved live from Yahoo at request time and were never designed to
+   * accumulate observations (`dxy`, `bitcoin`), and others have no verified
+   * live series at all and exist only as a static fallback (`litio-spot`,
+   * `brent`, `credito`, `pib`). Scored for staleness they are permanently
+   * "stale", because there is no ingestion whose health they could reflect —
+   * six standing false alarms that made the real ones unreadable.
+   *
+   * Supplied by the caller from the series registry (`getEnabledBcchSeries` +
+   * `getEnabledFredSeries`), the same source of truth that
+   * `tests/macroIndicatorDbCoverage.test.ts` already asserts DB coverage
+   * against, so the two definitions of "ingested" cannot diverge.
+   *
+   * OMITTED, every observation is scored — the pre-existing behaviour, kept so
+   * this stays a pure function with no hidden dependency on a registry.
+   */
+  ingestedIndicatorIds?: readonly string[]
   today?: string  // YYYY-MM-DD; defaults to UTC today
 }
 
@@ -47,6 +68,13 @@ export interface MacroHealthResult {
   indicatorsTotal: number
   rowsFailed: number
   staleIndicators: string[]
+  /**
+   * R13.R5C.1 § 4 — indicators present in the reference table but written by
+   * no ingestion pipeline. Reported, never scored: they are a display-layer
+   * fact, not an ingestion fault, and hiding them entirely would make the
+   * indicator counts look wrong to anyone comparing them with the table.
+   */
+  notIngestedIndicators: string[]
   alerts: HealthAlert[]
 }
 
@@ -201,8 +229,19 @@ export function evaluateMacroIngestionHealth(input: MacroHealthInput): MacroHeal
   }
 
   // ── Per-indicator staleness ────────────────────────────────────────────────
+  // R13.R5C.1 § 4 — score only what an ingestion pipeline writes. See
+  // `ingestedIndicatorIds`; omitted, the set is undefined and everything is
+  // scored exactly as before.
+  const ingested = input.ingestedIndicatorIds ? new Set(input.ingestedIndicatorIds) : null
+  const scored = ingested === null
+    ? input.observations
+    : input.observations.filter(o => ingested.has(o.indicatorId))
+  const notIngestedIndicators = ingested === null
+    ? []
+    : input.observations.filter(o => !ingested.has(o.indicatorId)).map(o => o.indicatorId)
+
   const staleIndicators: string[] = []
-  for (const obs of input.observations) {
+  for (const obs of scored) {
     if (!obs.maxDate) { staleIndicators.push(obs.indicatorId); continue }
     const obsDate = new Date(obs.maxDate + 'T00:00:00Z')
     if (isNaN(obsDate.getTime())) { staleIndicators.push(obs.indicatorId); continue }
@@ -215,7 +254,7 @@ export function evaluateMacroIngestionHealth(input: MacroHealthInput): MacroHeal
     }
   }
 
-  const indicatorsTotal   = input.observations.length
+  const indicatorsTotal   = scored.length
   const indicatorsHealthy = indicatorsTotal - staleIndicators.length
 
   if (staleIndicators.length > 0 && runStatus === 'healthy') {
@@ -235,6 +274,7 @@ export function evaluateMacroIngestionHealth(input: MacroHealthInput): MacroHeal
     indicatorsTotal,
     rowsFailed,
     staleIndicators,
+    notIngestedIndicators,
     alerts,
   }
 }

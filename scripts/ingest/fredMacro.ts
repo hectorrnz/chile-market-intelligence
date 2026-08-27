@@ -21,6 +21,7 @@ import {
   INGESTION_VERSION, SOURCE_PROVIDER,
   type ObservationUpsertRow, type IndicatorResult,
 } from './fredMacroCore.ts'
+import { requiredFetchStart, earliestIso } from '../../src/lib/providers/transforms.ts'
 import { fetchFredSeries, isFredConfigured } from '../../src/lib/providers/fredClient.ts'
 import { getEnabledFredSeries } from '../../src/config/macroSeries.ts'
 import { usFredSeriesManualMap } from '../../src/config/usFredSeriesManualMap.ts'
@@ -177,7 +178,16 @@ async function main() {
 
     process.stdout.write(`[fred-ingest] ${def.manualKey} (${seriesCode}): fetching... `)
 
-    const res = await fetchFredSeries(seriesCode, { startDate: fetchFrom })
+    // R13.R5F § 1A — the flat `years + 1` horizon above sits only ~46 days
+    // clear of what a monthly yoy series needs at the oldest storable date.
+    // Derive it from the store window and the transform's own lookback so the
+    // margin cannot silently vanish. Never narrows the range.
+    const seriesFetchFrom = earliestIso(
+      fetchFrom,
+      requiredFetchStart(rangeFrom, def.transformation, def.frequency),
+    )
+
+    const res = await fetchFredSeries(seriesCode, { startDate: seriesFetchFrom })
     if (!res.ok) {
       console.log(`SKIP — ${res.reason}`)
       results.push({ manualKey: def.manualKey, fallbackStaticId: def.fallbackStaticId, seriesCode, rawCount: 0, storedCount: 0, skipped: true, reason: res.reason, rows: [] })

@@ -320,3 +320,92 @@ describe('scope stays within the chart/token layer', () => {
     assert.match(mw, /decideRequestAccess/)
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// R13.7 — chart x values are CALENDAR DATES, not instants
+//
+// `new Date("2026-08-07")` is an instant at UTC midnight, so the local getters
+// the axis and tooltip used returned the PRIOR day in every negative UTC
+// offset: a 7 August publication rendered "6 Aug" for a viewer in Chile — the
+// entire client base of the family-portfolio module, whose evolution charts
+// plot publication dates. These are BEHAVIOURAL tests: they run the real
+// formatters under real timezones, and first prove the timezone is actually in
+// effect so they can never pass vacuously in a UTC-only environment.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('R13.7 · chart date axis is timezone-invariant', () => {
+  const ORIGINAL_TZ = process.env.TZ
+  const withTz = <T>(tz: string, fn: () => T): T => {
+    process.env.TZ = tz
+    try {
+      return fn()
+    } finally {
+      if (ORIGINAL_TZ === undefined) delete process.env.TZ
+      else process.env.TZ = ORIGINAL_TZ
+    }
+  }
+
+  test('the negative-offset case that produced the defect now renders the right day', async () => {
+    const { formatAxisDate, formatChartTooltipDate, calendarSpanDays } = await import('../src/lib/charts/dateAxis.ts')
+
+    withTz('America/Santiago', () => {
+      // Proof the timezone is genuinely applied — this is the old behaviour.
+      assert.equal(new Date('2026-08-07').getDate(), 6,
+        'expected a negative UTC offset; without it this test proves nothing')
+
+      const span = calendarSpanDays('2026-07-31', '2026-08-07')
+      assert.equal(span, 7)
+      assert.equal(formatAxisDate('2026-08-07', span), '7 Aug')
+      assert.equal(formatChartTooltipDate('2026-08-07', span), '7 Aug 2026')
+    })
+  })
+
+  test('the same value renders identically across positive, zero and negative offsets', async () => {
+    const { formatAxisDate, formatChartTooltipDate, calendarSpanDays } = await import('../src/lib/charts/dateAxis.ts')
+    const ZONES = ['America/Santiago', 'Pacific/Kiritimati', 'UTC', 'Asia/Tokyo', 'America/Anchorage']
+
+    const axis = new Set<string>()
+    const tip = new Set<string>()
+    const spans = new Set<number>()
+    for (const tz of ZONES) {
+      withTz(tz, () => {
+        const span = calendarSpanDays('2026-01-02', '2026-08-07')
+        spans.add(span)
+        axis.add(formatAxisDate('2026-08-07', 7))
+        tip.add(formatChartTooltipDate('2026-08-07', 7))
+      })
+    }
+    assert.equal(axis.size, 1, `axis label shifted across timezones: ${[...axis].join(' | ')}`)
+    assert.equal(tip.size, 1, `tooltip label shifted across timezones: ${[...tip].join(' | ')}`)
+    assert.equal(spans.size, 1, 'the span must be whole UTC-anchored days, never DST-dependent')
+    assert.deepEqual([...axis], ['7 Aug'])
+    assert.deepEqual([...tip], ['7 Aug 2026'])
+  })
+
+  test('axis and tooltip agree on the day, and month-only values resolve to the 1st', async () => {
+    const { formatAxisDate, formatChartTooltipDate } = await import('../src/lib/charts/dateAxis.ts')
+    withTz('America/Santiago', () => {
+      // Every day of a DST-transition month, both formatters, same day number.
+      for (let d = 1; d <= 30; d++) {
+        const iso = `2026-09-${String(d).padStart(2, '0')}`
+        assert.equal(formatAxisDate(iso, 7), `${d} Sep`, `axis wrong for ${iso}`)
+        assert.equal(formatChartTooltipDate(iso, 7), `${d} Sep 2026`, `tooltip wrong for ${iso}`)
+      }
+      // Long spans switch format but never change the calendar month/year.
+      assert.equal(formatAxisDate('2026-08-07', 400), "Aug '26")
+      assert.equal(formatChartTooltipDate('2026-08-07', 401), 'Aug 2026')
+      // `YYYY-MM` (quarterly/monthly series) resolves to the first of the month.
+      assert.equal(formatAxisDate('2026-08', 7), '1 Aug')
+      assert.equal(formatChartTooltipDate('2026-08', 7), '1 Aug 2026')
+    })
+  })
+
+  test('LineChart formats dates through the shared calendar-safe helpers, not new Date()', () => {
+    const src = read('src/components/charts/LineChart.tsx')
+    assert.match(src, /from '@\/lib\/charts\/dateAxis'/)
+    assert.match(src, /calendarSpanDays\(data\[0\]\.date/)
+    assert.ok(!/new Date\(/.test(src), 'LineChart must not parse a calendar date as an instant')
+    assert.ok(!/getMonth\(\)|getFullYear\(\)|getDate\(\)/.test(src),
+      'local date getters shift a UTC-parsed calendar date by a day')
+  })
+})

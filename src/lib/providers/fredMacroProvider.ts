@@ -6,7 +6,7 @@ import type { MacroProvider, ProviderResult } from './types'
 import type { MacroIndicator, MacroHistoryPoint } from '@/types'
 import { isFredConfigured, fetchFredSeries, type FredSeriesPoint } from './fredClient'
 import { getEnabledFredSeries, getSeriesByStaticId, type MacroSeriesDef } from '@/config/macroSeries'
-import { deriveValueChange, transformSeries, monthEndSample } from './transforms'
+import { deriveValueChange, transformSeries, monthEndSample, requiredFetchStart, earliestIso } from './transforms'
 import { isPlausible } from './plausibility'
 
 const NO_CODE = 'No live FRED series code mapped yet'
@@ -78,16 +78,25 @@ export const fredMacroProvider: MacroProvider = {
       return { ok: false, reason: NO_CODE }
     }
 
-    // Request 1 extra year of context so yoy/mom transforms have a base point,
-    // matching bcchMacroProvider's EXTRA_YEARS_CONTEXT pattern. cosd/coed keep
-    // the request bounded instead of downloading a series' full multi-decade
-    // history just to chart a 1-10Y window.
-    const startDate = firstDateFor(years + 1)
+    // R13.R5F § 1A — request enough context for THIS series' transform to have
+    // a real base at the oldest CHARTED point, derived from the display window
+    // and the transform's lookback rather than a flat extra year. cosd/coed
+    // keep the request bounded instead of downloading a series' full
+    // multi-decade history just to chart a 1-10Y window.
+    const cutoffIso = firstDateFor(years)
+    const startDate = earliestIso(
+      firstDateFor(years + 1),
+      requiredFetchStart(cutoffIso, def.transformation, def.frequency),
+    )
     const res = await fetchFredSeries(def.providerSeriesCode, { startDate })
     if (!res.ok) return res
-    const cutoffIso = firstDateFor(years)
-    const windowed = preprocess(def, res.data).filter((p) => p.date >= cutoffIso)
-    const data: MacroHistoryPoint[] = transformSeries(windowed, def.transformation)
+    // Transform the FULL fetched series, THEN window the result. Windowing
+    // first discarded the leading context this request went and fetched, so a
+    // yoy chart's oldest points had no base inside the data and were computed
+    // against whatever was nearest — the same wrong-base defect that corrupted
+    // persisted CPI y/y (see YEAR_AGO_MAX_DRIFT_DAYS in transforms.ts).
+    const data: MacroHistoryPoint[] = transformSeries(preprocess(def, res.data), def.transformation)
+      .filter((p) => p.date >= cutoffIso)
       .map((p) => ({ indicatorId, date: p.date, value: p.value }))
     if (data.length < 2) return { ok: false, reason: 'FRED series too short to chart' }
     return { ok: true, data, source: 'FRED (Federal Reserve Bank of St. Louis)', lastUpdated: res.lastUpdated }
