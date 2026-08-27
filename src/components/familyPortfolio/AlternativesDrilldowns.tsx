@@ -103,27 +103,32 @@ export function PeriodBreakdownModal({
             <div className="flex items-baseline gap-2">
               <dt className="ui-meta text-muted-fg">{a.kpiCalls}</dt>
               <dd className="ui-number text-sm text-foreground">
-                <MaskedAmount value={breakdown.calls.amount} masked={masked} signed />
+                {/* R13.R5C.1 § 2.2 — cash FLOWS. A period with no call (or no
+                    distribution) reads as the module's `-` for "nothing here",
+                    not as a `0` competing with the figures beside it. The
+                    commitment BALANCES further down keep their real zeros:
+                    committed / contributed / unfunded are a visible identity. */}
+                <MaskedAmount value={breakdown.calls.amount} masked={masked} signed zeroDash />
               </dd>
             </div>
             <div className="flex items-baseline gap-2">
               <dt className="ui-meta text-muted-fg">{a.kpiDistributions}</dt>
               <dd className="ui-number text-sm text-foreground">
-                <MaskedAmount value={breakdown.distributions.amount} masked={masked} signed />
+                <MaskedAmount value={breakdown.distributions.amount} masked={masked} signed zeroDash />
               </dd>
             </div>
             {breakdown.unclassified.count > 0 && (
               <div className="flex items-baseline gap-2">
                 <dt className="ui-meta text-warning">{a.kpiUnclassifiedAmount}</dt>
                 <dd className="ui-number text-sm text-foreground">
-                  <MaskedAmount value={breakdown.unclassified.amount} masked={masked} signed />
+                  <MaskedAmount value={breakdown.unclassified.amount} masked={masked} signed zeroDash />
                 </dd>
               </div>
             )}
             <div className="flex items-baseline gap-2">
               <dt className="ui-meta text-foreground">{a.kpiNetFlow}</dt>
               <dd className="ui-number text-sm font-semibold text-foreground">
-                <MaskedAmount value={breakdown.net} masked={masked} signed />
+                <MaskedAmount value={breakdown.net} masked={masked} signed zeroDash />
               </dd>
             </div>
           </dl>
@@ -160,7 +165,7 @@ export function PeriodBreakdownModal({
                       {e.sociedad ?? '—'}
                     </td>
                     <td className={`${CELL} text-right ui-number whitespace-nowrap`}>
-                      <MaskedAmount value={e.amount} masked={masked} signed />
+                      <MaskedAmount value={e.amount} masked={masked} signed zeroDash />
                     </td>
                   </tr>
                 ))}

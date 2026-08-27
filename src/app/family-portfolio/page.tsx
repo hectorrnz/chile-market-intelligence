@@ -1321,6 +1321,9 @@ function SummaryPageInner() {
                       {pub.parserVersion}
                     </p>
                     <p className="ui-meta text-muted-fg">{t.fp.portfolio.diffNote}</p>
+                    {/* R13.R5C.1 § 2.2 — same legend, same shared string, for
+                        the same table. */}
+                    <p className="ui-meta text-muted-fg">{t.fp.weeklyChanges.zeroDashNote}</p>
                   </div>
                 }
               >
@@ -1472,6 +1475,7 @@ function SummaryPageInner() {
                             value={headlineChange.absolute}
                             masked={masked}
                             signed
+                            zeroDash
                             className={`ui-number text-sm font-semibold ${changeTone}`}
                           />
                           <span className={`ui-number text-sm font-semibold ${changeTone}`}>
@@ -1513,6 +1517,7 @@ function SummaryPageInner() {
                                 value={c.change.absolute}
                                 masked={masked}
                                 signed
+                                zeroDash
                                 className={`ui-number ui-capsule-value ${toneOf(c.change.absolute)}`}
                               />
                               <span

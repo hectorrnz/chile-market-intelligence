@@ -373,6 +373,14 @@ export interface OverviewHero {
   weeklyDifferenceStatus: DifferenceReconciliation
   weeklyReturn: number | null
   ytdReturn: number | null
+  /**
+   * R13.R5C.1 § 1 — the year-to-date P&L of the same basis, read from the same
+   * published performance rows as `ytdReturn` through the same helper. It is a
+   * READ, not a second calculation: the Weekly Performance strip already shows
+   * this exact figure, and both now resolve it from one place, so the Overview
+   * card and the Summary can never disagree about it.
+   */
+  ytdProfit: number | null
 }
 
 export function buildHero(
@@ -390,6 +398,7 @@ export function buildHero(
     weeklyDifferenceStatus: diff.status,
     weeklyReturn: metricValue(performance, 'with_chilean_equities', 'weekly_return'),
     ytdReturn: metricValue(performance, 'with_chilean_equities', 'ytd_return'),
+    ytdProfit: metricValue(performance, 'with_chilean_equities', 'ytd_profit'),
   }
 }
 
@@ -741,6 +750,7 @@ export function buildPersonalHero(
     weeklyDifferenceStatus: diff.status,
     weeklyReturn: metricValue(performance, 'total', 'weekly_return'),
     ytdReturn: metricValue(performance, 'total', 'ytd_return'),
+    ytdProfit: metricValue(performance, 'total', 'ytd_profit'),
   }
 }
 

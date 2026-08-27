@@ -27,6 +27,7 @@ import {
   evaluateOverallIngestionHealth,
 } from '@/lib/observability/ingestionHealth'
 import { deliverAlertIfNeeded } from '@/lib/observability/alertDelivery'
+import { getEnabledBcchSeries, getEnabledFredSeries } from '@/config/macroSeries'
 
 export const dynamic    = 'force-dynamic'
 export const maxDuration = 30
@@ -76,6 +77,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         maxDate:     obs.maxDate,
         count:       obs.count,
       })),
+      // R13.R5C.1 § 4 — the alerting path scores the SAME set the status
+      // endpoint does. Two definitions of "ingested" would mean the dashboard
+      // and the alert could disagree about whether anything is wrong.
+      ingestedIndicatorIds: [...getEnabledBcchSeries(), ...getEnabledFredSeries()]
+        .map(s => s.fallbackStaticId),
     })
 
     const marketHealth = evaluateMarketIngestionHealth({

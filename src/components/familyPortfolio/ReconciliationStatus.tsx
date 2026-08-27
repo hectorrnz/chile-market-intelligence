@@ -57,7 +57,9 @@ export function ReconciliationStatus({
       <span className={state === 'reconciled' ? '' : 'text-foreground'}>{label}</span>
       {showResidual && (
         <span className="flex items-center gap-1">
-          · {w.residual}: <MaskedAmount value={residual} masked={masked} signed />
+          {/* R13.R5C.1 § 2.2 — a residual is a difference, and takes the same
+              mark as every other difference in the module. */}
+          · {w.residual}: <MaskedAmount value={residual} masked={masked} signed zeroDash />
         </span>
       )}
       {unavailableCount > 0 && unavailableNoun && (

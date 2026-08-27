@@ -791,7 +791,10 @@ function WeeklyChangesPageInner() {
                             movements between them stay quiet, so the eye reads
                             "from here, to here" before it reads how. */}
                         <dd className={`ui-number shrink-0 text-foreground ${r.strong ? 'text-base font-semibold' : ''}`}>
-                          <MaskedAmount value={r.value} masked={masked} signed={r.signed} />
+                          {/* R13.R5C.1 § 2.2 — `signed` marks the MOVEMENTS of
+                              this reconciliation (profit, net flow); the two
+                              endpoints are levels and keep a real `0`. */}
+                          <MaskedAmount value={r.value} masked={masked} signed={r.signed} zeroDash={r.signed} />
                         </dd>
                       </div>
                     ))}
@@ -979,7 +982,7 @@ function WeeklyChangesPageInner() {
                 >
                   <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
                     <span className="text-muted-fg">
-                      {w.parentChange}: <MaskedAmount value={contributionSet.netChange} masked={masked} signed />
+                      {w.parentChange}: <MaskedAmount value={contributionSet.netChange} masked={masked} signed zeroDash />
                     </span>
                   </div>
                   <ReconciliationStatus

@@ -469,10 +469,13 @@ describe('R13.6 · portfolio page', () => {
       'formatUsd must have exactly one call site (inside amountCell) plus its import')
     const amountCell = table.slice(table.indexOf('function amountCell'), table.indexOf('export function HierarchicalTable'))
     assert.match(amountCell, /formatUsd\(value\)/)
-    // All four dated value columns render through amountCell.
-    assert.match(table, /\{amountCell\(row\.beginningOfYearValue, masked\)\}/)
-    assert.match(table, /\{amountCell\(row\.previousValue, masked\)\}/)
-    assert.match(table, /\{amountCell\(row\.value, masked\)\}/)
+    // All four dated value columns render through amountCell. R13.R5C.1 § 2.2
+    // adds a fifth argument — whether the ROW is an unoccupied taxonomy slot —
+    // which only ever selects between `0` and the "nothing here" mark. The
+    // single-guarded-renderer property this test exists for is unchanged.
+    assert.match(table, /\{amountCell\(row\.beginningOfYearValue, masked, '', undefined, unoccupied\)\}/)
+    assert.match(table, /\{amountCell\(row\.previousValue, masked, '', undefined, unoccupied\)\}/)
+    assert.match(table, /\{amountCell\(row\.value, masked, '', undefined, unoccupied\)\}/)
     // R13.R2 defensive repair: the Difference column renders the DERIVED
     // figure (`This Week − Previous Week`, via the shared invariant), not the
     // persisted one — but through the SAME single guarded `amountCell`, so the
@@ -507,8 +510,15 @@ describe('R13.6 · portfolio page', () => {
     assert.match(maskedAmount, /compact === 'unit'\s*\?\s*formatUsdCompactUnit\(value, compactUnit\)/)
     assert.match(maskedAmount, /:\s*compact\s*\?\s*formatUsdCompactM\(value\)/)
     assert.match(maskedAmount, /:\s*formatUsd\(value, decimals\)/)
-    // R13.8: the single call site also carries the optional signed prefix.
-    assert.match(maskedAmount, /const text = `\$\{signed && value > 0 \? '\+' : ''\}\$\{amount\}`/)
+    // R13.8: the single call site also carries the optional signed prefix, and
+    // R13.R5C.1 § 2 the optional `US$` currency mark. Both are assembled HERE,
+    // inside the component, precisely so a call site can never build a marked
+    // amount out of a prefix plus an unmasked number — the property this whole
+    // test exists to defend.
+    assert.match(
+      maskedAmount,
+      /const text = `\$\{signed && value > 0 \? '\+' : ''\}\$\{currency \? 'US\$ ' : ''\}\$\{amount\}`/,
+    )
     assert.match(maskedAmount, /<PrivacyValue masked=\{masked\}[^>]*>\s*\{text\}/)
     assert.match(maskedAmount, />—</)
     // The compact form is reachable ONLY through this component — a caller

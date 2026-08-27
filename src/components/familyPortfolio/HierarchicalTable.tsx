@@ -30,7 +30,7 @@ import { Fragment, useState } from 'react'
 import { useLang } from '@/components/providers/LangProvider'
 import { PrivacyValue } from '@/components/fable/PrivacyValue'
 import { resolveDisplayedDifference } from '@/lib/familyPortfolio/difference'
-import { formatUsd, formatIsoDateLabel } from '@/lib/formatters'
+import { formatUsd, formatIsoDateLabel, roundsToZeroAt } from '@/lib/formatters'
 import type { FamilyPortfolioSnapshotRow } from '@/lib/data/familyPortfolio'
 
 interface HierarchicalTableProps {
@@ -62,7 +62,29 @@ function rowClasses(rowType: string): string {
   }
 }
 
-function amountCell(value: number | null, masked: boolean, extra = '', warning?: string) {
+/**
+ * R13.R5C.1 § 2.2 — an amount that reads as NOTHING rather than as `0`.
+ *
+ * Two distinct marks, exactly as the Weekly Changes view already defines them
+ * for the reader (`zeroDashNote`): `—` means the figure could not be
+ * established, `-` means there is nothing here. Extending the second mark from
+ * the change columns to the value columns is what makes the whole module
+ * consistent — before this, a row that did not move showed `-` on Weekly
+ * Changes and `0` in the very same conceptual column here.
+ *
+ * Applied under two conditions only, both computed per row (see `renderRow`):
+ *   · the DIFFERENCE is zero — the row did not move, the exact case the mark
+ *     was defined for;
+ *   · the row is UNOCCUPIED — zero or absent in every value column shown, i.e.
+ *     a slot the source workbook's fixed taxonomy lists but this portfolio
+ *     does not hold (Opciones / Call / Put / Preferred / High Yield …).
+ *
+ * A genuine zero is never dashed: a position that WAS worth something at the
+ * beginning of the year and is worth nothing now keeps its `0`, because the
+ * liquidation is the fact the reader needs. Nor does the mark disturb any
+ * total — an unoccupied row contributes nothing to its parent either way.
+ */
+function amountCell(value: number | null, masked: boolean, extra = '', warning?: string, none = false) {
   return (
     <td className={`${CELL} text-right ui-number whitespace-nowrap ${extra}`}>
       {/* A reconciliation anomaly is marked NEXT TO the figure, never by
@@ -80,6 +102,8 @@ function amountCell(value: number | null, masked: boolean, extra = '', warning?:
       )}
       {value === null ? (
         <span className="text-muted-fg">—</span>
+      ) : none && roundsToZeroAt(value, 0) ? (
+        <span className="text-muted-fg">-</span>
       ) : (
         <PrivacyValue masked={masked}>{formatUsd(value)}</PrivacyValue>
       )}
@@ -127,6 +151,13 @@ export function HierarchicalTable({ rows, dates, masked }: HierarchicalTableProp
     const diff = resolveDisplayedDifference(row.value, row.previousValue, row.difference)
     const diffColor =
       diff.displayed === null ? '' : diff.displayed >= 0 ? 'text-positive' : 'text-negative'
+    // R13.R5C.1 § 2.2 — a taxonomy slot this portfolio does not occupy: zero
+    // (or absent) in EVERY value column shown. Judged across all three columns
+    // deliberately, so a position closed during the year still prints its real
+    // `0` this week beside the figure it used to be worth.
+    const unoccupied = [row.beginningOfYearValue, row.previousValue, row.value].every(
+      (v) => v === null || (Number.isFinite(v) && roundsToZeroAt(v, 0)),
+    )
 
     return (
       <Fragment key={row.rowKey}>
@@ -162,14 +193,18 @@ export function HierarchicalTable({ rows, dates, masked }: HierarchicalTableProp
               <span className="truncate">{label}</span>
             </span>
           </td>
-          {amountCell(row.beginningOfYearValue, masked)}
-          {amountCell(row.previousValue, masked)}
-          {amountCell(row.value, masked)}
+          {amountCell(row.beginningOfYearValue, masked, '', undefined, unoccupied)}
+          {amountCell(row.previousValue, masked, '', undefined, unoccupied)}
+          {amountCell(row.value, masked, '', undefined, unoccupied)}
+          {/* The Difference always takes the mark when it is zero, occupied row
+              or not — "did not move" is exactly what the mark means, and it is
+              the same column Weekly Changes already dashes. */}
           {amountCell(
             diff.displayed,
             masked,
             diffColor,
             diff.status === 'mismatch' ? t.fp.portfolio.differenceMismatch : undefined,
+            true,
           )}
         </tr>
         {!isCollapsed && children.map((child) => renderRow(child))}

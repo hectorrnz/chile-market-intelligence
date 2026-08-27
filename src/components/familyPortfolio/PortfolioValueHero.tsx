@@ -42,9 +42,15 @@ export function PortfolioValueHero({ value, masked, label, basis, dateLabel }: P
     // rather than a stack of unrelated cards.
     <section className="flex flex-col min-w-0">
       <h2 className="ui-label text-muted-fg">{label}</h2>
+      {/* R13.R5C.1 § 2 — marked `US$`. Every scope in this book reports in
+          USD, but the source workbook, the market context and the reader's own
+          frame of reference are Chilean, so THE headline figure states its
+          unit. It is marked here, once, for all four scopes: Main and each
+          personal Summary render through this one component. */}
       <MaskedAmount
         value={value}
         masked={masked}
+        currency
         className="ui-number ui-kpi-hero text-foreground mt-1.5"
       />
       {(basis || dateLabel) && (

@@ -108,14 +108,23 @@ describe('R12 · liveOverlay — coverage helpers drive the module badge', () =>
 })
 
 describe('R12 · per-instrument gating wired into every snapshot consumer', () => {
-  test('Home derives watchlist/sector/index/portfolio badges from coverage, not snapshot presence', () => {
+  test('Home derives watchlist/sector/index badges from coverage, not snapshot presence', () => {
     const src = read('src/app/page.tsx')
     assert.match(src, /stockOverlayCoverage\(live\?\.stocks, watchlistTickers\)/)
     assert.match(src, /sectorOverlayCoverage\(live\?\.stocks, staticSectors\)/)
     assert.match(src, /indexOverlayCoverage\(live\?\.indices\)/)
-    assert.match(src, /stockOverlayCoverage\(live\.stocks, \(pfDetail\?\.positions \?\? \[\]\)\.map\(p => p\.ticker\)\)/)
     // A base index row must not shadow a fresher persisted snapshot.
     assert.match(src, /if \(lv && lv\.source === 'live'\)/)
+  })
+
+  // R13.R5B § 3 — the portfolio card no longer carries a market-data badge, and
+  // must not: it reads a PUBLISHED WORKBOOK, not a live market overlay. A
+  // live/persisted badge there would describe a price feed the card does not
+  // consult. Its provenance is the publication's own as-of date, in the footer.
+  test('the Home portfolio card is sourced by publication, not by market coverage', () => {
+    const src = read('src/app/page.tsx')
+    assert.doesNotMatch(src, /pfPriceStatus/)
+    assert.match(src, /<TableSourceFooter source=\{t\.fp\.portfolio\.source\} asOf=\{fpPublication\.asOfDate\}/)
   })
 
   test('Portfolio and Stocks derive their badge from their own displayed tickers', () => {

@@ -170,10 +170,17 @@ function MetricSlot({
         <span className={`ui-number ${scale} text-muted-fg`}>—</span>
       ) : metric.kind === 'amount' ? (
         // Portfolio money — masked exactly like every other amount on the page.
+        // R13.R5C.1 § 2.2 — every `amount` in this band is a CHANGE or a FLOW
+        // (weekly P&L, YTD P&L, Net Flows); none is a level. A zero therefore
+        // means "nothing moved", which is what the module's `-` mark says, and
+        // it stays distinct from the `—` above for "not established". Net
+        // Flows is the one that actually occurs: three of the five scopes
+        // published no external capital movement this week.
         <MaskedAmount
           value={metric.value}
           masked={masked}
           signed
+          zeroDash
           className={`ui-number ${scale} text-foreground`}
         />
       ) : metric.kind === 'price' ? (
@@ -189,15 +196,50 @@ function MetricSlot({
   )
 }
 
+/**
+ * R13.R5B § 1 — THE PER-BASIS COLUMN TRACKS, shared by the weekly row and the
+ * supporting row beneath it.
+ *
+ * Whole literal class strings, because Tailwind scans source text and a
+ * template-built name would not survive the build (the same reason
+ * `TILE_COLUMNS` on the Cash Flows view is written out).
+ *
+ * One column per basis, and STACKED below `lg`: a two-basis grid held at every
+ * width would put two groups of figures side by side on a phone, which is the
+ * crowding the flex row previously avoided by wrapping. Above `lg` the card is
+ * already in its multi-column composition, and that is exactly where the
+ * misalignment this fixes was visible.
+ */
+const BASIS_COLUMNS: Record<number, string> = {
+  2: 'grid-cols-1 lg:grid-cols-2',
+  3: 'grid-cols-1 lg:grid-cols-3',
+}
+
+/**
+ * The column gutter for that grid — ONE value for BOTH rows, deliberately.
+ *
+ * With `1fr` tracks the second basis begins at `(width + gap) / 2`, so the two
+ * rows align only if they share a gap as well as a track template. The lead
+ * row's more generous gutter is the one kept, since it sets the band's rhythm.
+ */
+const BASIS_COLUMN_GAP = 'gap-x-10 2xl:gap-x-14'
+
 function GroupStack({
   groups,
   lead,
   masked,
   reserveTitleRow = false,
+  columns = 0,
 }: {
   groups: StripGroup[]
   lead: boolean
   masked: boolean
+  /**
+   * R13.R5B § 1 — when set, the groups lay out on a shared column grid instead
+   * of flowing. See `BASIS_COLUMNS`. `0` keeps the original flex-wrap flow, so
+   * every column that is not the Main portfolio pair renders exactly as before.
+   */
+  columns?: number
   /**
    * R13.R2F1 § A — WEEKLY PERFORMANCE VERTICAL ALIGNMENT. When the sibling
    * column's groups carry a basis title (`<h4>`) and this column's groups do
@@ -218,11 +260,30 @@ function GroupStack({
   // viewport (R13.R2F § 5): the band is content-width by design, and on a wide
   // desktop a generous, deliberate rhythm is what turns leftover width into
   // composition rather than dead space.
+  // R13.R5B § 1 — ALIGNED MODE vs THE ORIGINAL FLOW.
+  //
+  // The defect: row 1 carries TWO metrics per basis and row 2 carries THREE, at
+  // different slot measures and different gutters. Both rows sit in the same
+  // outer grid column with the same padding, so the FIRST group's left edge
+  // always coincided — which is why "incl. Chilean equities" looked correct —
+  // but a flowed second group begins after however wide its own row's first
+  // group happens to be, so "excl. Chilean equities" started in a different
+  // place in each row. No amount of tuning the measures fixes that while the
+  // two rows are laid out independently: 2 slots are never 3 slots wide.
+  //
+  // So the basis groups get an explicit shared track template instead. Each
+  // basis owns the same column in both rows, and the two rows therefore agree
+  // by construction rather than by coincidence of content width.
+  const aligned = columns > 1 && BASIS_COLUMNS[columns] !== undefined
   return (
     <div
-      className={`flex flex-wrap ${
-        lead ? 'gap-x-10 2xl:gap-x-14 gap-y-4' : 'gap-x-8 2xl:gap-x-11 gap-y-3'
-      }`}
+      className={
+        aligned
+          ? `grid ${BASIS_COLUMNS[columns]} ${BASIS_COLUMN_GAP} ${lead ? 'gap-y-4' : 'gap-y-3'}`
+          : `flex flex-wrap ${
+              lead ? 'gap-x-10 2xl:gap-x-14 gap-y-4' : 'gap-x-8 2xl:gap-x-11 gap-y-3'
+            }`
+      }
     >
       {groups.map((group) => (
         <div key={group.key} className="flex flex-col gap-1.5 min-w-0">
@@ -287,6 +348,19 @@ export function PerformanceMarketsStrip({
   const portfolioSecondaryTitled = portfolioSecondary.some((g) => g.title)
   const marketsSecondaryTitled = marketsSecondary.some((g) => g.title)
 
+  // R13.R5B § 1 — the portfolio column's per-basis tracks, shared by both rows.
+  //
+  // DATA-DRIVEN, like `reserveTitleRow` beside it: the two rows share a grid
+  // only when they are actually describing the SAME set of bases, one group
+  // each. A personal scope (one group, untitled) and any future shape where the
+  // rows disagree fall through to the original flow untouched — aligning rows
+  // that do not correspond would move figures under the wrong heading, which is
+  // worse than the misalignment it set out to fix.
+  const basisColumns =
+    portfolioPrimary.length > 1 && portfolioPrimary.length === portfolioSecondary.length
+      ? portfolioPrimary.length
+      : 0
+
   if (frameless) {
     // R13.R2F3 — see the header comment. Same data, same GroupStack/MetricSlot
     // primitives, no card chrome, Portfolio stacked above Markets.
@@ -346,6 +420,7 @@ export function PerformanceMarketsStrip({
             lead
             masked={masked}
             reserveTitleRow={!portfolioPrimaryTitled && marketsPrimaryTitled}
+            columns={basisColumns}
           />
         </section>
 
@@ -371,7 +446,8 @@ export function PerformanceMarketsStrip({
           <>
             <div className={`${CELL_SUB} border-t`} style={line}>
               <GroupStack groups={portfolioSecondary} lead={false} masked={masked}
-                reserveTitleRow={!portfolioSecondaryTitled && marketsSecondaryTitled} />
+                reserveTitleRow={!portfolioSecondaryTitled && marketsSecondaryTitled}
+                columns={basisColumns} />
             </div>
             <div className={`${CELL_SUB} border-t lg:border-l`} style={line}>
               <GroupStack groups={marketsSecondary} lead={false} masked={masked}

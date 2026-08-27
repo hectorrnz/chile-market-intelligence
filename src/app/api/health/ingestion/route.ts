@@ -14,6 +14,17 @@ import {
   evaluateMarketIngestionHealth,
   evaluateOverallIngestionHealth,
 } from '@/lib/observability/ingestionHealth'
+import { getEnabledBcchSeries, getEnabledFredSeries } from '@/config/macroSeries'
+
+/**
+ * R13.R5C.1 § 4 — the indicators an ingestion pipeline actually writes, read
+ * from the series registry rather than restated here. `fallbackStaticId` is
+ * the `macro_indicators.id` an enabled series persists under, which is exactly
+ * the join `tests/macroIndicatorDbCoverage.test.ts` already enforces.
+ */
+function ingestedIndicatorIds(): string[] {
+  return [...getEnabledBcchSeries(), ...getEnabledFredSeries()].map(s => s.fallbackStaticId)
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -43,6 +54,7 @@ export async function GET(): Promise<NextResponse> {
         maxDate:     obs.maxDate,
         count:       obs.count,
       })),
+      ingestedIndicatorIds: ingestedIndicatorIds(),
     })
 
     const marketHealth = evaluateMarketIngestionHealth({
@@ -77,6 +89,9 @@ export async function GET(): Promise<NextResponse> {
           indicatorsTotal:    macroHealth.indicatorsTotal,
           rowsFailed:         macroHealth.rowsFailed,
           staleIndicators:    macroHealth.staleIndicators,
+          // Reported so the counts above can be reconciled against the
+          // reference table, and never counted as an ingestion fault.
+          notIngestedIndicators: macroHealth.notIngestedIndicators,
         },
         market: {
           status:             marketHealth.status,

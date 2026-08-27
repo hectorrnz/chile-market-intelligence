@@ -288,7 +288,10 @@ function FlowFigure({
         )}
       </dt>
       <dd className={`ui-number shrink-0 text-foreground ${strong ? 'text-base font-semibold' : ''}`}>
-        <MaskedAmount value={amount} masked={masked} signed />
+        {/* R13.R5C.1 § 2.2 — a cash FLOW: a period with no movement of this
+            kind reads as the module's `-`, never as a `0`. The commitment
+            KPIs above are levels and keep their real zeros. */}
+        <MaskedAmount value={amount} masked={masked} signed zeroDash />
       </dd>
     </div>
   )
@@ -875,7 +878,7 @@ function RecentActivityCard({
                   {e.investmentName ?? a.unknownInvestment}
                 </span>
                 <span className="ui-number whitespace-nowrap shrink-0">
-                  <MaskedAmount value={e.amount} masked={masked} signed />
+                  <MaskedAmount value={e.amount} masked={masked} signed zeroDash />
                   <span className="text-muted-fg"> {currencyLabel(e.currency)}</span>
                 </span>
               </div>

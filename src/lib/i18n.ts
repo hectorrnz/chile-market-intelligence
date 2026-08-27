@@ -59,7 +59,13 @@ export const dict = {
       emptyPublications: 'Nothing published yet.',
       error:          'Could not load the administrator console.',
       notAuthorized:  'Administrative capability is required.',
-      source:         'Family Portfolio uploads',
+      // R13.R5B § 2 — "Family Portfolio" removed from user-visible copy. NOT
+      // "Main Portfolio": this footer sits under BOTH the uploads and the
+      // publications table, and a RESUMEN workbook carries every scope, so
+      // naming Main here would misdescribe a file that also publishes the
+      // personal portfolios. `Portfolio` is the name the module already shows
+      // (`fp.tag`, `nav.portfolio`).
+      source:         'Portfolio uploads',
       refusal: {
         blocking_findings:          'A required cell is in error. Recalculate the workbook and upload it again.',
         no_publication_date:        'No publication date was detected or supplied.',
@@ -91,7 +97,10 @@ export const dict = {
       navAdmin:       'Admin',
       /** `{scope}` is the server-supplied scope label; word order differs by language. */
       scopeHeading:   '{scope} PORTFOLIO',
-      noAccess:       'This account has no Family Portfolio access. Access is assigned by an administrator.',
+      // R13.R5B § 2 — likewise not "Main Portfolio": this is the zero-scope
+      // state, which is about the module as a whole rather than any one
+      // portfolio in it.
+      noAccess:       'This account has no Portfolio access. Access is assigned by an administrator.',
       accessError:    'Your access could not be verified. Please try again.',
       overviewPendingTitle: 'Overview',
       overviewPending:  'The generated Overview is not available yet — it arrives in a later release stage.',
@@ -713,7 +722,11 @@ export const dict = {
         fullTableNote:      'Complete listing of every hierarchy row in published order — subtotal and total rows are structural and are never summed with their constituents.',
         fullTableCashNote:  'This listing includes Caja y Equivalentes; the ranked panels above exclude it unless toggled.',
         statusUnavailable:  'Unavailable',
-        zeroDashNote:       'In the change columns, “-” means the row did not move this week and “—” means the two weeks could not be compared.',
+        // R13.R5C.1 § 2.2 — rewritten for the module-wide convention. The `-`
+        // mark now also appears in the VALUE columns, for a category the
+        // portfolio does not hold, so a note scoped to "the change columns"
+        // would no longer describe what the reader sees.
+        zeroDashNote:       'In the amount columns, “-” means there is nothing here — a row that did not move, or a category this portfolio does not hold — and “—” means the figure could not be established.',
         reasonMissingCurrent:  'No published value in the selected week.',
         reasonMissingPrevious: 'No published value in the previous published week.',
         reasonMissingBoth:     'No published value in either week.',
@@ -1804,7 +1817,9 @@ export const dict = {
       emptyPublications: 'Aún no se ha publicado nada.',
       error:          'No se pudo cargar la consola de administración.',
       notAuthorized:  'Se requiere capacidad administrativa.',
-      source:         'Cargas de Portafolio Familiar',
+      // R13.R5B § 2 — ver la nota en inglés: no «Portafolio Principal», porque
+      // la planilla RESUMEN publica todos los alcances, no solo el principal.
+      source:         'Cargas de Portafolio',
       refusal: {
         blocking_findings:          'Una celda requerida está en error. Recalcule el libro y vuelva a cargarlo.',
         no_publication_date:        'No se detectó ni se indicó una fecha de publicación.',
@@ -1832,7 +1847,7 @@ export const dict = {
       navAlternatives:  'Alternativos',
       navAdmin:       'Admin',
       scopeHeading:   'PORTAFOLIO {scope}',
-      noAccess:       'Esta cuenta no tiene acceso al Portafolio Familiar. El acceso lo asigna un administrador.',
+      noAccess:       'Esta cuenta no tiene acceso al Portafolio. El acceso lo asigna un administrador.',
       accessError:    'No se pudo verificar su acceso. Intente nuevamente.',
       overviewPendingTitle: 'Resumen',
       overviewPending:  'El Resumen generado aún no está disponible — llega en una etapa posterior.',
@@ -2267,7 +2282,7 @@ export const dict = {
         fullTableNote:      'Listado completo de cada fila de la jerarquía en el orden publicado — las filas de subtotal y total son estructurales y nunca se suman con sus componentes.',
         fullTableCashNote:  'Este listado incluye Caja y Equivalentes; los paneles de ranking anteriores la excluyen salvo que se active la opción.',
         statusUnavailable:  'No disponible',
-        zeroDashNote:       'En las columnas de variación, “-” significa que la fila no varió esta semana y “—” que las dos semanas no pudieron compararse.',
+        zeroDashNote:       'En las columnas de montos, “-” significa que aquí no hay nada — una fila que no varió, o una categoría que este portafolio no mantiene — y “—” que la cifra no pudo establecerse.',
         reasonMissingCurrent:  'Sin valor publicado en la semana seleccionada.',
         reasonMissingPrevious: 'Sin valor publicado en la semana publicada anterior.',
         reasonMissingBoth:     'Sin valor publicado en ninguna de las dos semanas.',

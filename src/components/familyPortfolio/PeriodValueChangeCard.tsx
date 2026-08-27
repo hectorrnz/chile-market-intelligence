@@ -518,6 +518,10 @@ function Figure({
         value={value}
         masked={masked}
         signed={signed}
+        // R13.R5C.1 § 2.2 — `signed` marks the CHANGE figures of this card, and
+        // a change of zero is the module's `-`. The unsigned figures are period
+        // levels and keep a real `0`.
+        zeroDash={signed === true}
         className={`ui-number ui-chart-headline ${tone} leading-none`}
       />
       <span className={`ui-meta ui-number ${tone === 'text-foreground' ? 'text-muted-fg' : `${tone} font-semibold`}`}>

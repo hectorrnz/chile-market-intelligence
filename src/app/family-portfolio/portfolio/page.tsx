@@ -211,6 +211,11 @@ function PortfolioPageInner() {
                     as such — a genuine caveat on its own line beside the
                     footer, per the standing footer convention. */}
                 {snapshot && <p className="ui-meta text-muted-fg">{t.fp.portfolio.diffNote}</p>}
+                {/* R13.R5C.1 § 2.2 — this table now carries both marks, so it
+                    carries the legend that explains them. The string is shared
+                    with Weekly Changes rather than copied: one convention, one
+                    sentence, no drift. */}
+                {snapshot && <p className="ui-meta text-muted-fg">{t.fp.weeklyChanges.zeroDashNote}</p>}
               </div>
             }
           >

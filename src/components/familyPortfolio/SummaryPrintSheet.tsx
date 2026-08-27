@@ -94,7 +94,7 @@ function MetricValue({ metric, masked }: { metric: PrintMetric; masked: boolean 
       {metric.text !== undefined ? (
         metric.text
       ) : (
-        <MaskedAmount value={metric.amount ?? null} masked={masked} signed />
+        <MaskedAmount value={metric.amount ?? null} masked={masked} signed zeroDash />
       )}
     </dd>
   )
@@ -670,7 +670,10 @@ export function SummaryPrintSheet(props: SummaryPrintSheetProps) {
           </p>
         </div>
         <div className="nv-print-heroblock">
-          <MaskedAmount value={totalValue} masked={masked} className="ui-number nv-print-hero-value" />
+          {/* R13.R5C.1 § 2 — the same `US$` mark the on-screen hero carries.
+              A printed sheet leaves the app entirely, so the headline figure
+              stating its own unit matters more here, not less. */}
+          <MaskedAmount value={totalValue} masked={masked} currency className="ui-number nv-print-hero-value" />
           <p className="nv-print-meta">
             {valueLabel}
             {valueBasis ? ` · ${valueBasis}` : ''}
@@ -720,7 +723,12 @@ export function SummaryPrintSheet(props: SummaryPrintSheetProps) {
                     r.isDifference === true ? toneClass(r.value, masked) : ''
                   }`}
                 >
-                  <MaskedAmount value={r.value} masked={masked} signed={r.isDifference === true} />
+                  <MaskedAmount
+                    value={r.value}
+                    masked={masked}
+                    signed={r.isDifference === true}
+                    zeroDash={r.isDifference === true}
+                  />
                 </dd>
               </div>
             ))}
@@ -774,7 +782,7 @@ export function SummaryPrintSheet(props: SummaryPrintSheetProps) {
             <p className="nv-print-meta">
               {evolutionChangeLabel}{' '}
               <span className={toneClass(evolutionChangeAmount, masked)}>
-                <MaskedAmount value={evolutionChangeAmount} masked={masked} signed className="ui-number" />
+                <MaskedAmount value={evolutionChangeAmount} masked={masked} signed zeroDash className="ui-number" />
                 {evolutionChangeText ? ` ${evolutionChangeText}` : ''}
               </span>
               {hwmValue !== null && (

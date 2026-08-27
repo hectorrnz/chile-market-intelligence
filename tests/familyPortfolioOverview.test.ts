@@ -266,6 +266,9 @@ describe('R13.7 · hero and blocks', () => {
       weeklyDifferenceStatus: 'reconciled',
       weeklyReturn: 0.012,
       ytdReturn: 0.06,
+      // R13.R5C.1 § 1 — YTD P&L, read from the SAME basis as `ytdReturn`
+      // through the same helper, for the Overview card.
+      ytdProfit: 50,
     })
   })
 

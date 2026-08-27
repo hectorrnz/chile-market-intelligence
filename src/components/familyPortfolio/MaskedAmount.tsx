@@ -70,6 +70,25 @@ interface MaskedAmountProps {
    * figure, and it is public here by existing design.
    */
   zeroDash?: boolean
+  /**
+   * R13.R5C.1 § 2 — prefix the ISO-disambiguated currency mark `US$`.
+   *
+   * Reserved for the AUM / PORTFOLIO-VALUE figure of a scope — the one number
+   * a reader may quote out of context, and the one place the unit has to be
+   * unmistakable. Every scope in this book reports in USD, but the workbook,
+   * the market context and the reader's own frame of reference are Chilean, so
+   * a bare `143.677.987` invites being read as pesos. `US$` rather than `$`
+   * for exactly that reason.
+   *
+   * NOT applied to the dense tables: a unit repeated in every cell of a
+   * four-column hierarchy is noise, and those columns already sit under a
+   * scope whose value is marked.
+   *
+   * It lives INSIDE this component, like the three formatters, so the marked
+   * amount still has exactly one guarded render path and cannot be assembled
+   * at a call site out of a prefix plus an unmasked number.
+   */
+  currency?: boolean
   className?: string
 }
 
@@ -81,6 +100,7 @@ export function MaskedAmount({
   compact = false,
   compactUnit,
   zeroDash = false,
+  currency = false,
   className = '',
 }: MaskedAmountProps) {
   if (value === null || !Number.isFinite(value)) {
@@ -103,7 +123,12 @@ export function MaskedAmount({
       : compact
         ? formatUsdCompactM(value)
         : formatUsd(value, decimals)
-  const text = `${signed && value > 0 ? '+' : ''}${amount}`
+  // The mark sits after any sign, so a signed marked amount reads `+US$ 1.234`
+  // rather than splitting the unit off its own figure. In practice the two
+  // props do not meet — `currency` marks levels, `signed` marks changes — but
+  // the order is fixed here rather than left to whichever call site pairs them
+  // first.
+  const text = `${signed && value > 0 ? '+' : ''}${currency ? 'US$ ' : ''}${amount}`
   return (
     <PrivacyValue masked={masked} className={className}>
       {text}

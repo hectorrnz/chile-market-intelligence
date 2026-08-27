@@ -274,8 +274,17 @@ describe('R13.8 · § 4.2 vocabulary', () => {
 
     // In the page: all THREE change columns of the full listing dash, and so do
     // the ranked panels' two — one rule, so the two tables cannot disagree.
-    assert.equal((page.match(/signed zeroDash/g) ?? []).length, 2, 'both value-change columns')
+    assert.equal(
+      (page.match(/value=\{n\.weeklyValueChange\} masked=\{masked\} signed zeroDash/g) ?? []).length,
+      2,
+      'both value-change columns',
+    )
     assert.equal((page.match(/formatChangePct\(n\./g) ?? []).length, 3, 'both own % columns + impact')
+    // R13.R5C.1 § 2.2 — the same rule reached the rest of the page: the parent
+    // net change and the flow reconciliation's own MOVEMENT rows. Its two
+    // endpoint rows are levels and are excluded by `r.signed`.
+    assert.match(page, /value=\{contributionSet\.netChange\} masked=\{masked\} signed zeroDash/)
+    assert.match(page, /signed=\{r\.signed\} zeroDash=\{r\.signed\}/)
     // A LEVEL is never dashed: a holding worth exactly nothing is a real state,
     // and dashing it would collide with "could not be compared".
     assert.ok(

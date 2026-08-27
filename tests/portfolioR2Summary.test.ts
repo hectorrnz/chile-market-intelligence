@@ -572,7 +572,10 @@ describe('R13.R2 · personal-scope composition', () => {
       weeklyDifference: 30,
       weeklyDifferenceStatus: 'reconciled',
       weeklyReturn: 0.025,
+      // R13.R5C.1 § 1 — read off the personal `total` basis, like every other
+      // metric here.
       ytdReturn: 0.09,
+      ytdProfit: 90,
     })
     // Main's basis names must not resolve anything for a personal scope.
     const mainOnly: OverviewPerformanceRow[] = perf.map((p) => ({ ...p, basis: 'with_chilean_equities' }))

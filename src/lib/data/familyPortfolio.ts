@@ -108,6 +108,11 @@ export interface OverviewHeroData {
   weeklyDifference: number | null
   weeklyReturn: number | null
   ytdReturn: number | null
+  /**
+   * R13.R5C.1 § 1 — YTD P&L of the same basis as `ytdReturn`, carried on the
+   * hero so the Overview card READS it rather than deriving a second figure.
+   */
+  ytdProfit: number | null
 }
 
 export interface OverviewAllocationEntry {

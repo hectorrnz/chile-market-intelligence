@@ -26,6 +26,32 @@ const INTER_REQUEST_DELAY_MS = 150
 // Extra history fetched before rangeFrom so yoy/mom transforms have a year-ago base.
 const EXTRA_YEARS_CONTEXT = 1
 
+/**
+ * R13.R5C.1 § 4 — PER-FREQUENCY INCREMENTAL WINDOWS.
+ *
+ * The exact bug the BCCh ingestion fixed on 2026-07-21 with its own
+ * `MONTHLY_INCREMENTAL_DAYS_BACK`, still present here: a lagging print carries
+ * an observation date well OUTSIDE the default 14-day window, so an
+ * incremental run structurally cannot store it, no matter how often it runs.
+ * Found live — `us-gdp` frozen on 2026-01-01 for 238 days while FRED had
+ * already published 2026-04-01.
+ *
+ *  · monthly   — 120 days, the same value BCCh uses and the same order as the
+ *                health evaluator's own 100-day monthly staleness allowance.
+ *  · quarterly — 400 days. A quarter's print lands roughly 150 days after its
+ *                observation date (Q2 is dated 04-01 and released in late
+ *                July), and the evaluator allows 210 before flagging, so the
+ *                window has to clear that with room to spare.
+ *
+ * The FETCH range is unaffected (it is already a year or more, for the yoy/mom
+ * bases), so a wider window costs no extra request — only idempotent upserts
+ * of rows that are, in the steady state, already present.
+ */
+const INCREMENTAL_DAYS_BACK_BY_FREQUENCY: Partial<Record<string, number>> = {
+  monthly:   120,
+  quarterly: 400,
+}
+
 // ─── Public types ─────────────────────────────────────────────────────────────
 
 export interface IngestionOptions {
@@ -233,8 +259,16 @@ export async function runFredMacroIngestion(opts: IngestionOptions): Promise<Ing
     const isDerived   = def.transformation !== 'none'
     const fetchedAt   = new Date().toISOString()
 
+    // See INCREMENTAL_DAYS_BACK_BY_FREQUENCY — a monthly or quarterly print's
+    // observation date lags its publication by far more than the default
+    // window. A backfill run already spans years and is left alone.
+    const widened = INCREMENTAL_DAYS_BACK_BY_FREQUENCY[def.frequency]
+    const seriesRangeFrom = opts.mode === 'incremental' && widened !== undefined
+      ? daysAgoIso(widened)
+      : rangeFrom
+
     const insertRows: MacroObservationInsert[] = transformed
-      .filter(p => p.value != null && p.date >= rangeFrom && p.date <= rangeTo)
+      .filter(p => p.value != null && p.date >= seriesRangeFrom && p.date <= rangeTo)
       .map(p => ({
         indicator_id:       def.fallbackStaticId,
         observation_date:   p.date,

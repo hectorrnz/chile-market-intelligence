@@ -116,7 +116,9 @@ describe('R10 · composition — a Fable command center, not a reskin', () => {
     // into ONE Macro card (pulse-style rows in Chile/US bands) — one surface,
     // no duplicated indicator; see the dedicated R10.1 test below.
     for (const marker of [
-      'formatCLP(pfTotals.totalMarketValue)',       // portfolio snapshot
+      // R13.R5B § 3 — the portfolio snapshot now renders the CANONICAL Main
+      // Portfolio hero, not the legacy positions tracker's CLP market value.
+      'value={fpHero?.totalValue ?? null}',         // portfolio snapshot
       'book.summary.activeNotes',                   // structured-notes snapshot
       '<CurrentActions actions={actions}',          // attention card
       't.home.macroTitle',                          // merged macro card title
@@ -264,7 +266,13 @@ describe('R10.3 · wider canvas, two analytical peer rows, News below', () => {
     assert.doesNotMatch(HOME_CODE, /lg:hidden|md:hidden|sm:hidden|xl:hidden/)
     // Pins the total raw-fetch surface (helpers are pinned per-endpoint in
     // test 87) so a relayout can never quietly add a network call.
-    assert.equal((HOME_CODE.match(/fetch\(/g) ?? []).length, 6)
+    //
+    // R13.R5B § 3 — was 6. The portfolio card's two raw calls (`/api/portfolios`
+    // then `/api/portfolios/[id]`) are gone: it reads the canonical Main
+    // Portfolio through the shared `fetchFamilyPortfolio*` helpers instead, so
+    // its requests are pinned in `src/lib/data/familyPortfolio.ts` rather than
+    // spelled out here.
+    assert.equal((HOME_CODE.match(/fetch\(/g) ?? []).length, 4)
   })
 })
 
@@ -299,11 +307,16 @@ describe('R10 · data honesty — real sources, explicit states, no fabrication'
   })
 
   test('15. every async module distinguishes loading / success / empty / error', () => {
-    assert.match(HOME, /pfState === 'loading' && <AsyncState kind="loading"/)
-    assert.match(HOME, /pfState === 'error' && <AsyncState kind="error"/)
+    assert.match(HOME, /fpState === 'loading' && <AsyncState kind="loading"/)
+    assert.match(HOME, /fpState === 'error' && <AsyncState kind="error"/)
     assert.match(HOME, /bookState === 'unavailable' && <AsyncState kind="unavailable"/)
-    // Empty is a REAL zero, separate from failure.
-    assert.match(HOME, /pfDetail\.positions\.length === 0/)
+    // R13.R5B § 3 — the portfolio card additionally distinguishes DENIED, an
+    // authorization answer, from `error`, a failure to get one. A caller with
+    // no portfolio entitlement must never be shown a failure state, and must
+    // never be shown a figure.
+    assert.match(HOME, /fpState === 'denied' && <AsyncState kind="empty" message=\{t\.fp\.noAccess\}/)
+    // Empty is a REAL published-nothing state, separate from failure.
+    assert.match(HOME, /fpPublication === null/)
     assert.match(HOME, /book\.summary\.totalNotes === 0/)
     assert.match(HOME, /t\.home\.eventsEmpty/)
   })
@@ -322,33 +335,67 @@ describe('R10 · data honesty — real sources, explicit states, no fabrication'
 // ── 28-35 · Portfolio integration and privacy ───────────────────────────────
 
 describe('R10 · portfolio snapshot — existing calculations, masked amounts', () => {
-  test('28-29. reuses the exact valuation helpers /portfolio uses — no second derivation', () => {
-    assert.match(HOME, /import \{ valuePositions, calculatePortfolioTotals, type LatestPrice, type PortfolioTotals \} from '@\/lib\/portfolio\/valuation'/)
-    assert.match(HOME, /calculatePortfolioTotals\(valued\)/)
-    assert.match(HOME, /valuePositions\(/)
-    // The overlay builds the price map the same way the Portfolio page does.
-    assert.match(HOME, /lv\?\.price \?\? p\.latestPrice/)
+  // R13.R5B § 3 — SUPERSEDES the R10 contract that this card reuse the
+  // `/portfolio` valuation helpers.
+  //
+  // That contract made Home agree with the LEGACY positions tracker, which is
+  // not the portfolio this platform reports: it held hand-entered quantities
+  // priced in CLP, while the published Main portfolio is a USD workbook
+  // publication orders of magnitude larger. Agreeing precisely with the wrong
+  // source is still the wrong number, so the card now reads the canonical Main
+  // Portfolio read model and the contract is that it reuses THAT.
+  test('28-29. reads the canonical Main Portfolio read model — no second derivation', () => {
+    // The same client helpers the Family Portfolio module itself uses.
+    assert.match(HOME, /fetchFamilyPortfolioScopes,\s*\n\s*fetchFamilyPortfolioOverview,/)
+    assert.match(HOME, /await fetchFamilyPortfolioOverview\(scope\)/)
+    // Scope resolution mirrors the Summary's own rule, so the two surfaces can
+    // never describe different portfolios.
+    assert.match(HOME, /scopes\.filter\(\(s\) => s\.id !== 'alternatives'\)\[0\]\?\.id \?\? null/)
+    // The published hero is read VERBATIM — never recomputed, never summed.
+    assert.match(HOME, /const fpHero = fpData\?\.hero \?\? null/)
+    // The legacy tracker path is gone from Home entirely: no endpoint, no
+    // valuation helper, no CLP total.
+    assert.doesNotMatch(HOME_CODE, /\/api\/portfolios/)
+    assert.doesNotMatch(HOME_CODE, /valuePositions|calculatePortfolioTotals/)
     // No inline arithmetic re-derives a total anywhere on Home.
     assert.doesNotMatch(HOME_CODE, /quantity \*|\* p\.quantity|averageCost \*/)
   })
 
+  test('28-29b. the Overview card links to the Portfolio module, not the de-linked legacy route', () => {
+    assert.match(HOME, /<Link href="\/family-portfolio"/)
+    // `/portfolio` was removed from navigation in R13; Home must not be the one
+    // surface still sending readers to it.
+    assert.doesNotMatch(HOME, /<Link href="\/portfolio"/)
+  })
+
+  test('28-29c. the card fails closed — no fallback source and no invented value', () => {
+    // Every figure the card prints comes from `fpHero`/`fpPublication`, both of
+    // which are the response read verbatim. A missing figure stays null and
+    // renders through the guarded path as an em dash, never as 0.
+    assert.doesNotMatch(HOME, /fpHero\?\.\w+ \?\? 0/)
+    assert.doesNotMatch(HOME, /totalValue \|\| 0/)
+    // A failed read renders a state, never a number.
+    assert.match(HOME, /fpState === 'ready' &&/)
+  })
+
   test('30-31. every private amount renders through the shared boundary', () => {
+    // R13.R5B § 3 — the portfolio amounts are now Family Portfolio money, so
+    // they render through `MaskedAmount`, THE module's one guarded path
+    // (privacy + unavailable-as-em-dash), exactly as the Summary renders them.
     for (const expr of [
-      'formatCLP(pfTotals.totalMarketValue)',
+      'value={fpHero?.totalValue ?? null}',
+      'value={fpHero?.weeklyDifference ?? null}',
     ]) {
       const at = HOME.indexOf(expr)
       assert.ok(at > -1, `${expr} must render`)
-      assert.ok(HOME.slice(Math.max(0, at - 220), at).includes('<PrivacyValue masked={masked}>'), `${expr} must be masked`)
-    }
-    for (const stat of [
-      'label={t.portfolio.unrealizedPnL}',
-      'label={t.portfolio.totalCostBasis} value={formatCLP(pfTotals.totalCostBasis)}',
-      'label={t.portfolio.cashBalance} value={formatCLP(pfDetail.cashSummary.netCashBalance)}',
-      'label={t.portfolio.realizedPnL} value={formatCLP(pfDetail.realizedPnl.totalRealizedPnl)}',
-    ]) {
-      const at = HOME.indexOf(stat)
-      assert.ok(at > -1, `${stat} must render`)
-      assert.ok(HOME.slice(at, at + 400).includes('masked={masked}'), `${stat} must carry the mask`)
+      assert.ok(
+        HOME.slice(Math.max(0, at - 120), at).includes('<MaskedAmount'),
+        `${expr} must render through MaskedAmount`,
+      )
+      assert.ok(
+        HOME.slice(at, at + 200).includes('masked={masked}'),
+        `${expr} must carry the mask`,
+      )
     }
     // One page-level read of the ONE shared store; the key is never named.
     assert.equal((HOME.match(/const \[masked\] = usePrivacyMode\(\)/g) ?? []).length, 1)
@@ -356,10 +403,13 @@ describe('R10 · portfolio snapshot — existing calculations, masked amounts', 
   })
 
   test('32-34. public values stay visible; the mask is never a CSS trick', () => {
-    // Percentages and counts are deliberately public — same classification
-    // the Portfolio page documents.
-    assert.match(HOME, /value=\{pfTotals\.totalUnrealizedPnLPct\}/)
-    assert.match(HOME, /label=\{t\.portfolio\.positionCount\} value=\{String\(pfTotals\.positionCount\)\} \/>/)
+    // Percentages and counts are deliberately public — same classification the
+    // Portfolio module documents (a RETURN RATIO is not the family's wealth).
+    // R13.R5B § 3 — these are now the published weekly/YTD returns and the
+    // publication's revision number.
+    assert.match(HOME, /value=\{fpHero\?\.weeklyReturn \?\? null\}/)
+    assert.match(HOME, /label=\{t\.fp\.overview\.ytdReturn\} value=\{formatRatioPct\(fpHero\?\.ytdReturn \?\? null\)\}/)
+    assert.match(HOME, /label=\{t\.fp\.portfolio\.revisionShort\} value=\{String\(fpPublication\.revision\)\}/)
     assert.match(HOME, /formatCLP\(price\)/)
     assert.doesNotMatch(HOME_CODE, /blur\(|opacity: 0(?![.\d])|text-shadow/)
     // No masked-state branch ever alters data flow or a payload.
@@ -546,7 +596,10 @@ describe('R10 · performance — parallel, deduplicated, progressive', () => {
   test('87. no endpoint is fetched twice on mount', () => {
     for (const [literal, max] of [
       ["fetch('/api/watchlists'", 1],
-      ["fetch('/api/portfolios'", 1],
+      // R13.R5B § 3 — the portfolio card's endpoints are reached through the
+      // shared helpers, each called exactly once on mount.
+      ['fetchFamilyPortfolioScopes()', 1],
+      ['fetchFamilyPortfolioOverview(scope)', 1],
       ["fetch('/api/structured-notes'", 1],
       ["fetch('/api/health/ingestion'", 1],
       ['fetchStockSnapshots()', 1],
@@ -564,8 +617,15 @@ describe('R10 · performance — parallel, deduplicated, progressive', () => {
     // 2 parallel groups since R10.2 (mount batch + doRefresh) — the third was
     // the removed macro-history fetch.
     assert.ok((HOME_CODE.match(/Promise\.all\(/g) ?? []).length >= 2)
-    assert.ok((HOME_CODE.match(/new AbortController\(\)/g) ?? []).length >= 3)
-    assert.ok((HOME_CODE.match(/controller\.abort\(\)/g) ?? []).length >= 3)
+    // R13.R5B § 3 — every independent request still cancels on unmount, but the
+    // portfolio card now does it with the `cancelled` latch the Family
+    // Portfolio providers use (its helpers take no signal), so the count is
+    // AbortControllers + latches rather than AbortControllers alone.
+    const aborts = (HOME_CODE.match(/new AbortController\(\)/g) ?? []).length
+    const latches = (HOME_CODE.match(/cancelled = true/g) ?? []).length
+    assert.ok(aborts >= 2, `expected AbortControllers, saw ${aborts}`)
+    assert.ok(aborts + latches >= 3, `every async effect must cancel; saw ${aborts + latches}`)
+    assert.equal((HOME_CODE.match(/controller\.abort\(\)/g) ?? []).length, aborts)
   })
 
   test('90-91. no full-page blocking loader, no polling', () => {

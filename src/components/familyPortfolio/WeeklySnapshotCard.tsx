@@ -166,6 +166,10 @@ export function WeeklySnapshotCard({
                   value={row.value}
                   masked={masked}
                   signed={diff}
+                  // R13.R5C.1 § 2.2 — the DIFFERENCE row only. The two week
+                  // levels above it are levels: a line worth exactly nothing
+                  // this week is a fact, and dashing it would hide it.
+                  zeroDash={diff}
                   className={
                     anchor
                       ? 'ui-number ui-capsule-value text-foreground'

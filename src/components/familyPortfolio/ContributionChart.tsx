@@ -407,6 +407,7 @@ export function ContributionChart({
                     value={active.value}
                     masked={masked}
                     signed
+                    zeroDash
                     compact="unit"
                     className={`ui-number text-sm ${
                       active.value < 0 ? 'text-negative font-semibold' : 'text-positive font-semibold'
@@ -540,7 +541,7 @@ export function ContributionChart({
               <tr key={bar.rowKey ?? `residual-row-${i}`}>
                 <td>{contributionLabel(bar, lang, labelOverrides)}</td>
                 <td>
-                  <MaskedAmount value={bar.value} masked={masked} signed />
+                  <MaskedAmount value={bar.value} masked={masked} signed zeroDash />
                 </td>
                 <td>{bar.shareOfNet !== null ? formatRatioPct(bar.shareOfNet) : c.shareUnavailable}</td>
               </tr>

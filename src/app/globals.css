@@ -422,6 +422,15 @@
   /* ── Typography scale (design_principles §18) ─────────────────────────── */
   --fs-login-headline: clamp(32px, 4.6vw, 56px);
   --fs-kpi-hero:       clamp(30px, 3vw, 40px);
+  /* R13.R5C.1 § 1 — one step above the KPI hero, for a card whose ENTIRE
+     subject is a single portfolio value. Same family, weight and leading as
+     `--fs-kpi-hero`; only the step differs, so this extends the existing
+     scale rather than introducing a second one.
+     The FLOOR is only 2px above that hero's, deliberately: the figure now
+     carries a `US$ ` mark as well as eleven grouped digits, and at 390px the
+     card has ~326px of measure for it. The lift the owner asked for lands at
+     desktop widths, where there is room for it. */
+  --fs-kpi-hero-lg:    clamp(32px, 3.4vw, 46px);
   --fs-chart-headline: 23px;
   --fs-capsule-value:  20px;
   --fs-page-title:     19px;
@@ -793,6 +802,16 @@
 
   .ui-kpi-hero {
     font-size: var(--fs-kpi-hero);
+    font-weight: var(--fw-value);
+    line-height: 1;
+    letter-spacing: var(--tracking-hero);
+  }
+
+  /* R13.R5C.1 § 1 — the KPI hero one step up. Everything except the size is
+     inherited from the rule above deliberately, so the two steps can never
+     drift apart in weight, leading or tracking. */
+  .ui-kpi-hero-lg {
+    font-size: var(--fs-kpi-hero-lg);
     font-weight: var(--fw-value);
     line-height: 1;
     letter-spacing: var(--tracking-hero);

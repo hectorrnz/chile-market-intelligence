@@ -1651,15 +1651,20 @@ describe('R9.6 · Home and Portfolio consumers', () => {
     // portfolio-derived amount on Home masks through the ONE shared boundary".
     // Guarded in depth by tests/fableHomePage.test.ts; pinned here so this
     // suite's consumer inventory stays truthful.
+    //
+    // R13.R5B § 3 SUPERSEDES the R10 wording again: the snapshot is no longer
+    // read from `/api/portfolios` (the legacy positions tracker) but from the
+    // canonical Main Portfolio publication, so the hero amount now masks
+    // through `MaskedAmount` — the Family Portfolio module's own guarded
+    // renderer, which wraps `PrivacyValue`. The enduring property is unchanged:
+    // every portfolio-derived amount on Home masks through ONE shared boundary.
     assert.match(HOME, /import \{ PrivacyValue \} from '@\/components\/fable\/PrivacyValue'/)
     assert.match(HOME, /import \{ usePrivacyMode \} from '@\/components\/fable\/usePrivacyMode'/)
-    assert.match(HOME, /\/api\/portfolios/)
-    // The hero amount renders inside the boundary, fed by the SAME valuation
-    // helpers the Portfolio page uses — never a second derivation.
-    const at = HOME.indexOf('formatCLP(pfTotals.totalMarketValue)')
+    assert.match(HOME, /import \{ MaskedAmount \} from '@\/components\/familyPortfolio\/MaskedAmount'/)
+    const at = HOME.indexOf('value={fpHero?.totalValue ?? null}')
     assert.ok(at > -1, 'the portfolio hero value must render')
-    assert.ok(HOME.slice(Math.max(0, at - 200), at).includes('<PrivacyValue masked={masked}>'))
-    assert.match(HOME, /valuePositions, calculatePortfolioTotals/)
+    assert.ok(HOME.slice(Math.max(0, at - 120), at).includes('<MaskedAmount'))
+    assert.ok(HOME.slice(at, at + 200).includes('masked={masked}'))
     // Public watchlist columns stay exactly the public ones, unmasked.
     assert.match(HOME, /formatCLP\(price\)/)
     assert.match(HOME, /\/api\/watchlists/)

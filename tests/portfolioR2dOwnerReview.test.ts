@@ -574,7 +574,11 @@ describe('R13.R2 pass 4 § 3 — print colour follows meaning', () => {
   test('the sheet still formats no amount of its own', () => {
     const sheet = codeOf(PRINT)
     assert.ok(!/formatUsd|toLocaleString|Intl\./.test(sheet))
-    assert.match(PRINT, /<MaskedAmount value=\{metric\.amount \?\? null\} masked=\{masked\} signed \/>/)
+    // R13.R5C.1 § 2.2 — `zeroDash` added: every printed metric here is a
+    // change or a flow, so a zero takes the module's "nothing here" mark. The
+    // property this test exists for is unchanged — the amount is still passed
+    // as a NUMBER to the guarded renderer, never pre-formatted by the sheet.
+    assert.match(PRINT, /<MaskedAmount value=\{metric\.amount \?\? null\} masked=\{masked\} signed zeroDash \/>/)
   })
 
   test('the market labels are renamed, on paper and on screen alike', () => {

@@ -1,8 +1,22 @@
 // Phase 8D — FRED (US macro) ingestion route.
 //
-// NOT on a Vercel cron schedule (see vercel.json) — manually/reviewably
-// triggered only, same policy as /api/cron/ingest-bcch-macro and the CMF/XBRL
-// cron routes until stability is observed over time.
+// R13.R5C.1 § 4 — SCHEDULED weekdays at 12:50 UTC (vercel.json), 20 minutes
+// after the BCCh macro run so the two never contend for the same window.
+//
+// It was previously unscheduled, "until stability is observed over time" and
+// nominally by the same policy as /api/cron/ingest-bcch-macro — but that route
+// has been on a weekday schedule since Phase 5D, so the stated parity was not
+// real. The consequence was: persisted FRED observations only ever advanced
+// when someone ran the job by hand, the last such run was 2026-07-21, and the
+// health check correctly but unhelpfully reported six US series stale for
+// weeks on end. FRED macro is the direct architectural twin of BCCh macro —
+// the same MacroProvider contract, the same plausibility bands, the same
+// verified-series-only registry, a keyless public endpoint, and live since
+// Phase 8D — so it gets the same cadence as its twin.
+//
+// (Distinct from the CMF/XBRL and Yahoo-financials crons, which stay
+// unscheduled: those read an undocumented HTML surface, which is the actual
+// reason that policy exists.)
 //
 // Invoke with:
 //   Authorization: Bearer <CRON_SECRET>
