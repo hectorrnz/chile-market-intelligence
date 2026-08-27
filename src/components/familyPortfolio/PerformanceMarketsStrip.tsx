@@ -180,7 +180,6 @@ function MetricSlot({
           value={metric.value}
           masked={masked}
           signed
-          zeroDash
           className={`ui-number ${scale} text-foreground`}
         />
       ) : metric.kind === 'price' ? (

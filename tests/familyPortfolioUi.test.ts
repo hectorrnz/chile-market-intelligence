@@ -143,7 +143,11 @@ describe('R13.6 · module shell', () => {
     // reading through the real client helper); only the argument moved.
     assert.match(overview, /fetchFamilyPortfolioOverview\(activeScope\)/,
       'the Summary is the real page and reads whichever entitled scope is active')
-    assert.match(overview, /const portfolioScopes = scopes\.filter\(\(s\) => s\.id !== 'alternatives'\)/,
+    // R13.R5C.4 — the derivation moved into the module's one shared rule
+    // (`portfolioScopeRoutes.ts`), which the rail and all three scope-aware
+    // views now call. The property asserted is unchanged: options come from the
+    // SERVER-FILTERED entitlement, never a client list.
+    assert.match(overview, /const portfolioScopes = portfolioScopesOf\(scopes\)/,
       'scope options come from the SERVER-FILTERED entitlement, never a client list')
     assert.match(overview, /MemberGate/)
     const weekly = read(WEEKLY_PAGE)
@@ -436,12 +440,19 @@ describe('R13.6 · portfolio page', () => {
   })
 
   test('the scope selector renders only entitled scopes and syncs through the URL', () => {
-    assert.match(page, /scopes\.filter\(\(s\) => s\.id !== 'alternatives'\)/)
-    assert.match(page, /portfolioScopes\.some\(\(s\) => s\.id === requested\)/)
-    assert.match(page, /router\.replace\(/)
+    // R13.R5C.4 — the three clauses this test used to read inline now live in
+    // `portfolioScopeRoutes.ts`, shared with the module rail so a link cannot
+    // resolve a scope differently from the page it opens. Both halves are
+    // asserted: that Holdings reads the shared rule, and that the rule itself
+    // still says what this test was defending.
+    assert.match(page, /const portfolioScopes = portfolioScopesOf\(scopes\)/)
+    assert.match(page, /resolveActiveScope\(searchParams\.get\(SCOPE_PARAM\), scopes\)/)
+    assert.match(page, /router\.replace\(scopeHref\(/)
+    const routes = read('src/lib/familyPortfolio/portfolioScopeRoutes.ts')
+    assert.match(routes, /portfolioScopesOf\(scopes\)\.some\(\(s\) => s\.id === requested\)/)
     // An unentitled ?scope= resolves to the caller's own first scope — the
     // page never fetches the requested one.
-    assert.match(page, /portfolioScopes\[0\]\?\.id \?\? null/)
+    assert.match(routes, /portfolioScopesOf\(scopes\)\[0\]\?\.id \?\? null/)
   })
 
   test('a vanished selected week resets to latest instead of dead-ending', () => {
@@ -452,30 +463,30 @@ describe('R13.6 · portfolio page', () => {
   test('every monetary value is privacy-masked', () => {
     assert.match(page, /usePrivacyMode\(\)/)
     assert.match(page, /PrivacyToggle/)
+    // R13.R5C.2 — the table no longer wraps `PrivacyValue` itself: it renders
+    // through `MaskedAmount`, the module's one guarded renderer, which does.
+    // That is a STRONGER guarantee than the one this test used to make — there
+    // is now a single implementation of the masked-amount chain in the module
+    // rather than two that have to agree.
     const table = read(TABLE)
-    assert.match(table, /PrivacyValue/)
-    // The single amount-cell renderer wraps its value in PrivacyValue, so no
-    // column can forget the mask.
     const amountCell = table.slice(table.indexOf('function amountCell'), table.indexOf('export function HierarchicalTable'))
-    assert.match(amountCell, /PrivacyValue masked=\{masked\}/)
+    assert.match(amountCell, /<MaskedAmount value=\{value\} masked=\{masked\} \/>/)
+    assert.match(read(MASKED_AMOUNT), /<PrivacyValue masked=\{masked\}/)
   })
 
   test('every monetary render path is privacy-guarded — no amount can bypass the mask (audit area 5)', () => {
     const table = read(TABLE)
-    // In the table's CODE (comments stripped), `formatUsd` appears exactly
-    // twice: the import and the single call inside amountCell's PrivacyValue
-    // wrapper. A second call site would be an amount rendered outside the mask.
-    assert.equal(codeOf(table).split('formatUsd').length - 1, 2,
-      'formatUsd must have exactly one call site (inside amountCell) plus its import')
+    // R13.R5C.2 — the invariant tightened from "exactly one call site" to
+    // "NONE": the table formats no amount of its own at all, so there is
+    // nothing left that could render outside the mask.
+    assert.equal(codeOf(table).split('formatUsd').length - 1, 0,
+      'the table must not format an amount itself — MaskedAmount owns that')
     const amountCell = table.slice(table.indexOf('function amountCell'), table.indexOf('export function HierarchicalTable'))
-    assert.match(amountCell, /formatUsd\(value\)/)
-    // All four dated value columns render through amountCell. R13.R5C.1 § 2.2
-    // adds a fifth argument — whether the ROW is an unoccupied taxonomy slot —
-    // which only ever selects between `0` and the "nothing here" mark. The
-    // single-guarded-renderer property this test exists for is unchanged.
-    assert.match(table, /\{amountCell\(row\.beginningOfYearValue, masked, '', undefined, unoccupied\)\}/)
-    assert.match(table, /\{amountCell\(row\.previousValue, masked, '', undefined, unoccupied\)\}/)
-    assert.match(table, /\{amountCell\(row\.value, masked, '', undefined, unoccupied\)\}/)
+    assert.match(amountCell, /<MaskedAmount value=\{value\} masked=\{masked\} \/>/)
+    // All four dated value columns render through amountCell.
+    assert.match(table, /\{amountCell\(row\.beginningOfYearValue, masked\)\}/)
+    assert.match(table, /\{amountCell\(row\.previousValue, masked\)\}/)
+    assert.match(table, /\{amountCell\(row\.value, masked\)\}/)
     // R13.R2 defensive repair: the Difference column renders the DERIVED
     // figure (`This Week − Previous Week`, via the shared invariant), not the
     // persisted one — but through the SAME single guarded `amountCell`, so the
@@ -519,7 +530,10 @@ describe('R13.6 · portfolio page', () => {
       maskedAmount,
       /const text = `\$\{signed && value > 0 \? '\+' : ''\}\$\{currency \? 'US\$ ' : ''\}\$\{amount\}`/,
     )
-    assert.match(maskedAmount, /<PrivacyValue masked=\{masked\}[^>]*>\s*\{text\}/)
+    // R13.R5C.3 — the mask now wraps a TERNARY rather than `text` alone: the
+    // zero mark became the other arm, so it too is guarded. Both arms are
+    // inside the one `PrivacyValue`, which is the property this test defends.
+    assert.match(maskedAmount, /<PrivacyValue masked=\{masked\}[^>]*>\s*\{zero \? [\s\S]*?: text\}/)
     assert.match(maskedAmount, />—</)
     // The compact form is reachable ONLY through this component — a caller
     // that formatted an axis label itself would print an unmasked amount.
@@ -719,8 +733,13 @@ describe('R13.6 · hierarchical table', () => {
   })
 
   test('a null value renders as an em dash, never 0', () => {
-    assert.match(table, /value === null \?/)
-    assert.match(table, />—</)
+    // R13.R5C.2 — the branch moved into `MaskedAmount` with the rest of the
+    // chain. The property is unchanged and now holds for the whole module at
+    // once: unavailable is `—`, and a value that IS zero is a different mark.
+    const amount = read(MASKED_AMOUNT)
+    assert.match(amount, /if \(value === null \|\| !Number\.isFinite\(value\)\)/)
+    assert.match(amount, />—</)
+    assert.doesNotMatch(codeOf(table), /value === null/, 'the table must not re-implement it')
   })
 
   test('a column with no recorded source date is headed without one — never inferred', () => {
@@ -787,10 +806,16 @@ describe('R13.6 · i18n and formatting', () => {
     assert.deepEqual(shape(dict.en.fp).sort(), shape(dict.es.fp).sort())
   })
 
-  test('formatUsd: grouped Chilean-convention amount; unavailable is an em dash, never 0', () => {
+  test('formatUsd: grouped Chilean-convention amount; zero is the zero mark, unavailable the em dash', () => {
     assert.equal(formatUsd(1234567), '1.234.567')
     assert.equal(formatUsd(-2500.75, 2), '-2.500,75')
-    assert.equal(formatUsd(0), '0')
+    // R13.R5C.2 — was `'0'`. The owner's Portfolio-wide contract. The em dash
+    // still means ONLY "no value could be established", so the two states a
+    // reader must never confuse stay two different marks.
+    assert.equal(formatUsd(0), '-')
+    assert.equal(formatUsd(-0), '-')
+    assert.equal(formatUsd(0.4), '-', 'below the rendered precision reads as it renders')
+    assert.equal(formatUsd(0.4, 2), '0,40', '…and is a real figure once the column can show it')
     assert.equal(formatUsd(null), '—')
     assert.equal(formatUsd(undefined), '—')
     assert.equal(formatUsd(Number.NaN), '—')

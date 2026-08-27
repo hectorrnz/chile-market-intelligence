@@ -189,12 +189,21 @@ describe('R13.R5B § 3 · the Overview portfolio card and the Summary agree', ()
   })
 
   test('scope resolution is the Summary’s own rule, so they cannot describe different portfolios', () => {
-    const rule = /filter\(\(s\) => s\.id !== 'alternatives'\)/
-    assert.match(HOME, rule)
-    assert.match(SUMMARY, rule)
-    // Both default to the first entitled portfolio scope.
-    assert.match(HOME, /\[0\]\?\.id \?\? null/)
-    assert.match(SUMMARY, /portfolioScopes\[0\]\?\.id \?\? null/)
+    // R13.R5C.4 — STRONGER than the original form of this test. Both surfaces
+    // used to spell the same rule out separately (`filter(s => s.id !==
+    // 'alternatives')` … `[0]?.id ?? null`) and this test compared the two
+    // spellings. They now call the SAME function, so they cannot describe
+    // different portfolios by construction rather than by agreement.
+    const shared = /from '@\/lib\/familyPortfolio\/portfolioScopeRoutes'/
+    assert.match(HOME, shared)
+    assert.match(SUMMARY, shared)
+    // Home has no scope selector, so it asks for the Summary's own default.
+    assert.match(HOME, /function firstPortfolioScope[\s\S]{0,120}?return activeScope\(null, scopes\)/)
+    // The Summary asks for whatever the URL selected, falling back to the same
+    // default — one function, two arguments.
+    assert.match(SUMMARY, /resolveActiveScope\(searchParams\.get\(SCOPE_PARAM\), scopes\)/)
+    const routes = read('src/lib/familyPortfolio/portfolioScopeRoutes.ts')
+    assert.match(routes, /portfolioScopesOf\(scopes\)\[0\]\?\.id \?\? null/)
   })
 
   test('actual AUM is the published total, and it includes Chilean equities', () => {

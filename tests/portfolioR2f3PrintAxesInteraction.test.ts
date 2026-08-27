@@ -326,7 +326,10 @@ describe('R13.R2F3 §§ 20-21 · the printed axes', () => {
   })
 
   test('axis values obey the page mask — an axis is not a privacy loophole', () => {
-    assert.match(PRINT_CODE, /<MaskedAmount value=\{tick\.value\} masked=\{masked\} compact \/>/)
+    // R13.R5C.2 — `zeroDash={false}`: a y-axis TICK is a scale annotation, not
+    // a value, so it opts out of the Portfolio zero mark. The MASKED path this
+    // test exists for is unchanged.
+    assert.match(PRINT_CODE, /<MaskedAmount value=\{tick\.value\} masked=\{masked\} compact zeroDash=\{false\} \/>/)
     // The reference is withheld outright while masked, upstream of the chart.
     assert.match(PRINT_CODE, /hwmValue=\{masked \? null : hwmValue\}/)
     // A level is never toned as a gain or a loss.
@@ -546,7 +549,10 @@ describe('R13.R2F3 §§ 9-14 · hover reaches navigation', () => {
     // Admin appears only for an administrator, and every rail is still built
     // from the server-filtered entitlement, not from what CSS can reach.
     const fpNav = read('src/components/familyPortfolio/FamilyPortfolioNav.tsx')
-    assert.match(fpNav, /if \(isAdministrator\) \{[\s\S]{0,160}?key: 'admin'/)
+    // R13.R5C.4 — item construction moved to the `scoped()` / `shared()` pair
+    // (Admin is `shared`: a console takes no personal scope). The entitlement
+    // gate around it is unchanged, which is what this test defends.
+    assert.match(fpNav, /if \(isAdministrator\) \{[\s\S]{0,160}?shared\('admin'/)
     assert.match(fpNav, /const \{ status, scopes, isAdministrator \} = useFamilyPortfolio\(\)/)
     assert.match(fpNav, /if \(status !== 'ready' \|\| items\.length === 0\) return null/)
     assert.ok(!/nav a/.test(fpNav), 'the rail must not carry its own interaction styling')

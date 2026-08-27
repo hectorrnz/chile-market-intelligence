@@ -722,11 +722,13 @@ export const dict = {
         fullTableNote:      'Complete listing of every hierarchy row in published order — subtotal and total rows are structural and are never summed with their constituents.',
         fullTableCashNote:  'This listing includes Caja y Equivalentes; the ranked panels above exclude it unless toggled.',
         statusUnavailable:  'Unavailable',
-        // R13.R5C.1 § 2.2 — rewritten for the module-wide convention. The `-`
-        // mark now also appears in the VALUE columns, for a category the
-        // portfolio does not hold, so a note scoped to "the change columns"
-        // would no longer describe what the reader sees.
-        zeroDashNote:       'In the amount columns, “-” means there is nothing here — a row that did not move, or a category this portfolio does not hold — and “—” means the figure could not be established.',
+        // R13.R5C.2 — rewritten again, and now states the contract itself
+        // rather than an enumeration of the places it applies. R13.R3C.4
+        // scoped it to "the change columns"; R13.R5C.1 widened it to "the
+        // amount columns"; the rule is simply that a figure of zero shows the
+        // zero mark wherever it appears, so the note says that and cannot go
+        // out of date as more surfaces adopt it.
+        zeroDashNote:       'Throughout the Portfolio, “-” means the figure is zero — there is nothing here — and “—” means it could not be established.',
         reasonMissingCurrent:  'No published value in the selected week.',
         reasonMissingPrevious: 'No published value in the previous published week.',
         reasonMissingBoth:     'No published value in either week.',
@@ -2282,7 +2284,7 @@ export const dict = {
         fullTableNote:      'Listado completo de cada fila de la jerarquía en el orden publicado — las filas de subtotal y total son estructurales y nunca se suman con sus componentes.',
         fullTableCashNote:  'Este listado incluye Caja y Equivalentes; los paneles de ranking anteriores la excluyen salvo que se active la opción.',
         statusUnavailable:  'No disponible',
-        zeroDashNote:       'En las columnas de montos, “-” significa que aquí no hay nada — una fila que no varió, o una categoría que este portafolio no mantiene — y “—” que la cifra no pudo establecerse.',
+        zeroDashNote:       'En todo el Portafolio, “-” significa que la cifra es cero — aquí no hay nada — y “—” que no pudo establecerse.',
         reasonMissingCurrent:  'Sin valor publicado en la semana seleccionada.',
         reasonMissingPrevious: 'Sin valor publicado en la semana publicada anterior.',
         reasonMissingBoth:     'Sin valor publicado en ninguna de las dos semanas.',

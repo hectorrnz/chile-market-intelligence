@@ -1161,10 +1161,14 @@ describe('R13.R4A.2 · the modal shows the partition and the reported amounts', 
 
   test('the dialog renders all three counts and the population from the module', () => {
     const code = codeOf(read(DRILLDOWNS))
-    assert.match(code, /\{undrawn\.holdings\.length\}/)
-    assert.match(code, /\{undrawn\.fullyDrawn\}/)
-    assert.match(code, /\{undrawn\.unavailable\}/)
-    assert.match(code, /\{undrawn\.ofHoldings\}/)
+    // R13.R5C.2 — the four counts now render through `formatCount`, which
+    // applies the Portfolio zero mark to a cardinality standing in a value
+    // position. They still come from the module and are still not literals,
+    // which is what this test exists for.
+    assert.match(code, /formatCount\(undrawn\.holdings\.length\)/)
+    assert.match(code, /formatCount\(undrawn\.fullyDrawn\)/)
+    assert.match(code, /formatCount\(undrawn\.unavailable\)/)
+    assert.match(code, /formatCount\(undrawn\.ofHoldings\)/)
     // Nothing is hardcoded — no bare category count anywhere in the file.
     assert.equal(/>\s*(21|11|38)\s*</.test(code), false)
   })
@@ -1410,10 +1414,11 @@ describe('R13.R4A.3 · the undrawn dialog leads with what it could not assess', 
 
   test('the counts it prints still come from the module, never a literal', () => {
     const code = codeOf(read(DRILLDOWNS))
-    assert.match(code, /\{undrawn\.unavailable\}/)
-    assert.match(code, /\{undrawn\.holdings\.length\}/)
-    assert.match(code, /\{undrawn\.fullyDrawn\}/)
-    assert.match(code, /\{undrawn\.ofHoldings\}/)
+    // R13.R5C.2 — through `formatCount`; still the module's own figures.
+    assert.match(code, /formatCount\(undrawn\.unavailable\)/)
+    assert.match(code, /formatCount\(undrawn\.holdings\.length\)/)
+    assert.match(code, /formatCount\(undrawn\.fullyDrawn\)/)
+    assert.match(code, /formatCount\(undrawn\.ofHoldings\)/)
     assert.equal(/>\s*(21|11|38|34|6)\s*</.test(code), false, 'a count is hardcoded')
   })
 

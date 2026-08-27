@@ -94,7 +94,7 @@ function MetricValue({ metric, masked }: { metric: PrintMetric; masked: boolean 
       {metric.text !== undefined ? (
         metric.text
       ) : (
-        <MaskedAmount value={metric.amount ?? null} masked={masked} signed zeroDash />
+        <MaskedAmount value={metric.amount ?? null} masked={masked} signed />
       )}
     </dd>
   )
@@ -605,7 +605,11 @@ function PrintEvolutionChart({
               overflow: 'hidden',
             }}
           >
-            <MaskedAmount value={tick.value} masked={masked} compact />
+            {/* R13.R5C.2 — a y-axis TICK: a scale annotation, not a value, so
+                it opts out of the zero mark like the contributors axis. In
+                practice this axis plots a portfolio value and never reaches
+                zero; the opt-out states the rule rather than relying on that. */}
+            <MaskedAmount value={tick.value} masked={masked} compact zeroDash={false} />
           </span>
         ))}
         {/* The defensive standalone-reference case gets its own label, so the
@@ -727,7 +731,6 @@ export function SummaryPrintSheet(props: SummaryPrintSheetProps) {
                     value={r.value}
                     masked={masked}
                     signed={r.isDifference === true}
-                    zeroDash={r.isDifference === true}
                   />
                 </dd>
               </div>
@@ -782,7 +785,7 @@ export function SummaryPrintSheet(props: SummaryPrintSheetProps) {
             <p className="nv-print-meta">
               {evolutionChangeLabel}{' '}
               <span className={toneClass(evolutionChangeAmount, masked)}>
-                <MaskedAmount value={evolutionChangeAmount} masked={masked} signed zeroDash className="ui-number" />
+                <MaskedAmount value={evolutionChangeAmount} masked={masked} signed className="ui-number" />
                 {evolutionChangeText ? ` ${evolutionChangeText}` : ''}
               </span>
               {hwmValue !== null && (

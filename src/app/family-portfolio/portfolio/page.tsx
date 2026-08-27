@@ -33,6 +33,13 @@ import { HierarchicalTable } from '@/components/familyPortfolio/HierarchicalTabl
 import { formatTemplate } from '@/components/fable/chart/chartA11y'
 import { formatIsoDateLabel } from '@/lib/formatters'
 import {
+  PORTFOLIO_HOLDINGS,
+  SCOPE_PARAM,
+  activeScope as resolveActiveScope,
+  portfolioScopesOf,
+  scopeHref,
+} from '@/lib/familyPortfolio/portfolioScopeRoutes'
+import {
   fetchFamilyPortfolioSnapshot,
   type FamilyPortfolioSnapshotResponse,
 } from '@/lib/data/familyPortfolio'
@@ -56,11 +63,11 @@ function PortfolioPageInner() {
   // Scope is DERIVED from the URL against the server-granted list — no local
   // copy to fall out of sync, and an unentitled/unknown ?scope= silently
   // resolves to the caller's own first scope (nothing is fetched for it).
-  const portfolioScopes = scopes.filter((s) => s.id !== 'alternatives')
-  const requested = searchParams.get('scope')
-  const activeScope = portfolioScopes.some((s) => s.id === requested)
-    ? (requested as string)
-    : (portfolioScopes[0]?.id ?? null)
+  // R13.R5C.4 — the derivation itself is shared with the module rail and the
+  // other two scope-aware views, so a link can never resolve a scope
+  // differently from the page it opens.
+  const portfolioScopes = portfolioScopesOf(scopes)
+  const activeScope = resolveActiveScope(searchParams.get(SCOPE_PARAM), scopes)
 
   /** null = the latest published week. */
   const [asOf, setAsOf] = useState<string | null>(null)
@@ -110,9 +117,7 @@ function PortfolioPageInner() {
     : ''
 
   function selectScope(next: string) {
-    router.replace(`/family-portfolio/portfolio?scope=${encodeURIComponent(next)}`, {
-      scroll: false,
-    })
+    router.replace(scopeHref(PORTFOLIO_HOLDINGS, next), { scroll: false })
   }
 
   const cardState = loading

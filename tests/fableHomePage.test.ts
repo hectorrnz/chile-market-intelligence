@@ -349,8 +349,12 @@ describe('R10 · portfolio snapshot — existing calculations, masked amounts', 
     assert.match(HOME, /fetchFamilyPortfolioScopes,\s*\n\s*fetchFamilyPortfolioOverview,/)
     assert.match(HOME, /await fetchFamilyPortfolioOverview\(scope\)/)
     // Scope resolution mirrors the Summary's own rule, so the two surfaces can
-    // never describe different portfolios.
-    assert.match(HOME, /scopes\.filter\(\(s\) => s\.id !== 'alternatives'\)\[0\]\?\.id \?\? null/)
+    // never describe different portfolios. R13.R5C.4 makes that literal — this
+    // test's own title asked for "no second derivation" and there now is none:
+    // Home CALLS the module's shared rule instead of mirroring it, asking for
+    // the Summary's no-`?scope=` default since this card has no selector.
+    assert.match(HOME, /import \{ activeScope \} from '@\/lib\/familyPortfolio\/portfolioScopeRoutes'/)
+    assert.match(HOME, /function firstPortfolioScope[\s\S]{0,120}?return activeScope\(null, scopes\)/)
     // The published hero is read VERBATIM — never recomputed, never summed.
     assert.match(HOME, /const fpHero = fpData\?\.hero \?\? null/)
     // The legacy tracker path is gone from Home entirely: no endpoint, no

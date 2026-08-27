@@ -239,7 +239,13 @@ describe('R13.8 · § 4.2 vocabulary', () => {
     assert.match(page, /formatChangePct\(n\.impactOnPortfolioValue\)/)
   })
 
-  test('R13.R3C.4 — every CHANGE column dashes when it would print zero; the VALUE columns keep their numbers', () => {
+  // R13.R5C.2 — RENAMED AND WIDENED. The title used to end "…the VALUE columns
+  // keep their numbers", which was the R13.R3C.4 carve-out. The owner's rule is
+  // that every user-visible numeric zero in the Portfolio product takes the
+  // mark, levels included, so the second half of that contract is gone and the
+  // first half now holds everywhere. The formatter behaviour asserted below is
+  // unchanged in every respect except that it is no longer the exception.
+  test('R13.R3C.4 / R13.R5C.2 — a figure that would print zero takes the zero mark, in EVERY column', () => {
     // Three states, three marks, and none of them a fabricated zero:
     //   prints as zero → "-"   the row did not move this week
     //   null / ±∞      → "—"   the two weeks could not be compared
@@ -272,24 +278,27 @@ describe('R13.8 · § 4.2 vocabulary', () => {
     assert.equal(roundsToZeroAt(0.004, 2), true)
     assert.equal(roundsToZeroAt(0.005, 2), false)
 
-    // In the page: all THREE change columns of the full listing dash, and so do
-    // the ranked panels' two — one rule, so the two tables cannot disagree.
+    // In the page: the two value-change columns, the three percentage columns,
+    // the parent net change and the flow reconciliation's rows all take the
+    // mark — and so, now, do the two week-level columns beside them. R13.R5C.2
+    // achieves that by DELETING the per-call-site flag rather than adding it
+    // everywhere: `MaskedAmount` applies the rule by default, so the page can
+    // no longer opt a column out by omission.
     assert.equal(
-      (page.match(/value=\{n\.weeklyValueChange\} masked=\{masked\} signed zeroDash/g) ?? []).length,
+      (page.match(/value=\{n\.weeklyValueChange\} masked=\{masked\} signed \/>/g) ?? []).length,
       2,
       'both value-change columns',
     )
     assert.equal((page.match(/formatChangePct\(n\./g) ?? []).length, 3, 'both own % columns + impact')
-    // R13.R5C.1 § 2.2 — the same rule reached the rest of the page: the parent
-    // net change and the flow reconciliation's own MOVEMENT rows. Its two
-    // endpoint rows are levels and are excluded by `r.signed`.
-    assert.match(page, /value=\{contributionSet\.netChange\} masked=\{masked\} signed zeroDash/)
-    assert.match(page, /signed=\{r\.signed\} zeroDash=\{r\.signed\}/)
-    // A LEVEL is never dashed: a holding worth exactly nothing is a real state,
-    // and dashing it would collide with "could not be compared".
+    assert.match(page, /value=\{contributionSet\.netChange\} masked=\{masked\} signed \/>/)
+    assert.match(page, /value=\{r\.value\} masked=\{masked\} signed=\{r\.signed\} \/>/)
+    // The LEVEL columns take it too now — this is the carve-out the owner
+    // removed, asserted in its new direction rather than deleted.
+    assert.match(page, /value=\{n\.previousValue\} masked=\{masked\} \/>/)
+    assert.match(page, /value=\{n\.currentValue\} masked=\{masked\} \/>/)
     assert.ok(
-      !/value=\{n\.(previousValue|currentValue)\} masked=\{masked\}[^/]*zeroDash/.test(page),
-      'the previous/this-week value columns must keep their numbers',
+      !/zeroDash(?!Note)/.test(page),
+      'no page may carry the flag any more — the renderer owns the rule',
     )
     // And the reader is told which mark means what.
     for (const lang of [dict.en, dict.es]) {
@@ -299,20 +308,32 @@ describe('R13.8 · § 4.2 vocabulary', () => {
     assert.match(page, /\{w\.zeroDashNote\}/)
   })
 
-  test('R13.R3C.4 — the zero dash lives in the ONE guarded renderer, and shows through the mask', () => {
+  test('R13.R3C.4 → R13.R5C.3 — the zero dash lives in the ONE guarded renderer, BEHIND the mask', () => {
     // Putting it in `MaskedAmount` is what stops one table dashing a zero while
     // another prints it — and keeps the dash on the single guarded path rather
     // than a call site formatting an amount for itself.
     const amount = read('src/components/familyPortfolio/MaskedAmount.tsx')
     assert.match(amount, /zeroDash\?: boolean/)
-    assert.match(amount, /if \(zeroDash && roundsToZeroAt\(value, compact \? 1 : decimals\)\)/)
-    // The dash is returned BEFORE the mask, deliberately: "this row did not
-    // move" is not a figure, and the module already makes it public — the
-    // contributors chart keeps relative bar extents visible while masked, and
-    // the omitted-zero footnote NAMES the entities that did not move.
+    assert.match(amount, /zeroDash && roundsToZeroAt\(value, compact \? 1 : decimals\)/)
+    // R13.R5C.3 REVERSES THIS TEST'S ORDERING, on the owner's instruction, and
+    // the reversal is the point rather than a relaxation. R13.R3C.4 returned the
+    // dash BEFORE the mask, reasoning that "this row did not move" is not a
+    // figure. Once R13.R5C.2 widened the rule from changes to every value, the
+    // same short-circuit began announcing "this holding is worth exactly
+    // nothing" to a masked reader — which IS a fact about the family's
+    // holdings. Privacy now outranks both marks.
     const dashAt = amount.indexOf('zeroDash && roundsToZeroAt')
     const maskAt = amount.indexOf('<PrivacyValue')
-    assert.ok(dashAt > 0 && maskAt > dashAt, 'the dash short-circuits ahead of the mask')
+    assert.ok(maskAt > 0 && dashAt > 0, 'both the mask and the zero rule are still here')
+    assert.ok(
+      amount.indexOf('<PrivacyValue', dashAt) > dashAt,
+      'the mark is rendered as a child of the mask, never returned ahead of it',
+    )
+    assert.doesNotMatch(
+      amount,
+      /if \(zeroDash && roundsToZeroAt[^\n]*\n\s*return/,
+      'no early return may short-circuit the privacy gate for a zero',
+    )
     // No table cell formats an amount for itself — every one still goes
     // through `MaskedAmount` (the hero's guarded `formatValue` is covered by
     // its own test above).
@@ -612,7 +633,10 @@ describe('R13.8 · privacy', () => {
     // already permits. What must NOT survive masking is any absolute amount:
     // the axis gutter is withheld outright, and every other figure is routed
     // through `MaskedAmount`, which fails closed on its own.
-    assert.match(contrib, /masked \? null : <MaskedAmount value=\{tick\}/)
+    // R13.R5C.2 — the axis tick moved onto its own line when it took the
+    // `zeroDash={false}` opt-out (a gridline is a scale, not a value); it is
+    // still withheld outright while masked, which is the property here.
+    assert.match(contrib, /masked \? null : \(\s*<MaskedAmount value=\{tick\}/)
     assert.match(contrib, /<MaskedAmount\s+value=\{active\.value\}\s+masked=\{masked\}/)
     assert.match(contrib, /<MaskedAmount value=\{bar\.value\} masked=\{masked\}/)
     // …and no unmasked amount reaches the DOM by another route.

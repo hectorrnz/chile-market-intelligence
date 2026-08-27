@@ -635,10 +635,20 @@ describe('R13.7 · formatters and docs', () => {
     assert.equal(formatRatioPct(Number.NaN), '—')
   })
 
-  test('formatWeightPct: unsigned percent from a ratio; unavailable stays an em dash', () => {
+  test('formatWeightPct: unsigned percent from a ratio; zero is the zero mark, unavailable the em dash', () => {
     assert.equal(formatWeightPct(0.423), '42,3%')
-    assert.equal(formatWeightPct(0), '0,0%')
+    // R13.R5C.2 — was `'0,0%'`. The owner's Portfolio-wide contract: a weight
+    // or an IRR of exactly zero shows the zero mark, and the two marks stay
+    // distinct. The ratio itself is untouched and still drives the arc.
+    assert.equal(formatWeightPct(0), '-')
+    assert.equal(formatWeightPct(-0), '-')
+    // …and a weight too small to show at this precision reads the same way it
+    // renders, rather than claiming a distinction the reader cannot see.
+    assert.equal(formatWeightPct(0.0001), '-', '0,01% rounds away at one decimal')
+    // The first weight that DOES survive rounding keeps its number.
+    assert.equal(formatWeightPct(0.001), '0,1%')
     assert.equal(formatWeightPct(null), '—')
+    assert.equal(formatWeightPct(Number.NaN), '—')
   })
 
   test('data_source_status records the benchmark status and the four deliberately-unsurfaced instruments', () => {

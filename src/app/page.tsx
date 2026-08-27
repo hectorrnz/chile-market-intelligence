@@ -79,6 +79,7 @@ import { fetchStockSnapshots, fetchSectorPerformance, fetchIndexPerformance } fr
 import type { StockSnapshot, SectorSnapshot, IndexSnapshot } from '@/lib/providers/market/types'
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
 import { formatCLP, formatPct, formatRatioPct, formatMacroValue, formatMacroChange, changeColor, formatNewsTimestamp } from '@/lib/formatters'
+import { activeScope } from '@/lib/familyPortfolio/portfolioScopeRoutes'
 // R13.R5B § 3 — the Overview's portfolio card reads THE canonical Main
 // Portfolio read model, the same one the Summary hero reads. See the card.
 import { MaskedAmount } from '@/components/familyPortfolio/MaskedAmount'
@@ -286,9 +287,15 @@ const RISK_DOT: Record<string, string> = {
  *
  * Returns null when the caller holds no portfolio scope — a real answer, not a
  * failure, and the caller renders it as such.
+ *
+ * R13.R5C.4 — it now DELEGATES to the module's one derivation rather than
+ * repeating it, so "the two surfaces cannot describe different portfolios" is a
+ * structural fact instead of two identical expressions that have to be kept in
+ * step. `null` for the request: this card has no scope selector, so it always
+ * asks for the Summary's own no-`?scope=` default.
  */
 function firstPortfolioScope(scopes: readonly { id: string }[]): string | null {
-  return scopes.filter((s) => s.id !== 'alternatives')[0]?.id ?? null
+  return activeScope(null, scopes)
 }
 
 type BookResult =
@@ -882,7 +889,6 @@ export default function HomePage() {
                         value={fpHero?.weeklyDifference ?? null}
                         masked={masked}
                         signed
-                        zeroDash
                         className="ui-number ui-card-value text-foreground"
                       />
                     </div>
@@ -901,7 +907,6 @@ export default function HomePage() {
                         value={fpHero?.ytdProfit ?? null}
                         masked={masked}
                         signed
-                        zeroDash
                         className="ui-number ui-card-value text-foreground"
                       />
                     </div>

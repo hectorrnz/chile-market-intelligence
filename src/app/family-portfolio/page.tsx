@@ -175,6 +175,13 @@ import { formatTemplate } from '@/components/fable/chart/chartA11y'
 // `changeColor` left with the pass-3 detail row: the band now owns its own
 // signed-change tone, applied once inside `PerformanceMarketsStrip`.
 import { formatUsd, formatRatioPct, formatIsoDateLabel } from '@/lib/formatters'
+import {
+  PORTFOLIO_SUMMARY,
+  SCOPE_PARAM,
+  activeScope as resolveActiveScope,
+  portfolioScopesOf,
+  scopeHref,
+} from '@/lib/familyPortfolio/portfolioScopeRoutes'
 import { usePersistentState } from '@/lib/usePersistentState'
 import {
   EVOLUTION_PERIODS,
@@ -260,11 +267,11 @@ function SummaryPageInner() {
   // is no local copy to fall out of sync. An unentitled or unknown `?scope=`
   // silently resolves to the caller's own first scope (nothing is fetched for
   // the requested one).
-  const portfolioScopes = scopes.filter((s) => s.id !== 'alternatives')
-  const requested = searchParams.get('scope')
-  const activeScope = portfolioScopes.some((s) => s.id === requested)
-    ? (requested as string)
-    : (portfolioScopes[0]?.id ?? null)
+  // R13.R5C.4 — the derivation is shared with the module rail and the other two
+  // scope-aware views, so a link can never resolve a scope differently from the
+  // page it opens.
+  const portfolioScopes = portfolioScopesOf(scopes)
+  const activeScope = resolveActiveScope(searchParams.get(SCOPE_PARAM), scopes)
   const isMain = activeScope === 'main'
 
   const [slot, setSlot] = useState<FetchSlot | null>(null)
@@ -383,7 +390,7 @@ function SummaryPageInner() {
     : ''
 
   function selectScope(next: string) {
-    router.replace(`/family-portfolio?scope=${encodeURIComponent(next)}`, { scroll: false })
+    router.replace(scopeHref(PORTFOLIO_SUMMARY, next), { scroll: false })
   }
 
   // ---------------------------------------------------------------------
@@ -1475,7 +1482,6 @@ function SummaryPageInner() {
                             value={headlineChange.absolute}
                             masked={masked}
                             signed
-                            zeroDash
                             className={`ui-number text-sm font-semibold ${changeTone}`}
                           />
                           <span className={`ui-number text-sm font-semibold ${changeTone}`}>
@@ -1517,7 +1523,6 @@ function SummaryPageInner() {
                                 value={c.change.absolute}
                                 masked={masked}
                                 signed
-                                zeroDash
                                 className={`ui-number ui-capsule-value ${toneOf(c.change.absolute)}`}
                               />
                               <span

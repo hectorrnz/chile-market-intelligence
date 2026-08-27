@@ -207,15 +207,24 @@ describe('R13.R1 § 3 — Summary / Holdings terminology', () => {
   })
 
   test('route URLs are unchanged — only labels moved', () => {
+    // R13.R5C.4 — the three scope-aware paths are now named by the constants in
+    // `portfolioScopeRoutes.ts` rather than spelled again in the rail, so the
+    // check follows them there. The URLs themselves are unchanged, which is
+    // exactly what this test exists to say.
     const src = read(MODULE_NAV)
-    for (const href of [
-      "'/family-portfolio'",
-      "'/family-portfolio/portfolio'",
-      "'/family-portfolio/weekly-changes'",
-      "'/family-portfolio/alternatives'",
-      "'/family-portfolio/admin'",
-    ]) {
-      assert.ok(src.includes(href), `${href} still routed`)
+    const routes = read('src/lib/familyPortfolio/portfolioScopeRoutes.ts')
+    for (const [href, where] of [
+      ["'/family-portfolio'", routes],
+      ["'/family-portfolio/portfolio'", routes],
+      ["'/family-portfolio/weekly-changes'", routes],
+      ["'/family-portfolio/alternatives'", src],
+      ["'/family-portfolio/admin'", src],
+    ] as const) {
+      assert.ok(where.includes(href), `${href} still routed`)
+    }
+    // …and the rail still names all five, by constant or by literal.
+    for (const key of ['overview', 'portfolio', 'weekly-changes', 'alternatives', 'admin']) {
+      assert.match(src, new RegExp(`'${key}'`), `${key} still in the rail`)
     }
   })
 })

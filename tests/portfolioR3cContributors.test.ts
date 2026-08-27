@@ -1415,10 +1415,17 @@ describe('R13.R3C.2 · presentation', () => {
   test('the axis and the tooltip both take the compact form, through the masked path', () => {
     const code = read(CHART)
     assert.match(code, /const axisUnit = compactUnitForStep\(axis\.step\)/)
+    // R13.R5C.2 — `zeroDash={false}` added: THE ONE opt-out from the Portfolio
+    // zero contract. This chart's every bar is anchored to the zero gridline,
+    // and a baseline labelled `-` between `-2M` and `2M` would be read as a
+    // stray minus sign. The masked path is unchanged, which is what this test
+    // protects.
     assert.match(
       code,
-      /<MaskedAmount value=\{tick\} masked=\{false\} compact="unit" compactUnit=\{axisUnit\} \/>/,
+      /<MaskedAmount value=\{tick\} masked=\{false\} compact="unit" compactUnit=\{axisUnit\} zeroDash=\{false\} \/>/,
     )
+    // The opt-out is the AXIS's alone — the bar amounts take the mark.
+    assert.equal((codeOf(code).match(/zeroDash=\{false\}/g) ?? []).length, 1)
     // The TOOLTIP is one figure, so it picks its own unit — no forced unit.
     const tipStart = code.indexOf('<ChartTooltip')
     assert.ok(!code.slice(tipStart, code.indexOf('</ChartTooltip>')).includes('compactUnit'))

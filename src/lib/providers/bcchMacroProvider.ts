@@ -11,7 +11,7 @@ import type { MacroProvider, ProviderResult } from './types'
 import type { MacroIndicator, MacroHistoryPoint } from '@/types'
 import { isBcchConfigured, fetchBcchSeries, type BcchSeriesPoint } from './bcchClient'
 import { getEnabledBcchSeries, getSeriesByStaticId, type MacroSeriesDef } from '@/config/macroSeries'
-import { deriveValueChange, transformSeries } from './transforms'
+import { deriveValueChange, transformSeries, requiredFetchStart, earliestIso } from './transforms'
 import { isPlausible } from './plausibility'
 
 const NO_CODE = 'No live provider series code mapped yet'
@@ -72,9 +72,20 @@ export const bcchMacroProvider: MacroProvider = {
     const def = getSeriesByStaticId(indicatorId)
     if (!def || def.sourceProvider !== 'BCCh' || !def.enabled || !def.providerSeriesCode) return { ok: false, reason: NO_CODE }
 
-    const res = await fetchBcchSeries(def.providerSeriesCode, { firstDate: firstDateFor(years) })
+    // R13.R5F § 1A — this path fetched exactly the display window, so a yoy
+    // series (`imacec-anual`) had NO prior-year base inside the data at all and
+    // its oldest charted points were computed against whatever was nearest.
+    // Fetch the transform's lookback ahead of the window, then window the
+    // transformed result — see YEAR_AGO_MAX_DRIFT_DAYS in transforms.ts.
+    const cutoffIso = firstDateFor(years)
+    const firstDate = earliestIso(
+      cutoffIso,
+      requiredFetchStart(cutoffIso, def.transformation, def.frequency),
+    )
+    const res = await fetchBcchSeries(def.providerSeriesCode, { firstDate })
     if (!res.ok) return res
     const data: MacroHistoryPoint[] = transformSeries(res.data, def.transformation)
+      .filter(p => p.date >= cutoffIso)
       .map(p => ({ indicatorId, date: p.date, value: p.value }))
     if (data.length < 2) return { ok: false, reason: 'BCCh series too short to chart' }
     return { ok: true, data, source: 'Banco Central de Chile (BDE)', lastUpdated: res.lastUpdated }

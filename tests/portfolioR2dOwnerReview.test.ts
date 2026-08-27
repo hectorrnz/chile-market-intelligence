@@ -574,11 +574,15 @@ describe('R13.R2 pass 4 § 3 — print colour follows meaning', () => {
   test('the sheet still formats no amount of its own', () => {
     const sheet = codeOf(PRINT)
     assert.ok(!/formatUsd|toLocaleString|Intl\./.test(sheet))
-    // R13.R5C.1 § 2.2 — `zeroDash` added: every printed metric here is a
-    // change or a flow, so a zero takes the module's "nothing here" mark. The
-    // property this test exists for is unchanged — the amount is still passed
-    // as a NUMBER to the guarded renderer, never pre-formatted by the sheet.
-    assert.match(PRINT, /<MaskedAmount value=\{metric\.amount \?\? null\} masked=\{masked\} signed zeroDash \/>/)
+    // R13.R5C.2 — the `zeroDash` flag R13.R5C.1 added here is GONE, because the
+    // renderer now applies the Portfolio zero contract by default and the sheet
+    // has no say in it. The property this test exists for is unchanged and in
+    // fact stronger: the amount is still passed as a NUMBER to the one guarded
+    // renderer, and the sheet can no longer opt a figure out of the contract.
+    assert.match(PRINT, /<MaskedAmount value=\{metric\.amount \?\? null\} masked=\{masked\} signed \/>/)
+    // Only a chart SCALE may opt out, and only the y-axis tick does.
+    assert.equal((codeOf(PRINT).match(/zeroDash/g) ?? []).length, 1)
+    assert.match(PRINT, /value=\{tick\.value\}[^/]*zeroDash=\{false\}/)
   })
 
   test('the market labels are renamed, on paper and on screen alike', () => {

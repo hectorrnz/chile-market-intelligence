@@ -10,7 +10,7 @@
 // presentation convenience over the server-filtered scopes response — every
 // route and endpoint behind an item re-authorizes server-side.
 
-import type { ReactNode } from 'react'
+import { Suspense, type ReactNode } from 'react'
 import { FamilyPortfolioProvider } from '@/components/familyPortfolio/FamilyPortfolioProvider'
 import { FamilyPortfolioNav } from '@/components/familyPortfolio/FamilyPortfolioNav'
 
@@ -18,7 +18,15 @@ export default function FamilyPortfolioLayout({ children }: { children: ReactNod
   return (
     <FamilyPortfolioProvider>
       <div className="w-full">
-        <FamilyPortfolioNav />
+        {/* R13.R5C.4 — the rail reads `?scope=` to carry the reader's selected
+            portfolio across sub-tabs, so it needs the same Suspense boundary
+            every page in this module already puts around its own
+            `useSearchParams()`. It renders nothing until the scopes response
+            resolves, so the fallback is deliberately empty rather than a
+            placeholder that would flash a second, wrong shape. */}
+        <Suspense fallback={null}>
+          <FamilyPortfolioNav />
+        </Suspense>
         {children}
       </div>
     </FamilyPortfolioProvider>

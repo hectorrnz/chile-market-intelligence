@@ -127,6 +127,13 @@ import { ReconciliationStatus, type ReconciliationDisplayState } from '@/compone
 import { ContributionChart } from '@/components/familyPortfolio/ContributionChart'
 import { ContributionBreakdownModal } from '@/components/familyPortfolio/ContributionBreakdownModal'
 import { formatUsd, formatRatioPct, formatChangePct, formatIsoDateLabel } from '@/lib/formatters'
+import {
+  PORTFOLIO_WEEKLY_CHANGES,
+  SCOPE_PARAM,
+  activeScope as resolveActiveScope,
+  portfolioScopesOf,
+  scopeHref,
+} from '@/lib/familyPortfolio/portfolioScopeRoutes'
 import { dict, type Translation } from '@/lib/i18n'
 import {
   breadcrumbFor,
@@ -343,7 +350,7 @@ function RankedPanel({
                       row is a mover by construction, so in practice neither
                       dashes here — the shared rule is what keeps it that way.) */}
                   <td className={`${CELL} text-right ui-number whitespace-nowrap ${changeColor(n.weeklyValueChange)}`}>
-                    <MaskedAmount value={n.weeklyValueChange} masked={masked} signed zeroDash />
+                    <MaskedAmount value={n.weeklyValueChange} masked={masked} signed />
                   </td>
                   <td className={`${CELL} text-right ui-number whitespace-nowrap ${changeColor(n.ownPctChange)}`}>
                     {formatChangePct(n.ownPctChange)}
@@ -371,11 +378,11 @@ function WeeklyChangesPageInner() {
   const searchParams = useSearchParams()
   const [masked, setMasked] = usePrivacyMode()
 
-  const portfolioScopes = scopes.filter((s) => s.id !== 'alternatives')
-  const requested = searchParams.get('scope')
-  const activeScope = portfolioScopes.some((s) => s.id === requested)
-    ? (requested as string)
-    : (portfolioScopes[0]?.id ?? null)
+  // R13.R5C.4 — the derivation is shared with the module rail and the other two
+  // scope-aware views, so a link can never resolve a scope differently from the
+  // page it opens.
+  const portfolioScopes = portfolioScopesOf(scopes)
+  const activeScope = resolveActiveScope(searchParams.get(SCOPE_PARAM), scopes)
 
   /** null = the latest published week. */
   const [asOf, setAsOf] = useState<string | null>(null)
@@ -533,7 +540,7 @@ function WeeklyChangesPageInner() {
   )
 
   function selectScope(next: string) {
-    router.replace(`/family-portfolio/weekly-changes?scope=${encodeURIComponent(next)}`, { scroll: false })
+    router.replace(scopeHref(PORTFOLIO_WEEKLY_CHANGES, next), { scroll: false })
   }
 
   const ready = data !== null
@@ -794,7 +801,7 @@ function WeeklyChangesPageInner() {
                           {/* R13.R5C.1 § 2.2 — `signed` marks the MOVEMENTS of
                               this reconciliation (profit, net flow); the two
                               endpoints are levels and keep a real `0`. */}
-                          <MaskedAmount value={r.value} masked={masked} signed={r.signed} zeroDash={r.signed} />
+                          <MaskedAmount value={r.value} masked={masked} signed={r.signed} />
                         </dd>
                       </div>
                     ))}
@@ -982,7 +989,7 @@ function WeeklyChangesPageInner() {
                 >
                   <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
                     <span className="text-muted-fg">
-                      {w.parentChange}: <MaskedAmount value={contributionSet.netChange} masked={masked} signed zeroDash />
+                      {w.parentChange}: <MaskedAmount value={contributionSet.netChange} masked={masked} signed />
                     </span>
                   </div>
                   <ReconciliationStatus
@@ -1095,7 +1102,7 @@ function WeeklyChangesPageInner() {
                             their numbers: a holding worth exactly nothing is a
                             real level, not an absence. */}
                         <td className={`${CELL} text-center ui-number whitespace-nowrap ${changeColor(n.weeklyValueChange)}`}>
-                          <MaskedAmount value={n.weeklyValueChange} masked={masked} signed zeroDash />
+                          <MaskedAmount value={n.weeklyValueChange} masked={masked} signed />
                         </td>
                         <td className={`${CELL} text-center ui-number whitespace-nowrap ${changeColor(n.ownPctChange)}`}>
                           {formatChangePct(n.ownPctChange)}

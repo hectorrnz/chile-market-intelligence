@@ -52,7 +52,9 @@ describe('R13.R5C.1 § 1 — Overview Portfolio card', () => {
     assert.match(MASKED, /currency = false/)
     assert.match(MASKED, /currency \? 'US\$ ' : ''/)
     // …and the marked text still goes through PrivacyValue, not around it.
-    assert.match(MASKED, /<PrivacyValue masked=\{masked\}[\s\S]*?\{text\}/)
+    // R13.R5C.3 — `text` is now one arm of a ternary INSIDE the mask (the other
+    // is the zero mark), so both arms are guarded rather than only this one.
+    assert.match(MASKED, /<PrivacyValue masked=\{masked\}[\s\S]*?: text\}[\s\S]*?<\/PrivacyValue>/)
   })
 
   test('2 · the mark is US$, never a bare $', () => {
@@ -205,65 +207,30 @@ describe('R13.R5C.1 § 2.1 — the AUM mark', () => {
 
 describe('R13.R5C.1 § 2.2 — zeros that mean nothing', () => {
   test('18 · the two marks stay distinct: `-` is nothing, `—` is unestablished', () => {
-    // The frozen semantic. A zero flow and an unreadable flow must never
-    // collapse into the same mark.
-    assert.match(MASKED, /if \(value === null \|\| !Number\.isFinite\(value\)\)[\s\S]{0,120}?—/)
-    assert.match(MASKED, /zeroDash && roundsToZeroAt[\s\S]{0,120}?>-</)
+    // The frozen semantic, and the one part of this section R13.R5C.2 did not
+    // widen. A zero flow and an unreadable flow must never collapse into the
+    // same mark.
+    assert.match(MASKED, /if \(value === null \|\| !Number\.isFinite\(value\)\)[\s\S]{0,400}?—/)
+    // R13.R5C.3 — still two distinct marks; the zero mark simply no longer sits
+    // in an early return, because privacy now outranks it (see § 4 below).
+    assert.match(MASKED, /zeroDash && roundsToZeroAt/)
+    assert.match(MASKED, />-</)
   })
 
-  test('19 · the hierarchy dashes a zero DIFFERENCE, like Weekly Changes', () => {
-    // 78 of 195 rows in the current publication show a difference of exactly
-    // zero. Before this they printed `0` here and `-` on Weekly Changes.
-    assert.match(TABLE, /diff\.status === 'mismatch'[\s\S]{0,120}?,\s*true,/)
-  })
-
-  test('20 · a value dashes only when the row is unoccupied in EVERY column', () => {
-    assert.match(
-      TABLE,
-      /const unoccupied = \[row\.beginningOfYearValue, row\.previousValue, row\.value\]\.every\(/,
-    )
-    assert.match(TABLE, /v === null \|\| \(Number\.isFinite\(v\) && roundsToZeroAt\(v, 0\)\)/)
-    // All three value cells share the one judgement — a per-cell test would
-    // dash a closed position's current `0` and hide the liquidation.
-    assert.equal((TABLE.match(/masked, '', undefined, unoccupied\)/g) ?? []).length, 3)
-  })
-
-  test('21 · a genuine null still renders the unavailable mark, not the zero mark', () => {
-    assert.match(TABLE, /value === null \? \(\s*<span className="text-muted-fg">—<\/span>/)
-  })
-
-  test('22 · CHANGE and FLOW amounts across the module take the mark', () => {
-    const sites: Array<[string, RegExp]> = [
-      ['src/components/familyPortfolio/PerformanceMarketsStrip.tsx', /signed\s+zeroDash/],
-      ['src/components/familyPortfolio/PeriodValueChangeCard.tsx', /zeroDash=\{signed === true\}/],
-      ['src/components/familyPortfolio/WeeklySnapshotCard.tsx', /zeroDash=\{diff\}/],
-      ['src/components/familyPortfolio/ReconciliationStatus.tsx', /signed zeroDash/],
-      ['src/components/familyPortfolio/ContributionChart.tsx', /signed zeroDash/],
-      ['src/components/familyPortfolio/ContributionBreakdownModal.tsx', /signed\s+zeroDash/],
-      ['src/components/familyPortfolio/AlternativesDrilldowns.tsx', /signed zeroDash/],
-      ['src/components/familyPortfolio/AlternativesCashFlowChart.tsx', /signed\s+zeroDash/],
-      ['src/app/family-portfolio/alternatives/page.tsx', /signed zeroDash/],
-      ['src/app/family-portfolio/weekly-changes/page.tsx', /zeroDash=\{r\.signed\}/],
-      ['src/components/familyPortfolio/SummaryPrintSheet.tsx', /zeroDash=\{r\.isDifference === true\}/],
-    ]
-    for (const [path, re] of sites) assert.match(read(path), re, path)
-  })
-
-  test('23 · LEVELS keep a real zero — no identity is broken', () => {
-    // Committed / contributed / unfunded is an identity the reader can add up
-    // on screen; dashing the middle term would break it.
-    const drill = read('src/components/familyPortfolio/AlternativesDrilldowns.tsx')
-    for (const field of ['h.capitalCommitted', 'h.contributions', 'h.unfunded']) {
-      const m = new RegExp(`<MaskedAmount value=\\{${field.replace('.', '\\.')}\\} masked=\\{masked\\} />`)
-      assert.match(drill, m, field)
-    }
-    // The portfolio value hero is a level too.
-    assert.doesNotMatch(HERO, /zeroDash/)
-  })
-
-  test('24 · MaskedAmount still refuses to dash a level by default', () => {
-    assert.match(MASKED, /zeroDash = false/)
-  })
+  // 19-24 · SUPERSEDED BY R13.R5C.2, and moved rather than deleted.
+  //
+  // This stage read the owner's rule too narrowly: it dashed changes, flows and
+  // "unoccupied taxonomy slot" rows, and deliberately kept a numeric `0` on
+  // levels — a liquidated holding, an undrawn commitment of nothing, a
+  // reconciliation that left nothing over. The owner's rule is literal and
+  // applies to every user-visible numeric zero, so the per-call-site decisions
+  // those six tests locked no longer exist to be asserted: the flag is gone
+  // from every call site and the renderer applies the rule by default.
+  //
+  // The contract they defended is now in `tests/portfolioR5c2ZeroDisplay.test.ts`
+  // in its widened form, together with the reconciliation proofs that show the
+  // widening changed no arithmetic. Only the two marks' distinctness, tested
+  // above at 18, belongs to both stages and stays here.
 
   test('25 · the legend describes the module-wide convention, in both languages', () => {
     for (const lang of ['en', 'es'] as const) {

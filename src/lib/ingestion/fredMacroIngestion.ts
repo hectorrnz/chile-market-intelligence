@@ -12,7 +12,7 @@
 // The CLI script (scripts/ingest/fredMacro.ts) remains separate to avoid pulling
 // Next.js env/module machinery into the CLI context.
 
-import { transformSeries, monthEndSample } from '../providers/transforms.ts'
+import { transformSeries, monthEndSample, requiredFetchStart, earliestIso } from '../providers/transforms.ts'
 import { fetchFredSeries, isFredConfigured } from '../providers/fredClient.ts'
 import { getEnabledFredSeries } from '../../config/macroSeries.ts'
 import { usFredSeriesManualMap } from '../../config/usFredSeriesManualMap.ts'
@@ -23,7 +23,12 @@ export const INGESTION_VERSION = '8D.0'
 
 const BATCH_SIZE = 500
 const INTER_REQUEST_DELAY_MS = 150
-// Extra history fetched before rangeFrom so yoy/mom transforms have a year-ago base.
+// Baseline extra history fetched before rangeFrom. This is a FLOOR, not the
+// whole rule: R13.R5F derives each series' real horizon from its own store
+// window plus its transform's lookback (`requiredFetchStart`), because this
+// constant is measured from today while the store windows below reach much
+// further back. Relying on it alone let a monthly yoy series compare against
+// the wrong month — see YEAR_AGO_MAX_DRIFT_DAYS in transforms.ts.
 const EXTRA_YEARS_CONTEXT = 1
 
 /**
@@ -237,9 +242,26 @@ export async function runFredMacroIngestion(opts: IngestionOptions): Promise<Ing
     const sourceName  = manualEntry?.sourceName ?? null
     const seriesCode  = def.providerSeriesCode!
 
+    // See INCREMENTAL_DAYS_BACK_BY_FREQUENCY — a monthly or quarterly print's
+    // observation date lags its publication by far more than the default
+    // window. A backfill run already spans years and is left alone.
+    const widened = INCREMENTAL_DAYS_BACK_BY_FREQUENCY[def.frequency]
+    const seriesRangeFrom = opts.mode === 'incremental' && widened !== undefined
+      ? daysAgoIso(widened)
+      : rangeFrom
+
+    // R13.R5F § 1A — reach back far enough for THIS series' transform to be
+    // computed from a real prior observation at the oldest storable date, not
+    // a flat year from today. Never narrows the range: whichever start is
+    // earlier wins.
+    const seriesFetchFrom = earliestIso(
+      fetchFrom,
+      requiredFetchStart(seriesRangeFrom, def.transformation, def.frequency),
+    )
+
     // Bounded via cosd so this never downloads a series' full multi-decade
     // history — a real production timeout this caused before being fixed.
-    const res = await fetchFredSeries(seriesCode, { startDate: fetchFrom })
+    const res = await fetchFredSeries(seriesCode, { startDate: seriesFetchFrom })
     if (!res.ok) {
       indicatorsFailed.push(def.manualKey)
       errorMessages.push(`${def.manualKey}: ${res.reason}`)
@@ -258,14 +280,6 @@ export async function runFredMacroIngestion(opts: IngestionOptions): Promise<Ing
     const transformed = transformSeries(sourcePoints, def.transformation)
     const isDerived   = def.transformation !== 'none'
     const fetchedAt   = new Date().toISOString()
-
-    // See INCREMENTAL_DAYS_BACK_BY_FREQUENCY — a monthly or quarterly print's
-    // observation date lags its publication by far more than the default
-    // window. A backfill run already spans years and is left alone.
-    const widened = INCREMENTAL_DAYS_BACK_BY_FREQUENCY[def.frequency]
-    const seriesRangeFrom = opts.mode === 'incremental' && widened !== undefined
-      ? daysAgoIso(widened)
-      : rangeFrom
 
     const insertRows: MacroObservationInsert[] = transformed
       .filter(p => p.value != null && p.date >= seriesRangeFrom && p.date <= rangeTo)

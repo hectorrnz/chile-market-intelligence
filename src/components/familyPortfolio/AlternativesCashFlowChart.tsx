@@ -178,7 +178,6 @@ export function AlternativesCashFlowChart({ currency, columns, masked, onSelectP
                       value={active.calls}
                       masked={masked}
                       signed
-                      zeroDash
                       compact="unit"
                       className="ui-number whitespace-nowrap"
                     />
@@ -189,7 +188,6 @@ export function AlternativesCashFlowChart({ currency, columns, masked, onSelectP
                       value={active.distributions}
                       masked={masked}
                       signed
-                      zeroDash
                       compact="unit"
                       className="ui-number whitespace-nowrap"
                     />
@@ -201,7 +199,6 @@ export function AlternativesCashFlowChart({ currency, columns, masked, onSelectP
                         value={active.unclassified}
                         masked={masked}
                         signed
-                        zeroDash
                         compact="unit"
                         className="ui-number whitespace-nowrap"
                       />
@@ -313,8 +310,8 @@ export function AlternativesCashFlowChart({ currency, columns, masked, onSelectP
             {periodTitle(c)} ·{' '}
             {c.hasEvents ? (
               <>
-                {a.periodCallsLabel} <MaskedAmount value={c.calls} masked={masked} signed zeroDash /> ·{' '}
-                {a.periodDistLabel} <MaskedAmount value={c.distributions} masked={masked} signed zeroDash /> ·{' '}
+                {a.periodCallsLabel} <MaskedAmount value={c.calls} masked={masked} signed /> ·{' '}
+                {a.periodDistLabel} <MaskedAmount value={c.distributions} masked={masked} signed /> ·{' '}
                 {currencyLabel(currency)}
               </>
             ) : (

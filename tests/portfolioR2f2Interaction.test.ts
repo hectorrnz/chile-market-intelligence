@@ -380,11 +380,20 @@ describe('R13.R2F2 § 16 · the shared button interaction contract', () => {
 
   test('authorization and privacy are untouched by an interaction pass', () => {
     // A styling change must not have reached what the page is allowed to show.
-    assert.match(CODE, /const portfolioScopes = scopes\.filter\(\(s\) => s\.id !== 'alternatives'\)/)
-    assert.match(CODE, /portfolioScopes\.some\(\(s\) => s\.id === requested\)/)
+    // R13.R5C.4 — the scope derivation moved into the module's one shared rule
+    // so the rail can carry the selection across sub-tabs. The property this
+    // test defends is unchanged and is asserted at both ends: the page reads
+    // the server-filtered entitlement, and the rule itself still validates the
+    // requested scope against it.
+    assert.match(CODE, /const portfolioScopes = portfolioScopesOf\(scopes\)/)
+    assert.match(CODE, /resolveActiveScope\(searchParams\.get\(SCOPE_PARAM\), scopes\)/)
+    assert.match(
+      read('src/lib/familyPortfolio/portfolioScopeRoutes.ts'),
+      /portfolioScopesOf\(scopes\)\.some\(\(s\) => s\.id === requested\)/,
+    )
     assert.match(CODE, /portfolioScopes\.length > 1 && activeScope &&/)
     assert.match(CODE, /<PrivacyToggle masked=\{masked\}/)
     // The selector still only changes the URL — no client-side scope grant.
-    assert.match(CODE, /router\.replace\(`\/family-portfolio\?scope=\$\{encodeURIComponent\(next\)\}`/)
+    assert.match(CODE, /router\.replace\(scopeHref\(PORTFOLIO_SUMMARY, next\), \{ scroll: false \}\)/)
   })
 })

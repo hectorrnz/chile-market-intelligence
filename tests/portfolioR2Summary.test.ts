@@ -475,10 +475,16 @@ describe('R13.R2 · the displayed-Difference invariant', () => {
 
   test('privacy is unchanged — the derived figure still renders through the guarded path', () => {
     const table = codeOf(read('src/components/familyPortfolio/HierarchicalTable.tsx'))
-    // Still exactly one formatUsd call site (inside amountCell's PrivacyValue)
-    // plus the import — the repair added no second, unmasked render path.
-    assert.equal(table.split('formatUsd').length - 1, 2)
-    assert.match(table, /<PrivacyValue masked=\{masked\}>\{formatUsd\(value\)\}<\/PrivacyValue>/)
+    // R13.R5C.2 — STRONGER than before. The table used to hold one `formatUsd`
+    // call site inside its own `PrivacyValue`; it now holds NONE, because the
+    // cell renders through `MaskedAmount` like every other amount in the
+    // module. One implementation of the guarded chain, not two that agree.
+    assert.equal(table.split('formatUsd').length - 1, 0)
+    assert.match(table, /<MaskedAmount value=\{value\} masked=\{masked\} \/>/)
+    assert.match(
+      codeOf(read('src/components/familyPortfolio/MaskedAmount.tsx')),
+      /<PrivacyValue masked=\{masked\}/,
+    )
     // The warning text is never an amount.
     assert.ok(!/warning=\{[^}]*(formatUsd|value|difference)\}/.test(table))
     const card = codeOf(read('src/components/familyPortfolio/WeeklySnapshotCard.tsx'))

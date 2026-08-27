@@ -307,7 +307,16 @@ export function ContributionChart({
               <span className="w-12 sm:w-14 shrink-0 pr-2 text-right ui-meta text-muted-fg ui-number leading-none">
                 {/* Withheld rather than masked: five stacked bullet strings in a
                     narrow gutter is noise, and hiding is stronger than masking. */}
-                {masked ? null : <MaskedAmount value={tick} masked={false} compact="unit" compactUnit={axisUnit} />}
+                {/* R13.R5C.2 — `zeroDash={false}`: THE ONE opt-out from the
+                  Portfolio zero contract. This is the axis, not a value. Every
+                  bar on this chart is anchored to the zero gridline, and a
+                  baseline labelled `-` between `-2M` and `2M` reads as a stray
+                  minus sign rather than as zero. The bar amounts in the tooltip
+                  and the hidden table below take the mark like everything
+                  else. */}
+              {masked ? null : (
+                <MaskedAmount value={tick} masked={false} compact="unit" compactUnit={axisUnit} zeroDash={false} />
+              )}
               </span>
               <span
                 className="flex-1 border-t"
@@ -407,7 +416,6 @@ export function ContributionChart({
                     value={active.value}
                     masked={masked}
                     signed
-                    zeroDash
                     compact="unit"
                     className={`ui-number text-sm ${
                       active.value < 0 ? 'text-negative font-semibold' : 'text-positive font-semibold'
@@ -541,7 +549,7 @@ export function ContributionChart({
               <tr key={bar.rowKey ?? `residual-row-${i}`}>
                 <td>{contributionLabel(bar, lang, labelOverrides)}</td>
                 <td>
-                  <MaskedAmount value={bar.value} masked={masked} signed zeroDash />
+                  <MaskedAmount value={bar.value} masked={masked} signed />
                 </td>
                 <td>{bar.shareOfNet !== null ? formatRatioPct(bar.shareOfNet) : c.shareUnavailable}</td>
               </tr>

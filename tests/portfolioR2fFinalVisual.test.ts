@@ -390,7 +390,9 @@ describe('R13.R2F1 · the owner-review refinements', () => {
     // monetary and must keep the one guarded `MaskedAmount` render path.
     assert.match(PRINT, /preserveAspectRatio="xMidYMid meet"/)
     assert.match(PRINT, /top: `\$\{tick\.pct\}%`/)
-    assert.match(PRINT, /<MaskedAmount value=\{tick\.value\} masked=\{masked\} compact \/>/)
+    // R13.R5C.2 — see the § 4 masking test below for why the tick opts out of
+    // the zero mark. It still renders through the one guarded path.
+    assert.match(PRINT, /<MaskedAmount value=\{tick\.value\} masked=\{masked\} compact zeroDash=\{false\} \/>/)
     assert.ok(!/<text[\s\S]{0,400}?MaskedAmount/.test(PRINT), 'a monetary label may never be SVG text')
     // Strokes keep their true printed weight at any scale.
     assert.match(PRINT, /vectorEffect="non-scaling-stroke"/)
@@ -420,7 +422,9 @@ describe('R13.R2F1 · the owner-review refinements', () => {
     // An axis is not a loophole around the page mask.
     // R13.R2F4 § 2 — `compact` shortens the LABEL (`145,5M`); the guarded
     // render path is unchanged, which is the invariant this test protects.
-    assert.match(PRINT, /<MaskedAmount value=\{tick\.value\} masked=\{masked\} compact \/>/)
+    // R13.R5C.2 — `zeroDash={false}`: an axis tick is a scale annotation, not a
+    // value. The guarded render path is unchanged.
+    assert.match(PRINT, /<MaskedAmount value=\{tick\.value\} masked=\{masked\} compact zeroDash=\{false\} \/>/)
     // A LEVEL is never toned green or red — only a result is.
     const tickBlock = /\{yTicks\.map\(\(tick\) => \([\s\S]*?\)\)\}/.exec(PRINT)
     assert.ok(tickBlock !== null)

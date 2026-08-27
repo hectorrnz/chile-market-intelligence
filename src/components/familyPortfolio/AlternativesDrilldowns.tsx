@@ -47,7 +47,7 @@ import {
   type PeriodBreakdown,
   type UndrawnCommitment,
 } from '@/lib/familyPortfolio/alternativesView'
-import { formatIsoDateLabel } from '@/lib/formatters'
+import { formatCount, formatIsoDateLabel } from '@/lib/formatters'
 
 const TH = 'py-2 px-2 first:pl-0 last:pr-0 ui-table-header text-muted-fg'
 const CELL = 'py-1.5 px-2 first:pl-0 last:pr-0'
@@ -108,27 +108,27 @@ export function PeriodBreakdownModal({
                     not as a `0` competing with the figures beside it. The
                     commitment BALANCES further down keep their real zeros:
                     committed / contributed / unfunded are a visible identity. */}
-                <MaskedAmount value={breakdown.calls.amount} masked={masked} signed zeroDash />
+                <MaskedAmount value={breakdown.calls.amount} masked={masked} signed />
               </dd>
             </div>
             <div className="flex items-baseline gap-2">
               <dt className="ui-meta text-muted-fg">{a.kpiDistributions}</dt>
               <dd className="ui-number text-sm text-foreground">
-                <MaskedAmount value={breakdown.distributions.amount} masked={masked} signed zeroDash />
+                <MaskedAmount value={breakdown.distributions.amount} masked={masked} signed />
               </dd>
             </div>
             {breakdown.unclassified.count > 0 && (
               <div className="flex items-baseline gap-2">
                 <dt className="ui-meta text-warning">{a.kpiUnclassifiedAmount}</dt>
                 <dd className="ui-number text-sm text-foreground">
-                  <MaskedAmount value={breakdown.unclassified.amount} masked={masked} signed zeroDash />
+                  <MaskedAmount value={breakdown.unclassified.amount} masked={masked} signed />
                 </dd>
               </div>
             )}
             <div className="flex items-baseline gap-2">
               <dt className="ui-meta text-foreground">{a.kpiNetFlow}</dt>
               <dd className="ui-number text-sm font-semibold text-foreground">
-                <MaskedAmount value={breakdown.net} masked={masked} signed zeroDash />
+                <MaskedAmount value={breakdown.net} masked={masked} signed />
               </dd>
             </div>
           </dl>
@@ -165,7 +165,7 @@ export function PeriodBreakdownModal({
                       {e.sociedad ?? '—'}
                     </td>
                     <td className={`${CELL} text-right ui-number whitespace-nowrap`}>
-                      <MaskedAmount value={e.amount} masked={masked} signed zeroDash />
+                      <MaskedAmount value={e.amount} masked={masked} signed />
                     </td>
                   </tr>
                 ))}
@@ -237,21 +237,25 @@ export function UndrawnCommitmentsModal({
           after them, where it read as a footnote to a list it actually
           qualifies. */}
       <dl className="flex flex-wrap items-baseline gap-x-6 gap-y-1.5 pb-3 mb-3 border-b border-border">
+        {/* R13.R5C.2 — these four CARDINALITIES stand alone in a value
+            position, so they take the module's zero mark like the amounts
+            above them: "nothing unreported" reads `-`, not `0`. A cardinality
+            inside a sentence keeps its digits (see `formatCount`). */}
         <div className="flex items-baseline gap-2">
           <dt className="ui-meta text-muted-fg">{a.undrawnUnreportedLabel}</dt>
-          <dd className="ui-number text-sm font-medium text-foreground">{undrawn.unavailable}</dd>
+          <dd className="ui-number text-sm font-medium text-foreground">{formatCount(undrawn.unavailable)}</dd>
         </div>
         <div className="flex items-baseline gap-2">
           <dt className="ui-meta text-muted-fg">{a.undrawnWithLabel}</dt>
-          <dd className="ui-number text-sm text-foreground">{undrawn.holdings.length}</dd>
+          <dd className="ui-number text-sm text-foreground">{formatCount(undrawn.holdings.length)}</dd>
         </div>
         <div className="flex items-baseline gap-2">
           <dt className="ui-meta text-muted-fg">{a.undrawnFullyDrawnLabel}</dt>
-          <dd className="ui-number text-sm text-foreground">{undrawn.fullyDrawn}</dd>
+          <dd className="ui-number text-sm text-foreground">{formatCount(undrawn.fullyDrawn)}</dd>
         </div>
         <div className="flex items-baseline gap-2 ml-auto">
           <dt className="ui-meta text-muted-fg">{a.undrawnPopulationLabel}</dt>
-          <dd className="ui-number text-sm font-semibold text-foreground">{undrawn.ofHoldings}</dd>
+          <dd className="ui-number text-sm font-semibold text-foreground">{formatCount(undrawn.ofHoldings)}</dd>
         </div>
       </dl>
 
@@ -292,7 +296,7 @@ export function UndrawnCommitmentsModal({
         >
           <h3 className="ui-label text-muted-fg mb-2">
             {a.undrawnUnreportedLabel}
-            <span className="text-muted-fg"> · {undrawn.unreported.length}</span>
+            <span className="text-muted-fg"> · {formatCount(undrawn.unreported.length)}</span>
           </h3>
           <div className="overflow-x-auto">
             <table className="w-full text-xs min-w-[520px]" style={{ borderCollapse: 'collapse' }}>
@@ -346,7 +350,7 @@ export function UndrawnCommitmentsModal({
           directly under a paragraph. */}
       <h3 className="ui-label text-muted-fg mb-2">
         {a.undrawnWithLabel}
-        <span className="text-muted-fg"> · {undrawn.holdings.length}</span>
+        <span className="text-muted-fg"> · {formatCount(undrawn.holdings.length)}</span>
       </h3>
 
       {undrawn.holdings.length === 0 ? (

@@ -115,7 +115,6 @@ export function ContributionBreakdownModal({
               value={parent.weeklyValueChange}
               masked={masked}
               signed
-              zeroDash
               className={`ui-number ui-card-value ${
                 (parent.weeklyValueChange ?? 0) < 0 ? 'text-negative' : 'text-positive'
               }`}
@@ -338,7 +337,6 @@ function BreakdownRow({
             value={item.value}
             masked={masked}
             signed
-            zeroDash
             className={`ui-number ${item.value < 0 ? 'text-negative' : 'text-positive'}`}
           />
         </span>
