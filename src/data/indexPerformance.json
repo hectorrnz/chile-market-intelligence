@@ -21,7 +21,7 @@
     "currency": "USD",
     "dayChangePct": -0.25,
     "ytdChangePct": 12.44,
-    "date": "2026-08-28",
+    "date": "2026-08-29",
     "source": "yfinance / Yahoo Finance",
     "yearStartClose": 6858.47
   },
@@ -30,11 +30,11 @@
     "name": "Ibovespa",
     "country": "Brazil",
     "region": "LatAm",
-    "value": 175664.62,
+    "value": 175135.0,
     "currency": "BRL",
-    "dayChangePct": 0.3,
-    "ytdChangePct": 9.42,
-    "date": "2026-08-28",
+    "dayChangePct": 0.31,
+    "ytdChangePct": 9.09,
+    "date": "2026-08-29",
     "source": "yfinance / Yahoo Finance",
     "yearStartClose": 160539.0
   },
@@ -47,7 +47,7 @@
     "currency": "MXN",
     "dayChangePct": -0.53,
     "ytdChangePct": 2.09,
-    "date": "2026-08-28",
+    "date": "2026-08-29",
     "source": "yfinance / Yahoo Finance",
     "yearStartClose": 64141.36
   },
@@ -73,7 +73,7 @@
     "currency": "USD",
     "dayChangePct": -2.27,
     "ytdChangePct": 29.04,
-    "date": "2026-08-28",
+    "date": "2026-08-29",
     "source": "yfinance / Yahoo Finance",
     "yearStartClose": 71.53
   },
@@ -86,7 +86,7 @@
     "currency": "EUR",
     "dayChangePct": -0.71,
     "ytdChangePct": 8.46,
-    "date": "2026-08-28",
+    "date": "2026-08-29",
     "source": "yfinance / Yahoo Finance",
     "yearStartClose": 5923.69
   },
@@ -99,7 +99,7 @@
     "currency": "GBP",
     "dayChangePct": -0.79,
     "ytdChangePct": 8.46,
-    "date": "2026-08-28",
+    "date": "2026-08-29",
     "source": "yfinance / Yahoo Finance",
     "yearStartClose": 9951.1
   },
@@ -112,7 +112,7 @@
     "currency": "JPY",
     "dayChangePct": -0.2,
     "ytdChangePct": 27.59,
-    "date": "2026-08-28",
+    "date": "2026-08-29",
     "source": "yfinance / Yahoo Finance",
     "yearStartClose": 51832.8
   },
@@ -125,7 +125,7 @@
     "currency": "HKD",
     "dayChangePct": -0.34,
     "ytdChangePct": -2.93,
-    "date": "2026-08-28",
+    "date": "2026-08-29",
     "source": "yfinance / Yahoo Finance",
     "yearStartClose": 26338.47
   },
@@ -138,7 +138,7 @@
     "currency": "KRW",
     "dayChangePct": 1.53,
     "ytdChangePct": 60.39,
-    "date": "2026-08-28",
+    "date": "2026-08-29",
     "source": "yfinance / Yahoo Finance",
     "yearStartClose": 4309.63
   }
