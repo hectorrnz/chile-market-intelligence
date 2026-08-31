@@ -10,7 +10,7 @@
 // second page importing it would pull that whole route's bundle in behind it,
 // so the shared names live here instead of on either page.
 
-export const ALTERNATIVES_ROOT = '/family-portfolio/alternatives'
+export const ALTERNATIVES_ROOT = '/portfolio/alternatives'
 export const ALTERNATIVES_HOLDINGS = `${ALTERNATIVES_ROOT}/holdings`
 export const ALTERNATIVES_CASH_FLOWS = `${ALTERNATIVES_ROOT}/cash-flows`
 

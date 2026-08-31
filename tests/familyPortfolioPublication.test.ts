@@ -49,7 +49,7 @@ const ROLLBACK_ROUTE = 'src/app/api/family-portfolio/admin/publications/[id]/rol
 const COMMENTARY_ROUTE = 'src/app/api/family-portfolio/admin/publications/[id]/commentary/route.ts'
 const UPLOAD_DETAIL_ROUTE = 'src/app/api/family-portfolio/admin/uploads/[id]/route.ts'
 const UPLOADS_ROUTE = 'src/app/api/family-portfolio/admin/uploads/route.ts'
-const ADMIN_PAGE = 'src/app/family-portfolio/admin/page.tsx'
+const ADMIN_PAGE = 'src/app/portfolio/admin/page.tsx'
 const PGTAP = 'supabase/tests/database/family_portfolio_entitlements_test.sql'
 
 /** Strips comments so a rule can never be "satisfied" by prose about it. */

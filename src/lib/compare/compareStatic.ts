@@ -3,8 +3,10 @@
 // Split out of resolveCompareData.ts so this file has NO transitive import of
 // marketProvider.ts / staticMarketProvider.ts (which import '@/data/stocks',
 // an alias Node's native test runner cannot resolve directly — same reason
-// portfolioRepository.ts reads companies.json via fs instead of the
-// '@/lib/data/companies' helper). Everything in this file is safely
+// news/tickerMapping.ts reads its JSON via fs instead of the '@/' helper.
+// POST-R13.5: the precedent cited here used to be portfolioRepository.ts,
+// which was retired with the legacy positions tracker). Everything in this
+// file is safely
 // unit-testable with plain `node --test`.
 
 import companiesJson from '../../data/companies.json' with { type: 'json' }

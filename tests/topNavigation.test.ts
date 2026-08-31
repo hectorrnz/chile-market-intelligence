@@ -32,21 +32,28 @@ describe('navGroups — every existing route stays reachable', () => {
       // R13.R1 § 2 — the R13 module IS the Portfolio experience now. The legacy
       // `/portfolio` module is NOT deleted, only unlinked; it stays reachable by
       // URL and keeps its title through the group's `matchPrefixes` (asserted
-      // below), until a later cleanup stage removes it.
-      '/family-portfolio', '/structured-notes',
+      // POST-R13.5 — the module answers `/portfolio` directly now; the
+      // legacy tracker that used to occupy that path is retired.
+      '/portfolio', '/structured-notes',
       // R9.2 — /settings is now the canonical Settings destination.
       '/settings',
     ]
     assert.deepEqual(hrefs.sort(), expected.sort())
   })
 
-  test('R13.R1 § 2 — the legacy /portfolio route stays reachable and titled, but unlinked', () => {
+  // POST-R13.5 — R13.R1 kept `/portfolio` reachable-but-unlinked because the
+  // legacy tracker still lived there. The tracker is retired and the module
+  // answers that path itself, so the arrangement collapses: `/portfolio` is now
+  // BOTH the linked destination and the resolved group, and `/portfolio`
+  // survives only as a compatibility redirect that navigation never names.
+  test('the Portfolio item links to /portfolio, and the old path is unlinked', () => {
     const hrefs = navGroups.flatMap((g) => [g.href, ...(g.children ?? []).map((c) => c.href)])
-    assert.ok(!hrefs.includes('/portfolio'), 'nothing links to the legacy module')
+    assert.ok(hrefs.includes('/portfolio'), 'the canonical route is the linked destination')
+    assert.ok(!hrefs.includes('/family-portfolio'), 'nothing links to the superseded path')
     assert.equal(resolveActiveGroup('/portfolio')?.key, 'portfolio')
     assert.equal(getPageTitle('/portfolio', 'en', dict.en), dict.en.nav.portfolio)
-    assert.equal(resolveActiveGroup('/family-portfolio')?.key, 'portfolio')
-    assert.equal(resolveActiveGroup('/family-portfolio/weekly-changes')?.key, 'portfolio')
+    assert.equal(resolveActiveGroup('/portfolio/weekly-changes')?.key, 'portfolio')
+    assert.equal(resolveActiveGroup('/portfolio/alternatives')?.key, 'portfolio')
   })
 
   test('Settings is newly discoverable in nav (it was reachable only by direct URL before)', () => {

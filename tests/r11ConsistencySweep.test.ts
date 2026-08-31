@@ -10,7 +10,7 @@
 
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { dict } from '../src/lib/i18n.ts'
@@ -20,7 +20,6 @@ const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
 
 const HOME = read('src/app/page.tsx')
 const COMPANY = read('src/app/companies/[ticker]/page.tsx')
-const PORTFOLIO = read('src/app/portfolio/page.tsx')
 const EARNINGS = read('src/app/earnings/page.tsx')
 const SN_LIST = read('src/app/structured-notes/page.tsx')
 const SN_DETAIL = read('src/app/structured-notes/[id]/page.tsx')
@@ -95,13 +94,13 @@ describe('R11 · a source badge never claims more than the value it labels', () 
 })
 
 describe('R11 · a failed request is never rendered as empty or as a hung load', () => {
-  test('Portfolio distinguishes a load failure from an empty account', () => {
-    assert.match(PORTFOLIO, /const \[loadError, setLoadError\] = useState\(false\)/)
-    assert.match(PORTFOLIO, /\) : loadError \? \(\s*\n\s*<AsyncState kind="error" \/>/)
-    // The old swallow-and-show-empty comment must not come back.
-    assert.doesNotMatch(PORTFOLIO, /leave loading state, show empty/)
-    // "No portfolio yet" is a REAL empty and stays non-error.
-    assert.match(PORTFOLIO, /`!pf` stays non-error/)
+  // POST-R13.5 — this guarded the retired positions tracker's own
+  // load-failure state. The R13 Portfolio that took `/portfolio` answers loading,
+  // denied, no-publication and error separately in its own layout, which
+  // familyPortfolioUi/portfolioR2Summary cover; nothing here was lost silently.
+  test('the retired positions tracker is gone, so its load-state repair has no subject', () => {
+    assert.ok(!existsSync(join(ROOT, 'src/app/api/portfolios')))
+    assert.ok(!existsSync(join(ROOT, 'src/lib/portfolio')))
   })
 
   test('Company results and valuation reach an error state instead of loading forever', () => {
@@ -151,11 +150,12 @@ describe('R11 · both header toggles name each of their options', () => {
 // ── Localization ────────────────────────────────────────────────────────────
 
 describe('R11 · no user-visible English literal survives in a repaired surface', () => {
-  test('Portfolio form errors are dictionary-driven and leak no raw server string', () => {
-    assert.doesNotMatch(PORTFOLIO, /msg: 'Network error'/)
-    assert.doesNotMatch(PORTFOLIO, /msg: json\.error \?\? 'Error'/)
-    assert.equal((PORTFOLIO.match(/msg: t\.portfolio\.networkError/g) ?? []).length, 3)
-    assert.equal((PORTFOLIO.match(/msg: t\.portfolio\.addError/g) ?? []).length, 3)
+  // POST-R13.5 — the add-position / add-transaction / add-cash forms this
+  // covered belonged to the retired tracker. The R13 Portfolio is read-only for
+  // members and writes only through the administrator publication console, which
+  // has its own localized-error coverage.
+  test('the retired tracker took its write forms with it', () => {
+    assert.ok(!existsSync(join(ROOT, 'src/app/api/portfolios')))
   })
 
   test('Home’s rates tooltips are dictionary-driven', () => {

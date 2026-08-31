@@ -56,7 +56,7 @@ export interface AllocationPanelProps {
    * R13.R2F4 (owner report) — a personal scope's Allocation column is the
    * ROW'S LAST column, with nothing after it, so a centred pair there read as
    * dead space on both sides rather than sitting beside a neighbour the way
-   * Main's centred pair does beside its Notes column. `family-portfolio/page.tsx`
+   * Main's centred pair does beside its Notes column. `app/portfolio/page.tsx`
    * now passes 'wide' for a personal scope and 'compact' for Main, gated on
    * the same `showNotes` flag that already splits the two rows.
    */

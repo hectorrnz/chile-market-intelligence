@@ -15,6 +15,46 @@ and documented (see § "Decided, not open" below) rather than deferred.
 > **Family Portfolio** under `/family-portfolio`, and the existing `/portfolio` Chilean-equities
 > domain is untouched. See `05-authorization-and-data-architecture.md` § 7 and the
 > "Decided, not open" table below.
+>
+> **POST-R13.5 (2026-08-31) revisited and closed both halves of that.** The module is now the
+> canonical `/portfolio` experience and the Chilean-equities tracker was retired outright, which
+> also answers D1 below by decision rather than by evidence: the owner authorized retirement, so
+> whether the tracker was still in use stopped being a question the roadmap needs answered. Its
+> DATA is untouched — the migrations and the `portfolios` / `portfolio_positions` /
+> `portfolio_transactions` / `portfolio_cash_ledger` tables all remain, so the decision is
+> reversible if it turns out to have been wrong.
+
+---
+
+## D0 · User provisioning and granular access management — REQUIRED NEXT
+
+**Recorded POST-R13.5 (2026-08-31), at the owner's instruction, as a required follow-up stage.**
+
+The owner must be able to **create and provision individual users** and control what each one may
+reach in the application. Today an account's Family Portfolio access is derived from exactly two
+columns on its own `user_profiles` row — `role` (`user` | `administrator`) and
+`portfolio_principal` (`jaime` | `andres` | `pablo` | null) — through the single pure rule in
+`src/lib/portfolioAccess/entitlements.ts`, mirrored in PostgreSQL by
+`public.nmi_portfolio_scopes(boolean, boolean, text)`. There is no provisioning UI, and no
+module-level access model at all: every approved account reaches every non-Portfolio module.
+
+**The mandatory invariant carries forward unchanged into whatever that stage builds.** Personal
+portfolio isolation is not a default to be re-litigated:
+
+- Jaime can never see Andrés's or Pablo's personal portfolio.
+- Andrés can never see Jaime's or Pablo's.
+- Pablo can never see Jaime's or Andrés's.
+- An approved account with no `portfolio_principal` has no personal Family Portfolio scope.
+
+That rule is enforced server-side in three independent places (the route handler's `canReadScope`,
+PostgreSQL RLS via `nmi_can_access_scope`, and the default-deny path policy). A permission-management
+UI must be a fourth layer *above* them, never a replacement for any of them — and it must not become
+a way to grant a principal a second personal portfolio.
+
+**Open for that stage, not for this one:** whether module-level access (Macro, Stocks, Compare,
+Structured Notes, Settings…) should also become administrator-configurable, or whether every
+approved account should continue to reach every non-Portfolio module. Deliberately NOT built
+opportunistically during the POST-R13.5 route migration.
 
 ---
 

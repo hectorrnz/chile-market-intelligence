@@ -41,7 +41,7 @@ const ROOT = join(HERE, '..')
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
 const codeOf = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
 
-const PAGE = read('src/app/family-portfolio/page.tsx')
+const PAGE = read('src/app/portfolio/page.tsx')
 const PRINT = read('src/components/familyPortfolio/SummaryPrintSheet.tsx')
 const en = dict.en.fp.overview
 const es = dict.es.fp.overview

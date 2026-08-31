@@ -318,8 +318,15 @@ describe('UpdateDataButton — the platform-wide update contract (D-1)', () => {
 
   test('every route rendering it obtains the authoritative platform-wide callback', () => {
     // The real wiring assertion (route → useGlobalRefresh) lives here and in
-    // tests/marketDataProvider.test.ts; this covers all 7 rendering routes,
+    // tests/marketDataProvider.test.ts; this covers all 6 rendering routes,
     // including the three that provider suite does not enumerate.
+    //
+    // POST-R13.5 — was 7. `/portfolio` was the Phase 6C/6D positions tracker,
+    // which priced hand-entered holdings off the live market snapshot and so
+    // needed the refresh control. It is retired, and the R13 Portfolio that
+    // took the route reads an immutable weekly PUBLICATION — there is no live
+    // feed to re-pull, so it deliberately renders no Update button. Adding one
+    // would claim a freshness the publication model does not have.
     const ROUTES = [
       'src/app/page.tsx',
       'src/app/stocks/page.tsx',
@@ -327,7 +334,6 @@ describe('UpdateDataButton — the platform-wide update contract (D-1)', () => {
       'src/app/compare/page.tsx',
       'src/app/macro/page.tsx',
       'src/app/earnings/page.tsx',
-      'src/app/portfolio/page.tsx',
     ]
     for (const route of ROUTES) {
       const src = read(route)

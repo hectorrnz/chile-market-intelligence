@@ -26,7 +26,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 `h-full`, so everything past the viewport was empty: a page-level
                 scrollbar into a blank region roughly a viewport tall.
 
-                Measured on /family-portfolio before this fix:
+                Measured on the Portfolio Summary before this fix:
                 documentElement.scrollHeight 5241 against innerHeight 844, with
                 the two `sr-only` spans of DualFreshnessBadge reporting viewport
                 positions ~1612px (= main.scrollTop) below their own parent

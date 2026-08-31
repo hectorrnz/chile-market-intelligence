@@ -67,8 +67,8 @@ const codeOf = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/
 const CHART = 'src/components/familyPortfolio/ContributionChart.tsx'
 const MODAL = 'src/components/familyPortfolio/ContributionBreakdownModal.tsx'
 const CARD = 'src/components/familyPortfolio/PeriodValueChangeCard.tsx'
-const SUMMARY = 'src/app/family-portfolio/page.tsx'
-const WEEKLY = 'src/app/family-portfolio/weekly-changes/page.tsx'
+const SUMMARY = 'src/app/portfolio/page.tsx'
+const WEEKLY = 'src/app/portfolio/weekly-changes/page.tsx'
 const PURE_CHART = 'src/lib/familyPortfolio/contributionChart.ts'
 const PURE_SUBJECT = 'src/lib/familyPortfolio/portfolioSubject.ts'
 

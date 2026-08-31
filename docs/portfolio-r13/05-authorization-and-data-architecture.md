@@ -549,6 +549,33 @@ coexist, show two clearly-labelled as-ofs rather than one blended date.
 
 ## 7. Route architecture — BINDING
 
+> **POST-R13.5 — the page routes below were SUPERSEDED on 2026-08-31.** The module moved from
+> `/family-portfolio/*` to `/portfolio/*` once the Phase 6C/6D Chilean-equities positions tracker
+> that had been occupying `/portfolio` was retired, and `Portfolio` (the detailed holdings view)
+> became `/portfolio/holdings` rather than the doubled `/portfolio/portfolio`. Every old URL is
+> answered by a permanent redirect that carries `?scope=` through
+> (`src/lib/routes/portfolioLegacyRedirects.ts`).
+>
+> **Nothing else in this section changed.** The entitlement column, the module label, the navigation
+> order, the Admin gate and the `/api/family-portfolio/**` namespace are all exactly as written. The
+> table is kept verbatim below as the record of what R13 shipped; the canonical route map now lives
+> in `src/lib/familyPortfolio/portfolioScopeRoutes.ts` and
+> `src/lib/familyPortfolio/alternativesRoutes.ts`, and is asserted end-to-end by
+> `tests/portfolioCanonicalRoute.test.ts`.
+>
+> | R13 route | Canonical route |
+> |---|---|
+> | `/family-portfolio` | `/portfolio` |
+> | `/family-portfolio/portfolio` | `/portfolio/holdings` |
+> | `/family-portfolio/weekly-changes` | `/portfolio/weekly-changes` |
+> | `/family-portfolio/alternatives` | `/portfolio/alternatives` |
+> | `/family-portfolio/admin` | `/portfolio/admin` |
+>
+> Doc 01 § 2.3's "do not replace, rename, redirect or merge `/portfolio`" constraint was written to
+> protect a module that was still in service. POST-R13.5 was explicitly authorized to retire it, so
+> the constraint is discharged rather than violated: nothing was merged, and no Chilean-equities
+> data model reached the Family Portfolio.
+
 **Client-facing module label: `Family Portfolio`.**
 
 ### 7.1 Page routes

@@ -5,7 +5,7 @@
 //
 // ── WHAT REPLACED WHAT, AND WHY ────────────────────────────────────────────
 //
-// R13.R3A built a true cumulative bridge on `/family-portfolio/weekly-changes`;
+// R13.R3A built a true cumulative bridge on `/portfolio/weekly-changes`;
 // R13.R3B kept the bridge and widened its window to whole periods, which fixed
 // the legibility problem but kept a shape that asks the reader to follow a
 // running total. R13.R3C answers the question people actually bring to this

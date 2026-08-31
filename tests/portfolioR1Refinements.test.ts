@@ -58,8 +58,8 @@ const code = (rel: string) =>
 
 const NAVIGATION = 'src/lib/navigation.ts'
 const APP_SHELL = 'src/components/layout/AppShell.tsx'
-const OVERVIEW_PAGE = 'src/app/family-portfolio/page.tsx'
-const HOLDINGS_PAGE = 'src/app/family-portfolio/portfolio/page.tsx'
+const OVERVIEW_PAGE = 'src/app/portfolio/page.tsx'
+const HOLDINGS_PAGE = 'src/app/portfolio/holdings/page.tsx'
 const MODULE_NAV = 'src/components/familyPortfolio/FamilyPortfolioNav.tsx'
 const PARSER = 'src/lib/familyPortfolio/resumen/parseResumen.ts'
 const EVOLUTION = 'src/lib/familyPortfolio/resumen/evolutionHistory.ts'
@@ -79,44 +79,50 @@ const BVL_DOC = 'docs/portfolio-r13/11-r1-bvl-discovery.md'
 describe('R13.R1 § 2 — primary Portfolio navigation', () => {
   const portfolio = navGroups.find((g) => g.key === 'portfolio')
 
-  test('the primary Portfolio item opens the R13 module', () => {
+  // POST-R13.5 - R13.R1 section 2 pointed this item at `/portfolio`
+  // because the legacy tracker still occupied `/portfolio`, and kept the old
+  // path reachable-but-unlinked. The tracker is retired and the released
+  // product answers `/portfolio` directly, so both halves of that arrangement
+  // resolve into one canonical destination.
+  test('the primary Portfolio item opens the R13 module on its canonical route', () => {
     assert.ok(portfolio, 'a portfolio nav group exists')
-    assert.equal(portfolio!.href, '/family-portfolio')
+    assert.equal(portfolio!.href, '/portfolio')
   })
 
   test('exactly one navigation item points at a portfolio destination', () => {
     const pointing = navGroups.filter(
       (g) =>
-        g.href === '/family-portfolio' ||
         g.href === '/portfolio' ||
-        (g.children ?? []).some((c) => c.href === '/family-portfolio' || c.href === '/portfolio'),
+        g.href === '/portfolio' ||
+        (g.children ?? []).some((c) => c.href === '/portfolio' || c.href === '/portfolio'),
     )
     assert.equal(pointing.length, 1, 'no duplicate Portfolio navigation item')
   })
 
-  test('no navigation item links to the legacy /portfolio module', () => {
+  test('no navigation item links to the superseded /family-portfolio path', () => {
     const hrefs = navGroups.flatMap((g) => [g.href, ...(g.children ?? []).map((c) => c.href)])
-    assert.ok(!hrefs.includes('/portfolio'))
+    assert.ok(!hrefs.includes('/family-portfolio'))
   })
 
-  test('the legacy /portfolio route still exists and is NOT deleted', () => {
-    assert.ok(existsSync(join(ROOT, 'src/app/portfolio/page.tsx')))
+  test('the legacy positions tracker is retired, not merely de-linked', () => {
+    assert.ok(!existsSync(join(ROOT, 'src/app/api/portfolios')))
+    assert.ok(!existsSync(join(ROOT, 'src/lib/portfolio')))
   })
 
-  test('a bookmarked /portfolio URL still resolves to the Portfolio group and title', () => {
-    // Kept reachable and correctly titled until a later cleanup stage —
-    // `matchPrefixes` provides that without making it a navigable destination.
+  test('/portfolio resolves to the Portfolio group and title, now as the real route', () => {
+    // `matchPrefixes` used to supply this for a bookmarked legacy URL. The href
+    // itself does it now, so the prefix is gone and the behaviour is unchanged.
     assert.equal(resolveActiveGroup('/portfolio')?.key, 'portfolio')
     assert.equal(getPageTitle('/portfolio', 'en', dict.en), dict.en.nav.portfolio)
   })
 
   test('the R13 module resolves to the Portfolio group at every depth', () => {
     for (const path of [
-      '/family-portfolio',
-      '/family-portfolio/portfolio',
-      '/family-portfolio/weekly-changes',
-      '/family-portfolio/alternatives',
-      '/family-portfolio/admin',
+      '/portfolio',
+      '/portfolio/holdings',
+      '/portfolio/weekly-changes',
+      '/portfolio/alternatives',
+      '/portfolio/admin',
     ]) {
       assert.equal(resolveActiveGroup(path)?.key, 'portfolio', path)
     }
@@ -213,12 +219,17 @@ describe('R13.R1 § 3 — Summary / Holdings terminology', () => {
     // exactly what this test exists to say.
     const src = read(MODULE_NAV)
     const routes = read('src/lib/familyPortfolio/portfolioScopeRoutes.ts')
+    // POST-R13.5 — Alternatives and Admin were the last two paths the rail
+    // still spelled as literals. They are constants now (ALTERNATIVES_ROOT and
+    // PORTFOLIO_ADMIN), so the rail names no route of its own and the check
+    // follows each URL to the module that owns it.
+    const alt = read('src/lib/familyPortfolio/alternativesRoutes.ts')
     for (const [href, where] of [
-      ["'/family-portfolio'", routes],
-      ["'/family-portfolio/portfolio'", routes],
-      ["'/family-portfolio/weekly-changes'", routes],
-      ["'/family-portfolio/alternatives'", src],
-      ["'/family-portfolio/admin'", src],
+      ["'/portfolio'", routes],
+      ["'/portfolio/holdings'", routes],
+      ["'/portfolio/weekly-changes'", routes],
+      ["'/portfolio/alternatives'", alt],
+      ["'/portfolio/admin'", routes],
     ] as const) {
       assert.ok(where.includes(href), `${href} still routed`)
     }
@@ -737,7 +748,7 @@ describe('R13.R1 §§ 10-11 — historical backfill', () => {
   })
 
   test('Weekly Changes keeps its publication-only rule — no alternate UI path', () => {
-    const wc = read('src/app/family-portfolio/weekly-changes/page.tsx')
+    const wc = read('src/app/portfolio/weekly-changes/page.tsx')
     assert.ok(!wc.includes('parseResumen'), 'the page never parses a workbook')
     assert.ok(!wc.includes('publicationColumnLetter'), 'the page never reads workbook columns')
     assert.ok(!/xlsx/i.test(wc))

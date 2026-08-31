@@ -6,8 +6,8 @@
 // Items are derived from the SERVER-FILTERED entitlement in
 // FamilyPortfolioProvider — the browser never holds a scope it was not
 // granted, so there is nothing here to "hide". `Admin` follows the
-// administrator flag as a presentation convenience only: `/family-portfolio/
-// admin` and every `/api/family-portfolio/admin/*` endpoint reject a
+// administrator flag as a presentation convenience only: `/portfolio/admin`
+// and every `/api/family-portfolio/admin/*` endpoint reject a
 // non-administrator server-side regardless of what this renders.
 //
 // Same pill language and measured sliding indicator as the app's
@@ -30,8 +30,10 @@ import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useLang } from '@/components/providers/LangProvider'
 import { useNavIndicator } from '@/components/layout/useNavIndicator'
+import { ALTERNATIVES_ROOT } from '@/lib/familyPortfolio/alternativesRoutes'
 import {
   ALTERNATIVES_SCOPE,
+  PORTFOLIO_ADMIN,
   PORTFOLIO_HOLDINGS,
   PORTFOLIO_SUMMARY,
   PORTFOLIO_WEEKLY_CHANGES,
@@ -88,13 +90,13 @@ export function FamilyPortfolioNav() {
     items.push(scoped('weekly-changes', PORTFOLIO_WEEKLY_CHANGES, t.fp.navWeeklyChanges))
   }
   if (hasAlternatives) {
-    items.push(shared('alternatives', '/family-portfolio/alternatives', t.fp.navAlternatives))
+    items.push(shared('alternatives', ALTERNATIVES_ROOT, t.fp.navAlternatives))
   }
   if (isAdministrator) {
-    items.push(shared('admin', '/family-portfolio/admin', t.fp.navAdmin))
+    items.push(shared('admin', PORTFOLIO_ADMIN, t.fp.navAdmin))
   }
 
-  // Longest-prefix match so /family-portfolio (Overview) does not stay active
+  // Longest-prefix match so /portfolio (Overview) does not stay active
   // on every child route. Matched on `path`, never `href`: `usePathname()`
   // carries no query string, so comparing it against a scoped href would leave
   // every pill inactive the moment a scope was selected.

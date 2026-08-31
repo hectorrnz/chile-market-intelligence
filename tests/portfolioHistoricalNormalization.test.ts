@@ -616,7 +616,7 @@ describe('R13.R1.1 § 13 — weekly default and arbitrary comparison', () => {
   })
 
   test('the surface titles a multi-week range differently', () => {
-    const page = read('src/app/family-portfolio/weekly-changes/page.tsx')
+    const page = read('src/app/portfolio/weekly-changes/page.tsx')
     assert.match(page, /isCustomRange \? w\.customTitle : w\.title/)
     for (const lang of ['en', 'es'] as const) {
       const i18n = read('src/lib/i18n.ts')

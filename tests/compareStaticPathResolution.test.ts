@@ -197,18 +197,31 @@ describe('R6.1 — static-resource resolution under the real bundler shapes', ()
 // ─── 5. No hardcoded developer-machine path, no forbidden workaround ──────────
 
 describe('R6.1 — the repair uses no forbidden shortcut', () => {
-  // The four remaining consumers of the old pattern. They are NOT part of the
-  // reported Compare outage (they back /api/news and /api/portfolios), so this
-  // repair only hardens them against the brand-check half of the bug rather
-  // than restructuring routes outside its scope — see the R6.1 docs for the
-  // recorded webpack-asset limitation that still applies to them.
+  // The remaining consumers of the old pattern. They are NOT part of the
+  // reported Compare outage (they back /api/news), so this repair only hardens
+  // them against the brand-check half of the bug rather than restructuring
+  // routes outside its scope — see the R6.1 docs for the recorded
+  // webpack-asset limitation that still applies to them.
+  //
+  // POST-R13.5 — was four. `portfolioRepository.ts` and
+  // `portfolioTransactionRepository.ts` were the /api/portfolios data layer and
+  // went with the retired positions tracker, so two sites simply no longer
+  // exist to harden. Their absence is asserted below rather than assumed.
   const SIBLING_SITES = [
     'src/lib/news/tickerMapping.ts',
     'src/lib/financials/csvFinancials.ts',
+  ]
+  const RETIRED_SITES = [
     'src/lib/db/repositories/portfolioRepository.ts',
     'src/lib/db/repositories/portfolioTransactionRepository.ts',
   ]
   const ALL_SITES = [COMPARE_STATIC, ...SIBLING_SITES]
+
+  it('5-pre. the two retired sibling sites are gone, not merely unlisted', () => {
+    for (const site of RETIRED_SITES) {
+      assert.ok(!existsSync(join(ROOT, site)), `${site} was retired with the legacy tracker`)
+    }
+  })
 
   it('5. no absolute developer-machine or user directory path is hardcoded', () => {
     for (const site of ALL_SITES) {

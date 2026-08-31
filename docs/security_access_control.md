@@ -56,6 +56,12 @@ Everything else — `/api/market/**`, `/api/macro/**`, `/api/earnings/**`,
 `/api/health/**` — requires a session. Before R1.5 the first seven of those
 families were world-readable.
 
+> **POST-R13.5 (2026-08-31):** `/api/portfolios/**` no longer routes anywhere — it was the
+> retired positions tracker's data layer. It is deliberately still named above: the policy is
+> **default-deny and path-agnostic**, so an API path with no handler at all still fails closed with
+> a JSON 401 rather than a 404 that would leak the route's absence. That behaviour is asserted by
+> `tests/accessControl.test.ts` and was verified live during the migration.
+
 ---
 
 ## 2 · Enforcement layers

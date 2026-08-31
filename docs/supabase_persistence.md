@@ -182,6 +182,13 @@ psql $SUPABASE_DATABASE_URL -f supabase/seed.sql
 
 ## Portfolio Valuation (Phase 6C)
 
+> **POST-R13.5 (2026-08-31) — retired.** `src/lib/portfolio/valuation.ts`,
+> `src/lib/portfolio/transactions.ts`, both repositories and all seven `/api/portfolios/**` routes
+> were deleted when the R13 Family Portfolio became the canonical `/portfolio`. **The TABLES and
+> their migrations remain** (`portfolios`, `portfolio_positions`, `portfolio_transactions`,
+> `portfolio_cash_ledger`) — this stage removed code, not records. The two sections below are
+> kept as the record of how that data was computed and reconciled.
+
 `src/lib/portfolio/valuation.ts` — pure functions, no I/O:
 
 - `calculatePositionMarketValue` = `quantity × latestPrice` (from the latest deduplicated `stock_snapshots` row, via `getLatestStockSnapshots()` in `marketRepository.ts` — the same accumulated-snapshot table the company-page charts read from).

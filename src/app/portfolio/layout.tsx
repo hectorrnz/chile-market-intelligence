@@ -3,7 +3,7 @@
 // R13.6 — Family Portfolio module shell (doc 08 Stage 6).
 //
 // One provider (a single scopes fetch per module entry) and the module
-// navigation, wrapped around every `/family-portfolio/*` page — including the
+// navigation, wrapped around every `/portfolio/*` page — including the
 // Stage-5 administrator console, which doc 05 § 7.2 places behind the `Admin`
 // item of this same rail. Pages own their own headers, states and content;
 // this shell owns only who-sees-which-navigation, and even that is a

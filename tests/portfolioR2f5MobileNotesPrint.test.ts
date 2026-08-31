@@ -38,15 +38,15 @@ const CSS_CODE = CSS.replace(/\/\*[\s\S]*?\*\//g, '')
 
 /** Every page of the Portfolio tab, which § C says to treat as one surface. */
 const PORTFOLIO_TAB = [
-  'src/app/family-portfolio/page.tsx',
-  'src/app/family-portfolio/portfolio/page.tsx',
-  'src/app/family-portfolio/weekly-changes/page.tsx',
+  'src/app/portfolio/page.tsx',
+  'src/app/portfolio/holdings/page.tsx',
+  'src/app/portfolio/weekly-changes/page.tsx',
   // R13.R4A split Alternatives into three views. § C says to treat the tab as
   // ONE surface, so all three join the band conventions — a note packed
   // differently on one of them is exactly the drift this section exists to stop.
-  'src/app/family-portfolio/alternatives/page.tsx',
-  'src/app/family-portfolio/alternatives/holdings/page.tsx',
-  'src/app/family-portfolio/alternatives/cash-flows/page.tsx',
+  'src/app/portfolio/alternatives/page.tsx',
+  'src/app/portfolio/alternatives/holdings/page.tsx',
+  'src/app/portfolio/alternatives/cash-flows/page.tsx',
 ] as const
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -180,7 +180,7 @@ describe('R13.R2F5 § C · the footnote / source / disclosure band', () => {
     const users = PORTFOLIO_TAB.filter((p) => /nv-notes/.test(read(p)))
     assert.ok(users.length >= 3, `only ${users.length} Portfolio-tab pages use the band`)
     // …including the Summary, whose evolution disclosure is the widest region.
-    assert.match(read('src/app/family-portfolio/page.tsx'), /nv-notes/)
+    assert.match(read('src/app/portfolio/page.tsx'), /nv-notes/)
   })
 
   test('the per-note caps the band replaced are gone from those pages', () => {
@@ -202,7 +202,7 @@ describe('R13.R2F5 § C · the footnote / source / disclosure band', () => {
     // explainer is an expandable <details> body — real explanatory prose the
     // reader opens on purpose, not a provenance line packed into a band. It
     // keeps its own measure, and it is not a child of any `nv-notes` group.
-    const summary = read('src/app/family-portfolio/page.tsx')
+    const summary = read('src/app/portfolio/page.tsx')
     const explainer = summary.match(/id=\{hwmTipId\}\s*\n\s*className="([^"]+)"/)
     assert.ok(explainer, 'the HWM explainer must still exist')
     assert.match(explainer![1], /max-w-\[78ch\]/, 'a disclosure body keeps its own measure')

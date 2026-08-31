@@ -84,14 +84,15 @@ export const navGroups: NavGroup[] = [
     label: (t) => t.nav.earnings,
   },
   {
-    // R13.R1 § 2 — the R13 Family Portfolio module IS the Portfolio experience
-    // now. The legacy `/portfolio` module is NOT deleted (later cleanup owns
-    // that); it is simply no longer linked from navigation, and `matchPrefixes`
-    // keeps it resolving to this group so a bookmarked legacy URL still renders
-    // with its correct title instead of falling through to the app name.
+    // POST-R13.5 — the R13 Portfolio module now OWNS `/portfolio`. R13.R1 § 2
+    // pointed this item at `/family-portfolio` and kept `matchPrefixes:
+    // ['/portfolio']` only so a bookmarked legacy-tracker URL still resolved to
+    // the right title; the tracker is retired and the released product answers
+    // that path directly, so the prefix is redundant and the href is canonical.
+    // The old `/family-portfolio/*` URLs redirect (see `next.config.ts`) —
+    // nothing in navigation names them.
     key: 'portfolio',
-    href: '/family-portfolio',
-    matchPrefixes: ['/portfolio'],
+    href: '/portfolio',
     icon: 'portfolio',
     label: (t) => t.nav.portfolio,
   },

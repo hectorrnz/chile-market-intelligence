@@ -40,9 +40,28 @@ export const ALTERNATIVES_SCOPE = 'alternatives'
 /** The query parameter every scope-aware Portfolio view already reads. */
 export const SCOPE_PARAM = 'scope'
 
-export const PORTFOLIO_SUMMARY = '/family-portfolio'
-export const PORTFOLIO_HOLDINGS = '/family-portfolio/portfolio'
-export const PORTFOLIO_WEEKLY_CHANGES = '/family-portfolio/weekly-changes'
+// ── THE CANONICAL ROUTES (POST-R13.5) ───────────────────────────────────────
+// This module shipped on `/family-portfolio/*` only because `/portfolio` was
+// still occupied by the Phase 6C/6D positions tracker. That tracker is retired,
+// so the released product now owns the route its own navigation item always
+// called "Portfolio". Holdings is `/portfolio/holdings` rather than the
+// mechanical `/portfolio/portfolio`: nothing depended on the doubled segment,
+// and a path that says a word twice reads like a mistake every time.
+//
+// The previous URLs are not broken — `next.config.ts` answers each of them with
+// a permanent redirect that carries `?scope=` through. Nothing in the app links
+// to them any more; they exist for bookmarks and history.
+export const PORTFOLIO_SUMMARY = '/portfolio'
+export const PORTFOLIO_HOLDINGS = '/portfolio/holdings'
+export const PORTFOLIO_WEEKLY_CHANGES = '/portfolio/weekly-changes'
+
+/**
+ * The administrator publication console. Scope-free by construction — it is a
+ * console, not a portfolio view — so it is deliberately absent from
+ * `SCOPE_AWARE_ROUTES` below. It lives here so the module rail has no hardcoded
+ * path left of its own.
+ */
+export const PORTFOLIO_ADMIN = '/portfolio/admin'
 
 /**
  * The three views a Main / Jaime / Andrés / Pablo selection survives across.

@@ -13,7 +13,7 @@
 
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { dict } from '../src/lib/i18n.ts'
@@ -166,7 +166,7 @@ describe('R13.R5C.1 § 2.1 — the AUM mark', () => {
   test('14 · one component marks all four scopes', () => {
     assert.match(HERO, /<MaskedAmount[\s\S]*?currency[\s\S]*?ui-kpi-hero/)
     // Main and each personal Summary render through this one hero.
-    assert.equal((read('src/app/family-portfolio/page.tsx').match(/<PortfolioValueHero/g) ?? []).length, 1)
+    assert.equal((read('src/app/portfolio/page.tsx').match(/<PortfolioValueHero/g) ?? []).length, 1)
   })
 
   test('15 · the printed sheet carries the same mark', () => {
@@ -187,7 +187,7 @@ describe('R13.R5C.1 § 2.1 — the AUM mark', () => {
     // cross-currency totals, so a blanket US$ there would be a false claim.
     // It labels each figure with its real currency instead.
     for (const p of [
-      'src/app/family-portfolio/alternatives/page.tsx',
+      'src/app/portfolio/alternatives/page.tsx',
       'src/components/familyPortfolio/AlternativesDrilldowns.tsx',
       'src/components/familyPortfolio/AlternativesCashFlowChart.tsx',
     ]) {
@@ -197,7 +197,7 @@ describe('R13.R5C.1 § 2.1 — the AUM mark', () => {
       assert.doesNotMatch(alt, /^\s*currency\s*$/m, p)
       assert.doesNotMatch(alt, /\}\s+currency[\s/>]/, p)
     }
-    assert.match(read('src/app/family-portfolio/alternatives/page.tsx'), /currencyLabel\(/)
+    assert.match(read('src/app/portfolio/alternatives/page.tsx'), /currencyLabel\(/)
   })
 })
 
@@ -244,7 +244,7 @@ describe('R13.R5C.1 § 2.2 — zeros that mean nothing', () => {
   })
 
   test('26 · both hierarchy tables now show that legend', () => {
-    for (const p of ['src/app/family-portfolio/page.tsx', 'src/app/family-portfolio/portfolio/page.tsx']) {
+    for (const p of ['src/app/portfolio/page.tsx', 'src/app/portfolio/holdings/page.tsx']) {
       assert.match(read(p), /t\.fp\.weeklyChanges\.zeroDashNote/, p)
     }
   })
@@ -387,25 +387,37 @@ describe('R13.R5C.1 § 4 — ingestion health', () => {
 // ───────────────────────────────────────────────────────────────────────────
 
 describe('R13.R5C.1 § 3 — canonical route', () => {
-  test('36 · /portfolio is still owned by the legacy tracker', () => {
+  // POST-R13.5 — R13.R5C.1 section 3 recorded the canonical-route move as
+  // BLOCKED because `/portfolio` was physically occupied by the legacy tracker,
+  // which that stage was told not to touch. This stage was authorized to retire
+  // it, so these three tests now record the blocker as CLEARED — kept in place
+  // rather than deleted, because the point of section 5 was to hand the next
+  // stage a fact, and "it was resolved this way" is the fact it hands on.
+  test('36 · /portfolio is owned by the released module, blocker cleared', () => {
     // Why the canonical-route move is BLOCKED rather than half-done: the path
-    // is physically occupied, and vacating it means retiring or relocating a
-    // module this stage was told not to touch. This test states the blocker so
-    // the next stage inherits a fact rather than an impression.
-    assert.ok(readFileSync(join(ROOT, 'src/app/portfolio/page.tsx'), 'utf8').length > 0)
+    // POST-R13.5 — R13.R5C.1 section 3 recorded the canonical-route move as
+    // BLOCKED because `/portfolio` was physically occupied by the legacy tracker,
+    // which that stage was told not to touch. This stage was authorized to retire
+    // it, so tests 36-38 now record the blocker as CLEARED, kept in place rather
+    // than deleted: the point of section 5 was to hand the next stage a fact, and
+    // "it was resolved this way" is the fact it hands on.
+    assert.ok(readFileSync(join(ROOT, 'src/app/portfolio/page.tsx'), 'utf8').includes('R13.R2'))
+    assert.ok(!existsSync(join(ROOT, 'src/app/api/portfolios')), 'the legacy tracker is retired')
   })
 
-  test('37 · the module keeps ONE canonical route, with no redirect half-fix', () => {
+  test('37 · the module keeps ONE canonical route; the old path is a redirect only', () => {
     const nav = read('src/lib/navigation.ts')
-    assert.match(nav, /href: '\/family-portfolio'/)
-    // A redirect or rewrite between the two would be exactly the ambiguous
-    // ownership this stage was told not to create.
-    assert.doesNotMatch(code(nav), /redirect|rewrite/i)
-    assert.doesNotMatch(code(HOME), /href="\/portfolio"/)
+    assert.match(nav, /href: '\/portfolio'/)
+    // Navigation still names exactly ONE destination, which is the ambiguity
+    // R13.R5C.1 refused to create. The compatibility redirect lives in
+    // next.config.ts, outside the navigation model, and no link points at it.
+    assert.doesNotMatch(code(nav), /rewrite/i)
+    assert.doesNotMatch(code(nav), /family-portfolio/)
+    assert.doesNotMatch(code(HOME), /href="\/family-portfolio"/)
   })
 
   test('38 · every user-visible entry point still lands on the module', () => {
-    assert.match(HOME_CODE, /href="\/family-portfolio"/)
-    assert.match(read('src/lib/navigation.ts'), /matchPrefixes: \['\/portfolio'\]/)
+    assert.match(HOME_CODE, /href=\{PORTFOLIO_SUMMARY\}/)
+    assert.doesNotMatch(read('src/lib/navigation.ts'), /matchPrefixes: \['\/portfolio'\]/)
   })
 })

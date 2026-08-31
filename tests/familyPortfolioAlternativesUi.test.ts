@@ -22,10 +22,10 @@ import { dict } from '../src/lib/i18n.ts'
 const ROOT = join(import.meta.dirname, '..')
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
 
-const LAYOUT = 'src/app/family-portfolio/alternatives/layout.tsx'
-const DASHBOARD = 'src/app/family-portfolio/alternatives/page.tsx'
-const HOLDINGS = 'src/app/family-portfolio/alternatives/holdings/page.tsx'
-const CASHFLOWS = 'src/app/family-portfolio/alternatives/cash-flows/page.tsx'
+const LAYOUT = 'src/app/portfolio/alternatives/layout.tsx'
+const DASHBOARD = 'src/app/portfolio/alternatives/page.tsx'
+const HOLDINGS = 'src/app/portfolio/alternatives/holdings/page.tsx'
+const CASHFLOWS = 'src/app/portfolio/alternatives/cash-flows/page.tsx'
 const FILTERS = 'src/components/familyPortfolio/AlternativesFilters.tsx'
 const CHROME = 'src/components/familyPortfolio/AlternativesEventChrome.tsx'
 const CHART = 'src/components/familyPortfolio/AlternativesCashFlowChart.tsx'

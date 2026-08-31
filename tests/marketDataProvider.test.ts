@@ -18,11 +18,14 @@ import { join } from 'node:path'
 const ROOT = join(import.meta.dirname, '..')
 const PROVIDER = join(ROOT, 'src/components/providers/MarketDataProvider.tsx')
 const APP_SHELL = join(ROOT, 'src/components/layout/AppShell.tsx')
+// POST-R13.5 — `src/app/portfolio/page.tsx` left this list. It used to be the
+// Phase 6C/6D positions tracker, which read live prices through this provider;
+// that page is retired and the R13 Portfolio now on the route is publication-
+// backed and consults no market snapshot at all.
 const PAGES = [
   join(ROOT, 'src/app/page.tsx'),
   join(ROOT, 'src/app/stocks/page.tsx'),
   join(ROOT, 'src/app/companies/[ticker]/page.tsx'),
-  join(ROOT, 'src/app/portfolio/page.tsx'),
 ]
 
 describe('MarketDataProvider — shared platform-wide live snapshot', () => {

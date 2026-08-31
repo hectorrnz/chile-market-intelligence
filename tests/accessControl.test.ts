@@ -286,6 +286,11 @@ describe('verified identity and per-request approval', () => {
   const revoked: ApprovalLookup = async () => ({ id: 'user-1', username: null })
 
   const PAGE = '/portfolio'
+  // POST-R13.5 — `/api/portfolios` no longer routes anywhere: it was the retired
+  // positions tracker's data layer. It is kept here deliberately, because the
+  // property under test is that the policy is DEFAULT-DENY and path-agnostic
+  // — an API path with no handler at all must still fail closed with a JSON
+  // 401, never fall through to a 404 that leaks the route's absence.
   const API = '/api/portfolios'
 
   // 1 · fake or malformed session cookie cannot pass a private browser route

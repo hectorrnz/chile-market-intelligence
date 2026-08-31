@@ -68,7 +68,7 @@
 // `px-5 sm:px-6 pt-4` / `flex-1` idiom `WeeklySnapshotCard` and
 // `AllocationPanel` already use — so the page can seat it as the first column
 // of the shared Performance | Snapshot | Allocation row (§ R13.R2F3 in
-// `family-portfolio/page.tsx`) instead of as its own wide card.
+// `app/portfolio/page.tsx`) instead of as its own wide card.
 //
 // Portfolio and Markets stack VERTICALLY here rather than sitting in grid
 // columns. A columnar layout is what `reserveTitleRow` exists to keep

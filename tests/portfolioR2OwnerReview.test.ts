@@ -62,7 +62,7 @@ const ROOT = join(HERE, '..')
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
 
 const CSS = read('src/app/globals.css')
-const PAGE = read('src/app/family-portfolio/page.tsx')
+const PAGE = read('src/app/portfolio/page.tsx')
 const MIGRATION = read('supabase/migrations/20260812000000_family_portfolio_presentation_settings.sql')
 
 /**

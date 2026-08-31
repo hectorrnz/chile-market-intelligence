@@ -36,7 +36,7 @@ const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
 /** Strips comments — prose DESCRIBING a mechanism must never satisfy a check for it. */
 const codeOf = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
 
-const PAGE = read('src/app/family-portfolio/page.tsx')
+const PAGE = read('src/app/portfolio/page.tsx')
 const CODE = codeOf(PAGE)
 const PANEL = read('src/components/familyPortfolio/AllocationPanel.tsx')
 const PANEL_CODE = codeOf(PANEL)
@@ -210,7 +210,7 @@ describe('R13.R2F2 § 16 · the shared button interaction contract', () => {
     // transform it should extend this rule, not fork it.
     assert.match(CSS_CODE, /button:not\(:disabled\):not\(\[aria-disabled='true'\]\)/)
     for (const file of [
-      'src/app/family-portfolio/page.tsx',
+      'src/app/portfolio/page.tsx',
       'src/components/familyPortfolio/AllocationPanel.tsx',
       'src/components/familyPortfolio/SettingsGearButton.tsx',
       'src/components/fable/SegmentedControl.tsx',

@@ -66,7 +66,7 @@ const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
 /** Strips comments so hygiene regexes cannot be tripped by prose. */
 const codeOf = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
 
-const PAGE = 'src/app/family-portfolio/page.tsx'
+const PAGE = 'src/app/portfolio/page.tsx'
 const ROUTE = 'src/app/api/family-portfolio/overview/[scope]/route.ts'
 const SETTINGS_ROUTE = 'src/app/api/family-portfolio/presentation-settings/route.ts'
 const SETTINGS_REPO = 'src/lib/db/repositories/familyPortfolioSettingsRepository.ts'
@@ -404,7 +404,7 @@ describe('R13.R2 · the displayed-Difference invariant', () => {
     for (const rel of [
       'src/lib/familyPortfolio/overview.ts',
       'src/components/familyPortfolio/HierarchicalTable.tsx',
-      'src/app/family-portfolio/page.tsx',
+      'src/app/portfolio/page.tsx',
     ]) {
       const src = codeOf(read(rel))
       assert.ok(!/value\s*-\s*previousValue|thisWeek\s*-\s*previousWeek/.test(src),
@@ -1137,8 +1137,8 @@ describe('R13.R2 · regression', () => {
 
   test('Alternatives and Weekly Changes pages were not redesigned', () => {
     for (const p of [
-      'src/app/family-portfolio/alternatives/page.tsx',
-      'src/app/family-portfolio/weekly-changes/page.tsx',
+      'src/app/portfolio/alternatives/page.tsx',
+      'src/app/portfolio/weekly-changes/page.tsx',
     ]) {
       const src = read(p)
       // R13.R2F5 § C is the first R13.R2-series change these two pages have
@@ -1164,8 +1164,12 @@ describe('R13.R2 · regression', () => {
     }
   })
 
-  test('the legacy /portfolio route and the module nav are intact', () => {
+  test('the Summary route and the module nav are intact', () => {
+    // POST-R13.5 - this asserted the LEGACY tracker still occupied
+    // `src/app/portfolio/page.tsx`. That file is now the Summary itself, so the
+    // check reads as what it always meant: the module's own routes exist.
     assert.ok(existsSync(join(ROOT, 'src/app/portfolio/page.tsx')))
+    assert.ok(!existsSync(join(ROOT, 'src/app/api/portfolios')), 'the legacy tracker is retired')
     const nav = read('src/components/familyPortfolio/FamilyPortfolioNav.tsx')
     for (const key of ['navOverview', 'navPortfolio', 'navWeeklyChanges', 'navAlternatives', 'navAdmin']) {
       assert.ok(nav.includes(key), `${key} must remain in the module nav`)

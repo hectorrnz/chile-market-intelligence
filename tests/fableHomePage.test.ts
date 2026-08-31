@@ -281,10 +281,12 @@ describe('R10.3 · wider canvas, two analytical peer rows, News below', () => {
 describe('R10 · data honesty — real sources, explicit states, no fabrication', () => {
   test('9. every fetched endpoint is a real, existing application endpoint', () => {
     const endpoints = [...HOME_CODE.matchAll(/fetch\('([^']+)'/g)].map((m) => m[1])
-    const known = new Set(['/api/watchlists', '/api/portfolios', '/api/structured-notes', '/api/health/ingestion'])
+    // POST-R13.5 — `/api/portfolios` left this set with the retired positions
+    // tracker. Home never called it after R13.R5B; now nothing does.
+    const known = new Set(['/api/watchlists', '/api/structured-notes', '/api/health/ingestion'])
     for (const e of endpoints) assert.ok(known.has(e), `unknown endpoint ${e}`)
     // And each corresponding route handler exists.
-    assert.ok(existsSync(join(ROOT, 'src/app/api/portfolios/route.ts')))
+    assert.ok(!existsSync(join(ROOT, 'src/app/api/portfolios')), 'the legacy portfolios API is retired')
     assert.ok(existsSync(join(ROOT, 'src/app/api/structured-notes/route.ts')))
     assert.ok(existsSync(join(ROOT, 'src/app/api/health/ingestion/route.ts')))
     assert.ok(existsSync(join(ROOT, 'src/app/api/watchlists/route.ts')))
@@ -353,7 +355,7 @@ describe('R10 · portfolio snapshot — existing calculations, masked amounts', 
     // test's own title asked for "no second derivation" and there now is none:
     // Home CALLS the module's shared rule instead of mirroring it, asking for
     // the Summary's no-`?scope=` default since this card has no selector.
-    assert.match(HOME, /import \{ activeScope \} from '@\/lib\/familyPortfolio\/portfolioScopeRoutes'/)
+    assert.match(HOME, /import \{ activeScope, PORTFOLIO_SUMMARY \} from '@\/lib\/familyPortfolio\/portfolioScopeRoutes'/)
     assert.match(HOME, /function firstPortfolioScope[\s\S]{0,120}?return activeScope\(null, scopes\)/)
     // The published hero is read VERBATIM — never recomputed, never summed.
     assert.match(HOME, /const fpHero = fpData\?\.hero \?\? null/)
@@ -365,11 +367,14 @@ describe('R10 · portfolio snapshot — existing calculations, masked amounts', 
     assert.doesNotMatch(HOME_CODE, /quantity \*|\* p\.quantity|averageCost \*/)
   })
 
-  test('28-29b. the Overview card links to the Portfolio module, not the de-linked legacy route', () => {
-    assert.match(HOME, /<Link href="\/family-portfolio"/)
-    // `/portfolio` was removed from navigation in R13; Home must not be the one
-    // surface still sending readers to it.
-    assert.doesNotMatch(HOME, /<Link href="\/portfolio"/)
+  test('28-29b. the Overview card links to the Portfolio module by its shared route constant', () => {
+    // POST-R13.5 — the card used to hardcode `/family-portfolio`. It now names
+    // the same constant the module rail and every scope-aware link read, so the
+    // canonical route is spelled exactly once in the codebase and Home cannot be
+    // the one surface left pointing at a superseded path.
+    assert.match(HOME, /<Link href=\{PORTFOLIO_SUMMARY\}/)
+    assert.doesNotMatch(HOME, /href="\/family-portfolio/)
+    assert.doesNotMatch(HOME, /href="\/portfolio/)
   })
 
   test('28-29c. the card fails closed — no fallback source and no invented value', () => {
@@ -674,8 +679,11 @@ describe('R10 · security boundaries', () => {
 
 describe('R10 · regression — Home-scoped; every other surface untouched', () => {
   test('101-108. the consumed pages and platform surfaces keep their own composition', () => {
-    assert.match(read('src/app/portfolio/page.tsx'), /FABLE_HERO/)
-    assert.match(read('src/app/portfolio/page.tsx'), /<SegmentedControl/)
+    // POST-R13.5 — `/portfolio` is the R13 Summary now, not the retired
+    // positions tracker whose Fable hero this line used to pin. The surface
+    // still has to keep its own composition, so the assertion moves to what
+    // that page actually owns.
+    assert.match(read('src/app/portfolio/page.tsx'), /<FamilyPortfolioNav|MemberGate|TableSourceFooter/)
     assert.match(read('src/app/structured-notes/page.tsx'), /fetch\('\/api\/structured-notes'/)
     assert.match(read('src/app/earnings/page.tsx'), /<TableCard/)
     assert.match(read('src/app/macro/page.tsx'), /<ModalShell/)

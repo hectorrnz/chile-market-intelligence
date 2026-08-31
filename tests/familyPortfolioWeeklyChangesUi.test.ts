@@ -24,7 +24,7 @@ import { reconcileFlowAndProfit } from '../src/lib/familyPortfolio/weeklyChanges
 const ROOT = join(import.meta.dirname, '..')
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
 
-const PAGE = 'src/app/family-portfolio/weekly-changes/page.tsx'
+const PAGE = 'src/app/portfolio/weekly-changes/page.tsx'
 const ROUTE = 'src/app/api/family-portfolio/weekly-changes/[scope]/route.ts'
 // R13.R3C — `ValueChangeWaterfall` and `DivergingBarChart` are both retired.
 // The shared Contributors and Detractors pair replaces them on this page AND
@@ -792,7 +792,7 @@ describe('R13.8 · privacy', () => {
     }
     // …and the administrator sees it before publishing: findings are listed
     // with their severity, and each cross-check is chipped agrees/mismatch.
-    const admin = read('src/app/family-portfolio/admin/page.tsx')
+    const admin = read('src/app/portfolio/admin/page.tsx')
     assert.match(admin, /review\.findings\.map/)
     assert.match(admin, /f\.severity === 'warning' \? a\.warning/)
     assert.match(admin, /review\.performance\.map/)
@@ -1030,10 +1030,13 @@ describe('R13.8 · route and boundaries', () => {
     }
   })
 
-  test('the Chilean-equities /portfolio module remains untouched by Stage 8', () => {
-    const chilean = read('src/app/portfolio/page.tsx')
-    assert.ok(!chilean.includes('weeklyChanges'))
-    assert.ok(!chilean.includes('family-portfolio'))
+  // POST-R13.5 - the Chilean-equities tracker was retired so the released
+  // product could own `/portfolio`. Stage 8's Weekly Changes view is what sits
+  // at `/portfolio/weekly-changes` now; the boundary is that the tracker left
+  // nothing behind.
+  test('the Chilean-equities positions tracker is retired', () => {
+    assert.ok(!existsSync(join(ROOT, 'src/app/api/portfolios')))
+    assert.ok(!existsSync(join(ROOT, 'src/lib/portfolio')))
   })
 })
 

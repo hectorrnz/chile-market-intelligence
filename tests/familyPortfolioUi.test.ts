@@ -21,11 +21,11 @@ import { PALETTE_TOKENS } from '../src/lib/familyPortfolio/allocationSettings.ts
 const ROOT = join(import.meta.dirname, '..')
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
 
-const LAYOUT = 'src/app/family-portfolio/layout.tsx'
-const OVERVIEW_PAGE = 'src/app/family-portfolio/page.tsx'
-const PORTFOLIO_PAGE = 'src/app/family-portfolio/portfolio/page.tsx'
-const WEEKLY_PAGE = 'src/app/family-portfolio/weekly-changes/page.tsx'
-const ALTERNATIVES_PAGE = 'src/app/family-portfolio/alternatives/page.tsx'
+const LAYOUT = 'src/app/portfolio/layout.tsx'
+const OVERVIEW_PAGE = 'src/app/portfolio/page.tsx'
+const PORTFOLIO_PAGE = 'src/app/portfolio/holdings/page.tsx'
+const WEEKLY_PAGE = 'src/app/portfolio/weekly-changes/page.tsx'
+const ALTERNATIVES_PAGE = 'src/app/portfolio/alternatives/page.tsx'
 const SCOPES_ROUTE = 'src/app/api/family-portfolio/scopes/route.ts'
 const WEEKS_ROUTE = 'src/app/api/family-portfolio/[scope]/weeks/route.ts'
 const SNAPSHOT_ROUTE = 'src/app/api/family-portfolio/[scope]/snapshot/route.ts'
@@ -66,9 +66,9 @@ const EVO_CHART = 'src/components/familyPortfolio/PortfolioEvolutionChart.tsx'
 // in the same pass: its month-banded list is superseded by the Cash Flows
 // ledger table, and its chip/label/legend helpers moved to the chrome module,
 // which takes its place here.
-const ALT_LAYOUT = 'src/app/family-portfolio/alternatives/layout.tsx'
-const ALT_HOLDINGS = 'src/app/family-portfolio/alternatives/holdings/page.tsx'
-const ALT_CASHFLOWS = 'src/app/family-portfolio/alternatives/cash-flows/page.tsx'
+const ALT_LAYOUT = 'src/app/portfolio/alternatives/layout.tsx'
+const ALT_HOLDINGS = 'src/app/portfolio/alternatives/holdings/page.tsx'
+const ALT_CASHFLOWS = 'src/app/portfolio/alternatives/cash-flows/page.tsx'
 const ALT_PROVIDER = 'src/components/familyPortfolio/AlternativesProvider.tsx'
 const ALT_SUBNAV = 'src/components/familyPortfolio/AlternativesSubnav.tsx'
 const ALT_FILTERS = 'src/components/familyPortfolio/AlternativesFilters.tsx'
@@ -166,19 +166,19 @@ describe('R13.6 · module shell', () => {
 
   // SUPERSEDED BY R13.R1 § 2, deliberately. Stage 6 deferred app-level wiring
   // ("release wiring for a later stage"); R13.R1 IS that stage — the primary
-  // Portfolio item now opens `/family-portfolio`. The property that still
+  // Portfolio item now opens `/portfolio`. The property that still
   // matters is the one Stage 6 was actually protecting: the static app-nav
   // config cannot express per-user entitlement, so it must carry no
   // authorization logic and no per-scope destination. Module navigation
   // (`FamilyPortfolioNav`) remains the only entitlement-aware rail.
   test('the app-level primary navigation carries no entitlement logic', () => {
     const nav = read('src/lib/navigation.ts')
-    assert.ok(nav.includes('/family-portfolio'), 'R13.R1 § 2: the module is the Portfolio destination')
+    assert.ok(nav.includes('/portfolio'), 'R13.R1 § 2: the module is the Portfolio destination')
     for (const forbidden of ['isAdministrator', 'entitle', 'scopes', 'canRead', 'auth']) {
       assert.ok(!nav.includes(forbidden), `navigation.ts must not reference ${forbidden}`)
     }
     // No per-principal destination may appear in the static config.
-    assert.ok(!/family-portfolio\/(jaime|andres|pablo)/i.test(nav))
+    assert.ok(!/portfolio\/(jaime|andres|pablo)/i.test(nav))
   })
 })
 
@@ -843,14 +843,16 @@ describe('R13.6 · i18n and formatting', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('R13.6 · boundaries', () => {
-  test('the Chilean-equities /portfolio module is untouched', () => {
-    const page = read('src/app/portfolio/page.tsx')
-    assert.ok(!page.includes('familyPortfolio'))
-    assert.ok(!page.includes('family-portfolio'))
+  // POST-R13.5 — inverted for the same reason as its sibling in
+  // familyPortfolioAlternatives: the two products no longer coexist on one URL
+  // space, because only one of them is left.
+  test('the Chilean-equities positions tracker is retired', () => {
+    assert.ok(!existsSync(join(ROOT, 'src/app/api/portfolios')))
+    assert.ok(!existsSync(join(ROOT, 'src/lib/portfolio')))
   })
 
   test('the Stage-5 admin console was not redesigned — Stage 6 only navigates into it', () => {
-    const admin = read('src/app/family-portfolio/admin/page.tsx')
+    const admin = read('src/app/portfolio/admin/page.tsx')
     // The console keeps its own composition; the shell's nav wraps it from the
     // layout, so the page itself needed no change.
     assert.ok(!admin.includes('FamilyPortfolioNav'))

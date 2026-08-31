@@ -255,6 +255,13 @@ A signed-in user's holdings, with cost basis and live unrealized P&L. One or mor
 
 Unique on `(portfolio_id, ticker)`. RLS: `auth.uid() = user_id` on every operation — no public read/write.
 
+> **POST-R13.5 (2026-08-31) — this table is RETAINED but nothing reads it.** The Phase 6C/6D
+> positions tracker that owned it was retired when the R13 Family Portfolio took over `/portfolio`.
+> The table, its data and its migration are deliberately untouched so the decision stays reversible
+> — **do not drop them** on the assumption the cleanup was incomplete. The derived-field note below
+> describes a module (`src/lib/portfolio/valuation.ts`) that no longer exists; it is kept as the
+> record of how these columns were consumed.
+
 **Derived (not stored — computed in `src/lib/portfolio/valuation.ts` from the latest `stock_snapshots` price):** `latestPrice`, `marketValue`, `costBasis`, `unrealizedPnL`, `unrealizedPnLPct`, `weight` (% of portfolio market value), `mixedCurrency` (true when `cost_currency` ≠ the live price's currency — no FX conversion is applied).
 
 `metadata.positionSource` (`'manual'` or `'transactions'`, added Phase 6D — see below) and `metadata.lastReconciledAt` record provenance without a schema change; a row with no `positionSource` key (all pre-6D rows) is treated as `'manual'`.

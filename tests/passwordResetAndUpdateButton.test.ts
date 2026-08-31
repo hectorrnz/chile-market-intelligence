@@ -11,7 +11,6 @@ const ROOT = join(import.meta.dirname, '..')
 
 const HOME_PAGE       = join(ROOT, 'src/app/page.tsx')
 const STOCKS_PAGE     = join(ROOT, 'src/app/stocks/page.tsx')
-const PORTFOLIO_PAGE  = join(ROOT, 'src/app/portfolio/page.tsx')
 const COMPANY_PAGE    = join(ROOT, 'src/app/companies/[ticker]/page.tsx')
 // R1: /login lives in the (auth) route group (same URL, full-bleed auth shell).
 const LOGIN_PAGE      = join(ROOT, 'src/app/(auth)/login/page.tsx')
@@ -60,9 +59,13 @@ describe('Single Update Data button (replaces per-panel refresh icons)', () => {
     assert.equal(countOccurrences(src, '<UpdateDataButton'), 1)
   })
 
-  it('Portfolio page renders exactly one UpdateDataButton', () => {
-    const src = readFileSync(PORTFOLIO_PAGE, 'utf8')
-    assert.equal(countOccurrences(src, '<UpdateDataButton'), 1)
+  // POST-R13.5 — the Portfolio route no longer belongs in this list. It was
+  // the Phase 6C/6D positions tracker, priced off the live market snapshot;
+  // that page is retired and the R13 Portfolio that took `/portfolio` renders
+  // an immutable weekly publication, which has nothing to re-pull.
+  it('the retired positions tracker is gone, and its Update button with it', () => {
+    assert.ok(!existsSync(join(ROOT, 'src/app/api/portfolios')))
+    assert.equal(countOccurrences(readFileSync(join(ROOT, 'src/app/portfolio/page.tsx'), 'utf8'), '<UpdateDataButton'), 0)
   })
 
   it('Company page renders exactly one UpdateDataButton', () => {

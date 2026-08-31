@@ -40,7 +40,7 @@ const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
 const codeOf = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
 
 const OVERVIEW_ROUTE = 'src/app/api/family-portfolio/overview/[scope]/route.ts'
-const OVERVIEW_PAGE = 'src/app/family-portfolio/page.tsx'
+const OVERVIEW_PAGE = 'src/app/portfolio/page.tsx'
 const READ_REPO = 'src/lib/db/repositories/familyPortfolioReadRepository.ts'
 const MARKET_RESOLVER = 'src/lib/familyPortfolio/overviewMarket.ts'
 

@@ -55,7 +55,7 @@ const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
  */
 const codeOf = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
 
-const PAGE = read('src/app/family-portfolio/page.tsx')
+const PAGE = read('src/app/portfolio/page.tsx')
 const CHART = read('src/components/familyPortfolio/PortfolioEvolutionChart.tsx')
 const SNAPCARD = read('src/components/familyPortfolio/WeeklySnapshotCard.tsx')
 const NOTES = read('src/components/familyPortfolio/WeeklyNotesPanel.tsx')

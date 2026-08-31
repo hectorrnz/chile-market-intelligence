@@ -42,12 +42,12 @@ const code = (src: string) =>
 
 /** Every surface the owner enumerated, plus the shared components they use. */
 const SURFACES = [
-  'src/app/family-portfolio/page.tsx',                          // Summary
-  'src/app/family-portfolio/portfolio/page.tsx',                // Holdings
-  'src/app/family-portfolio/weekly-changes/page.tsx',           // Weekly Changes
-  'src/app/family-portfolio/alternatives/page.tsx',             // Alternatives Dashboard
-  'src/app/family-portfolio/alternatives/holdings/page.tsx',    // Alternatives Holdings
-  'src/app/family-portfolio/alternatives/cash-flows/page.tsx',  // Alternatives Cash Flows
+  'src/app/portfolio/page.tsx',                          // Summary
+  'src/app/portfolio/holdings/page.tsx',                // Holdings
+  'src/app/portfolio/weekly-changes/page.tsx',           // Weekly Changes
+  'src/app/portfolio/alternatives/page.tsx',             // Alternatives Dashboard
+  'src/app/portfolio/alternatives/holdings/page.tsx',    // Alternatives Holdings
+  'src/app/portfolio/alternatives/cash-flows/page.tsx',  // Alternatives Cash Flows
   'src/components/familyPortfolio/AlternativesDrilldowns.tsx',  // drilldowns
   'src/components/familyPortfolio/ContributionBreakdownModal.tsx',
   'src/components/familyPortfolio/AllocationDonut.tsx',
@@ -312,7 +312,7 @@ describe('R13.R5C.2 § 2 — one rule, not sixty', () => {
     const fixedUses = chart.match(/[\w.)\]]+\.toFixed\(/g) ?? []
     assert.ok(fixedUses.length > 0)
     assert.doesNotMatch(chart, /formatUsd|formatRatioPct|formatWeightPct/)
-    assert.match(read('src/app/family-portfolio/page.tsx'), /formatValue=\{\(v\) => formatUsd\(v\)\}/)
+    assert.match(read('src/app/portfolio/page.tsx'), /formatValue=\{\(v\) => formatUsd\(v\)\}/)
   })
 
   test('21 · the hierarchy table renders through the shared renderer, not a copy', () => {
@@ -340,7 +340,7 @@ describe('R13.R5C.2 § 2 — the blast radius stays inside Portfolio', () => {
       const src = read(rel)
       if (!/\bformatUsd\b|\bformatRatioPct\b|\bformatWeightPct\b|\bformatCount\b/.test(src)) continue
       const isPortfolio =
-        rel.includes('familyPortfolio') || rel.includes('family-portfolio') || rel === 'src/app/page.tsx'
+        rel.includes('familyPortfolio') || rel.startsWith('src/app/portfolio/') || rel === 'src/app/page.tsx'
       if (!isPortfolio) OUTSIDE.push(rel)
     }
     assert.deepEqual(OUTSIDE, [], 'a non-Portfolio surface now depends on the Portfolio zero contract')
@@ -368,7 +368,7 @@ describe('R13.R5C.2 § 3 — one convention on every surface', () => {
     // its own and delegates to a component that does — Holdings is the second
     // kind: its whole table IS `HierarchicalTable`.
     const DELEGATES: Record<string, string> = {
-      'src/app/family-portfolio/portfolio/page.tsx': 'HierarchicalTable',
+      'src/app/portfolio/holdings/page.tsx': 'HierarchicalTable',
     }
     for (const p of SURFACES) {
       const src = code(read(p))
@@ -393,9 +393,9 @@ describe('R13.R5C.2 § 3 — one convention on every surface', () => {
 
   test('26 · the legend is shown on the surfaces that carry both marks', () => {
     for (const p of [
-      'src/app/family-portfolio/page.tsx',
-      'src/app/family-portfolio/portfolio/page.tsx',
-      'src/app/family-portfolio/weekly-changes/page.tsx',
+      'src/app/portfolio/page.tsx',
+      'src/app/portfolio/holdings/page.tsx',
+      'src/app/portfolio/weekly-changes/page.tsx',
     ]) {
       assert.match(read(p), /zeroDashNote/, p)
     }
