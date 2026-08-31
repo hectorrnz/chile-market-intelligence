@@ -325,8 +325,17 @@ select ok(has_table_privilege('service_role', 'public.structured_note_monitoring
   'service_role can still open a monitoring run');
 select ok(has_table_privilege('service_role', 'public.structured_note_observations', 'UPDATE'),
   'service_role can still record an observation result');
-select ok(has_table_privilege('service_role', 'public.notifications', 'INSERT'),
-  'service_role can still create a notification');
+-- `notifications` is outside this migration's scope entirely: it carries no
+-- explicit grant in ANY migration, so in this isolated stack NEITHER
+-- `service_role` nor `authenticated` holds a privilege on it -- while a hosted
+-- project's default privileges grant both (the delivery cron writes to it on
+-- every run). Asserting the raw privilege would test the environment, so this
+-- uses the same parity form as section 8: the only thing this stage can and
+-- must prove is that 20260815000000 did not narrow it.
+select is(
+  has_table_privilege('service_role', 'public.notifications', 'INSERT'),
+  has_table_privilege('service_role', 'public.watchlists', 'INSERT'),
+  'notifications keeps the same service_role INSERT posture as an untouched control');
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
