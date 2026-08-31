@@ -380,6 +380,13 @@ begin
       if has_table_privilege('anon', 'public.' || t, priv) then
         raise exception 'anon has EFFECTIVE % on public.%', priv, t;
       end if;
+    end loop;
+    -- Column-level privileges are a SEPARATE loop with a different verb list:
+    -- PostgreSQL grants per column only SELECT/INSERT/UPDATE/REFERENCES. There
+    -- is no column-level DELETE, and asking for one raises 22023 rather than
+    -- returning false. This mirrors 20260730000000 and 20260814000000, plus
+    -- SELECT, because anon must hold nothing here at all.
+    foreach priv in array array['SELECT','INSERT','UPDATE','REFERENCES'] loop
       if has_any_column_privilege('anon', 'public.' || t, priv) then
         raise exception 'anon has EFFECTIVE column-level % on public.%', priv, t;
       end if;
@@ -397,9 +404,15 @@ begin
 
   foreach t in array grp_b loop
     foreach priv in array array['INSERT','UPDATE','DELETE'] loop
-      if has_table_privilege('authenticated', 'public.' || t, priv)
-         or has_any_column_privilege('authenticated', 'public.' || t, priv) then
+      if has_table_privilege('authenticated', 'public.' || t, priv) then
         raise exception 'authenticated has % on cron-owned public.%', priv, t;
+      end if;
+    end loop;
+    -- Column-level, minus DELETE (no such privilege) and minus SELECT (group B
+    -- is deliberately readable). A column grant must not survive the REVOKE.
+    foreach priv in array array['INSERT','UPDATE','REFERENCES'] loop
+      if has_any_column_privilege('authenticated', 'public.' || t, priv) then
+        raise exception 'authenticated has column-level % on cron-owned public.%', priv, t;
       end if;
     end loop;
   end loop;
