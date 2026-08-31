@@ -23,6 +23,9 @@ on:
     branches:
       - 'feat/portfolio-r13'
       - 'feat/portfolio-r13-**'
+      # POST-R13.6B onwards — the user-access work extends the same entitlement
+      # contract and must clear the same isolated-database gate.
+      - 'feat/user-access-r13-**'
   pull_request:
     paths:
       - 'supabase/migrations/**'
@@ -33,6 +36,7 @@ on:
       - 'src/lib/auth/**'
       - 'scripts/admin/**'
       - 'tests/familyPortfolioEntitlements.test.ts'
+      - 'tests/moduleEntitlements.test.ts'
       - '.github/workflows/r13-family-portfolio-db-validation.yml'
 
 # Read-only: this workflow never commits, never pushes, never comments.
@@ -228,6 +232,12 @@ jobs:
       # half executed during `db reset`; this is the TypeScript half.
       - name: Run the TypeScript entitlement suite (parity, other half)
         run: node --test "tests/familyPortfolioEntitlements.test.ts"
+
+      # POST-R13.6B — the module entitlement contract has the same two-sided
+      # shape: its SQL truth table executed during `db reset` above, and its
+      # pgTAP assertions ran in `supabase test db`. This is its TypeScript half.
+      - name: Run the TypeScript module entitlement suite (parity, other half)
+        run: node --test "tests/moduleEntitlements.test.ts"
 
       - name: Run access-control and profile regression suites
         run: |

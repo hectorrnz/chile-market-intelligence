@@ -619,6 +619,42 @@ export interface Database {
           new_value?: string | null
         }
       }
+      // POST-R13.6B — the registry of GRANTABLE application modules.
+      //
+      // Service-role writes only (no insert/update/delete policy exists), so
+      // every mutating field is deliberately ABSENT from Insert/Update below,
+      // mirroring how `user_profiles.role` is handled.
+      //
+      // `default_for_member` is PROVISIONING metadata, never an authorization
+      // input — see src/lib/auth/moduleAccess.ts.
+      app_modules: {
+        Row: {
+          module_key: string
+          label: string
+          display_order: number
+          default_for_member: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: never
+        Update: never
+      }
+      // POST-R13.6B — explicit per-user module grants. Row present = allowed;
+      // row ABSENT = denied. There is no runtime fallback to
+      // `app_modules.default_for_member`.
+      //
+      // Administrators hold every module by role and are given no rows here.
+      // Service-role writes only, so Insert/Update are `never`.
+      user_module_grants: {
+        Row: {
+          user_id: string
+          module_key: string
+          granted_at: string
+          granted_by: string | null
+        }
+        Insert: never
+        Update: never
+      }
       // R13.2 — Family Portfolio source-workbook uploads (doc 05 section 5.1).
       // Provenance only: opaque storage key, digest, size, status, dates. No
       // financial value and no cell content is ever stored here.
@@ -1402,6 +1438,8 @@ export type PortfolioSourceUploadRow = Database['public']['Tables']['portfolio_s
 export type PortfolioUploadFindingRow = Database['public']['Tables']['portfolio_upload_findings']['Row']
 export type FamilyPortfolioAccessAuditRow =
   Database['public']['Tables']['family_portfolio_access_audit']['Row']
+export type AppModuleRow = Database['public']['Tables']['app_modules']['Row']
+export type UserModuleGrantRow = Database['public']['Tables']['user_module_grants']['Row']
 export type WatchlistRow = Database['public']['Tables']['watchlists']['Row']
 export type WatchlistItemRow = Database['public']['Tables']['watchlist_items']['Row']
 export type PortfolioRow = Database['public']['Tables']['portfolios']['Row']

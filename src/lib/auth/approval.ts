@@ -19,10 +19,19 @@
 //        · `email`                          ← how username resolves to Auth
 //        · `display_name`                   ← shown in the shell
 //
-// `user_profiles.role` exists in the schema (default `'user'`) but is read
-// NOWHERE in the codebase. R1.5 deliberately does not activate it: inventing a
-// role hierarchy nobody enforces yet would be a new access-control schema
-// introduced without a reported design. Approval is presence-based today.
+// `user_profiles.role` was unread at R1.5, and this comment used to say so.
+// R13.1 activated it: `role` and `portfolio_principal` are now THE Family
+// Portfolio authorization inputs, read in TypeScript by
+// `portfolioAccess/entitlements.ts` and in PostgreSQL by
+// `public.nmi_portfolio_scopes(...)`. POST-R13.6B adds a second reader —
+// `auth/moduleAccess.ts` and `public.nmi_module_allowed(...)` — for application
+// module access.
+//
+// APPROVAL ITSELF IS STILL PRESENCE-BASED, and that has not changed: a non-empty
+// `username` is the marker, and it remains the OUTER gate. Every downstream rule
+// — every scope, every module, administrator capability included — returns
+// nothing for an unapproved account. Role and grants decide what an approved
+// account may reach; they never decide whether it is approved.
 //
 // WHY A PREDICATE IS NEEDED AT ALL
 // ────────────────────────────────
