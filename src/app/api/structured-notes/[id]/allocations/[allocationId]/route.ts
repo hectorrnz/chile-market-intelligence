@@ -3,11 +3,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseUserClient } from '@/lib/supabase/server'
 import { deleteAllocation } from '@/lib/db/repositories/structuredNotesRepository'
+import { guardAdministrator } from '@/lib/auth/moduleApiGuard'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string; allocationId: string }> }): Promise<NextResponse> {
+  const denied = await guardAdministrator()
+  if (denied) return denied
+
   const client = await getSupabaseUserClient()
   if (!client) return NextResponse.json({ error: 'Not configured' }, { status: 503 })
   const { allocationId } = await ctx.params

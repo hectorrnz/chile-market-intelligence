@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseUserClient } from '@/lib/supabase/server'
 import { importStructuredNote } from '@/lib/db/repositories/structuredNotesRepository'
 import type { StructuredNote } from '@/lib/structuredNotes/types'
+import { guardAdministrator } from '@/lib/auth/moduleApiGuard'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -25,6 +26,9 @@ function validateNote(note: StructuredNote): string[] {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  const denied = await guardAdministrator()
+  if (denied) return denied
+
   const client = await getSupabaseUserClient()
   if (!client) return NextResponse.json({ error: 'Not configured' }, { status: 503 })
 

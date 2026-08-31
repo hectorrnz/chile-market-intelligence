@@ -62,7 +62,13 @@ interface Recipient {
   createdAt: string
 }
 
-type LoadState = 'loading' | 'ready' | 'error'
+// POST-R13.6B.1 — `forbidden` is a distinct state from `error`. The recipient
+// list is an ADMINISTRATOR capability (it decides where family financial
+// notifications are delivered), so an ordinary member's 403 is the correct,
+// expected answer — not a failure to report. The card renders nothing at all
+// in that state rather than showing a member an error for a surface that was
+// never theirs. Hiding is a courtesy: the API and RLS are the boundary.
+type LoadState = 'loading' | 'ready' | 'error' | 'forbidden'
 
 /**
  * One coherent feedback area for the whole section. `scope` exists only so the
@@ -127,6 +133,10 @@ export function NotificationRecipientsCard() {
     void (async () => {
       try {
         const res = await fetch(ENDPOINT, { cache: 'no-store', signal: controller.signal })
+        if (res.status === 403) {
+          if (!controller.signal.aborted) setLoadState('forbidden')
+          return
+        }
         if (!res.ok) throw new Error('load_failed')
         const json = (await res.json()) as { recipients?: unknown }
         if (controller.signal.aborted) return
@@ -256,6 +266,11 @@ export function NotificationRecipientsCard() {
   const errorMessage = feedback?.tone === 'error' ? feedback.message : null
   const successMessage = feedback?.tone === 'success' ? feedback.message : null
   const addInvalid = feedback?.tone === 'error' && feedback.scope === 'add'
+
+  // An ordinary member never sees this surface at all. Returning null keeps the
+  // Settings page honest: no card, no error, no empty list implying there are no
+  // recipients. Deliberately AFTER every hook, so hook order never changes.
+  if (loadState === 'forbidden') return null
 
   const state =
     loadState === 'loading' ? 'loading'

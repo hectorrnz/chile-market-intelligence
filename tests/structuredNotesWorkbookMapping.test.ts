@@ -52,12 +52,34 @@ describe('migration — 7 tables, user-scoped, RLS', () => {
   })
 })
 
-describe('shared book migration (9B) — all authenticated users share one book', () => {
-  it('replaces per-user RLS with authenticated-only (still no public/anon access)', () => {
+describe('shared book migration (9B) — HISTORICAL, superseded by POST-R13.6B.1', () => {
+  // This migration is still in the chain and its text is unchanged, so these
+  // assertions still describe the FILE accurately. They no longer describe the
+  // SYSTEM: 20260815000000_sensitive_surface_hardening.sql drops every policy
+  // created here and replaces it with a module-gated read plus
+  // administrator-only writes. The check below is what keeps that honest — a
+  // reader arriving at this describe must not conclude the book is still
+  // readable and writable by every authenticated account.
+  it('historically replaced per-user RLS with authenticated-only (never public/anon)', () => {
     assert.ok(SHARED_MIGRATION.includes('auth.uid() is not null'))
     assert.ok(!/using \(true\)/.test(SHARED_MIGRATION))
     assert.ok(!/to anon/i.test(SHARED_MIGRATION))
     assert.ok(SHARED_MIGRATION.includes('sn_shared_select'))
+  })
+
+  it('is SUPERSEDED: the effective posture is module-gated read, admin-only write', () => {
+    const hardening = readFileSync(
+      new URL('../supabase/migrations/20260815000000_sensitive_surface_hardening.sql', import.meta.url),
+      'utf8',
+    )
+    // Every policy on every Structured Notes table is dropped and rebuilt.
+    assert.ok(hardening.includes('drop policy %I'))
+    assert.ok(hardening.includes('sn_module_select'))
+    assert.ok(hardening.includes("nmi_can_access_module(''structured_notes'')"))
+    assert.ok(hardening.includes('sn_admin_insert'))
+    assert.ok(hardening.includes('nmi_is_administrator()'))
+    // And it fails at apply time if the permissive shape survives anywhere.
+    assert.ok(hardening.includes('permissive auth.uid()-is-not-null policy still present'))
   })
   it('drops the per-user ownership-guard triggers (isolation no longer applies)', () => {
     assert.ok(SHARED_MIGRATION.includes('drop trigger if exists guard_sn_underlyings_owner'))

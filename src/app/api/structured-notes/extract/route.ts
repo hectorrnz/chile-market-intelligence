@@ -13,6 +13,7 @@ import { extractPdfPages } from '@/lib/structuredNotes/pdf/pdfText'
 import { extractStructuredNoteTerms } from '@/lib/structuredNotes/pdf/extractStructuredNoteTerms'
 import { classifyReviewState } from '@/lib/structuredNotes/pdf/parsers/shared'
 import { recordExtractionRun } from '@/lib/db/repositories/structuredNotesRepository'
+import { guardAdministrator } from '@/lib/auth/moduleApiGuard'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -20,6 +21,9 @@ export const runtime = 'nodejs'
 const MAX_BYTES = 10 * 1024 * 1024 // 10 MB
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  const denied = await guardAdministrator()
+  if (denied) return denied
+
   const client = await getSupabaseUserClient()
   if (!client) return NextResponse.json({ error: 'Not configured' }, { status: 503 })
 

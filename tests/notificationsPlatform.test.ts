@@ -44,12 +44,37 @@ describe('migration hygiene', () => {
     assert.ok(MIGRATION.includes('notification_reads_insert'))
     assert.ok(MIGRATION.includes('notification_reads_delete'))
   })
-  it('notification_recipients allows any authenticated user full CRUD (shared-trust model, matches Phase 9B)', () => {
+  // HISTORICAL. This migration originally gave every authenticated account full
+  // CRUD over the recipient list under the Phase 9B shared-trust model. The file
+  // is unchanged, so the assertion still describes it — but it no longer
+  // describes the system: POST-R13.6B.1 makes the list administrator-only for
+  // all four verbs, because it decides where family financial notifications are
+  // delivered. The paired test below is what keeps this section honest.
+  it('historically allowed any authenticated user full CRUD (shared-trust model)', () => {
     const block = MIGRATION.slice(MIGRATION.indexOf('notification_recipients_select'))
     assert.ok(block.includes('auth.uid() is not null'))
     assert.ok(MIGRATION.includes('notification_recipients_insert'))
     assert.ok(MIGRATION.includes('notification_recipients_update'))
     assert.ok(MIGRATION.includes('notification_recipients_delete'))
+  })
+
+  it('is SUPERSEDED: recipients are administrator-only, and never a grantable module', () => {
+    const hardening = readFileSync(
+      new URL('../supabase/migrations/20260815000000_sensitive_surface_hardening.sql', import.meta.url),
+      'utf8',
+    )
+    for (const verb of ['select', 'insert', 'update', 'delete']) {
+      assert.ok(
+        hardening.includes(`notification_recipients_admin_${verb}`),
+        `administrator-only ${verb} policy missing`,
+      )
+    }
+    assert.ok(hardening.includes('nmi_is_administrator()'))
+    // A capability, not a module: no grant may ever confer recipient access.
+    assert.ok(hardening.includes('must not be governed by a module grant'))
+    assert.ok(hardening.includes('must never be a grantable module'))
+    // Personal notification state is explicitly preserved.
+    assert.ok(hardening.includes('notification_reads lost its per-user policy'))
   })
   it('email column is citext (case-insensitive unique) and citext extension is (re)enabled defensively', () => {
     assert.ok(MIGRATION.includes('email       citext not null unique'))

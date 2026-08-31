@@ -20,6 +20,7 @@ import {
   calculateDistanceToBarrier,
 } from '@/lib/structuredNotes/calculations'
 import type { NoteStatus } from '@/lib/structuredNotes/types'
+import { guardAdministrator, guardModuleReadWithCapability } from '@/lib/auth/moduleApiGuard'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -27,6 +28,9 @@ export const runtime = 'nodejs'
 const VALID_STATUS: NoteStatus[] = ['active', 'autocalled', 'matured', 'defaulted', 'cancelled', 'draft']
 
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const { denied, canManage } = await guardModuleReadWithCapability('structured_notes')
+  if (denied) return denied
+
   const client = await getSupabaseUserClient()
   if (!client) return NextResponse.json({ error: 'Not configured' }, { status: 503 })
   const { id } = await ctx.params
@@ -71,6 +75,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   })
 
   return NextResponse.json({
+    // See the list route: a UI courtesy, never the boundary.
+    canManage,
     note,
     prices,
     metrics: {
@@ -85,6 +91,9 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
 }
 
 export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const denied = await guardAdministrator()
+  if (denied) return denied
+
   const client = await getSupabaseUserClient()
   if (!client) return NextResponse.json({ error: 'Not configured' }, { status: 503 })
   const { id } = await ctx.params
@@ -128,6 +137,9 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
  * JSON — never an HTML error page, a stack trace, a path, or SQL.
  */
 export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const denied = await guardAdministrator()
+  if (denied) return denied
+
   const client = await getSupabaseUserClient()
   if (!client) return NextResponse.json({ error: 'Not configured' }, { status: 503 })
   const { id } = await ctx.params

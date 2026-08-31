@@ -1,18 +1,28 @@
 // Phase 9A/9B — GET /api/structured-notes
 // Returns the shared book of structured notes plus live per-note metrics and a
 // book-level dashboard summary (live count, in/out of the money, about to
-// autocall, issuer exposure). Middleware enforces auth.
+// autocall, issuer exposure).
+//
+// READ REQUIRES THE `structured_notes` MODULE (POST-R13.6B.1). Middleware
+// enforces authentication; `guardModuleReadWithCapability` enforces the module
+// grant; and RLS (`nmi_can_access_module`) is the authoritative boundary. A
+// granted member reads the book but may not change it — every mutation route
+// is administrator-only.
 
 import { NextResponse } from 'next/server'
 import { getSupabaseUserClient } from '@/lib/supabase/server'
 import { listStructuredNotes } from '@/lib/db/repositories/structuredNotesRepository'
 import { fetchYahooPriceMap } from '@/lib/structuredNotes/structuredNoteMarketProvider'
 import { buildBookDashboard } from '@/lib/structuredNotes/dashboard'
+import { guardModuleReadWithCapability } from '@/lib/auth/moduleApiGuard'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export async function GET(): Promise<NextResponse> {
+  const { denied, canManage } = await guardModuleReadWithCapability('structured_notes')
+  if (denied) return denied
+
   const client = await getSupabaseUserClient()
   if (!client) return NextResponse.json({ error: 'Not configured' }, { status: 503 })
 
@@ -25,5 +35,8 @@ export async function GET(): Promise<NextResponse> {
   const today = new Date().toISOString().slice(0, 10)
   const { metrics, summary } = buildBookDashboard(notes, prices, asOf, today)
 
-  return NextResponse.json({ notes, metrics, summary })
+  // `canManage` drives whether the page offers create/edit/delete controls.
+  // It is a courtesy for the UI, never the boundary: every mutation route
+  // re-checks administrator status and RLS refuses the write regardless.
+  return NextResponse.json({ notes, metrics, summary, canManage })
 }

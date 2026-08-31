@@ -1,15 +1,26 @@
 // GET /api/notification-recipients  — list the email distribution list.
 // POST /api/notification-recipients — add a recipient.
-// Middleware enforces auth. Managed from /settings/notifications.
+//
+// ADMINISTRATOR ONLY (POST-R13.6B.1). The recipient list is an outbound-data
+// administration capability, not a module: it decides where family financial
+// notifications are delivered, so it is deliberately NOT grantable through
+// `user_module_grants` and has no `app_modules` row. Middleware still enforces
+// authentication; `guardAdministrator` enforces capability; and
+// `notification_recipients` RLS refuses every verb to a non-administrator even
+// if a handler here were ever to forget. Managed from /settings.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseUserClient } from '@/lib/supabase/server'
 import { isValidEmail } from '@/lib/auth/credentials'
 import { listNotificationRecipients, addNotificationRecipient } from '@/lib/db/repositories/notificationsRepository'
+import { guardAdministrator } from '@/lib/auth/moduleApiGuard'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(): Promise<NextResponse> {
+  const denied = await guardAdministrator()
+  if (denied) return denied
+
   const client = await getSupabaseUserClient()
   if (!client) return NextResponse.json({ error: 'Not configured' }, { status: 503 })
   const recipients = await listNotificationRecipients(client)
@@ -17,6 +28,9 @@ export async function GET(): Promise<NextResponse> {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  const denied = await guardAdministrator()
+  if (denied) return denied
+
   const client = await getSupabaseUserClient()
   if (!client) return NextResponse.json({ error: 'Not configured' }, { status: 503 })
 

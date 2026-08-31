@@ -37,6 +37,7 @@ on:
       - 'scripts/admin/**'
       - 'tests/familyPortfolioEntitlements.test.ts'
       - 'tests/moduleEntitlements.test.ts'
+      - 'tests/sensitiveSurfaceHardening.test.ts'
       - '.github/workflows/r13-family-portfolio-db-validation.yml'
 
 # Read-only: this workflow never commits, never pushes, never comments.
@@ -238,6 +239,13 @@ jobs:
       # pgTAP assertions ran in `supabase test db`. This is its TypeScript half.
       - name: Run the TypeScript module entitlement suite (parity, other half)
         run: node --test "tests/moduleEntitlements.test.ts"
+
+      # POST-R13.6B.1 — the Structured Notes / notification-recipient hardening.
+      # Its executable half (role sessions, RLS, GRANT/REVOKE) ran inside
+      # `supabase test db` above; this is the static half — route wiring, guard
+      # selection, and the migration's shape.
+      - name: Run the TypeScript sensitive-surface hardening suite
+        run: node --test "tests/sensitiveSurfaceHardening.test.ts"
 
       - name: Run access-control and profile regression suites
         run: |
