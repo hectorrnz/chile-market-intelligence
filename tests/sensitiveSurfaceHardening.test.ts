@@ -449,8 +449,31 @@ describe('POST-R13.6B.1 — the executable half covers the bypass path', () => {
   })
 
   it('proves personal notification state survives the hardening', () => {
-    assert.ok(PGTAP.includes('an ordinary member still reads the in-app notification feed'))
-    assert.ok(PGTAP.includes('can still mark their OWN notification read'))
+    // Proven by PARITY against an untouched control table rather than by a
+    // member-role read. The personal tables carry no explicit grant in any
+    // migration, so a member-role read would assert the environment's default
+    // privileges — which differ between the isolated CI stack and a hosted
+    // project — instead of asserting anything about this migration.
+    assert.ok(PGTAP.includes("has_table_privilege('authenticated', 'public.watchlists', 'SELECT')"))
+    assert.ok(PGTAP.includes('same authenticated SELECT posture as an untouched control table'))
+    assert.ok(PGTAP.includes('same authenticated INSERT posture as an untouched control'))
+    assert.ok(PGTAP.includes('the personal feed is NOT re-gated behind a module grant'))
+    assert.ok(PGTAP.includes('keeps all three of its per-user policies'))
+    assert.ok(PGTAP.includes('the member OWN read marker survives the hardening'))
+  })
+
+  it('never touches the personal notification tables with any DDL', () => {
+    // The parity assertion above is only meaningful because this is true: the
+    // migration must contain no grant, revoke, policy or ALTER for either
+    // personal table. Anything else and the control comparison would be
+    // comparing two tables this migration had both changed.
+    for (const t of ['notifications', 'notification_reads']) {
+      const ddl = new RegExp(
+        `(grant|revoke|create policy|drop policy|alter table)[^;]*\bpublic\.${t}\b`,
+        'i',
+      )
+      assert.ok(!ddl.test(MIGRATION_CODE), `the migration must not issue DDL against ${t}`)
+    }
   })
 
   it('uses only throwaway fixtures', () => {

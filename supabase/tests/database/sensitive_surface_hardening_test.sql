@@ -335,20 +335,51 @@ select ok(has_table_privilege('service_role', 'public.notifications', 'INSERT'),
 -- Hardening the SHARED address book must not take away a member's OWN read
 -- markers. This is the "do not break category A while fixing category B" proof.
 
+-- These are PARITY assertions rather than member-role reads, deliberately.
+-- `notifications` and `notification_reads` carry NO explicit grant in any
+-- migration: exactly like `watchlists`, they rely entirely on whatever
+-- Supabase's default privileges give `authenticated`, and that default is not
+-- identical between this isolated CLI stack and a hosted project. Asserting
+-- "a member can read the feed" would therefore test the ENVIRONMENT, not this
+-- migration -- and it fails in this stack for a reason that predates this
+-- stage entirely (20260815000000 contains no DDL of any kind for either
+-- table).
+--
+-- What actually must be proven is that this migration did not sweep the
+-- personal tables into the hardening. Comparing them against the untouched
+-- control `watchlists` -- same class, same reliance on defaults -- proves that
+-- in EITHER environment: had 20260815000000 revoked from them, they would no
+-- longer match the control.
+
 select pg_temp.as_service();
 insert into public.notifications (id, notification_type, title, body)
 values ('bbbb0007-0000-0000-0000-000000000007', 'system', 'Fixture', 'Fixture body');
+insert into public.notification_reads (notification_id, user_id)
+values ('bbbb0007-0000-0000-0000-000000000007', 'b3333333-3333-3333-3333-333333333333');
 
-select pg_temp.as_user('b3333333-3333-3333-3333-333333333333');
+select is(
+  has_table_privilege('authenticated', 'public.notifications', 'SELECT'),
+  has_table_privilege('authenticated', 'public.watchlists', 'SELECT'),
+  'notifications keeps the same authenticated SELECT posture as an untouched control table');
+select is(
+  has_table_privilege('authenticated', 'public.notification_reads', 'INSERT'),
+  has_table_privilege('authenticated', 'public.watchlists', 'INSERT'),
+  'notification_reads keeps the same authenticated INSERT posture as an untouched control');
 
-select is((select count(*)::int from public.notifications), 1,
-  'an ordinary member still reads the in-app notification feed');
-select lives_ok($$ insert into public.notification_reads (notification_id, user_id)
-                   values ('bbbb0007-0000-0000-0000-000000000007',
-                           'b3333333-3333-3333-3333-333333333333') $$,
-  'an ordinary member can still mark their OWN notification read');
-select is((select count(*)::int from public.notification_reads), 1,
-  'the member reads back their own marker');
+select ok(exists(
+    select 1 from pg_catalog.pg_policies
+    where schemaname = 'public' and tablename = 'notifications'
+      and cmd = 'SELECT' and qual like '%uid()%'
+      and coalesce(qual, '') not like '%nmi_can_access_module%'),
+  'the personal feed is NOT re-gated behind a module grant');
+
+select is((select count(*)::int from pg_catalog.pg_policies
+            where schemaname = 'public' and tablename = 'notification_reads'), 3,
+  'notification_reads keeps all three of its per-user policies');
+
+select is((select count(*)::int from public.notification_reads
+            where user_id = 'b3333333-3333-3333-3333-333333333333'), 1,
+  'the member OWN read marker survives the hardening');
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
