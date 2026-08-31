@@ -370,8 +370,19 @@ select is(
      and p.proname in ('nmi_current_module_grants','nmi_can_access_module')
      and p.prosecdef
      and exists (select 1 from unnest(coalesce(p.proconfig, array[]::text[])) cfg
-                 where cfg = 'search_path=')),
-  2, 'both SECURITY DEFINER module functions pin an empty search_path');
+               -- PostgreSQL serializes `set search_path = ''` into proconfig as
+               -- search_path="" -- the empty value is QUOTED. Comparing against the
+               -- unquoted literal matches nothing, which is what made this assertion
+               -- report 0 instead of 2 on its first isolated-PostgreSQL run.
+               --
+               -- Stripping the quotes and requiring the remainder to be empty is both
+               -- robust to the serialization form and STRICTER than the migration's own
+               -- postcondition, which only requires `like 'search_path=%'`: a function
+               -- pinned to a NON-empty path (search_path=public) passes there and fails
+               -- here.
+               where cfg like 'search_path=%'
+                 and btrim(split_part(cfg, '=', 2), '"''') = '')),
+  2, 'both SECURITY DEFINER module functions pin an EMPTY search_path');
 
 select is(
   (select p.provolatile from pg_catalog.pg_proc p
