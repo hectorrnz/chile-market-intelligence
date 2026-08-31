@@ -11,7 +11,26 @@ name: Sync Data to Feature Branches
 # were running green: not an ingestion failure at all, just branch drift.
 #
 # This workflow closes that gap: whenever a data refresh lands on master, the
-# same commit is merged into every `feat/**` branch.
+# same commit is merged into every participating `feat/**` branch.
+#
+# WHY IT TRIGGERS ON `workflow_run` AND NOT ON THE PUSH ITSELF
+# ------------------------------------------------------------
+# The obvious trigger — `push: branches: [master], paths: ['src/data/**']` —
+# reads correctly and never fires. Both refresh workflows push using
+# `secrets.GITHUB_TOKEN`, and GitHub deliberately raises no workflow-triggering
+# event for a push authored by that token; that is the platform's anti-recursion
+# rule, not a bug in the path filter. Measured 2026-08-28: 51 bot data-refresh
+# commits landed on master between 2026-08-06 and 2026-08-28, and this workflow
+# ran exactly ONCE in its entire lifetime — on 2026-08-05, from the human push
+# that added the file.
+#
+# `workflow_run` keys off the *completion of a workflow run* rather than off a
+# git push event, so the GITHUB_TOKEN restriction does not apply to it. It needs
+# no PAT, no GitHub App, and no new repository secret. (`workflow_run` only ever
+# runs the copy of this file that is on the default branch — `master` here.)
+#
+# The `push` trigger is KEPT as a secondary path: a human committing data to
+# master directly is a real event that should still sync.
 #
 # SAFETY RULES (deliberately conservative — an Action must not make integration
 # decisions on a human's behalf):
@@ -20,10 +39,17 @@ name: Sync Data to Feature Branches
 #     that branch is skipped with a warning — merging code is a human call.
 #   * A merge that conflicts is aborted and the branch is left exactly as it
 #     was. Nothing is ever force-pushed and no branch is ever rewritten.
-#   * It cannot loop: it triggers only on pushes to master, and it only ever
-#     pushes to feature branches.
+#   * Only branches under SYNC_BRANCH_GLOB that are still being worked on take
+#     part; parked branches are reported, not quietly rewritten.
+#   * It cannot loop: it is not in its own `workflows:` list, it never pushes to
+#     master, and its own pushes use GITHUB_TOKEN (which triggers nothing).
 
 on:
+  workflow_run:
+    workflows:
+      - 'Refresh Market Data'
+      - 'Refresh Earnings Calendar'
+    types: [completed]
   push:
     branches: [master]
     paths:
@@ -33,8 +59,27 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
+
+    # Sync only after a refresh that actually SUCCEEDED, and only for a refresh
+    # that ran on master. A failed or cancelled refresh has nothing to
+    # propagate, and a refresh dispatched by hand from a feature branch must not
+    # push master's state around on that branch's behalf.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'master')
+
     permissions:
       contents: write
+
+    env:
+      # Which branches take part. Scoped on purpose — this is not "every ref".
+      SYNC_BRANCH_GLOB: 'refs/remotes/origin/feat/**'
+      # A branch with no commit in this many days is treated as parked: reported
+      # in the summary, never merged into. Keeps abandoned work from collecting
+      # merge commits, without needing a hand-maintained branch list that
+      # everyone forgets to update — which is how the original drift happened.
+      SYNC_MAX_BRANCH_AGE_DAYS: '30'
 
     steps:
       - name: Checkout (full history — merges need every branch)
@@ -51,15 +96,18 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin --prune
 
-          BRANCHES=$(git for-each-ref --format='%(refname:strip=3)' 'refs/remotes/origin/feat/**')
+          echo "## Data sync" >> "$GITHUB_STEP_SUMMARY"
+          echo "Triggered by \`$GITHUB_EVENT_NAME\`." >> "$GITHUB_STEP_SUMMARY"
+
+          BRANCHES=$(git for-each-ref --format='%(refname:strip=3)' "$SYNC_BRANCH_GLOB")
 
           if [ -z "$BRANCHES" ]; then
-            echo "No feat/** branches — nothing to sync."
-            echo "No \`feat/**\` branches to sync." >> "$GITHUB_STEP_SUMMARY"
+            echo "No branches match $SYNC_BRANCH_GLOB — nothing to sync."
+            echo "No participating branches to sync." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
-          echo "## Data sync" >> "$GITHUB_STEP_SUMMARY"
+          CUTOFF=$(( $(date +%s) - SYNC_MAX_BRANCH_AGE_DAYS * 86400 ))
 
           for BRANCH in $BRANCHES; do
             echo "::group::$BRANCH"
@@ -67,6 +115,18 @@ jobs:
             if git merge-base --is-ancestor origin/master "origin/$BRANCH"; then
               echo "Already contains master — nothing to do."
               echo "- \`$BRANCH\` — already up to date" >> "$GITHUB_STEP_SUMMARY"
+              echo "::endgroup::"
+              continue
+            fi
+
+            # Parked branches are left alone. Merging refreshed data into work
+            # nobody is touching only adds noise to a branch a human will have
+            # to reconcile by hand anyway.
+            TIP_TS=$(git log -1 --format=%ct "origin/$BRANCH")
+            if [ "$TIP_TS" -lt "$CUTOFF" ]; then
+              LAST=$(git log -1 --format=%as "origin/$BRANCH")
+              echo "Last commit $LAST is older than ${SYNC_MAX_BRANCH_AGE_DAYS}d — parked, skipping."
+              echo "- \`$BRANCH\` — skipped: parked since $LAST" >> "$GITHUB_STEP_SUMMARY"
               echo "::endgroup::"
               continue
             fi
