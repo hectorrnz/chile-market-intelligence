@@ -8,7 +8,7 @@
 
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import {
@@ -127,9 +127,14 @@ describe('R12 · per-instrument gating wired into every snapshot consumer', () =
     assert.match(src, /<TableSourceFooter source=\{t\.fp\.portfolio\.source\} asOf=\{fpPublication\.asOfDate\}/)
   })
 
-  test('Portfolio and Stocks derive their badge from their own displayed tickers', () => {
-    assert.match(read('src/app/portfolio/page.tsx'), /stockOverlayCoverage\(live\.stocks, \(detail\?\.positions \?\? \[\]\)\.map\(p => p\.ticker\)\)/)
+  // POST-R13.5 — was "Portfolio and Stocks". The Portfolio half described
+  // the retired positions tracker, which priced hand-entered holdings off the
+  // live market snapshot and so needed a coverage-derived badge. The R13
+  // Portfolio on that route is publication-backed and consults no price feed at
+  // all, which is exactly why the Home card test above asserts no pfPriceStatus.
+  test('Stocks derives its badge from its own displayed tickers', () => {
     assert.match(read('src/app/stocks/page.tsx'), /stockOverlayCoverage\(live\?\.stocks, rows\.map\(r => r\.c\.ticker\)\)/)
+    assert.ok(!existsSync(join(ROOT, 'src/app/api/portfolios')), 'the legacy tracker is retired')
   })
 
   test('the Company page keeps its per-ticker gate (R11) — unchanged', () => {
@@ -250,10 +255,10 @@ describe('R12 · failed loads reach explicit error states, never confirmed-empty
     assert.match(src, /json\?\.note/)
   })
 
-  test('Portfolio: all three detail calls flag loadError on failure, and loadDetail never rejects', () => {
-    const src = read('src/app/portfolio/page.tsx')
-    assert.equal((src.match(/\} else anyFailed = true/g) ?? []).length, 3)
-    assert.match(src, /if \(anyFailed && !cancelled\.value\) setLoadError\(true\)/)
+  // POST-R13.5 — the three detail calls were the retired tracker's
+  // positions/transactions/cash fetches. They no longer exist.
+  test('the retired positions tracker made the three-call detail fetch obsolete', () => {
+    assert.ok(!existsSync(join(ROOT, 'src/app/api/portfolios')))
   })
 
   test('Home watchlist card: only a 401 means signed-out; other failures render an error row', () => {
@@ -304,23 +309,18 @@ describe('R12 · Chart Builder settings dialog is the shared ModalShell', () => 
   })
 })
 
-describe('R12 · Portfolio destructive actions go through DestructiveConfirm', () => {
-  const src = read('src/app/portfolio/page.tsx')
-
-  test('both the position remove and the transaction delete are gated', () => {
-    assert.equal((src.match(/<DestructiveConfirm/g) ?? []).length, 2)
-    assert.match(src, /from '@\/components\/fable\/ModalShell'/)
-  })
-
-  test('both handlers check the response and surface a localized failure', () => {
-    assert.match(src, /if \(!res\.ok\) \{ setRemoveError\(true\); return \}/)
-    assert.match(src, /if \(!res\.ok\) \{ setDeleteError\(true\); return \}/)
-    assert.match(src, /\{t\.portfolio\.removeError\}/)
-  })
-
-  test('neither confirmation description contains an amount', () => {
-    assert.match(src, /description=\{`\$\{position\.ticker\} — \$\{position\.companyName\}`\}/)
-    assert.ok(!/description=\{[^}]*formatCLP/s.test(src), 'no formatted amount in any dialog description')
+// POST-R13.5 — the Phase 6C/6D Chilean-equities positions tracker was
+// retired so the released Portfolio product could take the `/portfolio` route
+// it had always been named for. The behaviours below belonged to that page and
+// exist nowhere now, so the block asserts the retirement instead of guarding a
+// file that is gone. Deleting it outright would leave no record that the
+// coverage was removed on purpose.
+describe('R12 · Portfolio destructive actions (retired with the tracker)', () => {
+  test('the two destructive actions no longer exist anywhere', () => {
+    // The position remove and transaction delete were the only two destructive
+    // actions on `/portfolio`. The R13 Portfolio a member sees is read-only.
+    assert.ok(!existsSync(join(ROOT, 'src/app/api/portfolios')))
+    assert.doesNotMatch(read('src/app/portfolio/page.tsx'), /<DestructiveConfirm/)
   })
 })
 

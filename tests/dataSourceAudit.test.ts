@@ -5,7 +5,7 @@
 
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   SOURCE_REGISTRY,
@@ -206,10 +206,13 @@ describe('Phase 8A regression — existing badge i18n namespaces unaffected', ()
 // ─── Regression: watchlist/portfolio/auth/macro/market untouched ─────────────
 
 describe('Phase 8A regression — no changes to auth, portfolio math, or ingestion', () => {
-  it('portfolio valuation module is unchanged (still exports the same pure functions)', () => {
-    const src = readFileSync(join(ROOT, 'src/lib/portfolio/valuation.ts'), 'utf8')
-    assert.ok(src.includes('calculatePositionMarketValue'))
-    assert.ok(src.includes('calculateUnrealizedPnL'))
+  it('the legacy portfolio valuation module is retired, and nothing still imports it', () => {
+    // POST-R13.5 — Phase 8A guarded this module against incidental change while
+    // it still backed `/portfolio` and `/api/portfolios`. Both are retired, so
+    // the guard inverts: what must hold now is that no import of it survived the
+    // deletion, which is the failure mode that would actually break a build.
+    assert.ok(!existsSync(join(ROOT, 'src/lib/portfolio/valuation.ts')))
+    assert.ok(!existsSync(join(ROOT, 'src/lib/portfolio/transactions.ts')))
   })
 
   it('middleware still protects watchlist + portfolio (structured-notes added in Phase 9A)', async () => {
@@ -224,7 +227,7 @@ describe('Phase 8A regression — no changes to auth, portfolio math, or ingesti
       assert.ok(requiresApprovedSession(page), `${page} must stay protected`)
     }
     for (const api of [
-      '/api/portfolios', '/api/watchlists', '/api/structured-notes',
+      '/api/family-portfolio/scopes', '/api/watchlists', '/api/structured-notes',
       '/api/notifications', '/api/notification-recipients',
     ]) {
       assert.ok(requiresApprovedSession(api), `${api} must stay protected`)

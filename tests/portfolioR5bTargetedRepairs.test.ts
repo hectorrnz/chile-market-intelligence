@@ -8,7 +8,7 @@
 
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { dict } from '../src/lib/i18n.ts'
@@ -26,7 +26,7 @@ const code = (src: string) =>
   src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 
 const STRIP = read('src/components/familyPortfolio/PerformanceMarketsStrip.tsx')
-const SUMMARY = read('src/app/family-portfolio/page.tsx')
+const SUMMARY = read('src/app/portfolio/page.tsx')
 const HOME = read('src/app/page.tsx')
 const HOME_CODE = code(HOME)
 
@@ -171,11 +171,16 @@ describe('R13.R5B § 2 · "Family Portfolio" is gone from user-visible copy', ()
     assert.doesNotMatch(dict.es.fp.noAccess, /Principal|Familiar/i)
   })
 
-  test('routes, modules and internal identifiers are deliberately NOT renamed', () => {
-    // The repair was copy-only: the route, its API and the module names stay.
-    assert.ok(read('src/app/family-portfolio/page.tsx').length > 0)
+  test('internal identifiers are deliberately NOT renamed', () => {
+    // R13.R5B was copy-only: the module and API names stayed even as the
+    // member-facing wording changed. POST-R13.5 moved the ROUTE from
+    // `/family-portfolio` to `/portfolio` and nothing else - the API namespace,
+    // the provider, the data helpers and every internal identifier are
+    // untouched, which is what keeps this a routing change rather than a rename.
+    assert.ok(read('src/app/portfolio/page.tsx').length > 0)
     assert.ok(read('src/components/familyPortfolio/FamilyPortfolioProvider.tsx').length > 0)
-    assert.match(HOME, /href="\/family-portfolio"/)
+    assert.ok(existsSync(join(ROOT, 'src/app/api/family-portfolio')), 'the API namespace is unchanged')
+    assert.match(HOME, /href=\{PORTFOLIO_SUMMARY\}/)
     assert.match(HOME, /fetchFamilyPortfolioOverview/)
   })
 })
@@ -233,8 +238,11 @@ describe('R13.R5B § 3 · the Overview portfolio card and the Summary agree', ()
     assert.doesNotMatch(HOME_CODE, /valuePositions|calculatePortfolioTotals|PortfolioTotals/)
     // …and the legacy module itself is untouched — this was a repair, not a
     // cleanup. Both still exist and still carry their own logic.
-    assert.ok(read('src/app/portfolio/page.tsx').includes('valuePositions'))
-    assert.ok(read('src/app/api/portfolios/route.ts').length > 0)
+    // POST-R13.5 finished the job R13.R5B deliberately left: the tracker this
+    // card was un-wired from is now retired outright, so there is no second
+    // portfolio source left in the codebase to drift back to.
+    assert.ok(!existsSync(join(ROOT, 'src/app/api/portfolios')))
+    assert.ok(!existsSync(join(ROOT, 'src/lib/portfolio')))
   })
 
   test('it fails closed: no fallback source, no invented value, no stale substitute', () => {

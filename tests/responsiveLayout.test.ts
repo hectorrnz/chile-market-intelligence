@@ -21,7 +21,7 @@
 
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { join, sep } from 'node:path'
 
 const ROOT = join(import.meta.dirname, '..')
@@ -143,25 +143,14 @@ describe('dashboard grids collapse', () => {
     assert.match(src, /grid grid-cols-1 lg:grid-cols-2 gap-4 items-start/)
   })
 
-  // Phase 5H rebuilt Portfolio onto the Fable composition, which is
-  // intrinsically responsive (wrapping flex rows with `min(100%, …)` bases and
-  // an auto-fit minis grid) rather than breakpoint-classed. Updated
-  // deliberately to the new conventions — the guarantee is unchanged and, if
-  // anything, stronger: every column is asserted to collapse to full width.
-  test('Portfolio Fable columns collapse to full width, and the metric grids reflow', () => {
-    const src = read('src/app/portfolio/page.tsx')
-    // All four Fable columns (hero, aside, table column, rail) carry a
-    // `min(100%, …)` basis, so each wraps to full width below its threshold.
-    assert.equal((src.match(/minWidth: 'min\(100%,/g) ?? []).length, 4, 'every Fable column collapses')
-    // Both regions are wrapping flex rows, never fixed-column grids.
-    assert.match(src, /flex flex-wrap items-stretch gap-3\.5/)
-    assert.match(src, /flex flex-wrap items-start gap-3\.5/)
-    // The hero's secondary-metric grid is auto-fit, never a fixed column count.
-    assert.match(src, /repeat\(auto-fit, minmax\(120px, 1fr\)\)/)
-    // The cash secondary metrics still reflow across breakpoints.
-    assert.match(src, /grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3/)
-    // The pre-Fable fixed 7-across capsule grid must not come back.
-    assert.doesNotMatch(src, /xl:grid-cols-7/)
+  // POST-R13.5 — Phase 5H's Fable composition belonged to the retired
+  // positions tracker. The R13 Portfolio now on `/portfolio` has its own
+  // responsive conventions, asserted in full by the Family Portfolio section
+  // lower in this file (FP_DIRS / FP_PAGES) — so this is not a coverage gap, it
+  // is the same guarantee asserted against the page that actually exists.
+  test('the retired positions tracker took its Fable column composition with it', () => {
+    assert.ok(!existsSync(join(ROOT, 'src/app/api/portfolios')))
+    assert.ok(!read('src/app/portfolio/page.tsx').includes('FABLE_HERO'))
   })
 
   test('Macro US region stacks below xl', () => {
@@ -287,7 +276,6 @@ describe('the Settings recipient form stacks instead of overflowing', () => {
 // geometry whether it is on or off.
 describe('the privacy mask is layout-neutral', () => {
   const boundary = read('src/components/fable/PrivacyValue.tsx')
-  const portfolio = read('src/app/portfolio/page.tsx')
 
   test('the mask is an inline span with no width, height or block behaviour of its own', () => {
     assert.doesNotMatch(boundary, /\bw-\[|\bh-\[|\bmin-w-|\bmax-w-|block|absolute|fixed/)
@@ -297,13 +285,16 @@ describe('the privacy mask is layout-neutral', () => {
   })
 
   test('masking is applied inside the existing cell, never around it', () => {
-    // A <td> wrapped in the boundary would move the column; the boundary always
-    // sits INSIDE the cell that already set the alignment and padding.
+    // POST-R13.5 — the sample surface was the retired positions tracker. The
+    // same property is asserted against the R13 Portfolio Summary, which is the
+    // page carrying masked values on `/portfolio` now: a <td> wrapped in the
+    // boundary would move the column, so the boundary always sits INSIDE the
+    // cell that already set the alignment and padding.
+    const portfolio = read('src/app/portfolio/page.tsx')
     assert.doesNotMatch(portfolio, /<PrivacyValue[^>]*>\s*\n?\s*<td/)
-    assert.match(portfolio, /<td className="py-2\.5 px-3 text-right ui-number text-foreground">\s*\n\s*<PrivacyValue/)
-    // The Portfolio table floors and the card-local scroll are untouched.
-    assert.match(portfolio, /minWidth=\{720\}/)
-    assert.match(portfolio, /minWidth=\{440\}/)
+    assert.doesNotMatch(portfolio, /<MaskedAmount[^>]*>\s*\n?\s*<td/)
+    // Its card-local scroll floors are untouched by the mask.
+    assert.match(portfolio, /minWidth=\{\d+\}/)
   })
 
   test('the Settings privacy row reuses PreferenceRow — no new responsive shape', () => {
@@ -343,7 +334,7 @@ describe('shared components wrap instead of overflowing', () => {
 // Source scans, not pixel snapshots — they assert the load-bearing recipe, never
 // a rendered measurement, so a legitimate visual change never has to fight them.
 
-const FP_DIRS = ['src/app/family-portfolio', 'src/components/familyPortfolio'] as const
+const FP_DIRS = ['src/app/portfolio', 'src/components/familyPortfolio'] as const
 
 /** Every .tsx under the Family Portfolio, so a NEW surface is covered the day it lands. */
 function fpFiles(): string[] {
@@ -358,13 +349,13 @@ function fpFiles(): string[] {
 }
 
 const FP_SURFACES = {
-  summary: 'src/app/family-portfolio/page.tsx',
-  holdings: 'src/app/family-portfolio/portfolio/page.tsx',
-  weeklyChanges: 'src/app/family-portfolio/weekly-changes/page.tsx',
-  altDashboard: 'src/app/family-portfolio/alternatives/page.tsx',
-  altHoldings: 'src/app/family-portfolio/alternatives/holdings/page.tsx',
-  altCashFlows: 'src/app/family-portfolio/alternatives/cash-flows/page.tsx',
-  admin: 'src/app/family-portfolio/admin/page.tsx',
+  summary: 'src/app/portfolio/page.tsx',
+  holdings: 'src/app/portfolio/holdings/page.tsx',
+  weeklyChanges: 'src/app/portfolio/weekly-changes/page.tsx',
+  altDashboard: 'src/app/portfolio/alternatives/page.tsx',
+  altHoldings: 'src/app/portfolio/alternatives/holdings/page.tsx',
+  altCashFlows: 'src/app/portfolio/alternatives/cash-flows/page.tsx',
+  admin: 'src/app/portfolio/admin/page.tsx',
 } as const
 
 describe('Family Portfolio: every multi-column grid collapses to one column', () => {

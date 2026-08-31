@@ -6,7 +6,7 @@
 
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import {
@@ -218,10 +218,10 @@ describe('R13.9 · statement age', () => {
     // statement age is rendered by Holdings, but the prohibition covers all of
     // them so a verdict cannot reappear on another view.
     for (const rel of [
-      'src/app/family-portfolio/alternatives/layout.tsx',
-      'src/app/family-portfolio/alternatives/page.tsx',
-      'src/app/family-portfolio/alternatives/holdings/page.tsx',
-      'src/app/family-portfolio/alternatives/cash-flows/page.tsx',
+      'src/app/portfolio/alternatives/layout.tsx',
+      'src/app/portfolio/alternatives/page.tsx',
+      'src/app/portfolio/alternatives/holdings/page.tsx',
+      'src/app/portfolio/alternatives/cash-flows/page.tsx',
       'src/components/familyPortfolio/AlternativesEventChrome.tsx',
     ]) {
       assert.ok(!/\bstale\b|staleFlag|STALE_MONTHS/i.test(codeOf(read(rel))),
@@ -423,10 +423,10 @@ describe('R13.9 · SAN ROQUE release control', () => {
       'src/lib/familyPortfolio/alternativesView.ts',
       'src/lib/familyPortfolio/alternatives/eventPresentation.ts',
       'src/app/api/family-portfolio/alternatives/route.ts',
-      'src/app/family-portfolio/alternatives/layout.tsx',
-      'src/app/family-portfolio/alternatives/page.tsx',
-      'src/app/family-portfolio/alternatives/holdings/page.tsx',
-      'src/app/family-portfolio/alternatives/cash-flows/page.tsx',
+      'src/app/portfolio/alternatives/layout.tsx',
+      'src/app/portfolio/alternatives/page.tsx',
+      'src/app/portfolio/alternatives/holdings/page.tsx',
+      'src/app/portfolio/alternatives/cash-flows/page.tsx',
       'src/components/familyPortfolio/AlternativesEventChrome.tsx',
       'src/components/familyPortfolio/AlternativesFilters.tsx',
       'src/lib/db/repositories/familyPortfolioReadRepository.ts',
@@ -445,7 +445,7 @@ describe('R13.9 · SAN ROQUE release control', () => {
   })
 
   test('no member-facing vocabulary mentions the internal decision machinery', () => {
-    const page = read('src/app/family-portfolio/alternatives/page.tsx')
+    const page = read('src/app/portfolio/alternatives/page.tsx')
     const i18n = read('src/lib/i18n.ts')
     for (const banned of [/ownership/i, /\bD2\b/, /release blocker/i]) {
       assert.ok(!banned.test(page), `page must not surface ${banned}`)
@@ -537,10 +537,13 @@ describe('R13.9 · stage boundaries', () => {
     assert.match(migration, /R13\.4/)
   })
 
-  test('the Chilean-equities /portfolio module remains untouched', () => {
-    const chilean = read('src/app/portfolio/page.tsx')
-    assert.ok(!chilean.includes('alternatives'))
-    assert.ok(!chilean.includes('family-portfolio'))
+  // POST-R13.5 — this guarded a boundary between two products sharing a URL
+  // space. The Chilean-equities tracker is retired, so the boundary is now
+  // absence: nothing of it survived, and Alternatives still owns its own route.
+  test('the Chilean-equities positions tracker is retired, not merely bypassed', () => {
+    assert.ok(!existsSync(join(ROOT, 'src/app/api/portfolios')))
+    assert.ok(!existsSync(join(ROOT, 'src/lib/portfolio')))
+    assert.ok(existsSync(join(ROOT, 'src/app/portfolio/alternatives/page.tsx')))
   })
 
   test('the view model never imports the parser, a repository, or Next.js', () => {

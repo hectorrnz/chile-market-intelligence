@@ -29,19 +29,18 @@ const PAGES_WITH_TABLES = [
   'src/app/earnings/page.tsx',
   'src/app/companies/[ticker]/page.tsx',
   'src/app/watchlist/page.tsx',
-  'src/app/portfolio/page.tsx',
   'src/app/macro/page.tsx',
   'src/app/structured-notes/page.tsx',
   'src/app/structured-notes/[id]/page.tsx',
   // R13.5/R13.6/R13.7 — Family Portfolio table-bearing pages.
-  'src/app/family-portfolio/admin/page.tsx',
-  'src/app/family-portfolio/portfolio/page.tsx',
-  'src/app/family-portfolio/page.tsx',
+  'src/app/portfolio/admin/page.tsx',
+  'src/app/portfolio/holdings/page.tsx',
+  'src/app/portfolio/page.tsx',
   // R13.R5G — the remaining R13 table-bearing surfaces.
-  'src/app/family-portfolio/weekly-changes/page.tsx',
-  'src/app/family-portfolio/alternatives/page.tsx',
-  'src/app/family-portfolio/alternatives/holdings/page.tsx',
-  'src/app/family-portfolio/alternatives/cash-flows/page.tsx',
+  'src/app/portfolio/weekly-changes/page.tsx',
+  'src/app/portfolio/alternatives/page.tsx',
+  'src/app/portfolio/alternatives/holdings/page.tsx',
+  'src/app/portfolio/alternatives/cash-flows/page.tsx',
 ]
 
 describe('every table-bearing page renders its source via TableSourceFooter', () => {
@@ -181,10 +180,10 @@ describe('structured notes — one source line, not four', () => {
 // change.
 
 const FP_TABLE_SURFACES = [
-  'src/app/family-portfolio/weekly-changes/page.tsx',
-  'src/app/family-portfolio/alternatives/page.tsx',
-  'src/app/family-portfolio/alternatives/holdings/page.tsx',
-  'src/app/family-portfolio/alternatives/cash-flows/page.tsx',
+  'src/app/portfolio/weekly-changes/page.tsx',
+  'src/app/portfolio/alternatives/page.tsx',
+  'src/app/portfolio/alternatives/holdings/page.tsx',
+  'src/app/portfolio/alternatives/cash-flows/page.tsx',
 ] as const
 
 // Two shared components publish their own surface rather than delegating to a
@@ -195,7 +194,7 @@ const FP_FOOTER_COMPONENTS = [
   'src/components/familyPortfolio/PeriodValueChangeCard.tsx',
 ] as const
 
-const FP_DIRS = ['src/app/family-portfolio', 'src/components/familyPortfolio'] as const
+const FP_DIRS = ['src/app/portfolio', 'src/components/familyPortfolio'] as const
 
 function fpFiles(): string[] {
   const out: string[] = []
@@ -263,7 +262,7 @@ describe('R13.R5G — every Family Portfolio publication surface names its sourc
       const src = read(rel)
       // The one legitimate composition is the print sheet's string prop, which
       // is asserted below to be built from the same two dictionary keys.
-      if (rel.endsWith('family-portfolio/page.tsx')) continue
+      if (rel === 'src/app/portfolio/page.tsx') continue
       assert.ok(!/\{t\.common\.source\}:/.test(src), `${rel}: use TableSourceFooter, not a hand-written prefix`)
       assert.ok(!src.includes('SourceNote.tsx'), `${rel}: the removed page-level SourceNote must not return`)
     }
@@ -348,7 +347,7 @@ describe('R13.R5G — one as-of per surface, and it comes from the publication',
   })
 
   it('each footer as-of is the publication timestamp the rows came from', () => {
-    for (const rel of [...FP_TABLE_SURFACES, 'src/app/family-portfolio/page.tsx', 'src/app/family-portfolio/portfolio/page.tsx']) {
+    for (const rel of [...FP_TABLE_SURFACES, 'src/app/portfolio/page.tsx', 'src/app/portfolio/holdings/page.tsx']) {
       const src = read(rel)
       assert.match(
         src,
@@ -362,7 +361,7 @@ describe('R13.R5G — one as-of per surface, and it comes from the publication',
     // Paper has no hook context, so this one is a string prop — but it is built
     // from `common.source` + `fp.portfolio.source`, so the wording can never
     // drift from what the screen shows.
-    const src = read('src/app/family-portfolio/page.tsx')
+    const src = read('src/app/portfolio/page.tsx')
     assert.ok(src.includes('sourceLine={`${t.common.source}: ${t.fp.portfolio.source}`}'))
     assert.ok(read('src/components/familyPortfolio/SummaryPrintSheet.tsx').includes('{sourceLine}'))
   })

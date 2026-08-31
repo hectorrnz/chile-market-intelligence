@@ -57,12 +57,12 @@ const PRIVACY_VALUE = 'src/components/fable/PrivacyValue.tsx'
 
 /** The privacy-sensitive Portfolio surfaces, as enumerated by the owner. */
 const SURFACES = [
-  'src/app/family-portfolio/page.tsx',
-  'src/app/family-portfolio/portfolio/page.tsx',
-  'src/app/family-portfolio/weekly-changes/page.tsx',
-  'src/app/family-portfolio/alternatives/page.tsx',
-  'src/app/family-portfolio/alternatives/holdings/page.tsx',
-  'src/app/family-portfolio/alternatives/cash-flows/page.tsx',
+  'src/app/portfolio/page.tsx',
+  'src/app/portfolio/holdings/page.tsx',
+  'src/app/portfolio/weekly-changes/page.tsx',
+  'src/app/portfolio/alternatives/page.tsx',
+  'src/app/portfolio/alternatives/holdings/page.tsx',
+  'src/app/portfolio/alternatives/cash-flows/page.tsx',
   'src/components/familyPortfolio/AlternativesDrilldowns.tsx',
   'src/components/familyPortfolio/AlternativesCashFlowChart.tsx',
   'src/components/familyPortfolio/AllocationDonut.tsx',
@@ -215,7 +215,7 @@ describe('R13.R5C.3 § 1 — the privacy mask comes first', () => {
     const ALLOWED: Record<string, RegExp[]> = {
       // A benchmark's closing price and a public index level — market data
       // anyone can look up; masking hides the family's wealth, not the market.
-      'src/app/family-portfolio/page.tsx': [
+      'src/app/portfolio/page.tsx': [
         /m\.kind === 'price' \? formatUsd/,
         // The evolution chart's exact-value formatter. The chart is replaced
         // WHOLESALE while masked (its axis and crosshair carry raw amounts), so
@@ -224,7 +224,7 @@ describe('R13.R5C.3 § 1 — the privacy mask comes first', () => {
       ],
       'src/components/familyPortfolio/PerformanceMarketsStrip.tsx': [/formatUsd\(metric\.value!, 2\)/],
       // The hero's own formatter, rendered inside `KpiHero`'s `PrivacyValue`.
-      'src/app/family-portfolio/weekly-changes/page.tsx': [
+      'src/app/portfolio/weekly-changes/page.tsx': [
         /formatValue=\{\(v\) => \(v > 0 \? `\+\$\{formatUsd\(v\)\}` : formatUsd\(v\)\)\}/,
       ],
       // An SVG slice label, where `MaskedAmount` cannot render. It falls back to
@@ -244,10 +244,10 @@ describe('R13.R5C.3 § 1 — the privacy mask comes first', () => {
 
   test('12 · the two guarded chart callers still gate on the mask themselves', () => {
     // Belt and braces for the two exceptions above that depend on a caller.
-    const summary = read('src/app/family-portfolio/page.tsx')
+    const summary = read('src/app/portfolio/page.tsx')
     assert.match(summary, /\) : masked \? \(/, 'the evolution chart is replaced wholesale while masked')
     assert.match(summary, /<PrivacyValue masked className="block text-center text-lg">/)
-    const weekly = read('src/app/family-portfolio/weekly-changes/page.tsx')
+    const weekly = read('src/app/portfolio/weekly-changes/page.tsx')
     assert.match(weekly, /privacyMasked=\{masked\}/)
     assert.match(read('src/components/fable/KpiHero.tsx'), /<PrivacyValue masked=\{privacyMasked\}>/)
     const donut = read('src/components/familyPortfolio/AllocationDonut.tsx')
@@ -312,9 +312,9 @@ describe('R13.R5C.3 § 2 — a scale origin and a sentence are not displayed met
     // "0 events" is grammatical; "- events" is not. These read as words, not as
     // figures in a value position, so the mark would make them worse.
     const PROSE: Array<[string, RegExp]> = [
-      ['src/app/family-portfolio/alternatives/cash-flows/page.tsx', /\{visibleEvents\.length\} \{a\.eventsWord\}/],
-      ['src/app/family-portfolio/alternatives/holdings/page.tsx', /\{group\.holdings\.length\} \{t\.holdingsWord\}/],
-      ['src/app/family-portfolio/weekly-changes/page.tsx', /\{ranked\.cashRowCount\} \{w\.cashWithheldSuffix\}/],
+      ['src/app/portfolio/alternatives/cash-flows/page.tsx', /\{visibleEvents\.length\} \{a\.eventsWord\}/],
+      ['src/app/portfolio/alternatives/holdings/page.tsx', /\{group\.holdings\.length\} \{t\.holdingsWord\}/],
+      ['src/app/portfolio/weekly-changes/page.tsx', /\{ranked\.cashRowCount\} \{w\.cashWithheldSuffix\}/],
       ['src/components/familyPortfolio/AlternativesDrilldowns.tsx', /fill\(a\.breakdownCount, \{ n: breakdown\.events\.length \}\)/],
     ]
     for (const [p, re] of PROSE) assert.match(read(p), re, p)

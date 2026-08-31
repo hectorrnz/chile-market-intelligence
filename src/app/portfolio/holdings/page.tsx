@@ -1,6 +1,8 @@
 'use client'
 
-// R13.6 — `/family-portfolio/portfolio` (doc 08 Stage 6; doc 07 § 7.2).
+// R13.6 — `/portfolio/holdings` (doc 08 Stage 6; doc 07 § 7.2).
+// (Shipped as `/family-portfolio/portfolio`; moved to the canonical route in
+// POST-R13.5, which also dropped the doubled segment. The old URL redirects.)
 //
 // The detailed authorized portfolio: an entitled-scope selector, the
 // hierarchical four-dated-column table, and a historical week selector over

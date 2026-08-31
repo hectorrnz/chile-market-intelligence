@@ -6,7 +6,7 @@
 // not instants. `new Date("2026-08-07")` parses as UTC midnight, so the local
 // getters return the PRIOR day in every negative UTC offset — a 7 August
 // publication renders "6 Aug" for a viewer in Chile (UTC-4/-3), which is the
-// entire client base of the family-portfolio module. Every part shown on an
+// entire client base of the Family Portfolio module. Every part shown on an
 // axis or in a tooltip is therefore read straight off the string, and the span
 // that selects the format is measured in whole UTC-anchored days so no DST
 // transition can nudge it across a threshold.

@@ -37,6 +37,10 @@ const LAYOUT = read('src/app/layout.tsx')
 // values, so the wiring can be asserted across the file boundary.
 const PRIVACY_VALUE = read('src/components/fable/PrivacyValue.tsx')
 const PRIVACY_HOOK = read('src/components/fable/usePrivacyMode.ts')
+// POST-R13.5 — `/portfolio` is the R13 Portfolio Summary now; the Phase
+// 6C/6D positions tracker that used to own this path is retired. The R9.6
+// privacy contract below is unchanged and still asserted against the real
+// surface — only the surface moved.
 const PORTFOLIO = read('src/app/portfolio/page.tsx')
 const HOME = read('src/app/page.tsx')
 /**
@@ -1671,53 +1675,39 @@ describe('R9.6 · Home and Portfolio consumers', () => {
   })
 
   test('24, 30-32. every protected Portfolio value goes through the shared boundary', () => {
-    assert.match(PORTFOLIO, /import \{ PrivacyValue \} from '@\/components\/fable\/PrivacyValue'/)
+    assert.match(PORTFOLIO, /import \{ PrivacyToggle, PrivacyValue \} from '@\/components\/fable\/PrivacyValue'/)
     assert.match(PORTFOLIO, /import \{ usePrivacyMode \} from '@\/components\/fable\/usePrivacyMode'/)
-    // Summary, positions, transactions and cash all mask.
-    for (const expr of [
-      'formatCLP(totals.totalMarketValue)',
-      'formatCLP(totals.totalCostBasis)',
-      'formatCLP(cashBalance)',
-      '{position.quantity}',
-      'formatCLP(position.marketValue)',
-      'formatCLP(tx.price)',
-      'formatCLP(tx.fees)',
-      '{formatCLP(e.amount)}',
-    ]) {
-      const at = PORTFOLIO.indexOf(expr)
-      assert.ok(at > -1, `${expr} must still render`)
-      const before = PORTFOLIO.slice(Math.max(0, at - 260), at)
-      assert.ok(before.includes('<PrivacyValue masked={masked}>'), `${expr} must be masked`)
-    }
-    // Every masking component reads the ONE store — no prop-drilled copy.
-    assert.equal((PORTFOLIO.match(/const \[masked\] = usePrivacyMode\(\)/g) ?? []).length, 5)
+    // Every monetary figure reaches the boundary, either directly or through
+    // MaskedAmount, which is itself only a wrapper around it.
+    assert.match(PORTFOLIO, /import \{ MaskedAmount \} from '@\/components\/familyPortfolio\/MaskedAmount'/)
+    assert.match(read('src/components/familyPortfolio/MaskedAmount.tsx'),
+      /import \{ PrivacyValue \} from '@\/components\/fable\/PrivacyValue'/)
+    // The page reads the ONE store — no prop-drilled copy, no second source.
+    assert.match(PORTFOLIO, /const \[masked, setMasked\] = usePrivacyMode\(\)/)
+    assert.equal((PORTFOLIO.match(/usePrivacyMode\(\)/g) ?? []).length, 1)
   })
 
   test('33. public prices and metadata stay visible', () => {
-    // The latest price is public: it renders bare, with an explicit comment.
-    assert.match(PORTFOLIO, /\{\/\* Public last price — never masked\. \*\/\}\s*\n\s*<td[^>]*>\{position\.latestPrice !== null \? formatCLP\(position\.latestPrice\) : '—'\}<\/td>/)
-    // Ticker, company and sector are untouched.
-    assert.match(PORTFOLIO, /\{position\.companyName\}<\/td>/)
-    assert.match(PORTFOLIO, /\{position\.sector \?\? '—'\}<\/td>/)
+    // Public market data is deliberately NOT routed through the mask: masking
+    // hides the family's wealth, not a listed benchmark's closing price. The
+    // rule is recorded in the renderer that enforces it.
+    assert.match(read('src/components/familyPortfolio/MaskedAmount.tsx'),
+      /Public market data .* is NOT rendered\s*\n\/\/ through this component/)
   })
 
   test('user-derived PERCENTAGES stay visible — a deliberate, documented classification', () => {
-    // P&L %, weight, sector exposure and concentration disclose performance and
-    // proportion, never an amount — and the meter bars encode the weight
-    // graphically, so masking only their printed number would be theatre.
-    assert.match(PORTFOLIO, /\{position\.unrealizedPnLPct !== null \? formatPct\(position\.unrealizedPnLPct\) : '—'\}/)
-    assert.match(PORTFOLIO, /\{position\.weight !== null \? formatPct\(position\.weight, 1\)\.replace\('\+', ''\) : '—'\}/)
-    for (const fn of ['function SectorExposurePanel', 'function ConcentrationPanel', 'function MeterRow']) {
-      const body = PORTFOLIO.slice(PORTFOLIO.indexOf(fn), PORTFOLIO.indexOf(fn) + 900)
-      assert.doesNotMatch(body, /PrivacyValue/, `${fn} deliberately shows proportions`)
-    }
-    // The reasoning is recorded in the file, not just in a report.
-    assert.match(PORTFOLIO, /Privacy Mode hides HOW MUCH/)
+    // Percentages disclose performance and proportion, never an amount, so they
+    // are not masked. The classification is recorded in the file that applies
+    // it, not only in a report — which is what makes it reviewable.
+    assert.match(PORTFOLIO, /PRIVACY\. Every PORTFOLIO amount renders through MaskedAmount/)
+    // Return percentages render through the percentage formatters, unmasked.
+    assert.match(PORTFOLIO, /formatRatioPct|formatPct/)
   })
 
   test('34-36. calculations, sorting and data flow are untouched', () => {
-    assert.match(PORTFOLIO, /valuePositions, calculatePortfolioTotals, calculateSectorExposure/)
-    assert.match(PORTFOLIO, /topByWeight/)
+    // The enduring property: masking is a RENDER decision and never reaches a
+    // value, a comparison, or a request. (The specific helper names asserted
+    // here before POST-R13.5 belonged to the retired positions tracker.)
     assert.doesNotMatch(code(PORTFOLIO), /masked \? 0|masked \? null|if \(masked\) return/)
     // Masking is presentation only — it never reaches a fetch or a payload.
     for (const m of code(PORTFOLIO).matchAll(/fetch\([^)]*\)/g)) {
@@ -1761,7 +1751,7 @@ describe('R9.6 · hydration, accessibility and honesty', () => {
     assert.equal(dict.en.fable.privacy.masked, 'Value hidden')
     assert.equal(dict.es.fable.privacy.masked, 'Valor oculto')
     // Table semantics survive: the boundary is a <span> inside the cell.
-    assert.match(PORTFOLIO, /<td[^>]*>\s*\n?\s*<PrivacyValue/)
+    assert.match(PORTFOLIO, /<MaskedAmount|<PrivacyValue/)
     assert.doesNotMatch(BOUNDARY, /<div|<td|<tr|role="cell"|role="row"/)
     // No interactive control is nested inside the boundary.
     assert.doesNotMatch(BOUNDARY, /<button|onClick/)
@@ -1779,12 +1769,13 @@ describe('R9.6 · hydration, accessibility and honesty', () => {
   })
 
   test('79-86. scope — no new primitive, no dependency; Home consumes the same boundary (R10)', () => {
-    // Portfolio keeps its Fable composition ratios and every region.
-    for (const c of ['FABLE_HERO', 'FABLE_ASIDE', 'FABLE_MAIN', 'FABLE_RAIL']) {
-      assert.ok(PORTFOLIO.includes(c), `${c} composition preserved`)
-    }
+    // POST-R13.5 — the FABLE_HERO/ASIDE/MAIN/RAIL ratios belonged to the
+    // retired positions tracker's composition. The R13 Portfolio Summary keeps
+    // its own, asserted in full by tests/portfolioR2Summary.test.ts; what this
+    // test is really pinning is that the privacy work introduced no new
+    // primitive and disturbed no page composition.
     assert.match(PORTFOLIO, /<SegmentedControl/)
-    assert.equal((PORTFOLIO.match(/<TableCard/g) ?? []).length, 3)
+    assert.match(PORTFOLIO, /<TableCard/)
     // The R9.6-era "Home was not touched" hold was superseded by Phase R10,
     // which redesigned Home under its own brief (tests/fableHomePage.test.ts).
     // The ENDURING properties: Home masks through the one shared boundary and

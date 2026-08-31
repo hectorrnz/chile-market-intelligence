@@ -42,10 +42,10 @@ import {
 const ROOT = join(import.meta.dirname, '..')
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
 
-const LAYOUT = 'src/app/family-portfolio/alternatives/layout.tsx'
-const DASHBOARD = 'src/app/family-portfolio/alternatives/page.tsx'
-const HOLDINGS = 'src/app/family-portfolio/alternatives/holdings/page.tsx'
-const CASHFLOWS = 'src/app/family-portfolio/alternatives/cash-flows/page.tsx'
+const LAYOUT = 'src/app/portfolio/alternatives/layout.tsx'
+const DASHBOARD = 'src/app/portfolio/alternatives/page.tsx'
+const HOLDINGS = 'src/app/portfolio/alternatives/holdings/page.tsx'
+const CASHFLOWS = 'src/app/portfolio/alternatives/cash-flows/page.tsx'
 const FILTERS = 'src/components/familyPortfolio/AlternativesFilters.tsx'
 const CHART = 'src/components/familyPortfolio/AlternativesCashFlowChart.tsx'
 const DRILLDOWNS = 'src/components/familyPortfolio/AlternativesDrilldowns.tsx'
@@ -946,9 +946,9 @@ describe('R13.R4A.1 · boundaries', () => {
   test('every view is protected by the default-deny allowlist', async () => {
     const { requiresApprovedSession, classifyPath } = await import('../src/lib/auth/accessPolicy.ts')
     for (const path of [
-      '/family-portfolio/alternatives',
-      '/family-portfolio/alternatives/holdings',
-      '/family-portfolio/alternatives/cash-flows',
+      '/portfolio/alternatives',
+      '/portfolio/alternatives/holdings',
+      '/portfolio/alternatives/cash-flows',
     ]) {
       assert.equal(requiresApprovedSession(path), true, `${path} is not gated`)
       assert.equal(classifyPath(path), 'private_page', `${path} is not a private page`)

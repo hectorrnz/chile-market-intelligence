@@ -353,6 +353,10 @@ unavailable data · and free of fabricated insights.
 
 ## 7. Information architecture — BINDING
 
+> **POST-R13.5 — the routes in the table below were superseded on 2026-08-31** (`/family-portfolio`
+> -> `/portfolio`, `Portfolio` -> `/portfolio/holdings`). The navigation, labels, renders and
+> administrator gate are unchanged. See doc 05 § 7 for the full mapping and the reason.
+
 **Client-facing module label: `Family Portfolio`.** Full route contract in doc 05 § 7.
 
 | Navigation | Route | Renders |

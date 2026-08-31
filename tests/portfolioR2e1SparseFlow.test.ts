@@ -55,7 +55,7 @@ const ROOT = join(HERE, '..')
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
 const codeOf = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
 
-const PAGE = read('src/app/family-portfolio/page.tsx')
+const PAGE = read('src/app/portfolio/page.tsx')
 const ROUTE = read('src/app/api/family-portfolio/overview/[scope]/route.ts')
 const PURE = read('src/lib/familyPortfolio/flowAdjustedEvolution.ts')
 const READ_REPO = read('src/lib/db/repositories/familyPortfolioReadRepository.ts')

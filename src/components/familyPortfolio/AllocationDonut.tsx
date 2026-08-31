@@ -81,7 +81,7 @@ export interface AllocationDonutProps {
    * ROW'S LAST column, with nothing after it, so a centred pair there reads
    * as dead space rather than sitting beside Main's Notes ledger the way
    * Main's centred pair does. 'wide' is back in use
-   * (`family-portfolio/page.tsx`, gated on the same `showNotes` flag that
+   * (`app/portfolio/page.tsx`, gated on the same `showNotes` flag that
    * already splits the two rows) — now WITHOUT the leader: the legend is a
    * plain name-left/weight-right ledger row, the same convention the rest of
    * NMI uses, simply released to the column's own right edge instead of a

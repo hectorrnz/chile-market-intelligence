@@ -587,7 +587,63 @@ docs/                 — Project documentation
 
 ## Current Phase
 
-**Most recent work (2026-07-21, tenth pass) — full production audit: source integrity + responsive
+**Most recent work (2026-08-31) — POST-R13.5: the R13 Family Portfolio becomes the canonical
+`/portfolio`, and the Phase 6C/6D positions tracker is retired.** Suite 6225 → **6027** (accounted
+below) · lint 0 · build 0 errors · `tsc` 0 diagnostics in `src`.
+
+R13 shipped on `/family-portfolio/*` only because `/portfolio` was still occupied by the Phase 6C/6D
+hand-entered Chilean-equities positions tracker (see the Phase 6C/6D entries far below, kept as
+history). With R13 released, the owner authorized taking the canonical route.
+
+1. **Routes moved, not rewritten.** `src/app/family-portfolio/**` → `src/app/portfolio/**` via
+   `git mv`, with the one renamed segment `portfolio/` → `holdings/` (the doubled
+   `/portfolio/portfolio` was never preserved — nothing depended on it). Canonical map:
+   `/portfolio` · `/portfolio/holdings` · `/portfolio/weekly-changes` ·
+   `/portfolio/alternatives[/holdings|/cash-flows]` · `/portfolio/admin`. The eight moved page
+   files are byte-identical apart from header comments.
+2. **Old URLs are permanent redirects, and the query rides along.** The table lives in
+   `src/lib/routes/portfolioLegacyRedirects.ts`, spread into `next.config.ts`'s `redirects()`. It is
+   a module rather than a literal because the one mistake that matters — the Holdings rule sitting
+   below the `:path*` catch-all — is invisible to a source scan and 404s instead of erroring, so
+   the test suite resolves real paths through the actual table. **Never reorder those rules.**
+   `?scope=` IS the scope mechanism, so no destination may declare a query — Next.js forwards the
+   incoming one only when the destination has none.
+3. **The legacy tracker is deleted: page, all 7 `/api/portfolios` endpoints, 2 repositories,
+   `src/lib/portfolio/valuation.ts` + `transactions.ts`, and 3 dedicated test files.** A dependency
+   audit found no inbound link — R13.R5B had already moved Home's Overview card onto
+   `/api/family-portfolio/overview/[scope]` — so every endpoint classified as unused-legacy.
+   **Its DATA is untouched:** the `portfolios` / `portfolio_positions` / `portfolio_transactions` /
+   `portfolio_cash_ledger` tables and their migrations all remain, so the retirement is reversible.
+   This stage removed code, not records. Do not drop those tables believing the cleanup was already
+   done — a test asserts the migrations still exist.
+4. **The `/api/family-portfolio` namespace was deliberately NOT renamed.** Nobody bookmarks an API
+   path; a second migration would carry risk for no user-visible benefit. A test rejects any
+   parallel `/api/portfolio(s)` namespace reappearing.
+5. **Entitlements are byte-unchanged** — `entitlements.ts`, `getEntitlement.ts`, the SQL parity
+   function and every route guard. Authorization never depended on the path: `accessPolicy.ts` is
+   default-deny, so both the old and the new paths are `private_page` independently of the redirect.
+   `tests/portfolioCanonicalRoute.test.ts` (35 tests) re-asserts the full isolation matrix, proves a
+   forged `?scope=` cannot broaden entitlement, that a redirect cannot bypass one, and that `next=`
+   cannot manufacture one. Non-vacuity was demonstrated: reordering the redirect rules fails exactly
+   3 tests; pointing nav back at `/family-portfolio` fails exactly 2.
+6. **Test-count delta accounted:** —221 (the three tracker-only files) +35 (new suite) —12
+   (assertions folded into single retirement checks and parameterised page lists). Retired
+   assertions were **inverted, not deleted** — "the legacy module is untouched" became "it is
+   genuinely gone", which guards the same boundary from the other side.
+
+**NEXT REQUIRED STAGE: user provisioning + granular access management** (recorded as
+`docs/portfolio-r13/09-open-decisions.md` **D0**). Non-negotiable and unchanged: Jaime cannot see
+Andrés's or Pablo's personal portfolio, Andrés cannot see Jaime's or Pablo's, Pablo cannot see
+Jaime's or Andrés's, no `portfolio_principal` means no personal scope, administrators retain full
+family access, and backend authorization stays authoritative — a permission UI is a fourth layer
+above the three server-side enforcement points, never a replacement for any of them.
+
+POST-R13.4 automatic natural-refresh pipeline validation remains **deferred / observational** and did
+not block this release.
+
+---
+
+**Previous work (2026-07-21, tenth pass) — full production audit: source integrity + responsive
 layout.** Suite 1702 → **1739** · lint 0 · build 0 errors. Findings list produced first, then only
 high-confidence fixes applied; everything below verified in the browser and/or against the live DB.
 

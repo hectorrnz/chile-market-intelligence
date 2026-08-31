@@ -33,7 +33,7 @@ const codeOf = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/
 const DONUT = read('src/components/familyPortfolio/AllocationDonut.tsx')
 const DONUT_CODE = codeOf(DONUT)
 const PANEL_CODE = codeOf(read('src/components/familyPortfolio/AllocationPanel.tsx'))
-const PAGE_CODE = codeOf(read('src/app/family-portfolio/page.tsx'))
+const PAGE_CODE = codeOf(read('src/app/portfolio/page.tsx'))
 
 // ═══════════════════════════════════════════════════════════════════════════
 // § 1 · THE NON-WRAP GUARANTEE

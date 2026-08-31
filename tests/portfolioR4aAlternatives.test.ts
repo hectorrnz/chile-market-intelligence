@@ -29,10 +29,10 @@ import {
 const ROOT = join(import.meta.dirname, '..')
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
 
-const LAYOUT = 'src/app/family-portfolio/alternatives/layout.tsx'
-const DASHBOARD = 'src/app/family-portfolio/alternatives/page.tsx'
-const HOLDINGS = 'src/app/family-portfolio/alternatives/holdings/page.tsx'
-const CASHFLOWS = 'src/app/family-portfolio/alternatives/cash-flows/page.tsx'
+const LAYOUT = 'src/app/portfolio/alternatives/layout.tsx'
+const DASHBOARD = 'src/app/portfolio/alternatives/page.tsx'
+const HOLDINGS = 'src/app/portfolio/alternatives/holdings/page.tsx'
+const CASHFLOWS = 'src/app/portfolio/alternatives/cash-flows/page.tsx'
 const SUBNAV = 'src/components/familyPortfolio/AlternativesSubnav.tsx'
 const PROVIDER = 'src/components/familyPortfolio/AlternativesProvider.tsx'
 const FILTERS = 'src/components/familyPortfolio/AlternativesFilters.tsx'
@@ -134,7 +134,7 @@ describe('R13.R4A · Dashboard / Holdings / Cash Flows navigation', () => {
     assert.match(nav, /ALTERNATIVES_HOLDINGS/)
     assert.match(nav, /ALTERNATIVES_CASH_FLOWS/)
     const routes = read(ROUTES)
-    assert.match(routes, /ALTERNATIVES_ROOT = '\/family-portfolio\/alternatives'/)
+    assert.match(routes, /ALTERNATIVES_ROOT = '\/portfolio\/alternatives'/)
     assert.ok(routes.includes("ALTERNATIVES_HOLDINGS = `${ALTERNATIVES_ROOT}/holdings`"), 'holdings URL')
     assert.ok(routes.includes("ALTERNATIVES_CASH_FLOWS = `${ALTERNATIVES_ROOT}/cash-flows`"), 'cash-flows URL')
     // Real links, so each view is addressable and back-button reachable —

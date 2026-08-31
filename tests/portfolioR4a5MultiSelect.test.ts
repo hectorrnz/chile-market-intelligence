@@ -59,9 +59,9 @@ import {
 const ROOT = join(import.meta.dirname, '..')
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
 
-const DASHBOARD = 'src/app/family-portfolio/alternatives/page.tsx'
-const HOLDINGS_PAGE = 'src/app/family-portfolio/alternatives/holdings/page.tsx'
-const CASHFLOWS = 'src/app/family-portfolio/alternatives/cash-flows/page.tsx'
+const DASHBOARD = 'src/app/portfolio/alternatives/page.tsx'
+const HOLDINGS_PAGE = 'src/app/portfolio/alternatives/holdings/page.tsx'
+const CASHFLOWS = 'src/app/portfolio/alternatives/cash-flows/page.tsx'
 const FILTERS = 'src/components/familyPortfolio/AlternativesFilters.tsx'
 const VIEW = 'src/lib/familyPortfolio/alternativesView.ts'
 

@@ -11,8 +11,10 @@
 // and rebuilt the Watchlist, Chilean rates, sector heat map and Markets
 // modules in the Fable idiom (News keeps its NH terminal anatomy by product
 // rule). R10 ADDS the modules the platform already had real data for but Home
-// never surfaced: a portfolio snapshot (existing /api/portfolios + the same
-// valuation helpers /portfolio uses), a Structured Notes book snapshot
+// never surfaced: a portfolio snapshot (then the Phase 6C/6D positions
+// tracker; rebound to the canonical Family Portfolio publication in R13.R5B
+// and the tracker retired in POST-R13.5 — see the card below), a
+// Structured Notes book snapshot
 // (existing /api/structured-notes dashboard payload), a merged upcoming-events
 // timeline (CMF dates + scheduled high-importance US releases + note
 // observation dates — sorted purely by date, never by a fabricated score),
@@ -79,7 +81,7 @@ import { fetchStockSnapshots, fetchSectorPerformance, fetchIndexPerformance } fr
 import type { StockSnapshot, SectorSnapshot, IndexSnapshot } from '@/lib/providers/market/types'
 import { UpdateDataButton } from '@/components/ui/UpdateDataButton'
 import { formatCLP, formatPct, formatRatioPct, formatMacroValue, formatMacroChange, changeColor, formatNewsTimestamp } from '@/lib/formatters'
-import { activeScope } from '@/lib/familyPortfolio/portfolioScopeRoutes'
+import { activeScope, PORTFOLIO_SUMMARY } from '@/lib/familyPortfolio/portfolioScopeRoutes'
 // R13.R5B § 3 — the Overview's portfolio card reads THE canonical Main
 // Portfolio read model, the same one the Summary hero reads. See the card.
 import { MaskedAmount } from '@/components/familyPortfolio/MaskedAmount'
@@ -426,9 +428,10 @@ export default function HomePage() {
   // source cannot be read the card says so — there is no fallback to the
   // tracker, and no invented value.
   //
-  // The legacy module itself is untouched: `/portfolio`, `/api/portfolios` and
-  // the valuation helpers all still exist and still work. Retiring them is
-  // legacy cleanup, which this pass is explicitly not doing.
+  // POST-R13.5 completed that cleanup: the tracker page, its `/api/portfolios`
+  // endpoints and its valuation helpers are gone, and `/portfolio` now IS this
+  // publication. Nothing here changed — the card already read the canonical
+  // endpoint — but the "legacy module still exists" note above no longer does.
   const [fpScope, setFpScope] = useState<string | null>(null)
   const [fpData, setFpData] = useState<FamilyPortfolioOverviewResponse | null>(null)
   const [fpState, setFpState] = useState<FpCardState>('loading')
@@ -833,7 +836,7 @@ export default function HomePage() {
           <GlassSurface variant="card" as="section" className="p-5 flex flex-col gap-2" style={FABLE_HERO}>
             <div className="flex items-center justify-between gap-2">
               <h2 className="ui-label text-muted-fg">{t.fp.tag}</h2>
-              <Link href="/family-portfolio" className="text-xs text-primary hover:underline whitespace-nowrap">{t.nav.portfolio} →</Link>
+              <Link href={PORTFOLIO_SUMMARY} className="text-xs text-primary hover:underline whitespace-nowrap">{t.nav.portfolio} →</Link>
             </div>
             {fpState === 'loading' && <AsyncState kind="loading" message={t.common.loading} />}
             {fpState === 'error' && <AsyncState kind="error" message={t.fp.accessError} />}

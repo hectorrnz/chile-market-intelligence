@@ -41,10 +41,10 @@ const code = (src: string) =>
   src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 
 const NAV = 'src/components/familyPortfolio/FamilyPortfolioNav.tsx'
-const LAYOUT = 'src/app/family-portfolio/layout.tsx'
-const SUMMARY = 'src/app/family-portfolio/page.tsx'
-const HOLDINGS = 'src/app/family-portfolio/portfolio/page.tsx'
-const WEEKLY = 'src/app/family-portfolio/weekly-changes/page.tsx'
+const LAYOUT = 'src/app/portfolio/layout.tsx'
+const SUMMARY = 'src/app/portfolio/page.tsx'
+const HOLDINGS = 'src/app/portfolio/holdings/page.tsx'
+const WEEKLY = 'src/app/portfolio/weekly-changes/page.tsx'
 const SCOPE_PAGES = [SUMMARY, HOLDINGS, WEEKLY]
 
 /** A caller entitled to everything — the shape `/api/family-portfolio/scopes` returns. */
@@ -113,19 +113,19 @@ describe('R13.R5C.4 § 2 — the selected portfolio survives a sub-tab change', 
       { go: PORTFOLIO_WEEKLY_CHANGES },
     ])
     assert.deepEqual(seen, ['main', 'andres', 'andres'])
-    assert.equal(url, '/family-portfolio/weekly-changes?scope=andres')
+    assert.equal(url, '/portfolio/weekly-changes?scope=andres')
   })
 
   test('3 · Andrés Weekly Changes → Summary stays Andrés', () => {
-    const { url, seen } = journey('/family-portfolio/weekly-changes?scope=andres', [
+    const { url, seen } = journey('/portfolio/weekly-changes?scope=andres', [
       { go: PORTFOLIO_SUMMARY },
     ])
     assert.deepEqual(seen, ['andres', 'andres'])
-    assert.equal(url, '/family-portfolio?scope=andres')
+    assert.equal(url, '/portfolio?scope=andres')
   })
 
   test('4 · Andrés Weekly Changes → Holdings stays Andrés', () => {
-    const { seen } = journey('/family-portfolio/weekly-changes?scope=andres', [
+    const { seen } = journey('/portfolio/weekly-changes?scope=andres', [
       { go: PORTFOLIO_HOLDINGS },
     ])
     assert.deepEqual(seen, ['andres', 'andres'])
@@ -138,16 +138,16 @@ describe('R13.R5C.4 § 2 — the selected portfolio survives a sub-tab change', 
       { go: PORTFOLIO_WEEKLY_CHANGES },
     ])
     assert.deepEqual(seen, ['main', 'pablo', 'pablo', 'pablo'])
-    assert.equal(url, '/family-portfolio/weekly-changes?scope=pablo')
+    assert.equal(url, '/portfolio/weekly-changes?scope=pablo')
   })
 
   test('6 · Pablo Holdings → Summary stays Pablo', () => {
-    const { seen } = journey('/family-portfolio/portfolio?scope=pablo', [{ go: PORTFOLIO_SUMMARY }])
+    const { seen } = journey('/portfolio/holdings?scope=pablo', [{ go: PORTFOLIO_SUMMARY }])
     assert.deepEqual(seen, ['pablo', 'pablo'])
   })
 
   test('7 · Jaime Weekly Changes → Holdings stays Jaime', () => {
-    const { seen } = journey('/family-portfolio/weekly-changes?scope=jaime', [
+    const { seen } = journey('/portfolio/weekly-changes?scope=jaime', [
       { go: PORTFOLIO_HOLDINGS },
     ])
     assert.deepEqual(seen, ['jaime', 'jaime'])
@@ -161,7 +161,7 @@ describe('R13.R5C.4 § 2 — the selected portfolio survives a sub-tab change', 
       { go: PORTFOLIO_SUMMARY },
     ])
     assert.deepEqual(seen, ['main', 'jaime', 'jaime', 'jaime', 'jaime'])
-    assert.equal(url, '/family-portfolio?scope=jaime')
+    assert.equal(url, '/portfolio?scope=jaime')
   })
 
   test('9 · every ordered pair of the three views preserves every scope', () => {
@@ -183,15 +183,15 @@ describe('R13.R5C.4 § 2 — the selected portfolio survives a sub-tab change', 
 
 describe('R13.R5C.4 § 3 — the scope lives in the URL, so the browser handles it', () => {
   test('10 · a direct link opens the portfolio it names', () => {
-    assert.equal(pageScope('/family-portfolio?scope=pablo'), 'pablo')
-    assert.equal(pageScope('/family-portfolio/portfolio?scope=jaime'), 'jaime')
-    assert.equal(pageScope('/family-portfolio/weekly-changes?scope=andres'), 'andres')
+    assert.equal(pageScope('/portfolio?scope=pablo'), 'pablo')
+    assert.equal(pageScope('/portfolio/holdings?scope=jaime'), 'jaime')
+    assert.equal(pageScope('/portfolio/weekly-changes?scope=andres'), 'andres')
   })
 
   test('11 · reload and a new tab resolve identically — the state is the URL', () => {
     // Nothing is read from memory, so the same string always yields the same
     // scope: a reload, a duplicated tab and a pasted link cannot disagree.
-    const url = '/family-portfolio/weekly-changes?scope=andres'
+    const url = '/portfolio/weekly-changes?scope=andres'
     assert.equal(pageScope(url), pageScope(url))
     assert.equal(pageScope(url), 'andres')
   })
@@ -247,8 +247,8 @@ describe('R13.R5C.4 § 4 — scope boundaries', () => {
   test('15 · Alternatives and Admin never receive a personal scope', () => {
     // Alternatives is a SHARED publication and Admin is a console; forcing a
     // principal onto either would claim a filter neither has.
-    for (const target of ['/family-portfolio/alternatives', '/family-portfolio/admin']) {
-      assert.equal(railHref('/family-portfolio?scope=pablo', target), target)
+    for (const target of ['/portfolio/alternatives', '/portfolio/admin']) {
+      assert.equal(railHref('/portfolio?scope=pablo', target), target)
       assert.ok(!(SCOPE_AWARE_ROUTES as readonly string[]).includes(target))
     }
   })
@@ -256,11 +256,11 @@ describe('R13.R5C.4 § 4 — scope boundaries', () => {
   test('16 · Alternatives and Admin semantics are untouched by this pass', () => {
     // Neither reads the parameter, and neither was given a scope selector.
     for (const p of [
-      'src/app/family-portfolio/alternatives/page.tsx',
-      'src/app/family-portfolio/alternatives/holdings/page.tsx',
-      'src/app/family-portfolio/alternatives/cash-flows/page.tsx',
-      'src/app/family-portfolio/alternatives/layout.tsx',
-      'src/app/family-portfolio/admin/page.tsx',
+      'src/app/portfolio/alternatives/page.tsx',
+      'src/app/portfolio/alternatives/holdings/page.tsx',
+      'src/app/portfolio/alternatives/cash-flows/page.tsx',
+      'src/app/portfolio/alternatives/layout.tsx',
+      'src/app/portfolio/admin/page.tsx',
     ]) {
       assert.doesNotMatch(code(read(p)), /portfolioScopeRoutes/, p)
       assert.doesNotMatch(code(read(p)), /searchParams\.get\('scope'\)/, p)
@@ -271,12 +271,12 @@ describe('R13.R5C.4 § 4 — scope boundaries', () => {
     // Leaving for Alternatives leaves the parameter behind, so coming back
     // lands on the default. Remembering it would be the invented persistence
     // § 4 rules out, and would fight the URL on Back.
-    const away = railHref('/family-portfolio?scope=pablo', '/family-portfolio/alternatives')
-    assert.equal(away, '/family-portfolio/alternatives')
+    const away = railHref('/portfolio?scope=pablo', '/portfolio/alternatives')
+    assert.equal(away, '/portfolio/alternatives')
     assert.equal(pageScope(railHref(away, PORTFOLIO_SUMMARY)), 'main')
     // The reader's own Back button still restores it, because the scoped URL is
     // a real history entry.
-    assert.equal(pageScope('/family-portfolio?scope=pablo'), 'pablo')
+    assert.equal(pageScope('/portfolio?scope=pablo'), 'pablo')
   })
 })
 
@@ -289,7 +289,7 @@ describe('R13.R5C.4 § 5 — a URL cannot grant a scope', () => {
     const jaimeOnly = [{ id: 'jaime' }]
     assert.equal(selectedScope('pablo', jaimeOnly), null, 'not an explicit selection')
     assert.equal(activeScope('pablo', jaimeOnly), 'jaime', 'falls back to the caller’s own scope')
-    assert.equal(pageScope('/family-portfolio?scope=pablo', jaimeOnly), 'jaime')
+    assert.equal(pageScope('/portfolio?scope=pablo', jaimeOnly), 'jaime')
   })
 
   test('19 · …and is never carried onward by the rail', () => {
@@ -297,7 +297,7 @@ describe('R13.R5C.4 § 5 — a URL cannot grant a scope', () => {
     // the tampered value does not spread across the module.
     const jaimeOnly = [{ id: 'jaime' }]
     assert.equal(
-      railHref('/family-portfolio?scope=pablo', PORTFOLIO_WEEKLY_CHANGES, jaimeOnly),
+      railHref('/portfolio?scope=pablo', PORTFOLIO_WEEKLY_CHANGES, jaimeOnly),
       PORTFOLIO_WEEKLY_CHANGES,
     )
   })
@@ -317,7 +317,7 @@ describe('R13.R5C.4 § 5 — a URL cannot grant a scope', () => {
   })
 
   test('22 · a scope value is encoded, never interpolated raw', () => {
-    assert.equal(scopeHref(PORTFOLIO_SUMMARY, 'a b&c=d'), '/family-portfolio?scope=a%20b%26c%3Dd')
+    assert.equal(scopeHref(PORTFOLIO_SUMMARY, 'a b&c=d'), '/portfolio?scope=a%20b%26c%3Dd')
     assert.equal(scopeHref(PORTFOLIO_SUMMARY, null), PORTFOLIO_SUMMARY)
   })
 
@@ -381,12 +381,12 @@ describe('R13.R5C.4 § 6 — the rail carries the scope and still highlights cor
 
   test('28 · the route constants are spelled once', () => {
     // A path written in two files is how a link and its target drift apart.
-    assert.equal(PORTFOLIO_SUMMARY, '/family-portfolio')
-    assert.equal(PORTFOLIO_HOLDINGS, '/family-portfolio/portfolio')
-    assert.equal(PORTFOLIO_WEEKLY_CHANGES, '/family-portfolio/weekly-changes')
-    // R13.R5C.1's route decision is unchanged: /family-portfolio stays
+    assert.equal(PORTFOLIO_SUMMARY, '/portfolio')
+    assert.equal(PORTFOLIO_HOLDINGS, '/portfolio/holdings')
+    assert.equal(PORTFOLIO_WEEKLY_CHANGES, '/portfolio/weekly-changes')
+    // R13.R5C.1's route decision is unchanged: /portfolio stays
     // canonical and the legacy /portfolio collision is not reopened.
-    for (const r of SCOPE_AWARE_ROUTES) assert.match(r, /^\/family-portfolio/)
+    for (const r of SCOPE_AWARE_ROUTES) assert.match(r, /^\/portfolio/)
     for (const p of [NAV, ...SCOPE_PAGES]) {
       assert.doesNotMatch(code(read(p)), /href="\/portfolio"/, p)
     }

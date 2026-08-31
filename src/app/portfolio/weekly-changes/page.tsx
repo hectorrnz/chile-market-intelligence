@@ -1,6 +1,6 @@
 'use client'
 
-// R13.8 — `/family-portfolio/weekly-changes` (doc 08 Stage 8; doc 07 Parts
+// R13.8 — `/portfolio/weekly-changes` (doc 08 Stage 8; doc 07 Parts
 // A2/A3, page order § 6h).
 //
 // SECTION ORDER IS THE CONTRACT'S (§ 6h), verbatim:

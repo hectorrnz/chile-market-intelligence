@@ -406,10 +406,31 @@ Earnings' own CMF FECU references and the Document Viewer (now earnings-only) ar
 
 ## Portfolio (`/portfolio`, auth required)
 
-| Module | Current source | Status | UI label (after 8A) | Accuracy | API route | Priority |
+**POST-R13.5 (2026-08-31) — this route changed hands.** `/portfolio` is now the **R13 Family
+Portfolio** module (Summary · Holdings · Weekly Changes · Alternatives · Admin), served from the
+immutable weekly publication through `/api/family-portfolio/**`. The previous `/family-portfolio/*`
+URLs answer with permanent redirects that carry `?scope=` through
+(`src/lib/routes/portfolioLegacyRedirects.ts`).
+
+| Module | Current source | Status | UI label | Accuracy | API route | Priority |
 |---|---|---|---|---|---|---|
-| Positions, transactions, cash ledger | Supabase (`portfolios`, `portfolio_positions`, `portfolio_transactions`, `portfolio_cash_ledger`), user-scoped, RLS-protected | `persisted` | "Personal portfolio · Supabase · Pricing: latest Supabase market snapshot" | ✅ Already accurate (built correctly in Phase 6C/6D) — no change needed | `/api/portfolios/*` | Done — no action needed |
-| Current price used for valuation | `getLatestStockSnapshots()` (Supabase) | `persisted` | Covered by the same footer | ✅ Accurate | — | Done |
+| Summary / Holdings / Weekly Changes | Supabase publication spine + snapshot rows, entitlement-filtered per scope and re-checked by RLS | `persisted` | `TableSourceFooter` naming the publication and its own as-of | ✅ Accurate — unchanged by the route move | `/api/family-portfolio/[scope]/*`, `/overview/[scope]`, `/weekly-changes/[scope]` | Done |
+| Alternatives (Dashboard / Holdings / Cash Flows) | Same publication model, shared `alternatives` scope | `persisted` | Own as-of stamp in the sub-module layout | ✅ Accurate | `/api/family-portfolio/alternatives` | Done |
+| Admin publication console | Supabase, administrator-only | `persisted` | — | ✅ Accurate | `/api/family-portfolio/admin/*` | Done |
+
+### Retired: the Phase 6C/6D Chilean-equities positions tracker
+
+The hand-entered positions / transactions / cash-ledger module that used to own `/portfolio` was
+**retired in POST-R13.5**, at the owner's instruction, once the R13 product was ready to take the
+route. Its page, its seven `/api/portfolios/**` endpoints, its two repositories and its two pure
+modules are deleted; nothing in the application referenced them (R13.R5B had already moved the Home
+Overview card onto the canonical Family Portfolio read model).
+
+**Its DATA is untouched.** The `portfolios`, `portfolio_positions`, `portfolio_transactions` and
+`portfolio_cash_ledger` tables and their migrations all remain: this stage removed code, not
+records, so the decision is reversible. Nothing reads those tables today — that is a deliberate,
+recorded state rather than an oversight, and it is the one place in this matrix where persisted data
+has no surface. Re-exposing it would be new product work, not a repair.
 
 ---
 

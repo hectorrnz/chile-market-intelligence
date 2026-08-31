@@ -856,32 +856,39 @@ describe('existing behaviour is unchanged', () => {
     assert.equal(classifyPath('/api/auth/login'), 'public_api')
   })
 
-  test('future family-portfolio routes are private by default with no allowlist entry', () => {
+  test('every Portfolio route is private by default with no allowlist entry', () => {
     for (const p of [
-      '/family-portfolio',
-      '/family-portfolio/portfolio',
-      '/family-portfolio/weekly-changes',
-      '/family-portfolio/alternatives',
-      '/family-portfolio/admin',
+      '/portfolio',
+      '/portfolio/holdings',
+      '/portfolio/weekly-changes',
+      '/portfolio/alternatives',
+      '/portfolio/admin',
     ]) {
       assert.equal(classifyPath(p), 'private_page', `${p} must be private`)
     }
     assert.equal(classifyPath('/api/family-portfolio/scopes'), 'private_api')
+    // Default-deny is what protects these paths, so the policy must not name
+    // them AT ALL — an allowlist entry is the only way one could leak, and
+    // POST-R13.5 moving the module onto `/portfolio` must not have added one.
     const POLICY = read('src/lib/auth/accessPolicy.ts')
-    assert.doesNotMatch(POLICY, /family-portfolio/, 'family-portfolio must never appear on an allowlist')
+    assert.doesNotMatch(POLICY, /portfolio/i, 'no Portfolio route may appear on an allowlist')
   })
 
-  test('the existing Chilean-equities /portfolio module was not modified by R13.1', () => {
+  test('the Chilean-equities module is retired, and took none of R13.1 with it', () => {
+    // R13.1 asserted the legacy tracker was left alone. POST-R13.5 retired it
+    // outright so the released product could own `/portfolio`, so the guard
+    // becomes: every one of its files is gone, and the entitlement model —
+    // which never depended on it — is entirely intact.
     for (const f of [
-      'src/app/portfolio/page.tsx',
       'src/lib/portfolio/valuation.ts',
       'src/lib/portfolio/transactions.ts',
       'src/lib/db/repositories/portfolioRepository.ts',
+      'src/lib/db/repositories/portfolioTransactionRepository.ts',
+      'src/app/api/portfolios',
     ]) {
-      assert.ok(existsSync(join(ROOT, f)), `${f} must still exist`)
-      assert.doesNotMatch(read(f), /portfolioAccess|portfolio_principal|nmi_portfolio_scopes/,
-        `${f} must not depend on R13.1 entitlements`)
+      assert.ok(!existsSync(join(ROOT, f)), `${f} was retired`)
     }
+    assert.ok(existsSync(join(ROOT, 'src/lib/portfolioAccess/entitlements.ts')))
   })
 
   test('the Family Portfolio surface is exactly the R13.6 set — nothing from a later stage', () => {
@@ -901,7 +908,7 @@ describe('existing behaviour is unchanged', () => {
     //       administrator routes, plus Stage 7's `/overview/[scope]` and
     //       Stage 8's `/weekly-changes/[scope]`. The Stage-9 client
     //       `/alternatives` read route stays forbidden until its stage.
-    const pageRoot = join(ROOT, 'src/app/family-portfolio')
+    const pageRoot = join(ROOT, 'src/app/portfolio')
     assert.ok(existsSync(pageRoot), 'the Stage-6 module shell must exist')
     const pages: string[] = []
     const walkPages = (dir: string) => {
@@ -922,9 +929,9 @@ describe('existing behaviour is unchanged', () => {
       '/alternatives/holdings/page.tsx',
       '/alternatives/layout.tsx',
       '/alternatives/page.tsx',
+      '/holdings/page.tsx',
       '/layout.tsx',
       '/page.tsx',
-      '/portfolio/page.tsx',
       '/weekly-changes/page.tsx',
     ], 'the page tree must be exactly the declared member surface — no early later-stage surface')
 
@@ -936,10 +943,10 @@ describe('existing behaviour is unchanged', () => {
       const provider = read('src/components/familyPortfolio/AlternativesProvider.tsx')
       assert.match(provider, /fetchFamilyPortfolioAlternatives/)
       for (const rel of [
-        'src/app/family-portfolio/alternatives/layout.tsx',
-        'src/app/family-portfolio/alternatives/page.tsx',
-        'src/app/family-portfolio/alternatives/holdings/page.tsx',
-        'src/app/family-portfolio/alternatives/cash-flows/page.tsx',
+        'src/app/portfolio/alternatives/layout.tsx',
+        'src/app/portfolio/alternatives/page.tsx',
+        'src/app/portfolio/alternatives/holdings/page.tsx',
+        'src/app/portfolio/alternatives/cash-flows/page.tsx',
       ]) {
         assert.ok(!/fetchFamilyPortfolioSnapshot|HierarchicalTable|Waterfall/.test(read(rel)),
           `${rel} must not render another stage's surface`)
