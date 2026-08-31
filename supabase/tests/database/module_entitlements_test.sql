@@ -230,8 +230,17 @@ select is(public.nmi_can_access_module('structured_notes'), false,
 -- ── Anonymous ──────────────────────────────────────────────────────────────
 select pg_temp.as_service();
 select pg_temp.as_anon();
-select is(public.nmi_current_module_grants(), array[]::text[],
-  'an anonymous caller resolves no grants');
+-- An anonymous caller never even reaches the rule. EXECUTE on both definer
+-- functions is revoked from `anon`, so the attempt is refused at the privilege
+-- boundary (42501) instead of returning an empty answer -- a stronger property
+-- than "resolves no grants", and the one the migration actually establishes.
+--
+-- It MUST be asserted with throws_ok: a bare call raises an uncatchable ERROR
+-- that aborts the entire psql script, so every later section would be skipped
+-- and finish() would never emit a plan. The same property is re-asserted from
+-- the privilege side in section 5; both angles are kept deliberately.
+select throws_ok($$ select public.nmi_current_module_grants() $$,
+  '42501', null, 'an anonymous caller cannot even reach the grant lookup');
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
