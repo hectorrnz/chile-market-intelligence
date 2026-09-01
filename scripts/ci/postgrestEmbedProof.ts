@@ -30,12 +30,14 @@
 // application will actually receive — not a hand-written fixture that agrees
 // with the code because the same person wrote both.
 //
-// HERMETIC. Every credential is minted by the local stack inside the runner.
-// The application-facing query is issued with the ANON key plus a genuine user
-// access token — never the service-role key. The service-role key is used ONLY
-// to create fixture identities, which is setup, not the proof.
+// HERMETIC. Every key and secret comes from the throwaway stack the runner just
+// started; nothing is read from a repository secret and nothing leaves the
+// runner. The application-facing query is issued with the ANON key plus a
+// genuine user access token — never the service-role key, which is used ONLY to
+// create fixture identities, and that is setup, not the proof.
 
 import { execFileSync } from 'node:child_process'
+import { createHmac } from 'node:crypto'
 import {
   AUTHORIZATION_STATE_SELECT,
   parseAuthorizationRow,
@@ -82,7 +84,17 @@ interface StackConfig {
   apiUrl: string
   anonKey: string
   serviceRoleKey: string
+  jwtSecret: string
 }
+
+/**
+ * The Supabase CLI's documented local development JWT secret.
+ *
+ * Used ONLY if `supabase status` does not expose JWT_SECRET on this CLI
+ * version, and it can never produce a false pass: a wrong secret yields a
+ * signature GoTrue rejects, the token check below fails, and the proof stops.
+ */
+const LOCAL_DEFAULT_JWT_SECRET = 'super-secret-jwt-token-with-at-least-32-characters-long'
 
 function pick(status: Record<string, unknown>, candidates: string[], label: string): string {
   for (const key of candidates) {
@@ -112,6 +124,13 @@ function readStack(): StackConfig {
     throw new Error('`supabase status -o json` did not return an object')
   }
   const status = parsed as Record<string, unknown>
+  let jwtSecret: string
+  try {
+    jwtSecret = pick(status, ['JWT_SECRET', 'jwt_secret'], 'the JWT secret')
+  } catch {
+    console.log('note: `supabase status` exposes no JWT_SECRET; using the documented local default')
+    jwtSecret = LOCAL_DEFAULT_JWT_SECRET
+  }
   return {
     apiUrl: pick(status, ['API_URL', 'api_url'], 'the API URL'),
     anonKey: pick(status, ['ANON_KEY', 'anon_key', 'PUBLISHABLE_KEY'], 'the anon key'),
@@ -120,7 +139,39 @@ function readStack(): StackConfig {
       ['SERVICE_ROLE_KEY', 'service_role_key', 'SECRET_KEY'],
       'the service-role key',
     ),
+    jwtSecret,
   }
+}
+
+// ── Session tokens ───────────────────────────────────────────────────────────
+// The local stack deliberately runs with `[auth.email] enable_signup = false`,
+// mirroring production's no-self-registration posture — which also disables the
+// password grant, so a fixture cannot simply "sign in". Rather than weaken that
+// configuration for the convenience of a test, the token is minted directly
+// with the stack's own JWT secret.
+//
+// This is not a shortcut around authentication. GoTrue and PostgREST do not
+// care how a token was produced; they verify its signature against the project
+// secret and read `sub` and `role` from it. A token minted here is byte-for-
+// purpose the same artifact a browser sign-in returns — and it is CHECKED
+// against `GET /auth/v1/user` below, so a bad secret or malformed claim set
+// fails loudly instead of silently degrading the proof.
+
+function mintAccessToken(cfg: StackConfig, sub: string): string {
+  const now = Math.floor(Date.now() / 1000)
+  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url')
+  const payload = Buffer.from(
+    JSON.stringify({
+      aud: 'authenticated',
+      role: 'authenticated',
+      sub,
+      iat: now,
+      exp: now + 3600,
+    }),
+  ).toString('base64url')
+  const signingInput = `${header}.${payload}`
+  const signature = createHmac('sha256', cfg.jwtSecret).update(signingInput).digest('base64url')
+  return `${signingInput}.${signature}`
 }
 
 // ── HTTP ─────────────────────────────────────────────────────────────────────
@@ -167,7 +218,6 @@ async function waitForRest(cfg: StackConfig): Promise<void> {
 interface Fixture {
   key: string
   email: string
-  password: string
   /** NULL username = provisioned but not approved. */
   username: string | null
   role: 'administrator' | 'user'
@@ -181,7 +231,6 @@ const FIXTURES: Array<Omit<Fixture, 'id' | 'accessToken'>> = [
   {
     key: 'admin',
     email: 'ci_embed_admin@test.invalid',
-    password: 'ci-embed-admin-pw-0001',
     username: 'ci_embed_admin',
     role: 'administrator',
     principal: null,
@@ -192,7 +241,6 @@ const FIXTURES: Array<Omit<Fixture, 'id' | 'accessToken'>> = [
   {
     key: 'memberTwo',
     email: 'ci_embed_member_two@test.invalid',
-    password: 'ci-embed-member-two-pw-0001',
     username: 'ci_embed_member_two',
     role: 'user',
     principal: 'jaime',
@@ -201,7 +249,6 @@ const FIXTURES: Array<Omit<Fixture, 'id' | 'accessToken'>> = [
   {
     key: 'macroOnly',
     email: 'ci_embed_macro_only@test.invalid',
-    password: 'ci-embed-macro-only-pw-0001',
     username: 'ci_embed_macro_only',
     role: 'user',
     principal: 'andres',
@@ -210,7 +257,6 @@ const FIXTURES: Array<Omit<Fixture, 'id' | 'accessToken'>> = [
   {
     key: 'zero',
     email: 'ci_embed_zero@test.invalid',
-    password: 'ci-embed-zero-pw-0001',
     username: 'ci_embed_zero',
     role: 'user',
     principal: 'pablo',
@@ -219,7 +265,6 @@ const FIXTURES: Array<Omit<Fixture, 'id' | 'accessToken'>> = [
   {
     key: 'unapproved',
     email: 'ci_embed_unapproved@test.invalid',
-    password: 'ci-embed-unapproved-pw-0001',
     username: null,
     role: 'user',
     principal: 'jaime',
@@ -244,11 +289,7 @@ async function createFixtures(cfg: StackConfig): Promise<Map<string, Fixture>> {
     const created = await request(`${cfg.apiUrl}/auth/v1/admin/users`, {
       method: 'POST',
       headers: serviceHeaders(cfg),
-      body: JSON.stringify({
-        email: spec.email,
-        password: spec.password,
-        email_confirm: true,
-      }),
+      body: JSON.stringify({ email: spec.email, email_confirm: true }),
     })
     if (created.status >= 300) {
       throw new Error(`could not create fixture ${spec.key}: HTTP ${created.status} ${created.text}`)
@@ -286,20 +327,21 @@ async function createFixtures(cfg: StackConfig): Promise<Map<string, Fixture>> {
       }
     }
 
-    // 4 · a genuine user session — anon key, password grant, exactly as a
-    //     browser sign-in produces. No service-role token from here on.
-    const token = await request(`${cfg.apiUrl}/auth/v1/token?grant_type=password`, {
-      method: 'POST',
-      headers: { apikey: cfg.anonKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: spec.email, password: spec.password }),
+    // 4 · a genuine user session token, and PROOF that the stack accepts it.
+    //     From here on nothing uses the service-role key.
+    const accessToken = mintAccessToken(cfg, id)
+    const whoami = await request(`${cfg.apiUrl}/auth/v1/user`, {
+      headers: { apikey: cfg.anonKey, Authorization: `Bearer ${accessToken}` },
     })
-    if (token.status >= 300) {
-      throw new Error(`could not sign in fixture ${spec.key}: HTTP ${token.status} ${token.text}`)
+    if (whoami.status !== 200) {
+      throw new Error(
+        `the stack rejected the session token for ${spec.key}: HTTP ${whoami.status} ${whoami.text}`,
+      )
     }
-    const tokenBody = token.body as { access_token?: unknown } | null
-    const accessToken =
-      tokenBody && typeof tokenBody.access_token === 'string' ? tokenBody.access_token : null
-    if (accessToken === null) throw new Error(`fixture ${spec.key} received no access token`)
+    const whoamiBody = whoami.body as { id?: unknown } | null
+    if (!whoamiBody || whoamiBody.id !== id) {
+      throw new Error(`the session token for ${spec.key} did not resolve to that identity`)
+    }
 
     out.set(spec.key, { ...spec, id, accessToken })
   }
