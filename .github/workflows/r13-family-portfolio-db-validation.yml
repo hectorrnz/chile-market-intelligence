@@ -233,9 +233,12 @@ jobs:
           set -euo pipefail
           supabase test db 2>&1 | tee /tmp/pgtap.log
           echo "== pgTAP totals =="
-          echo "files      : $(ls -1 supabase/tests/database/*.sql | wc -l)"
-          echo "assertions : $(grep -cE '^[[:space:]]*(not )?ok [0-9]+' /tmp/pgtap.log || true)"
-          echo "failures   : $(grep -cE '^[[:space:]]*not ok [0-9]+' /tmp/pgtap.log || true)"
+          # pg_prove AGGREGATES the per-assertion TAP stream and prints one
+          # summary line, so counting `ok N` lines here reports zero however
+          # many assertions ran. Read its own summary instead.
+          echo "on disk    : $(ls -1 supabase/tests/database/*.sql | wc -l) suite files"
+          grep -E '^Files=[0-9]+, Tests=[0-9]+' /tmp/pgtap.log || true
+          grep -E '^Result: ' /tmp/pgtap.log || true
           ls -1 supabase/tests/database/*.sql
 
       # Advisory: surfaces missing RLS, mutable search_path and similar issues.
