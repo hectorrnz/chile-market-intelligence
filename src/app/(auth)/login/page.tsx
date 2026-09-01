@@ -41,11 +41,19 @@ import {
 import { toSafeInternalPath } from '@/lib/auth/safeRedirect'
 
 function errorKeyToMessage(t: ReturnType<typeof useLang>['t'], code: string): string {
-  // /api/auth/login answers only `invalid_credentials`, `invalid_json` or
-  // `not_configured`; everything else falls through to the generic message.
-  // The former create-account codes are gone with the endpoint.
+  // /api/auth/login answers `invalid_credentials`, `invalid_json`,
+  // `not_configured` or `lookup_unavailable`; everything else falls through to
+  // the generic message. The former create-account codes are gone with the
+  // endpoint.
+  //
+  // POST-R13.6R1.1 — only a genuine credential refusal may say so. The two
+  // deployment-side failures (`not_configured`, `lookup_unavailable`) are
+  // deliberately NOT mapped here: telling someone their password is wrong when
+  // the server could not look anything up is what makes a configuration fault
+  // unfindable.
   switch (code) {
     case 'invalid_credentials': return t.auth.errInvalidCredentials
+    case 'lookup_unavailable':  return t.auth.errAccessUnavailable
     default:                    return t.auth.errorGeneric
   }
 }
