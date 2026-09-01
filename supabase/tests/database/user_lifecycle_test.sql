@@ -344,8 +344,12 @@ select pg_temp.as_anon();
 select throws_ok(
   $$ select public.nmi_admin_update_access(
        'b6666666-6666-6666-6666-666666666666'::uuid, 'user', null, array['markets']) $$,
-  'not_authenticated',
-  'anon cannot use the administrative RPCs');
+  -- anon is stopped one layer EARLIER than the in-body guard: EXECUTE on the
+  -- administrative RPCs is not granted to it at all, so the call is refused on
+  -- privilege before nmi_assert_admin_actor() can raise not_authenticated. The
+  -- in-body guard is still proven above for an authenticated non-administrator.
+  '42501', null,
+  'anon cannot even EXECUTE the administrative RPCs');
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -554,7 +558,9 @@ select throws_ok(
 select pg_temp.as_anon();
 select throws_ok(
   $$ select public.nmi_activate_current_user() $$,
-  'not_authenticated', 'anon cannot activate anything');
+  -- Same layering as above: the EXECUTE privilege is withheld from anon, so
+  -- activation is unreachable without an authenticated session at all.
+  '42501', null, 'anon cannot even EXECUTE activation');
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -573,7 +579,7 @@ select throws_ok(
        (target_user_id, actor_user_id, actor_kind, field_changed, previous_value, new_value)
      values ('b6666666-6666-6666-6666-666666666666','b1111111-1111-1111-1111-111111111111',
              'administrator','something_else',null,'x') $$,
-  '23514', 'an undeclared audit kind is still refused');
+  '23514', null, 'an undeclared audit kind is still refused');
 
 -- A lifecycle row must not name a module; a module row must.
 select throws_ok(
@@ -581,7 +587,7 @@ select throws_ok(
        (target_user_id, actor_user_id, actor_kind, field_changed, module_key, previous_value, new_value)
      values ('b6666666-6666-6666-6666-666666666666','b1111111-1111-1111-1111-111111111111',
              'administrator','user_disable','markets','active','disabled') $$,
-  '23514', 'a lifecycle audit row must not name a module');
+  '23514', null, 'a lifecycle audit row must not name a module');
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
