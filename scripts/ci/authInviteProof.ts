@@ -233,7 +233,19 @@ async function main(): Promise<void> {
   )
 
   // E3-E6 prove the link the application ACTUALLY emails.
-  const acceptLink = buildInviteAcceptUrl('http://127.0.0.1:3000', String(b.data?.properties?.hashed_token))
+  //
+  // A SEPARATE invitation, deliberately. The token above has just been spent by
+  // following it in E1 — these links are single-use, which is itself part of the
+  // security model — so reusing it would prove only that a consumed token is
+  // rejected. This mints an unconsumed one for the redemption test.
+  const redeemEmail = `invite-redeem-${stamp}@invite-proof.invalid`
+  const r = await admin.auth.admin.generateLink({
+    type: 'invite',
+    email: redeemEmail,
+    options: { redirectTo: REDIRECT },
+  })
+  const redeemUserId = r.data?.user?.id
+  const acceptLink = buildInviteAcceptUrl('http://127.0.0.1:3000', String(r.data?.properties?.hashed_token))
   const acceptUrl = new URL(acceptLink)
   check(
     'E3 the emailed link is app-hosted and carries token_hash + type',
@@ -253,7 +265,7 @@ async function main(): Promise<void> {
   const otp = await createClient(cfg.url, cfg.anonKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   }).auth.verifyOtp({
-    token_hash: String(b.data?.properties?.hashed_token),
+    token_hash: String(r.data?.properties?.hashed_token),
     type: 'invite',
   })
   check(
@@ -263,9 +275,23 @@ async function main(): Promise<void> {
   )
   check(
     'E6 and it is the invited identity, not some other account',
-    otp.data?.user?.id === aUserId,
-    `same=${otp.data?.user?.id === aUserId}`,
+    typeof redeemUserId === 'string' && otp.data?.user?.id === redeemUserId,
+    `same=${otp.data?.user?.id === redeemUserId}`,
   )
+  // E7 — single use is part of the security model, so it is asserted rather than
+  // assumed: the same token must not mint a second session.
+  const replay = await createClient(cfg.url, cfg.anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  }).auth.verifyOtp({
+    token_hash: String(r.data?.properties?.hashed_token),
+    type: 'invite',
+  })
+  check(
+    'E7 the same token cannot be redeemed twice',
+    !!replay.error && !replay.data?.session,
+    replay.error ? 'replay refused' : 'REPLAY SUCCEEDED',
+  )
+  if (redeemUserId) await admin.auth.admin.deleteUser(redeemUserId)
 
   console.log('\n── C · invite for an ALREADY-ACTIVATED (password-holding) address ──')
   const created = await admin.auth.admin.createUser({
