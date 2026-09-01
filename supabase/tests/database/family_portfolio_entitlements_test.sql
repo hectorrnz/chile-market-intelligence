@@ -392,8 +392,20 @@ select throws_ok(
 -- say so, exactly as real provisioning does. Without it every assertion below
 -- would pass for the WRONG reason: denied because the fixture was never
 -- activated, rather than because the rule under test denied it.
+--
+-- The marker is FIXTURE MAINTENANCE and must run on the privileged path. The
+-- `authenticated` role deliberately holds NO update privilege on user_profiles
+-- — the very hardening this suite asserts a few lines above — so issuing it
+-- while impersonating a user raises an insufficient-privilege error and aborts
+-- the script before its plan completes. Proven by the isolated-PostgreSQL run,
+-- not assumed.
+select pg_temp.as_service();
 update public.user_profiles set activated_at = now()
  where activated_at is null and disabled_at is null;
+
+-- Back to the impersonated user: everything below is about what THAT user can
+-- see and do under RLS.
+select pg_temp.as_user('33333333-3333-3333-3333-333333333333');
 
 -- Own-row RLS still lets a user read their own row, and only their own.
 select is((select count(*)::int from public.user_profiles), 1,

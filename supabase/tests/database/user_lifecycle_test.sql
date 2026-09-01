@@ -221,10 +221,16 @@ select is((select count(*)::int from public.structured_notes
            where id = 'bbbbbbbb-0000-0000-0000-00000000000f'),
   0, 'INVITED (never activated) member is denied by RLS');
 
+-- anon is denied HARDER than by RLS: the R13.6B.1 hardening revoked the table
+-- privilege outright, so the read raises an insufficient-privilege error rather
+-- than returning zero rows.
+-- Asserting an empty result would understate the guarantee AND abort the script,
+-- because a privilege error is an error, not an empty set. This matches the
+-- canonical form already used by sensitive_surface_hardening_test.sql.
 select pg_temp.as_anon();
-select is((select count(*)::int from public.structured_notes
-           where id = 'bbbbbbbb-0000-0000-0000-00000000000f'),
-  0, 'anon still reads nothing — the R13.6B.1 hardening is intact');
+select throws_ok(
+  $$ select count(*) from public.structured_notes $$,
+  '42501', null, 'anon cannot read structured_notes at all — R13.6B.1 intact');
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
