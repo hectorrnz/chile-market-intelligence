@@ -15,13 +15,32 @@
 // table lives in `src/lib/auth/requestAccess.ts` and is unit-tested against
 // every case; this file only binds it to Supabase and to HTTP.
 //
-// LATENCY. A private request costs TWO sequential Supabase round-trips:
-// `auth.getUser()` (verifies the JWT with the Auth server — this is what rejects
-// forged, expired, revoked, banned and deleted identities) and a single-row
-// `user_profiles` read under own-row RLS (the current approval marker). The
-// earlier zero-network `getSession()` gate was faster but authorised from
-// unverified cookie state and could not revoke promptly; correctness wins. See
-// docs/security_access_control.md § "Verified session".
+// POST-R13.6CDE.1 adds the PLATFORM-ACCESS BOUNDARY to the same gate: an
+// approved account that holds no module at all is refused the application
+// entirely — Overview and personal Settings included — because approval now
+// means the account exists and entitlement is what admits it. Refusing here is
+// what makes § 4 true: the shell never renders, so a zero-grant member never
+// issues the private requests the shell would have made on load.
+//
+// POST-R13.6CDE.2 adds the SECOND layer to the same gate: entering the platform
+// is not entering every module. Each private path is resolved through
+// `moduleRoutes.ts` and refused unless the caller's grants satisfy it, so a
+// member holding `macro` alone can no longer reach Stocks or Portfolio by
+// typing the URL. Denials stay in their route's own language — a page redirects,
+// an API answers JSON — because `json` is computed from the route class before
+// any authorization reasoning happens.
+//
+// LATENCY. A private request costs exactly TWO sequential Supabase round-trips,
+// for every caller and every route: `auth.getUser()` (verifies the JWT with the
+// Auth server — this is what rejects forged, expired, revoked, banned and
+// deleted identities) and ONE authorization-state read. POST-R13.6CDE.1 needed a
+// third for members, because approval and grants were fetched separately;
+// POST-R13.6CDE.2 embeds the grants in the profile read, so the extra
+// round-trip is gone AND both facts now come from one snapshot that cannot
+// disagree with itself. The earlier zero-network `getSession()` gate was faster
+// still but authorised from unverified cookie state and could not revoke
+// promptly; correctness wins. See docs/security_access_control.md §
+// "Verified session".
 //
 // Bearer-token endpoints (/api/cron/*) are classified `bearer_auth_api` and are
 // left untouched: each validates CRON_SECRET / MARKET_INGEST_SECRET itself and
@@ -33,12 +52,18 @@ import { getSupabasePublicConfig } from '@/lib/supabase/env'
 import { requiresApprovedSession, deniesWithJson } from '@/lib/auth/accessPolicy'
 import { buildLoginRedirectPath } from '@/lib/auth/safeRedirect'
 import { ACCESS_DENIED_REASONS } from '@/lib/auth/approval'
-import type { ApprovalProfile } from '@/lib/auth/approval'
 import {
   decideRequestAccess,
   shouldClearSession,
   type AccessDecision,
+  type DenialReason,
 } from '@/lib/auth/requestAccess'
+import {
+  parseAuthorizationRow,
+  AUTHORIZATION_STATE_SELECT,
+  type AuthorizationRow,
+  type AuthorizationStateResult,
+} from '@/lib/auth/authorizationState'
 
 /** A denial must never be cached by the browser, a CDN, or a shared proxy. */
 const NO_STORE = 'no-store, no-cache, must-revalidate, private'
@@ -46,9 +71,47 @@ const NO_STORE = 'no-store, no-cache, must-revalidate, private'
 /** Supabase writes its session under `sb-*` cookies. */
 const SESSION_COOKIE_PREFIX = 'sb-'
 
-const REASON_TO_CODE: Record<'unauthenticated' | 'not_approved', string> = {
+const REASON_TO_CODE: Record<DenialReason, string> = {
   unauthenticated: ACCESS_DENIED_REASONS.unauthenticated,
   not_approved: ACCESS_DENIED_REASONS.notApproved,
+  no_platform_access: ACCESS_DENIED_REASONS.noPlatformAccess,
+  module_not_granted: ACCESS_DENIED_REASONS.moduleNotGranted,
+  administrator_required: ACCESS_DENIED_REASONS.administratorRequired,
+  access_unavailable: ACCESS_DENIED_REASONS.accessUnavailable,
+}
+
+/**
+ * The `?error=` value the login gateway renders for a page denial.
+ *
+ * `unauthenticated` is absent on purpose: there is nothing to explain, and a
+ * banner would appear every time a session simply expired.
+ */
+const PAGE_ERROR_PARAM: Partial<Record<DenialReason, string>> = {
+  not_approved: 'not_authorized',
+  no_platform_access: ACCESS_DENIED_REASONS.noPlatformAccess,
+  module_not_granted: ACCESS_DENIED_REASONS.moduleNotGranted,
+  administrator_required: ACCESS_DENIED_REASONS.administratorRequired,
+  access_unavailable: ACCESS_DENIED_REASONS.accessUnavailable,
+}
+
+/**
+ * Whether the original destination is worth carrying through `?next=`.
+ *
+ * Only when the caller has no usable session yet. `not_approved` clears the
+ * cookies, so signing in as a different, approved account and landing on the
+ * requested page is exactly right. Every other reason KEEPS the session:
+ * replaying `next` would send the very same account straight back into the very
+ * same denial, so the gateway would look like it were bouncing. Landing on a
+ * plain `/login?error=…` is terminal and readable, and no automatic redirect
+ * follows it — the login page never forwards an existing session into the app,
+ * so there is no loop to enter.
+ *
+ * This covers the POST-R13.6CDE.2 reasons for free: a member who typed the URL
+ * of a module they do not hold must not have that URL replayed after signing in
+ * again, because holding the module is what was missing, not the session.
+ */
+function carriesNext(reason: DenialReason): boolean {
+  return reason === 'unauthenticated' || reason === 'not_approved'
 }
 
 /** JSON 401/403 for a private API route. Carries only a reason code. */
@@ -70,9 +133,12 @@ function pageDenial(
   decision: Extract<AccessDecision, { outcome: 'deny' }>,
 ): NextResponse {
   const { pathname, search } = request.nextUrl
-  const loginPath = buildLoginRedirectPath(`${pathname}${search}`)
+  const loginPath = carriesNext(decision.reason)
+    ? buildLoginRedirectPath(`${pathname}${search}`)
+    : '/login'
   const target = new URL(loginPath, request.url)
-  if (decision.reason === 'not_approved') target.searchParams.set('error', 'not_authorized')
+  const errorParam = PAGE_ERROR_PARAM[decision.reason]
+  if (errorParam) target.searchParams.set('error', errorParam)
 
   const response = NextResponse.redirect(target)
   response.headers.set('Cache-Control', NO_STORE)
@@ -142,24 +208,38 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
       const { data, error } = await supabase.auth.getUser()
       return { user: error ? null : (data.user ?? null) }
     },
-    // Current approval marker, re-read per request so revocation is immediate.
-    // Own-row RLS (`auth.uid() = id`) authorises the read; the service-role
-    // client is never used here.
-    async (userId) => {
-      const { data } = await (supabase as never as {
+    // THE authorization state — approval marker, role and module grants — in
+    // ONE query, re-read per request so revoking either the username or the
+    // last grant denies immediately. `user_module_grants.user_id` is a real
+    // foreign key into `user_profiles(id)`, so PostgREST embeds the grants in
+    // the profile row; RLS authorises both halves independently
+    // (`auth.uid() = id` on the parent, `auth.uid() = user_id` on the embedded
+    // rows), and the service-role client is never used here.
+    //
+    // Explicit columns only. The profile row also carries the caller's email and
+    // display name, and neither belongs in an authorization decision.
+    //
+    // A read error is reported as a FAILURE, never as an empty grant set. On a
+    // deployment whose database is behind its code — no `user_module_grants`
+    // relation to embed — this refuses every caller and says why, rather than
+    // either inventing access or accusing a member of holding none.
+    async (userId): Promise<AuthorizationStateResult> => {
+      const { data, error } = await (supabase as never as {
         from: (t: string) => {
           select: (c: string) => {
             eq: (col: string, val: string) => {
-              maybeSingle: () => Promise<{ data: ApprovalProfile | null }>
+              maybeSingle: () => Promise<{ data: AuthorizationRow | null; error: unknown }>
             }
           }
         }
       })
         .from('user_profiles')
-        .select('id, username')
+        .select(AUTHORIZATION_STATE_SELECT)
         .eq('id', userId)
         .maybeSingle()
-      return data ?? null
+
+      if (error) return { ok: false }
+      return parseAuthorizationRow(userId, data)
     },
   )
 

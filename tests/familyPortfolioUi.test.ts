@@ -171,14 +171,23 @@ describe('R13.6 · module shell', () => {
   // config cannot express per-user entitlement, so it must carry no
   // authorization logic and no per-scope destination. Module navigation
   // (`FamilyPortfolioNav`) remains the only entitlement-aware rail.
-  test('the app-level primary navigation carries no entitlement logic', () => {
+  // AMENDED by POST-R13.6CDE — navigation is entitlement-aware now. The part
+  // this test was really protecting is untouched and still asserted below: no
+  // per-principal destination may ever appear in the static config, because a
+  // sibling's portfolio is not a place navigation can point at.
+  test('the primary navigation filters by module, never by principal', () => {
     const nav = read('src/lib/navigation.ts')
     assert.ok(nav.includes('/portfolio'), 'R13.R1 § 2: the module is the Portfolio destination')
-    for (const forbidden of ['isAdministrator', 'entitle', 'scopes', 'canRead', 'auth']) {
-      assert.ok(!nav.includes(forbidden), `navigation.ts must not reference ${forbidden}`)
-    }
-    // No per-principal destination may appear in the static config.
+    assert.ok(nav.includes('visibleNavGroups'))
+    // THE invariant: no per-principal destination in the static config.
     assert.ok(!/portfolio\/(jaime|andres|pablo)/i.test(nav))
+    // And no principal identity of any kind reaches this shared client module.
+    for (const p of ['jaime', 'andres', 'pablo', 'Andrés', 'Pablo']) {
+      assert.ok(!nav.includes(p), `navigation.ts must not name ${p}`)
+    }
+    // Scope resolution stays server-side: navigation must not compute scopes.
+    assert.ok(!nav.includes('scopesFor'))
+    assert.ok(!nav.includes('portfolioVisibleScopes'))
   })
 })
 
@@ -214,7 +223,14 @@ describe('R13.6 · unentitled principals never reach the browser', () => {
 
   test('the scopes route returns only the caller\'s scopes and filters the admin capability out of the list', () => {
     const route = read(SCOPES_ROUTE)
-    assert.match(route, /entitlement\.scopes\s*\n?\s*\.filter\(\(s\) => s !== 'admin'\)/)
+    // AMENDED by POST-R13.6CDE. The source is no longer the raw ceiling but the
+    // ceiling INTERSECTED with the caller's module grants — strictly narrower,
+    // never wider, because `portfolioVisibleScopes` filters `scopesFor()` and
+    // set intersection cannot add a member the left operand lacked.
+    assert.match(route, /portfolioVisibleScopes\(entitlement\.input, access\)\s*\n?\s*\.filter\(\(s\) => s !== 'admin'\)/)
+    assert.ok(route.includes('getCallerModuleAccess'), 'the mask must come from the caller\'s own grants')
+    // Unchanged and still the point: built from the caller's entitlement, never
+    // from the full scope universe.
     assert.ok(!/FAMILY_PORTFOLIO_SCOPES/.test(codeOf(route)),
       'the response must be built from the caller\'s entitlement, never the full scope universe')
   })

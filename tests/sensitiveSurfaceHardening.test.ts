@@ -29,6 +29,9 @@ import {
 } from '../src/lib/auth/moduleAccess.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
+import { ACCESS_DENIED_REASONS } from '../src/lib/auth/approval.ts'
+import { AUTHORIZATION_STATE_SELECT } from '../src/lib/auth/authorizationState.ts'
+
 const ROOT = join(HERE, '..')
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
 
@@ -224,13 +227,24 @@ describe('POST-R13.6B.1 — the guard helpers fail closed', () => {
   it('both denials are 403 with no payload fragment and no caching', () => {
     assert.ok(GUARD.includes('status: 403'))
     assert.ok(GUARD.includes('NO_STORE_HEADERS'))
-    assert.ok(GUARD.includes("moduleNotGranted: 'module_not_granted'"))
-    assert.ok(GUARD.includes("administratorRequired: 'administrator_required'"))
+    // POST-R13.6CDE.2 moved both wire codes into `ACCESS_DENIED_REASONS`, so
+    // middleware and these route guards answer the same condition with the same
+    // string. Pinning the guard's own literal would now pin a COPY; pin the
+    // single source of truth and the guard's reference to it instead.
+    assert.ok(GUARD.includes('moduleNotGranted: ACCESS_DENIED_REASONS.moduleNotGranted'))
+    assert.ok(GUARD.includes('administratorRequired: ACCESS_DENIED_REASONS.administratorRequired'))
+    assert.equal(ACCESS_DENIED_REASONS.moduleNotGranted, 'module_not_granted')
+    assert.equal(ACCESS_DENIED_REASONS.administratorRequired, 'administrator_required')
   })
 
   it('the resolver reads the database, never client-supplied claims', () => {
     assert.ok(RESOLVER.includes("from('user_profiles')"))
-    assert.ok(RESOLVER.includes("from('user_module_grants')"))
+    // POST-R13.6CDE.2 — the grants are EMBEDDED in that one read rather than
+    // fetched by a second query, so the assertion follows them into the shared
+    // select constant. Both facts still come from the database, per request,
+    // through the caller's own session client.
+    assert.ok(RESOLVER.includes('AUTHORIZATION_STATE_SELECT'))
+    assert.match(AUTHORIZATION_STATE_SELECT, /user_module_grants\(module_key\)/)
     assert.ok(RESOLVER.includes('getSupabaseUserClient'))
     // Negative scans read CODE only — this file documents why it avoids
     // user_metadata, and the comment must not be what fails the test.
@@ -244,10 +258,44 @@ describe('POST-R13.6B.1 — the guard helpers fail closed', () => {
   })
 
   it('every failure path denies rather than defaulting to an empty grant set', () => {
-    assert.ok(RESOLVER.includes('if (!user) return DENIED'))
-    assert.ok(RESOLVER.includes('if (!client) return DENIED'))
-    assert.ok(RESOLVER.includes('if (grantRes.error) return { ...DENIED, userId: user.id }'))
+    // Asserted as a PROPERTY over every return statement rather than by pinning
+    // three literals: exactly one return may produce access, and it is the one
+    // reached only after both reads succeeded. Any new early return that forgot
+    // to deny would add a second, and fail here.
+    const body = RESOLVER.slice(RESOLVER.indexOf('export async function getCallerModuleAccess'))
+    const fn = body.slice(0, body.indexOf('\n}\n'))
+    const returns = [...fn.matchAll(/return\s+(\{[\s\S]*?\}|[A-Za-z_$][\w$]*)/g)].map((m) => m[1])
+    assert.ok(returns.length >= 5, `expected every branch to return explicitly, saw ${returns.length}`)
+    const denying = returns.filter((r) => r.includes('...DENIED'))
+    const allowing = returns.filter((r) => !r.includes('...DENIED'))
+    assert.equal(allowing.length, 1, 'exactly one return may yield real access')
+    assert.ok(allowing[0].includes("reason: 'ok'"), 'and it is the fully-resolved one')
+    assert.ok(denying.length >= 4, 'every other branch denies')
     assert.ok(RESOLVER.includes('isApproved: false'))
+  })
+
+  it('separates an authorization denial from an unreadable grant store', () => {
+    // The reported "Something went wrong" was a 403 standing in for a schema
+    // mismatch. Denial must stay denial; unavailability must be its own answer.
+    assert.ok(RESOLVER.includes("reason: 'grant_store_unavailable'"))
+    assert.ok(RESOLVER.includes("reason: 'not_configured'"))
+    // POST-R13.6CDE.1 moved the literal into `ACCESS_DENIED_REASONS` so the
+    // middleware and the route guards answer this condition with ONE code. The
+    // property is unchanged and now also pins both halves of that single source.
+    assert.ok(GUARD.includes('accessUnavailable: ACCESS_DENIED_REASONS.accessUnavailable'))
+    assert.ok(read('src/lib/auth/approval.ts').includes("accessUnavailable: 'module_access_unavailable'"))
+    assert.ok(GUARD.includes('status: 503'))
+    // ...and it must NOT have become permissive while doing so.
+    assert.ok(!/grant_store_unavailable[\s\S]{0,200}(allowed: true|return null)/.test(GUARD))
+    for (const fnName of ['guardModuleRead', 'guardAdministrator', 'guardModuleReadWithCapability']) {
+      const at = GUARD.indexOf(`export async function ${fnName}`)
+      assert.notEqual(at, -1, `${fnName} missing`)
+      const end = GUARD.indexOf('\n}', at)
+      assert.ok(
+        GUARD.slice(at, end).includes('isAccessUnavailable(reason)'),
+        `${fnName} must answer 503 for an unreadable store, not 403`,
+      )
+    }
   })
 
   it('capability and denial come from ONE resolution, so they cannot disagree', () => {
@@ -538,11 +586,20 @@ describe('POST-R13.6B.1 — the UI cannot offer what the API refuses', () => {
     assert.ok(DETAIL.includes('readOnly?: boolean'))
   })
 
-  it('an ungranted member gets the honest error state, never a false empty book', () => {
-    // The 403 now returned by the API flows into the pre-existing load-failure
-    // path, which deliberately does NOT render "no structured notes yet".
-    assert.ok(LIST.includes('if (!res.ok) { setNotes([]); setLoadFailed(true); return }'))
+  it('an ungranted member gets an honest state, never a false empty book', () => {
+    // SUPERSEDED and STRENGTHENED by POST-R13.6CDE. When this was written, a 403
+    // flowed into the generic load-failure path — honest about "not the empty
+    // book", but not about WHY, so a deliberate denial read as "Something went
+    // wrong". The denial now has its own state, and the failure path still
+    // exists for genuine failures. Both halves are asserted, because dropping
+    // either would recreate a version of the original confusion.
+    assert.ok(LIST.includes('res.status === 403'), 'the denial is recognised')
+    assert.ok(LIST.includes("setNotAuthorized(true); setLoadFailed(false)"), 'and is not a failure')
+    assert.ok(LIST.includes('setNotAuthorized(false); setLoadFailed(true); return }'), 'a real failure still fails')
+    assert.ok(DETAIL.includes('if (res.status === 403) { setNotAuthorized(true); return }'))
     assert.ok(DETAIL.includes('if (!res.ok) { setLoadFailed(true); return }'))
+    // Neither page may render the confirmed-empty copy for a denied caller.
+    assert.ok(LIST.includes('setNotes([])'))
   })
 
   it('the recipients card renders nothing for a non-administrator', () => {

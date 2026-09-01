@@ -30,16 +30,35 @@
 // Passing a module key for it would be a category error.
 
 import { NextResponse } from 'next/server'
-import { getCallerModuleAccess } from './getModuleAccess.ts'
+import { getCallerModuleAccess, isAccessUnavailable } from './getModuleAccess.ts'
 import { canAccessModule, type ModuleKey } from './moduleAccess.ts'
 import { NO_STORE_HEADERS } from './apiGuard.ts'
+import { ACCESS_DENIED_REASONS } from './approval.ts'
 
-/** Machine-readable denial reasons for these two surfaces. */
+/**
+ * Machine-readable denial reasons for these surfaces.
+ *
+ * Every value is re-exported from `ACCESS_DENIED_REASONS` rather than written
+ * out again. Middleware answers the same two conditions at the request boundary
+ * (POST-R13.6CDE.2), and a route guard that spelled them differently would give
+ * one denial two wire codes depending on which layer happened to catch it.
+ */
 export const SENSITIVE_DENIAL_REASONS = {
   /** Authenticated and approved, but the module was not granted. */
-  moduleNotGranted: 'module_not_granted',
+  moduleNotGranted: ACCESS_DENIED_REASONS.moduleNotGranted,
   /** Authenticated and approved, but the operation is administrator-only. */
-  administratorRequired: 'administrator_required',
+  administratorRequired: ACCESS_DENIED_REASONS.administratorRequired,
+  /**
+   * The entitlement store could not be READ. Not an authorization answer — the
+   * request is still refused, but the cause is this deployment, not the caller.
+   *
+   * Answered 503, never 403. A 403 asserts "we checked and you may not"; saying
+   * that when nothing was checked sends every reader — the UI, the operator,
+   * the next engineer — after the wrong problem. POST-R13.6CDE traced the
+   * reported "Something went wrong" on Structured Notes to exactly that
+   * confusion.
+   */
+  accessUnavailable: ACCESS_DENIED_REASONS.accessUnavailable,
 } as const
 
 /** Builds the canonical module denial. Carries no payload fragment. */
@@ -59,6 +78,21 @@ export function administratorForbiddenJson(): NextResponse {
 }
 
 /**
+ * Builds the entitlement-store-unavailable response.
+ *
+ * 503, and deliberately retryable-looking, because it IS: the same request from
+ * the same caller succeeds once the deployment's database carries the module
+ * migrations. Carries no schema detail — an unauthenticated probe learns only
+ * that this deployment is degraded, which it can already tell.
+ */
+export function accessUnavailableJson(): NextResponse {
+  return NextResponse.json(
+    { error: SENSITIVE_DENIAL_REASONS.accessUnavailable },
+    { status: 503, headers: NO_STORE_HEADERS },
+  )
+}
+
+/**
  * Denies unless the caller may reach `module`.
  *
  * Returns a 403 response, or null when the request may proceed. Never throws.
@@ -67,7 +101,8 @@ export function administratorForbiddenJson(): NextResponse {
  * middleware has not already covered.
  */
 export async function guardModuleRead(module: ModuleKey): Promise<NextResponse | null> {
-  const { access } = await getCallerModuleAccess()
+  const { access, reason } = await getCallerModuleAccess()
+  if (isAccessUnavailable(reason)) return accessUnavailableJson()
   return canAccessModule(access, module) ? null : moduleForbiddenJson()
 }
 
@@ -78,7 +113,8 @@ export async function guardModuleRead(module: ModuleKey): Promise<NextResponse |
  * A module grant can never satisfy this guard — that is the entire point.
  */
 export async function guardAdministrator(): Promise<NextResponse | null> {
-  const { isAdministrator } = await getCallerModuleAccess()
+  const { isAdministrator, reason } = await getCallerModuleAccess()
+  if (isAccessUnavailable(reason)) return accessUnavailableJson()
   return isAdministrator ? null : administratorForbiddenJson()
 }
 
@@ -96,7 +132,8 @@ export async function guardAdministrator(): Promise<NextResponse | null> {
 export async function guardModuleReadWithCapability(
   module: ModuleKey,
 ): Promise<{ denied: NextResponse | null; canManage: boolean }> {
-  const { access, isAdministrator } = await getCallerModuleAccess()
+  const { access, isAdministrator, reason } = await getCallerModuleAccess()
+  if (isAccessUnavailable(reason)) return { denied: accessUnavailableJson(), canManage: false }
   if (!canAccessModule(access, module)) return { denied: moduleForbiddenJson(), canManage: false }
   return { denied: null, canManage: isAdministrator }
 }

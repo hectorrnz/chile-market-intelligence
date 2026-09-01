@@ -177,6 +177,10 @@ export default function StructuredNotesPage() {
   const [summary, setSummary] = useState<BookSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
+  // POST-R13.6CDE — an authorization denial is an ANSWER, not a failure, and
+  // must never render as "Something went wrong". 403 means this account does not
+  // hold the module; 503 and everything else remain genuine failures.
+  const [notAuthorized, setNotAuthorized] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [view, setView] = useState<'live' | 'archived'>('live')
   const [statusFilter, setStatusFilter] = useState<string>('all')
@@ -226,12 +230,15 @@ export default function StructuredNotesPage() {
     // the honest error state instead.
     try {
       const res = await fetch('/api/structured-notes', { cache: 'no-store' })
-      if (!res.ok) { setLoadFailed(true); return }
+      if (res.status === 403) { setNotes([]); setNotAuthorized(true); setLoadFailed(false); return }
+      if (!res.ok) { setNotAuthorized(false); setLoadFailed(true); return }
       const json = await res.json().catch(() => null)
-      if (!json) { setLoadFailed(true); return }
+      if (!json) { setNotAuthorized(false); setLoadFailed(true); return }
       ingest(json)
+      setNotAuthorized(false)
       setLoadFailed(false)
     } catch {
+      setNotAuthorized(false)
       setLoadFailed(true)
     }
     await loadMonitoring()
@@ -246,14 +253,16 @@ export default function StructuredNotesPage() {
         // R3/R12 — a failed initial load (thrown OR non-ok OR unparseable)
         // renders the honest error state, never the "no structured notes yet"
         // empty copy (the book may well be non-empty).
-        if (!res.ok) { setNotes([]); setLoadFailed(true); return }
+        if (res.status === 403) { setNotes([]); setNotAuthorized(true); setLoadFailed(false); return }
+        if (!res.ok) { setNotes([]); setNotAuthorized(false); setLoadFailed(true); return }
         const json = await res.json().catch(() => null)
         if (cancelled.value) return
-        if (!json) { setNotes([]); setLoadFailed(true); return }
+        if (!json) { setNotes([]); setNotAuthorized(false); setLoadFailed(true); return }
         ingest(json)
+        setNotAuthorized(false)
         setLoadFailed(false)
       } catch {
-        if (!cancelled.value) { setNotes([]); setLoadFailed(true) }
+        if (!cancelled.value) { setNotes([]); setNotAuthorized(false); setLoadFailed(true) }
       } finally {
         if (!cancelled.value) setLoading(false)
       }
@@ -426,7 +435,14 @@ export default function StructuredNotesPage() {
     { status: 'breached', label: t.sn.riskBreached, tip: t.sn.legendBreached },
   ]
 
-  const tableState = loading ? 'loading' as const : loadFailed ? 'error' as const : shown.length === 0 ? 'empty' as const : undefined
+  const tableState = loading
+    ? 'loading' as const
+    // Denial is checked BEFORE failure: the two are mutually exclusive by
+    // construction above, and ordering it first documents which one wins.
+    : notAuthorized ? 'not_authorized' as const
+    : loadFailed ? 'error' as const
+    : shown.length === 0 ? 'empty' as const
+    : undefined
 
   const toolbar = (
     <div className="flex flex-wrap items-center gap-2.5 w-full no-print">

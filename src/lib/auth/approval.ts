@@ -56,6 +56,16 @@ export interface ApprovalProfile {
   username?: string | null
   email?: string | null
   display_name?: string | null
+  /**
+   * POST-R13.6CDE.1 — read by the platform-access boundary, NOT by approval.
+   *
+   * `isApprovedProfile` still ignores it entirely: approval remains presence of
+   * a username. Role decides whether an approved account needs module grants to
+   * enter (a member does, an administrator does not) — it never decides whether
+   * the account is approved. Keeping the two separate is what stops "promote to
+   * administrator" from ever being able to substitute for provisioning.
+   */
+  role?: string | null
 }
 
 /**
@@ -82,6 +92,38 @@ export const ACCESS_DENIED_REASONS = {
   unauthenticated: 'unauthenticated',
   /** Verified Auth identity, but no approved application profile. */
   notApproved: 'not_authorized',
+  /**
+   * POST-R13.6CDE.1 — approved, but holds no module at all.
+   *
+   * A distinct code from `not_authorized` on purpose: the account IS
+   * provisioned, and the fix is to grant it a module, not to provision it
+   * again. Collapsing the two would send the administrator to the wrong screen.
+   */
+  noPlatformAccess: 'no_platform_access',
+  /**
+   * POST-R13.6CDE.2 — approved, entitled to enter, but not to THIS module.
+   *
+   * The second layer. `no_platform_access` says "you may not enter Nevada
+   * Market Intelligence"; this says "you are inside it, and this is not one of
+   * your modules". Distinct codes because the remedies differ: the first needs
+   * any grant at all, the second needs one specific grant.
+   */
+  moduleNotGranted: 'module_not_granted',
+  /**
+   * POST-R13.6CDE.2 — approved and entitled, but the surface is a ROLE
+   * capability. No module grant can ever satisfy it; that is the entire point.
+   */
+  administratorRequired: 'administrator_required',
+  /**
+   * The entitlement store could not be READ — not an authorization answer.
+   *
+   * The request is still refused, but the cause is this deployment (a database
+   * behind its code), not the caller. Kept separate for the same reason
+   * `getModuleAccess.ts` keeps `grant_store_unavailable` separate: a 403 asserts
+   * "we checked and you may not", and saying that when nothing was checked sends
+   * everyone after the wrong problem.
+   */
+  accessUnavailable: 'module_access_unavailable',
 } as const
 
 export type AccessDeniedReason =

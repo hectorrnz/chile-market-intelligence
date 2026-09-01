@@ -120,6 +120,9 @@ export default function StructuredNoteDetailPage() {
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [loadFailed, setLoadFailed] = useState(false)
+  // POST-R13.6CDE — see the list page: a 403 is an authorization ANSWER and
+  // renders as such, never as the generic failure state.
+  const [notAuthorized, setNotAuthorized] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteFailed, setDeleteFailed] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -148,6 +151,7 @@ export default function StructuredNoteDetailPage() {
         const res = await fetch(`/api/structured-notes/${id}`, { cache: 'no-store' })
         if (cancelled.value) return
         if (res.status === 404) { setNotFound(true); return }
+        if (res.status === 403) { setNotAuthorized(true); return }
         // R12: any other non-ok (503 not-configured, middleware 401) is a
         // LOAD FAILURE — its JSON error body must never become page data
         // (that crashed the render at `data.note`).
@@ -244,6 +248,12 @@ export default function StructuredNoteDetailPage() {
   if (loading) return (
     <div className="w-full">
       <GlassSurface variant="card"><AsyncState kind="loading" /></GlassSurface>
+    </div>
+  )
+  if (notAuthorized) return (
+    <div className="w-full">
+      {backLink}
+      <GlassSurface variant="card" className="mt-3"><AsyncState kind="not_authorized" /></GlassSurface>
     </div>
   )
   if (loadFailed) return (

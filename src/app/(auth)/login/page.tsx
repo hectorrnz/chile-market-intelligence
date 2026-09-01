@@ -52,10 +52,37 @@ function errorKeyToMessage(t: ReturnType<typeof useLang>['t'], code: string): st
 
 /** Maps a ?error= value set by a server redirect onto a user-facing message. */
 function callbackErrorToMessage(t: ReturnType<typeof useLang>['t'], code: string): string {
-  // `not_authorized` is set by /auth/callback when a verified Auth identity has
-  // no approved application profile — an account that exists in Supabase but was
-  // never provisioned for this platform.
-  return code === 'not_authorized' ? t.auth.errNotAuthorized : t.auth.errorCallback
+  switch (code) {
+    // Set by /auth/callback and by middleware when a verified Auth identity has
+    // no approved application profile — an account that exists in Supabase but
+    // was never provisioned for this platform.
+    case 'not_authorized':
+      return t.auth.errNotAuthorized
+    // POST-R13.6CDE.1 — approved, but granted no module, so there is no
+    // application to enter. Deliberately a DIFFERENT message from the one above:
+    // this account is provisioned and the administrator needs to grant it
+    // something, not create it again. It says nothing about which modules exist.
+    case 'no_platform_access':
+      return t.auth.errNoPlatformAccess
+    // POST-R13.6CDE.2 — inside the platform, but that page belongs to a module
+    // this account does not hold. A third distinct message: the account is
+    // provisioned AND may enter, so telling it either of the two above would
+    // send the reader after the wrong problem. It names no module, because
+    // which modules exist is not something a denied caller needs to learn.
+    case 'module_not_granted':
+      return t.auth.errModuleNotGranted
+    // A role capability, which no module grant can ever satisfy. Separate from
+    // the message above so an administrator reading a report knows the request
+    // failed on ROLE, not on a missing grant they could simply add.
+    case 'administrator_required':
+      return t.auth.errAdministratorRequired
+    // The entitlement store could not be read. Not the account's fault, and not
+    // a denial — so it must not read like one.
+    case 'module_access_unavailable':
+      return t.auth.errAccessUnavailable
+    default:
+      return t.auth.errorCallback
+  }
 }
 
 const HINT_STYLE: CSSProperties = { color: 'var(--nv-auth-ink-3)' }

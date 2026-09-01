@@ -2,7 +2,26 @@
 
 import { useLang } from '@/components/providers/LangProvider'
 
-export type AsyncStateKind = 'loading' | 'empty' | 'error' | 'unavailable' | 'blocked' | 'partial' | 'stale'
+export type AsyncStateKind =
+  | 'loading'
+  | 'empty'
+  | 'error'
+  | 'unavailable'
+  | 'blocked'
+  | 'partial'
+  | 'stale'
+  /**
+   * POST-R13.6CDE — the caller is signed in and approved, but does not hold the
+   * module. An ANSWER, not a failure.
+   *
+   * Distinct from `error` because the reported Structured Notes bug was exactly
+   * this conflation: a deliberate authorization denial rendered as "Something
+   * went wrong", which invites the user to retry something that will never
+   * succeed and hides the real cause from whoever debugs it. Distinct from
+   * `blocked` too — that means a DATA SOURCE is unavailable to everyone (CMF's
+   * CAPTCHA gate), not that this particular account may not look.
+   */
+  | 'not_authorized'
 
 interface AsyncStateProps {
   kind: AsyncStateKind
@@ -16,6 +35,9 @@ interface AsyncStateProps {
 
 const DOT_COLOR: Partial<Record<AsyncStateKind, string>> = {
   error: 'var(--negative)',
+  // Warning, not negative: being outside a module is a normal configuration,
+  // not a fault, and colouring it like a crash would misrepresent it.
+  not_authorized: 'var(--warning)',
   unavailable: 'var(--warning)',
   blocked: 'var(--negative)',
   partial: 'var(--warning)',
@@ -23,9 +45,9 @@ const DOT_COLOR: Partial<Record<AsyncStateKind, string>> = {
 }
 
 /**
- * Shared visual language for the seven async states this app distinguishes.
+ * Shared visual language for the eight async states this app distinguishes.
  * Deliberately NOT a generic skeleton for every state — "loading" has a
- * spinner, but "empty"/"error"/"unavailable"/"blocked"/"partial"/"stale" each
+ * spinner, but "empty"/"error"/"unavailable"/"blocked"/"not_authorized"/"partial"/"stale" each
  * render their own honest copy, so a viewer can never mistake "still
  * loading" for "nothing here" or "this failed" for "this is blocked". Source
  * and as-of are preserved for the two states where real data still backs the

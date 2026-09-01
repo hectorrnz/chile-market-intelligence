@@ -52,6 +52,7 @@ import {
   resolvePathModule,
   DECLARED_MODULE_ROUTE_BASES,
 } from '../src/lib/auth/moduleRoutes.ts'
+import { AUTHORIZATION_STATE_SELECT } from '../src/lib/auth/authorizationState.ts'
 import {
   portfolioVisibleScopes,
   canViewScopeWithModules,
@@ -428,7 +429,26 @@ describe('route to module binding', () => {
     assert.equal(moduleForPath('/portfolio/holdings'), 'portfolio')
     assert.equal(resolvePathModule('/api/family-portfolio/admin').kind, 'administrator_only')
     assert.equal(moduleForPath('/api/family-portfolio/alternatives'), 'alternatives')
-    assert.equal(moduleForPath('/api/family-portfolio/scopes'), 'portfolio')
+    // POST-R13.6CDE.2 INVERTED this. `/api/family-portfolio/scopes` is the
+    // Portfolio LAYOUT's scope resolver, mounted for the Alternatives pages
+    // too, so binding it to `portfolio` alone would have denied it to an
+    // alternatives-only member — breaking § 7's "Alternatives surfaces allowed"
+    // under `portfolio=false, alternatives=true`. It is a `module_any` family
+    // entry point, and it widens reach to the ROUTE only: the route already
+    // returns `portfolioVisibleScopes`, i.e. the principal ceiling already
+    // intersected with the module mask, so no scope leaks with it.
+    const scopes = resolvePathModule('/api/family-portfolio/scopes')
+    assert.equal(scopes.kind, 'module_any')
+    assert.deepEqual(
+      scopes.kind === 'module_any' ? [...scopes.modules] : [],
+      ['portfolio', 'alternatives'],
+    )
+    assert.equal(moduleForPath('/api/family-portfolio/scopes'), null,
+      'a family surface has no single owning module')
+    // Everything else in the family stays portfolio DATA, bound to `portfolio`.
+    assert.equal(moduleForPath('/api/family-portfolio/overview/main'), 'portfolio')
+    assert.equal(moduleForPath('/api/family-portfolio/jaime/snapshot'), 'portfolio')
+    assert.equal(moduleForPath('/api/family-portfolio/weekly-changes/main'), 'portfolio')
     assert.equal(resolvePathModule('/settings/notifications').kind, 'administrator_only')
     assert.equal(resolvePathModule('/settings').kind, 'always_available')
   })
@@ -927,15 +947,55 @@ describe('compatibility backfill', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('POST-R13.6B is substrate only', () => {
-  test('middleware does not consume the module policy yet', () => {
-    // 6E owns integration. Wiring it here would change production behaviour in
-    // a stage whose contract is that it must not.
+  // SUPERSEDED by POST-R13.6CDE.1, the stage this deferral named. Inverted
+  // rather than deleted, so the same boundary is guarded from the other side:
+  // middleware must consume THE shared module rule — not a second, divergent
+  // copy of it — and must fail closed when the grant store cannot be read.
+  test('middleware now consumes the module policy, and only the shared rule', () => {
     const mw = read('src/middleware.ts')
-    assert.doesNotMatch(mw, /moduleAccess|moduleRoutes|user_module_grants/)
+    // POST-R13.6CDE.2 — the grants are EMBEDDED in the one authorization read
+    // rather than fetched separately, so the assertion follows them into the
+    // shared select constant. The gate still reads the store itself.
+    assert.match(mw, /AUTHORIZATION_STATE_SELECT/, 'the gate must read the authorization state itself')
+    assert.match(AUTHORIZATION_STATE_SELECT, /user_module_grants\(module_key\)/)
+    // It composes `canEnterPlatform` through the shared decision table rather
+    // than re-deriving entitlement inline.
+    assert.match(mw, /decideRequestAccess/)
+    assert.doesNotMatch(mw, /default_for_member/, 'defaults are never authorization')
+    const decision = read('src/lib/auth/requestAccess.ts')
+    assert.match(decision, /from '\.\/moduleAccess\.ts'/)
+    assert.match(decision, /canEnterPlatform/)
+    // A missing or unreadable store must never open the gate.
+    assert.match(decision, /!resolved\.ok[\s\S]{0,300}outcome: 'deny'/)
   })
 
-  test('navigation does not consume it yet', () => {
-    assert.doesNotMatch(read('src/lib/navigation.ts'), /moduleAccess|module_key|canAccessModule/)
+  // POST-R13.6CDE.2 — the SECOND layer. `moduleRoutes.ts` had no production
+  // consumer through POST-R13.6CDE.1, which is why one grant reached every
+  // private surface. The decision must now resolve the requested path through
+  // that same table, and must do so via the shared predicate rather than
+  // re-implementing the four-way binding match inline.
+  test('the request decision resolves the requested path through the route table', () => {
+    const decision = read('src/lib/auth/requestAccess.ts')
+    assert.match(decision, /from '\.\/moduleRoutes\.ts'/)
+    assert.match(decision, /resolvePathModule\(pathname\)/)
+    assert.match(decision, /bindingSatisfiedBy\(binding, access\)/)
+    // The two Step-B denials are distinct, and neither is `no_platform_access`:
+    // being refused ONE module is not being refused the platform.
+    assert.match(decision, /'administrator_required'/)
+    assert.match(decision, /'module_not_granted'/)
+  })
+
+  // SUPERSEDED by POST-R13.6CDE, which is the stage this deferral named.
+  // Inverted rather than deleted: the same boundary is now guarded from the
+  // other side — navigation must consume the module rule, and must consume THAT
+  // rule rather than inventing a second one.
+  test('navigation now consumes the module rule, and only that rule', () => {
+    const nav = read('src/lib/navigation.ts')
+    assert.match(nav, /moduleAccess|effectiveAccess/, 'navigation must be entitlement-aware')
+    assert.match(nav, /visibleNavGroups/)
+    // It composes the shared helpers; it must not re-derive access itself.
+    assert.doesNotMatch(nav, /user_module_grants|isApproved\s*===|role\s*===/)
+    assert.doesNotMatch(nav, /from 'next|@supabase|process\.env/, 'still a pure config module')
   })
 
   test('no route handler consumes it yet', () => {

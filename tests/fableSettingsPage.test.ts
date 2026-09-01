@@ -113,7 +113,12 @@ describe('R9.2 · route and Fable composition', () => {
     assert.equal((CLIENT_CODE.match(/<GlassSurface as="section"/g) ?? []).length, 4)
     // R9.3 added a fourth card INSIDE the existing second-row Reveal; R9.4 adds
     // the full-width third row as its own staggered reveal.
-    assert.equal((CLIENT_CODE.match(/<Reveal delayMs=/g) ?? []).length, 3)
+    // AMENDED by POST-R13.6CDE. Settings gained a FOURTH row: the
+    // administrator-only Users & Access entry, which the owner specified as the
+    // way into the console. It renders null for every non-administrator, so an
+    // ordinary member still sees exactly the three approved rows this case was
+    // written to protect.
+    assert.equal((CLIENT_CODE.match(/<Reveal delayMs=/g) ?? []).length, 4)
     assert.match(CLIENT_CODE, /<Reveal delayMs=\{70\}>/)
     assert.match(CLIENT_CODE, /<Reveal delayMs=\{130\}>/)
     assert.match(CLIENT_CODE, /<Reveal delayMs=\{190\}>/)
@@ -1363,7 +1368,12 @@ describe('R9.5 · the surface is one integrated product', () => {
     const files = readdirSync(join(ROOT, 'src/app/settings'), { withFileTypes: true })
     assert.deepEqual(
       files.map((f) => f.name).sort(),
-      ['NotificationRecipientsCard.tsx', 'SettingsClient.tsx', 'notifications', 'page.tsx'].sort(),
+      // AMENDED by POST-R13.6CDE. `users/` is a deliberate exception to "no
+      // Settings subpage", specified by the owner: the administrator console is
+      // a management surface with its own table and form, not another row of the
+      // immediate-save Settings composition. The rule still holds for the
+      // MEMBER-facing surface, which remains exactly one page.
+      ['NotificationRecipientsCard.tsx', 'SettingsClient.tsx', 'UsersAccessCard.tsx', 'notifications', 'users', 'page.tsx'].sort(),
     )
     assert.deepEqual(readdirSync(join(ROOT, 'src/app/settings/notifications')), ['page.tsx'])
 
@@ -1387,9 +1397,12 @@ describe('R9.5 · the surface is one integrated product', () => {
     }
     // Row 3 is the recipients card, last.
     assert.ok(CLIENT_CODE.indexOf('<NotificationRecipientsCard') > cursor)
-    // Exactly three staggered reveals — one per row, cadence preserved.
-    assert.equal((CLIENT_CODE.match(/<Reveal /g) ?? []).length, 3)
-    for (const ms of [70, 130, 190]) assert.match(CLIENT_CODE, new RegExp(`delayMs=\\{${ms}\\}`))
+    // Four staggered reveals since POST-R13.6CDE — the cadence is preserved and
+    // extended by one for the administrator-only Users & Access entry.
+    assert.equal((CLIENT_CODE.match(/<Reveal /g) ?? []).length, 4)
+    for (const ms of [70, 130, 190, 220]) assert.match(CLIENT_CODE, new RegExp(`delayMs=\\{${ms}\\}`))
+    // The new row is LAST, after the three approved member rows.
+    assert.ok(CLIENT_CODE.indexOf('<UsersAccessCard') > CLIENT_CODE.indexOf('<NotificationRecipientsCard'))
   })
 
   test('45-46. exactly one h1 for the whole surface, and only h2 below it', () => {
@@ -1595,7 +1608,8 @@ describe('R9.6 · the Settings control', () => {
     assert.equal((CLIENT_CODE.match(/<GlassSurface as="section"/g) ?? []).length, 4)
     assert.match(CLIENT_CODE, /<CardTitle>\{s\.security\.title\}<\/CardTitle>/)
     assert.ok(CLIENT_CODE.indexOf('<NotificationRecipientsCard') > privacy)
-    assert.equal((CLIENT_CODE.match(/<Reveal /g) ?? []).length, 3)
+    // Four since POST-R13.6CDE — see the R9.5 case above for why.
+    assert.equal((CLIENT_CODE.match(/<Reveal /g) ?? []).length, 4)
   })
 
   test('15-18. the shared Switch, driven by the shared store — no local authority', () => {

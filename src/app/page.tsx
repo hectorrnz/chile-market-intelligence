@@ -97,6 +97,7 @@ import type { NoteDashboardMetrics, BookSummary } from '@/lib/structuredNotes/da
 import { PageHeader } from '@/components/fable/PageHeader'
 import { GlassSurface } from '@/components/fable/GlassSurface'
 import { TableCard } from '@/components/fable/TableCard'
+import { useModuleAccess } from '@/components/providers/ModuleAccessProvider'
 import { AsyncState } from '@/components/fable/AsyncState'
 import { ChangeIndicator } from '@/components/fable/ChangeIndicator'
 import { CurrentActions, type CurrentAction } from '@/components/fable/CurrentActions'
@@ -432,11 +433,37 @@ export default function HomePage() {
   // endpoints and its valuation helpers are gone, and `/portfolio` now IS this
   // publication. Nothing here changed — the card already read the canonical
   // endpoint — but the "legacy module still exists" note above no longer does.
+  // ── POST-R13.6CDE — Overview is entitlement-aware ─────────────────────────
+  // Overview stays reachable by every approved member, but it must not become a
+  // side door into a module they were not given. Each private-module card below
+  // is gated on the module itself, and the gate sits on the FETCH, not only on
+  // the JSX: hiding a card after its request already returned the data would
+  // leak exactly what the revocation was meant to withhold, and would keep
+  // hitting endpoints that are going to 403 anyway.
+  //
+  // `ready` matters. Until the access snapshot resolves, `can()` answers false
+  // for everything, so nothing is requested and nothing renders — the correct
+  // direction to fail. Each effect re-runs when it flips, so a permitted card
+  // loads a moment later rather than never.
+  const { can, ready: accessReady } = useModuleAccess()
+  // POST-R13.6CDE.2 — `portfolio` ALONE, not `portfolio || alternatives`. This
+  // card reads `/api/family-portfolio/overview/<scope>`, which serves `main` and
+  // the three personal scopes and 404s on `alternatives`. An alternatives-only
+  // member could therefore never populate it: before this stage the card
+  // rendered, requested, and settled on "error"; the request is now refused by
+  // the module boundary as well. Not requesting it at all is the honest
+  // behaviour and the one § 4 asks for — Overview omits what the caller may not
+  // reach rather than showing a card that cannot fill.
+  const canPortfolio = can('portfolio')
+  const canNotes = can('structured_notes')
+  const canMarkets = can('markets')
+
   const [fpScope, setFpScope] = useState<string | null>(null)
   const [fpData, setFpData] = useState<FamilyPortfolioOverviewResponse | null>(null)
   const [fpState, setFpState] = useState<FpCardState>('loading')
 
   useEffect(() => {
+    if (!accessReady || !canPortfolio) return
     let cancelled = false
     ;(async () => {
       const scopesResult = await fetchFamilyPortfolioScopes()
@@ -466,7 +493,7 @@ export default function HomePage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [accessReady, canPortfolio])
 
   // ── Structured Notes book snapshot — the same dashboard payload the
   // /structured-notes page reads. 503 = not configured → honest 'unavailable'.
@@ -474,13 +501,14 @@ export default function HomePage() {
   const [bookState, setBookState] = useState<ModuleState>('loading')
 
   useEffect(() => {
+    if (!accessReady || !canNotes) return
     const controller = new AbortController()
     fetchBookSnapshot(controller.signal).then((result) => {
       if (controller.signal.aborted) return
       if (result.kind === 'ready') { setBook(result.data); setBookState('ready') } else { setBookState(result.kind) }
     })
     return () => controller.abort()
-  }, [])
+  }, [accessReady, canNotes])
 
   // ── Ingestion health — the same sanitized endpoint Settings reads. A failed
   // request is never rendered as healthy or empty.
@@ -557,6 +585,7 @@ export default function HomePage() {
   // error row, never the sign-in prompt and never a confirmed-empty watchlist.
   const [watchlistError, setWatchlistError] = useState(false)
   useEffect(() => {
+    if (!accessReady || !canMarkets) return
     let cancelled = false
     ;(async () => {
       try {
@@ -581,7 +610,7 @@ export default function HomePage() {
       }
     })()
     return () => { cancelled = true }
-  }, [])
+  }, [accessReady, canMarkets])
   // R12 — per-instrument live gating: the badge describes the user's own
   // watchlist tickers, not the 25-stock universe. A watchlist row whose quote
   // failed must not sit under a page-wide "Live"; partial coverage is
@@ -829,159 +858,169 @@ export default function HomePage() {
       <Reveal delayMs={80}>
         <div className="flex flex-wrap items-stretch gap-4">
 
+          {/* POST-R13.6CDE — the private Portfolio card is omitted entirely when neither
+              `portfolio` nor `alternatives` is held. Its fetch is gated too, so no
+              portfolio figure is ever retrieved for an account that may not see one. */}
           {/* Portfolio snapshot — the canonical Main Portfolio publication.
               See the fetch effect above for why this no longer reads the
               legacy positions tracker. Every figure here is a field the
               Summary hero reads from the same response for the same scope. */}
-          <GlassSurface variant="card" as="section" className="p-5 flex flex-col gap-2" style={FABLE_HERO}>
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="ui-label text-muted-fg">{t.fp.tag}</h2>
-              <Link href={PORTFOLIO_SUMMARY} className="text-xs text-primary hover:underline whitespace-nowrap">{t.nav.portfolio} →</Link>
-            </div>
-            {fpState === 'loading' && <AsyncState kind="loading" message={t.common.loading} />}
-            {fpState === 'error' && <AsyncState kind="error" message={t.fp.accessError} />}
-            {/* An account with no portfolio entitlement is told so plainly. No
-                figure, no placeholder zero, nothing about a portfolio it may
-                not see. */}
-            {fpState === 'denied' && <AsyncState kind="empty" message={t.fp.noAccess} />}
-            {fpState === 'ready' && (
-              fpPublication === null ? (
-                <AsyncState kind="empty" message={t.fp.portfolio.noPublication} />
-              ) : (
-                <>
-                  <div className="flex items-baseline gap-3 flex-wrap">
-                    {/* R13.R5C.1 § 1 — marked `US$` and rendered one step
-                        above the KPI hero. This card's whole subject is this
-                        one figure; nothing else on it competes, and the unit
-                        is the one thing a reader could get wrong by a factor
-                        of ~950 in a Chilean frame of reference. */}
-                    <MaskedAmount
-                      value={fpHero?.totalValue ?? null}
-                      masked={masked}
-                      currency
-                      className="ui-number ui-kpi-hero-lg text-foreground"
-                    />
-                    {/* The period is NAMED. "+0,12% Return" beside a portfolio
-                        value could be read as the week, the month or the year;
-                        the read model's field is the WEEKLY return, so the
-                        label says so and matches the P&L beneath it. */}
-                    <ChangeIndicator
-                      value={fpHero?.weeklyReturn ?? null}
-                      label={
-                        fpHero?.weeklyReturn != null
-                          ? `${formatRatioPct(fpHero.weeklyReturn)} ${t.fp.overview.weeklyReturn}`
-                          : undefined
-                      }
-                    />
-                  </div>
-                  {/* The basis is stated only where it is TRUE: Main is the one
-                      scope with a Chilean-equities split to name.
-
-                      ONE AS-OF PER SURFACE — the publication date is carried by
-                      the footer below and deliberately not repeated here. */}
-                  {fpScope === 'main' && (
-                    <p className="ui-meta text-muted-fg">{t.fp.overview.aumBasis}</p>
-                  )}
-                  <div className="flex flex-wrap gap-x-5 gap-y-2 pt-2" style={{ borderTop: '1px solid var(--nv-line)' }}>
-                    {/* Portfolio money — the module's one guarded renderer, so
-                        the Overview obeys the privacy mask exactly as the
-                        Summary does. */}
-                    <div className="flex flex-col min-w-0">
-                      <span className="ui-meta text-muted-fg">{t.fp.overview.weeklyProfit}</span>
+          {canPortfolio && (
+            <GlassSurface variant="card" as="section" className="p-5 flex flex-col gap-2" style={FABLE_HERO}>
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="ui-label text-muted-fg">{t.fp.tag}</h2>
+                <Link href={PORTFOLIO_SUMMARY} className="text-xs text-primary hover:underline whitespace-nowrap">{t.nav.portfolio} →</Link>
+              </div>
+              {fpState === 'loading' && <AsyncState kind="loading" message={t.common.loading} />}
+              {fpState === 'error' && <AsyncState kind="error" message={t.fp.accessError} />}
+              {/* An account with no portfolio entitlement is told so plainly. No
+                  figure, no placeholder zero, nothing about a portfolio it may
+                  not see. */}
+              {fpState === 'denied' && <AsyncState kind="empty" message={t.fp.noAccess} />}
+              {fpState === 'ready' && (
+                fpPublication === null ? (
+                  <AsyncState kind="empty" message={t.fp.portfolio.noPublication} />
+                ) : (
+                  <>
+                    <div className="flex items-baseline gap-3 flex-wrap">
+                      {/* R13.R5C.1 § 1 — marked `US$` and rendered one step
+                          above the KPI hero. This card's whole subject is this
+                          one figure; nothing else on it competes, and the unit
+                          is the one thing a reader could get wrong by a factor
+                          of ~950 in a Chilean frame of reference. */}
                       <MaskedAmount
-                        value={fpHero?.weeklyDifference ?? null}
+                        value={fpHero?.totalValue ?? null}
                         masked={masked}
-                        signed
-                        className="ui-number ui-card-value text-foreground"
+                        currency
+                        className="ui-number ui-kpi-hero-lg text-foreground"
+                      />
+                      {/* The period is NAMED. "+0,12% Return" beside a portfolio
+                          value could be read as the week, the month or the year;
+                          the read model's field is the WEEKLY return, so the
+                          label says so and matches the P&L beneath it. */}
+                      <ChangeIndicator
+                        value={fpHero?.weeklyReturn ?? null}
+                        label={
+                          fpHero?.weeklyReturn != null
+                            ? `${formatRatioPct(fpHero.weeklyReturn)} ${t.fp.overview.weeklyReturn}`
+                            : undefined
+                        }
                       />
                     </div>
-                    {/* Returns are ratios, never masked — the module's standing
-                        policy (see MaskedAmount's header). */}
-                    <SnapshotStat label={t.fp.overview.ytdReturn} value={formatRatioPct(fpHero?.ytdReturn ?? null)} valueClass="ui-card-value" />
-                    {/* R13.R5C.1 § 1.5 — the one addition to this card. It is
-                        not filler: it completes the weekly/YTD pair the card
-                        already half-states (weekly return + weekly P&L + YTD
-                        return), it is masked money like the weekly P&L beside
-                        it, and it is READ from the same canonical hero as
-                        every other figure here rather than computed. */}
-                    <div className="flex flex-col min-w-0">
-                      <span className="ui-meta text-muted-fg">{t.fp.overview.ytdProfit}</span>
-                      <MaskedAmount
-                        value={fpHero?.ytdProfit ?? null}
-                        masked={masked}
-                        signed
-                        className="ui-number ui-card-value text-foreground"
-                      />
-                    </div>
-                    <SnapshotStat label={t.fp.portfolio.revisionShort} value={String(fpPublication.revision)} valueClass="ui-card-value" />
-                  </div>
-                  <div className="mt-auto pt-1">
-                    <TableSourceFooter source={t.fp.portfolio.source} asOf={fpPublication.asOfDate} />
-                  </div>
-                </>
-              )
-            )}
-          </GlassSurface>
+                    {/* The basis is stated only where it is TRUE: Main is the one
+                        scope with a Chilean-equities split to name.
 
-          {/* Structured Notes book snapshot — same payload as /structured-notes. */}
-          <GlassSurface variant="card" as="section" className="p-5 flex flex-col gap-2" style={FABLE_SIDE}>
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="ui-label text-muted-fg">{t.nav.structuredNotes}</h2>
-              <Link href="/structured-notes" className="text-xs text-primary hover:underline whitespace-nowrap">{t.nav.structuredNotes} →</Link>
-            </div>
-            {bookState === 'loading' && <AsyncState kind="loading" message={t.common.loading} />}
-            {bookState === 'error' && <AsyncState kind="error" />}
-            {bookState === 'unavailable' && <AsyncState kind="unavailable" />}
-            {bookState === 'ready' && book && (
-              book.summary.totalNotes === 0 ? (
-                <p className="text-xs text-muted-fg py-4">{t.home.notesEmpty}</p>
-              ) : (
-                <>
-                  <div className="flex items-baseline gap-2">
-                    <span className="ui-kpi-hero text-foreground ui-number">{book.summary.activeNotes}</span>
-                    <span className="text-xs text-muted-fg">{t.sn.dashLive}</span>
-                  </div>
-                  <ul className="flex flex-wrap gap-x-3 gap-y-1" aria-label={t.sn.riskStatus}>
-                    {([
-                      ['safe', book.summary.safeNotes, t.sn.riskSafe, t.sn.legendSafe],
-                      ['watch', book.summary.watchNotes, t.sn.riskWatch, t.sn.legendWatch],
-                      ['autocallable', book.summary.autocallableNotes, t.sn.riskAutocallable, t.sn.legendAutocallable],
-                      ['breached', book.summary.breachedNotes, t.sn.riskBreached, t.sn.legendBreached],
-                    ] as const).map(([key, count, label, legend]) => (
-                      <li key={key} className="inline-flex items-center gap-1 text-xs text-muted-fg" title={legend}>
-                        <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ backgroundColor: RISK_DOT[key] }} aria-hidden="true" />
-                        <span className="ui-number text-foreground font-medium">{count}</span> {label}
-                      </li>
-                    ))}
-                  </ul>
-                  <div className="flex flex-col gap-0.5 pt-2" style={{ borderTop: '1px solid var(--nv-line)' }}>
-                    <span className="ui-meta text-muted-fg">{t.sn.dashNotional}</span>
-                    <PrivacyValue masked={masked} className="ui-number text-sm">
-                      <span className="ui-number text-sm text-foreground">
-                        {book.summary.currency} {book.summary.totalCurrentNotional.toLocaleString('en-US')}
-                      </span>
-                    </PrivacyValue>
-                    {book.summary.mixedCurrency && (
-                      <span className="ui-meta text-muted-fg">{t.home.notesMixedCcy}</span>
+                        ONE AS-OF PER SURFACE — the publication date is carried by
+                        the footer below and deliberately not repeated here. */}
+                    {fpScope === 'main' && (
+                      <p className="ui-meta text-muted-fg">{t.fp.overview.aumBasis}</p>
                     )}
-                  </div>
-                  {nextObs && (
-                    <div className="flex flex-col gap-0.5">
-                      <span className="ui-meta text-muted-fg">{t.sn.dashNextObs}</span>
-                      <Link href={`/structured-notes/${nextObs.id}`} className="text-xs text-foreground hover:underline">
-                        <span className="ui-number">{ddmm(nextObs.date)}</span>
-                        {nextObs.days != null && <span className="text-muted-fg"> · {nextObs.days}d</span>}
-                        <span className="text-muted-fg"> · </span>{nextObs.name}
-                      </Link>
+                    <div className="flex flex-wrap gap-x-5 gap-y-2 pt-2" style={{ borderTop: '1px solid var(--nv-line)' }}>
+                      {/* Portfolio money — the module's one guarded renderer, so
+                          the Overview obeys the privacy mask exactly as the
+                          Summary does. */}
+                      <div className="flex flex-col min-w-0">
+                        <span className="ui-meta text-muted-fg">{t.fp.overview.weeklyProfit}</span>
+                        <MaskedAmount
+                          value={fpHero?.weeklyDifference ?? null}
+                          masked={masked}
+                          signed
+                          className="ui-number ui-card-value text-foreground"
+                        />
+                      </div>
+                      {/* Returns are ratios, never masked — the module's standing
+                          policy (see MaskedAmount's header). */}
+                      <SnapshotStat label={t.fp.overview.ytdReturn} value={formatRatioPct(fpHero?.ytdReturn ?? null)} valueClass="ui-card-value" />
+                      {/* R13.R5C.1 § 1.5 — the one addition to this card. It is
+                          not filler: it completes the weekly/YTD pair the card
+                          already half-states (weekly return + weekly P&L + YTD
+                          return), it is masked money like the weekly P&L beside
+                          it, and it is READ from the same canonical hero as
+                          every other figure here rather than computed. */}
+                      <div className="flex flex-col min-w-0">
+                        <span className="ui-meta text-muted-fg">{t.fp.overview.ytdProfit}</span>
+                        <MaskedAmount
+                          value={fpHero?.ytdProfit ?? null}
+                          masked={masked}
+                          signed
+                          className="ui-number ui-card-value text-foreground"
+                        />
+                      </div>
+                      <SnapshotStat label={t.fp.portfolio.revisionShort} value={String(fpPublication.revision)} valueClass="ui-card-value" />
                     </div>
-                  )}
-                  <div className="mt-auto pt-1">
-                    <TableSourceFooter source={t.sn.sourceMarket} asOf={book.summary.pricesAsOf} />
-                  </div>
-                </>
-              )
-            )}
-          </GlassSurface>
+                    <div className="mt-auto pt-1">
+                      <TableSourceFooter source={t.fp.portfolio.source} asOf={fpPublication.asOfDate} />
+                    </div>
+                  </>
+                )
+              )}
+            </GlassSurface>
+          )}
+
+          {/* POST-R13.6CDE — omitted outright when the module is not held. Not a denial message: a member
+              who was never given Structured Notes should not learn the module exists
+              from a card telling them they may not see it. */}
+          {/* Structured Notes book snapshot — same payload as /structured-notes. */}
+          {canNotes && (
+            <GlassSurface variant="card" as="section" className="p-5 flex flex-col gap-2" style={FABLE_SIDE}>
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="ui-label text-muted-fg">{t.nav.structuredNotes}</h2>
+                <Link href="/structured-notes" className="text-xs text-primary hover:underline whitespace-nowrap">{t.nav.structuredNotes} →</Link>
+              </div>
+              {bookState === 'loading' && <AsyncState kind="loading" message={t.common.loading} />}
+              {bookState === 'error' && <AsyncState kind="error" />}
+              {bookState === 'unavailable' && <AsyncState kind="unavailable" />}
+              {bookState === 'ready' && book && (
+                book.summary.totalNotes === 0 ? (
+                  <p className="text-xs text-muted-fg py-4">{t.home.notesEmpty}</p>
+                ) : (
+                  <>
+                    <div className="flex items-baseline gap-2">
+                      <span className="ui-kpi-hero text-foreground ui-number">{book.summary.activeNotes}</span>
+                      <span className="text-xs text-muted-fg">{t.sn.dashLive}</span>
+                    </div>
+                    <ul className="flex flex-wrap gap-x-3 gap-y-1" aria-label={t.sn.riskStatus}>
+                      {([
+                        ['safe', book.summary.safeNotes, t.sn.riskSafe, t.sn.legendSafe],
+                        ['watch', book.summary.watchNotes, t.sn.riskWatch, t.sn.legendWatch],
+                        ['autocallable', book.summary.autocallableNotes, t.sn.riskAutocallable, t.sn.legendAutocallable],
+                        ['breached', book.summary.breachedNotes, t.sn.riskBreached, t.sn.legendBreached],
+                      ] as const).map(([key, count, label, legend]) => (
+                        <li key={key} className="inline-flex items-center gap-1 text-xs text-muted-fg" title={legend}>
+                          <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ backgroundColor: RISK_DOT[key] }} aria-hidden="true" />
+                          <span className="ui-number text-foreground font-medium">{count}</span> {label}
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="flex flex-col gap-0.5 pt-2" style={{ borderTop: '1px solid var(--nv-line)' }}>
+                      <span className="ui-meta text-muted-fg">{t.sn.dashNotional}</span>
+                      <PrivacyValue masked={masked} className="ui-number text-sm">
+                        <span className="ui-number text-sm text-foreground">
+                          {book.summary.currency} {book.summary.totalCurrentNotional.toLocaleString('en-US')}
+                        </span>
+                      </PrivacyValue>
+                      {book.summary.mixedCurrency && (
+                        <span className="ui-meta text-muted-fg">{t.home.notesMixedCcy}</span>
+                      )}
+                    </div>
+                    {nextObs && (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="ui-meta text-muted-fg">{t.sn.dashNextObs}</span>
+                        <Link href={`/structured-notes/${nextObs.id}`} className="text-xs text-foreground hover:underline">
+                          <span className="ui-number">{ddmm(nextObs.date)}</span>
+                          {nextObs.days != null && <span className="text-muted-fg"> · {nextObs.days}d</span>}
+                          <span className="text-muted-fg"> · </span>{nextObs.name}
+                        </Link>
+                      </div>
+                    )}
+                    <div className="mt-auto pt-1">
+                      <TableSourceFooter source={t.sn.sourceMarket} asOf={book.summary.pricesAsOf} />
+                    </div>
+                  </>
+                )
+              )}
+            </GlassSurface>
+          )}
 
           {/* Current Actions — the one solid deep-teal Fable card. Real items
               only: note risk states, due observations, ingestion health. */}
@@ -1114,75 +1153,81 @@ export default function HomePage() {
               (The FX band moved into the Macro card's Chile band — R10.1;
               the card was promoted into Row A as a visual peer of Macro and
               Events — R10.3.) */}
-          <div className={`flex flex-col min-w-0 ${ANALYTIC_SPAN}`}>
-          <TableCard
-            title={t.home.watchlistTitle}
-            controls={
-              <>
-                <MarketDataSourceBadge status={watchlistStatus} />
-                <Link href="/watchlist" className="text-xs text-primary hover:underline">{t.watchlist.title} →</Link>
-              </>
-            }
-            minWidth={430}
-            maxHeight={420}
-            className="flex-1"
-            footer={<TableSourceFooter source={t.home.watchlistSource} asOf={watchlistAsOf} />}
-          >
-            <table className="w-full text-xs" style={{ fontSize: 'var(--fs-table-cell)' }}>
-              <caption className="sr-only">{t.home.watchlistTitle}</caption>
-              <thead>
-                <tr>
-                  <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="sticky top-0 z-10 border-b border-border text-left py-2.5 pl-4 pr-3 ui-table-header text-muted-fg">{t.home.ticker}</th>
-                  <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="sticky top-0 z-10 border-b border-border text-left py-2.5 px-3 ui-table-header text-muted-fg">{t.home.company}</th>
-                  <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="sticky top-0 z-10 border-b border-border text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.home.price}</th>
-                  {/* Sortable headers: real buttons inside the th (keyboard-
-                      operable, same pattern as the Fable Stocks table). */}
-                  <th scope="col" aria-sort={watchlistSort?.key === 'dayChg' ? (watchlistSort.dir === 'desc' ? 'descending' : 'ascending') : undefined} style={{ backgroundColor: 'var(--surface-table)' }} className="sticky top-0 z-10 border-b border-border text-right py-2.5 px-3 ui-table-header text-muted-fg">
-                    <button
-                      type="button"
-                      onClick={() => toggleWatchlistSort('dayChg')}
-                      title={`${t.common.sortBy} ${t.home.dayChg}`}
-                      className="ui-table-header text-muted-fg hover:text-foreground nv-transition select-none whitespace-nowrap"
-                    >
-                      {t.home.dayChg}{sortArrow('dayChg')}
-                    </button>
-                  </th>
-                  <th scope="col" aria-sort={watchlistSort?.key === 'ytd' ? (watchlistSort.dir === 'desc' ? 'descending' : 'ascending') : undefined} style={{ backgroundColor: 'var(--surface-table)' }} className="sticky top-0 z-10 border-b border-border text-right py-2.5 px-3 pr-4 ui-table-header text-muted-fg">
-                    <button
-                      type="button"
-                      onClick={() => toggleWatchlistSort('ytd')}
-                      title={`${t.common.sortBy} ${t.home.ytd}`}
-                      className="ui-table-header text-muted-fg hover:text-foreground nv-transition select-none whitespace-nowrap"
-                    >
-                      {t.home.ytd}{sortArrow('ytd')}
-                    </button>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {watchlistError ? (
-                  <tr><td colSpan={5} className="p-0"><AsyncState kind="error" /></td></tr>
-                ) : watchlistAuthed === false ? (
-                  <tr><td colSpan={5} className="px-4 py-4 text-center text-muted-fg">
-                    <Link href="/login" className="text-primary hover:underline">{t.home.watchlistSignIn}</Link>
-                  </td></tr>
-                ) : watchlistAuthed === true && watchlistRows.length === 0 ? (
-                  <tr><td colSpan={5} className="px-4 py-4 text-center text-muted-fg">
-                    <Link href="/watchlist" className="text-primary hover:underline">{t.home.watchlistEmpty}</Link>
-                  </td></tr>
-                ) : watchlistRows.map(({ ticker, company: c, price, dayPct, ytdPct }) => (
-                  <tr key={ticker} className="border-b border-border last:border-0 nv-row-hover nv-transition">
-                    <td className="py-2 pl-4 pr-3"><Link href={`/companies/${ticker}`} className="font-mono text-primary hover:underline">{ticker}</Link></td>
-                    <td className="py-2 px-3 text-foreground truncate max-w-[110px]">{c.shortName}</td>
-                    <td className="py-2 px-3 text-right ui-number text-foreground">{price != null ? formatCLP(price) : '—'}</td>
-                    <td className={`py-2 px-3 text-right ui-number ${dayPct != null ? changeColor(dayPct) : 'text-muted-fg'}`}>{dayPct != null ? formatPct(dayPct) : '—'}</td>
-                    <td className={`py-2 px-3 pr-4 text-right ui-number ${ytdPct != null ? changeColor(ytdPct) : 'text-muted-fg'}`}>{ytdPct != null ? formatPct(ytdPct) : '—'}</td>
+          {/* POST-R13.6CDE — the Watchlist is per-user private data behind the
+              Markets module: both its fetch and its render are gated, so a member
+              without `markets` neither sees the card nor causes their watchlist to
+              be read. */}
+          {canMarkets && (
+            <div className={`flex flex-col min-w-0 ${ANALYTIC_SPAN}`}>
+            <TableCard
+              title={t.home.watchlistTitle}
+              controls={
+                <>
+                  <MarketDataSourceBadge status={watchlistStatus} />
+                  <Link href="/watchlist" className="text-xs text-primary hover:underline">{t.watchlist.title} →</Link>
+                </>
+              }
+              minWidth={430}
+              maxHeight={420}
+              className="flex-1"
+              footer={<TableSourceFooter source={t.home.watchlistSource} asOf={watchlistAsOf} />}
+            >
+              <table className="w-full text-xs" style={{ fontSize: 'var(--fs-table-cell)' }}>
+                <caption className="sr-only">{t.home.watchlistTitle}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="sticky top-0 z-10 border-b border-border text-left py-2.5 pl-4 pr-3 ui-table-header text-muted-fg">{t.home.ticker}</th>
+                    <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="sticky top-0 z-10 border-b border-border text-left py-2.5 px-3 ui-table-header text-muted-fg">{t.home.company}</th>
+                    <th scope="col" style={{ backgroundColor: 'var(--surface-table)' }} className="sticky top-0 z-10 border-b border-border text-right py-2.5 px-3 ui-table-header text-muted-fg">{t.home.price}</th>
+                    {/* Sortable headers: real buttons inside the th (keyboard-
+                        operable, same pattern as the Fable Stocks table). */}
+                    <th scope="col" aria-sort={watchlistSort?.key === 'dayChg' ? (watchlistSort.dir === 'desc' ? 'descending' : 'ascending') : undefined} style={{ backgroundColor: 'var(--surface-table)' }} className="sticky top-0 z-10 border-b border-border text-right py-2.5 px-3 ui-table-header text-muted-fg">
+                      <button
+                        type="button"
+                        onClick={() => toggleWatchlistSort('dayChg')}
+                        title={`${t.common.sortBy} ${t.home.dayChg}`}
+                        className="ui-table-header text-muted-fg hover:text-foreground nv-transition select-none whitespace-nowrap"
+                      >
+                        {t.home.dayChg}{sortArrow('dayChg')}
+                      </button>
+                    </th>
+                    <th scope="col" aria-sort={watchlistSort?.key === 'ytd' ? (watchlistSort.dir === 'desc' ? 'descending' : 'ascending') : undefined} style={{ backgroundColor: 'var(--surface-table)' }} className="sticky top-0 z-10 border-b border-border text-right py-2.5 px-3 pr-4 ui-table-header text-muted-fg">
+                      <button
+                        type="button"
+                        onClick={() => toggleWatchlistSort('ytd')}
+                        title={`${t.common.sortBy} ${t.home.ytd}`}
+                        className="ui-table-header text-muted-fg hover:text-foreground nv-transition select-none whitespace-nowrap"
+                      >
+                        {t.home.ytd}{sortArrow('ytd')}
+                      </button>
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </TableCard>
-          </div>
+                </thead>
+                <tbody>
+                  {watchlistError ? (
+                    <tr><td colSpan={5} className="p-0"><AsyncState kind="error" /></td></tr>
+                  ) : watchlistAuthed === false ? (
+                    <tr><td colSpan={5} className="px-4 py-4 text-center text-muted-fg">
+                      <Link href="/login" className="text-primary hover:underline">{t.home.watchlistSignIn}</Link>
+                    </td></tr>
+                  ) : watchlistAuthed === true && watchlistRows.length === 0 ? (
+                    <tr><td colSpan={5} className="px-4 py-4 text-center text-muted-fg">
+                      <Link href="/watchlist" className="text-primary hover:underline">{t.home.watchlistEmpty}</Link>
+                    </td></tr>
+                  ) : watchlistRows.map(({ ticker, company: c, price, dayPct, ytdPct }) => (
+                    <tr key={ticker} className="border-b border-border last:border-0 nv-row-hover nv-transition">
+                      <td className="py-2 pl-4 pr-3"><Link href={`/companies/${ticker}`} className="font-mono text-primary hover:underline">{ticker}</Link></td>
+                      <td className="py-2 px-3 text-foreground truncate max-w-[110px]">{c.shortName}</td>
+                      <td className="py-2 px-3 text-right ui-number text-foreground">{price != null ? formatCLP(price) : '—'}</td>
+                      <td className={`py-2 px-3 text-right ui-number ${dayPct != null ? changeColor(dayPct) : 'text-muted-fg'}`}>{dayPct != null ? formatPct(dayPct) : '—'}</td>
+                      <td className={`py-2 px-3 pr-4 text-right ui-number ${ytdPct != null ? changeColor(ytdPct) : 'text-muted-fg'}`}>{ytdPct != null ? formatPct(ytdPct) : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableCard>
+            </div>
+          )}
         </div>
       </Reveal>
 

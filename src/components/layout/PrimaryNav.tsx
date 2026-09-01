@@ -21,14 +21,23 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useLang } from '@/components/providers/LangProvider'
-import { navGroups, resolveActiveGroup } from '@/lib/navigation'
+import { visibleNavGroups, resolveActiveGroup } from '@/lib/navigation'
+import { useModuleAccess } from '@/components/providers/ModuleAccessProvider'
 import { useNavIndicator } from './useNavIndicator'
 
 export function PrimaryNav() {
   const pathname = usePathname()
   const { t, lang } = useLang()
   const activeGroup = resolveActiveGroup(pathname)
-  const { railRef, setItemRef, rect } = useNavIndicator(activeGroup?.key ?? null, `${pathname}|${lang}`)
+  // POST-R13.6CDE — the rail advertises only what this caller may open. The
+  // indicator key includes the visible set so the sliding pill re-measures when
+  // entitlement resolves and the rail's width changes underneath it.
+  const { access } = useModuleAccess()
+  const groups = visibleNavGroups(access)
+  const { railRef, setItemRef, rect } = useNavIndicator(
+    activeGroup?.key ?? null,
+    `${pathname}|${lang}|${groups.map((g) => g.key).join(',')}`,
+  )
 
   return (
     <nav
@@ -44,7 +53,7 @@ export function PrimaryNav() {
           style={{ transform: `translateX(${rect.left}px)`, width: rect.width, backgroundColor: 'var(--surface)' }}
         />
       )}
-      {navGroups.map((group) => {
+      {groups.map((group) => {
         const active = activeGroup?.key === group.key
         return (
           <Link

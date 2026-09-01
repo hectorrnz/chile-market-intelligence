@@ -246,7 +246,13 @@ describe('R12 · SN extract/import never ship raw backend detail', () => {
 describe('R12 · failed loads reach explicit error states, never confirmed-empty', () => {
   test('SN dashboard: load() and the mount fetch both check res.ok', () => {
     const src = read('src/app/structured-notes/page.tsx')
-    assert.equal((src.match(/if \(!res\.ok\) \{ (setNotes\(\[\]\); )?setLoadFailed\(true\); return \}/g) ?? []).length, 2)
+    // AMENDED by POST-R13.6CDE: both branches now also clear the denial flag, so
+    // a failure can never be reported as an authorization answer. The property is
+    // unchanged — BOTH paths still check res.ok and both still fail closed.
+    assert.equal(
+      (src.match(/if \(!res\.ok\) \{ (setNotes\(\[\]\); )?setNotAuthorized\(false\); setLoadFailed\(true\); return \}/g) ?? []).length,
+      2,
+    )
   })
 
   test('SN detail: a non-404 error body never becomes page data', () => {

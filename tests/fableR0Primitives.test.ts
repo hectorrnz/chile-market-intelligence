@@ -512,11 +512,18 @@ describe('header regions — brand, utilities and the nav rail cannot starve eac
   })
 
   test('navigation labels, destinations and the measured indicator are unchanged', () => {
-    assert.match(PRIMARY_NAV, /\{navGroups\.map\(\(group\) => \{/, 'items still come from navGroups')
+    // AMENDED by POST-R13.6CDE: the rail renders `visibleNavGroups(access)`,
+    // which is `navGroups` filtered by the caller's modules. Same source, same
+    // order, same objects — an entitled caller sees exactly the list this
+    // asserted before, and every property below is untouched.
+    assert.match(PRIMARY_NAV, /\{groups\.map\(\(group\) => \{/, 'items still come from the shared config')
+    assert.match(PRIMARY_NAV, /visibleNavGroups\(access\)/, 'filtered by effective access')
     assert.match(PRIMARY_NAV, /\{group\.label\(t\)\}/, 'labels still resolve through i18n')
     assert.match(PRIMARY_NAV, /href=\{group\.href\}/)
     assert.match(PRIMARY_NAV, /aria-current=\{active \? 'page' : undefined\}/)
-    assert.match(PRIMARY_NAV, /useNavIndicator\(activeGroup\?\.key \?\? null/)
+    // The indicator key gained the visible-set fingerprint so the sliding pill
+    // re-measures when entitlement resolves and the rail's width changes.
+    assert.match(PRIMARY_NAV, /useNavIndicator\(\s*activeGroup\?\.key \?\? null/)
     assert.match(PRIMARY_NAV, /nv-indicator/)
     assert.doesNotMatch(PRIMARY_NAV, /\btruncate\b/, 'a nav label must never be truncated')
   })

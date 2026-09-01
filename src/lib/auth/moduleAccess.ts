@@ -36,9 +36,12 @@
 // authorization", which exists to stop a future change from quietly converting
 // one into the other.
 //
-// NOT WIRED YET. POST-R13.6B establishes this substrate only. Integration into
-// middleware and navigation is POST-R13.6E, and the PostgreSQL-level enforcement
-// that Structured Notes and notification recipients require is POST-R13.6B.1.
+// WHERE THIS IS CONSUMED. POST-R13.6B established the substrate; it is now
+// wired. POST-R13.6B.1 attached the PostgreSQL-level enforcement for Structured
+// Notes and notification recipients; POST-R13.6CDE drove navigation, Overview
+// composition and the Users & Access console from it; POST-R13.6CDE.1 added
+// `canEnterPlatform` and bound it into the middleware gate, so an approved
+// member holding nothing no longer enters the application at all.
 
 /**
  * The grantable application modules, in canonical order.
@@ -52,10 +55,16 @@
  *                                   distribution list is a ROLE capability; it
  *                                   is not member-configurable and must never be
  *                                   modelled as an ordinary module grant.
- *   overview                      — always available to an approved member. It
- *                                   must instead OMIT content belonging to
- *                                   modules the member cannot reach (6E).
- *   settings                      — personal account infrastructure.
+ *   overview                      — not grantable, because it is not a
+ *                                   destination anyone is given: it is what the
+ *                                   application opens on, and it OMITS content
+ *                                   belonging to modules the member cannot
+ *                                   reach. Reaching it at all is governed by
+ *                                   `canEnterPlatform` below, which POST-R13.6-
+ *                                   CDE.1 made conditional on holding at least
+ *                                   one real module.
+ *   settings                      — personal account infrastructure, reachable
+ *                                   on the same condition as Overview.
  *   news                          — currently exists only as an Overview
  *                                   surface, with no route of its own. Adding a
  *                                   key purely for symmetry would invent a
@@ -173,6 +182,47 @@ export function canAccessModule(input: ModuleAccessInput, module: unknown): bool
  */
 export function modulesFor(input: ModuleAccessInput): ModuleKey[] {
   return APP_MODULE_KEYS.filter((m) => canAccessModule(input, m))
+}
+
+/**
+ * POST-R13.6CDE.1 — THE platform-access boundary.
+ *
+ * True when this account may enter the authenticated application AT ALL.
+ * Distinct from `canAccessModule`, which decides one module once the caller is
+ * already inside.
+ *
+ *   approved administrator                -> yes, with no grant rows at all
+ *   approved member, >= 1 reachable module -> yes, then filtered per module
+ *   approved member, zero modules          -> NO — not Overview, not Settings
+ *   unapproved / no profile / no session   -> no
+ *
+ * WHY ZERO MODULES IS ZERO ACCESS. Overview and personal Settings used to be
+ * unconditional for any approved member. The owner replaced that: an account
+ * with nothing granted has nothing to do inside the shell, and letting it in
+ * would present an application that is entirely empty — while still exposing the
+ * chrome, the account surface and every private request the shell makes on load.
+ * "Approved" now means the account EXISTS; entitlement is what admits it.
+ *
+ * COUNTED THROUGH `modulesFor`, NOT `grants.length`. A stored grant naming a key
+ * this build does not declare — a retired module, a registry row added by a
+ * newer deployment, a corrupted read — must not be what lets someone in. Counting
+ * only modules that actually resolve keeps the boundary equal to what the caller
+ * could truly reach, and it is strictly the stricter of the two readings.
+ *
+ * `app_modules.default_for_member` is never consulted here either. A member is
+ * admitted by explicit grants alone.
+ *
+ * PRESENTATION NEVER CALLS THIS TO GRANT. It is used by middleware to REFUSE,
+ * and by the administrator console to LABEL. Every route still re-derives its
+ * own answer, and PostgreSQL RLS holds underneath: a zero-grant member who
+ * bypassed this boundary entirely would still read nothing.
+ */
+export function canEnterPlatform(input: ModuleAccessInput): boolean {
+  if (input.isApproved !== true) return false
+  // Administrators hold every module by role and are deliberately given no
+  // grant rows, so an empty grant table can never lock administration out.
+  if (input.isAdministrator === true) return true
+  return modulesFor(input).length > 0
 }
 
 /**

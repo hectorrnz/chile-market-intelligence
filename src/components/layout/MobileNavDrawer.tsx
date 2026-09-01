@@ -28,7 +28,8 @@ import { usePersistentState } from '@/lib/usePersistentState'
 import { useAuthDisplay } from '@/lib/auth/useAuthDisplay'
 import { useEscape } from '@/lib/useEscape'
 import { useMobileNav } from '@/components/providers/MobileNavProvider'
-import { MACRO_REGIONS, navGroups, resolveActiveChild, resolveActiveGroup } from '@/lib/navigation'
+import { MACRO_REGIONS, visibleNavGroups, resolveActiveChild, resolveActiveGroup } from '@/lib/navigation'
+import { useModuleAccess } from '@/components/providers/ModuleAccessProvider'
 import { NavIcon } from './NavIcon'
 import { NevadaMark } from '@/components/ui/NevadaMark'
 
@@ -38,6 +39,10 @@ export function MobileNavDrawer() {
   const pathname = usePathname()
   const { t } = useLang()
   const { open, closeNav, returnFocusRef } = useMobileNav()
+  // POST-R13.6CDE — the drawer is the below-lg equivalent of the pill rail and
+  // must show exactly the same set; a module hidden on desktop but reachable
+  // from the mobile drawer would be the worst of both.
+  const { access } = useModuleAccess()
   const { name: displayName, ready: authReady } = useAuthDisplay()
   const [macroRegion, setMacroRegion] = usePersistentState<'CL' | 'US'>('cmi.macroRegion', 'CL')
   const drawerRef = useRef<HTMLDivElement>(null)
@@ -128,7 +133,7 @@ export function MobileNavDrawer() {
         </div>
 
         <nav aria-label={t.common.primaryNav} className="flex-1 py-2">
-          {navGroups.map((group) => {
+          {visibleNavGroups(access).map((group) => {
             const groupActive = activeGroup?.key === group.key
             return (
               <div key={group.key}>

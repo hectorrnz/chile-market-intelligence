@@ -22,8 +22,56 @@
 // on EVERY private request. See `docs/security_access_control.md` for the
 // latency this costs and why it is accepted.
 
-import { isApprovedProfile, type ApprovalProfile } from './approval.ts'
+// POST-R13.6CDE.1 — THE PLATFORM-ACCESS BOUNDARY JOINS THIS TABLE.
+//
+// Approval used to be the whole gate: an approved account reached the shell and
+// every module inside it. The owner replaced that model. Approval now means the
+// account EXISTS; what admits it is entitlement — administrator by role, or at
+// least one explicit module grant. A member holding nothing is refused the
+// application entirely, Overview and personal Settings included.
+//
+// It belongs HERE, not in a page or a layout, for two reasons. Middleware is the
+// only place that can refuse before the shell renders, which is what § 4 of the
+// stage requires; and it is the same choke point that already answers pages with
+// a redirect and APIs with JSON, so a zero-grant member's API call cannot
+// receive an HTML login page.
+//
+// FOUR OUTCOMES, NOT TWO. `no_platform_access` is an ANSWER (approved, granted
+// nothing) and `access_unavailable` is a FAILURE (the grant store could not be
+// read). Both refuse. Keeping them apart is the same discipline
+// `getModuleAccess.ts` applies, and for the same reason: collapsing them made a
+// database-behind-its-code look identical to a deliberate denial, which is
+// exactly the bug POST-R13.6CDE was opened to fix.
+
+// POST-R13.6CDE.2 — STEP B: THE REQUESTED MODULE.
+//
+// Passing the platform boundary answers "may this account enter Nevada Market
+// Intelligence". It does NOT answer "may it enter every module". Until this
+// stage nothing asked the second question: `moduleRoutes.ts` existed, was
+// tested, and had no production consumer, so a member granted `macro` alone
+// reached Stocks, Compare, Earnings, Portfolio and Structured Notes by typing
+// their URLs. Every private path now resolves through that table.
+//
+// It belongs in the SAME decision, immediately after the boundary, for the
+// reasons the boundary belongs here: middleware is the only place that can
+// refuse before the shell renders, and it is the one choke point that already
+// answers pages with a redirect and APIs with JSON. Route handlers still
+// re-derive their own answer and PostgreSQL RLS still holds underneath — this
+// is the first of three layers, never the only one.
+//
+// ONE STATE, NOT TWO SNAPSHOTS. Steps A and B read the same
+// `AuthorizationState`, resolved by ONE query. Two lookups would cost an extra
+// sequential round-trip on every member request and, worse, could disagree with
+// each other inside a single request if a grant changed between them.
+
 import { requiresApprovedSession, deniesWithJson } from './accessPolicy.ts'
+import { canEnterPlatform } from './moduleAccess.ts'
+import { resolvePathModule, bindingSatisfiedBy } from './moduleRoutes.ts'
+import {
+  moduleAccessOf,
+  type AuthorizationState,
+  type AuthorizationStateLookup,
+} from './authorizationState.ts'
 
 /**
  * Result of an authoritative identity verification.
@@ -38,21 +86,33 @@ export interface VerifiedIdentity {
 }
 
 export type IdentityVerifier = () => Promise<VerifiedIdentity>
-export type ApprovalLookup = (userId: string) => Promise<ApprovalProfile | null>
 
-export type DenialReason = 'unauthenticated' | 'not_approved'
+export type DenialReason =
+  | 'unauthenticated'
+  | 'not_approved'
+  /** Approved, but holds no module: no application access at all. */
+  | 'no_platform_access'
+  /** Inside the platform, but this surface belongs to a module not held. */
+  | 'module_not_granted'
+  /** Inside the platform, but this surface is a role capability. */
+  | 'administrator_required'
+  /** The entitlement store could not be read. A failure, not an answer. */
+  | 'access_unavailable'
 
 export type AccessDecision =
   /** Path is exempt from the gate (public, framework, bearer-authenticated). */
   | { outcome: 'exempt' }
-  /** Verified identity with a current approval record. */
+  /** Verified identity, current approval record, and platform entitlement. */
   | { outcome: 'allow'; userId: string }
   /**
-   * Denied. `status` is 401 when the session itself is invalid and 403 when a
-   * valid identity simply lacks approval. `json` mirrors the route class, so
-   * an API never receives an HTML redirect and a page never receives JSON.
+   * Denied. `status` is 401 when the session itself is invalid, 403 for every
+   * authorization answer (unapproved, no platform access, module not granted,
+   * administrator required), and 503 when the entitlement store could not be
+   * read at all. `json` mirrors the ROUTE CLASS and is computed before any
+   * reason is known, so an API can never receive an HTML redirect and a page
+   * can never receive JSON — whichever layer produced the denial.
    */
-  | { outcome: 'deny'; reason: DenialReason; status: 401 | 403; json: boolean }
+  | { outcome: 'deny'; reason: DenialReason; status: 401 | 403 | 503; json: boolean }
 
 /**
  * Decides whether a request for `pathname` may proceed.
@@ -64,10 +124,12 @@ export type AccessDecision =
 export async function decideRequestAccess(
   pathname: string,
   verifyIdentity: IdentityVerifier,
-  loadApproval: ApprovalLookup,
+  loadAuthorizationState: AuthorizationStateLookup,
 ): Promise<AccessDecision> {
   if (!requiresApprovedSession(pathname)) return { outcome: 'exempt' }
 
+  // Computed from the ROUTE, before any authorization reasoning. A page denial
+  // is a redirect and an API denial is JSON no matter which check refuses.
   const json = deniesWithJson(pathname)
 
   // 1 · Authoritative identity verification (network-verified, never a local
@@ -84,17 +146,46 @@ export async function decideRequestAccess(
     return { outcome: 'deny', reason: 'unauthenticated', status: 401, json }
   }
 
-  // 2 · CURRENT approval, re-read on every private request. This is what makes
-  //     revocation immediate: clearing the marker denies the very next request
-  //     rather than waiting for the access token to expire.
-  let profile: ApprovalProfile | null
+  // 2 · THE authorization state — approval, role and grants — read together in
+  //     ONE query, re-read on every private request so revocation of either the
+  //     username or the last grant denies the very next request rather than
+  //     waiting for the access token to expire.
+  let resolved: Awaited<ReturnType<AuthorizationStateLookup>>
   try {
-    profile = await loadApproval(identity.user.id)
+    resolved = await loadAuthorizationState(identity.user.id)
   } catch {
+    resolved = { ok: false }
+  }
+  // The store failed. Refuse — and say so honestly. NOT a fallback to "allow if
+  // the table is missing", which would defeat the entire entitlement design, and
+  // NOT a 403, which would tell a correctly-configured member they had been
+  // denied when nothing was ever checked.
+  if (!resolved.ok) {
+    return { outcome: 'deny', reason: 'access_unavailable', status: 503, json }
+  }
+  const state: AuthorizationState | null = resolved.state
+  if (state === null || !state.approved) {
     return { outcome: 'deny', reason: 'not_approved', status: 403, json }
   }
-  if (!isApprovedProfile(profile)) {
-    return { outcome: 'deny', reason: 'not_approved', status: 403, json }
+
+  const access = moduleAccessOf(state)
+
+  // 3 · STEP A — PLATFORM ENTITLEMENT. Approval says the account exists; this
+  //     says it may enter. An administrator is admitted by role; a member needs
+  //     at least one module that resolves.
+  if (!canEnterPlatform(access)) {
+    return { outcome: 'deny', reason: 'no_platform_access', status: 403, json }
+  }
+
+  // 4 · STEP B — THE REQUESTED SURFACE. Entering the platform is not entering
+  //     every module. An unmapped private path denies here, administrators
+  //     included: a surface added later must be classified deliberately before
+  //     anyone reaches it.
+  const binding = resolvePathModule(pathname)
+  if (!bindingSatisfiedBy(binding, access)) {
+    const reason: DenialReason =
+      binding.kind === 'administrator_only' ? 'administrator_required' : 'module_not_granted'
+    return { outcome: 'deny', reason, status: 403, json }
   }
 
   return { outcome: 'allow', userId: identity.user.id }
@@ -107,6 +198,14 @@ export async function decideRequestAccess(
  * dropping it stops the browser replaying it and makes the next request a clean
  * unauthenticated one. Not done for a plain `unauthenticated` denial: there is
  * nothing useful to clear, and a mid-refresh request must not lose its session.
+ *
+ * DELIBERATELY NOT DONE for `no_platform_access`, `module_not_granted`,
+ * `administrator_required` or `access_unavailable`. All four callers are
+ * approved and genuinely signed in; signing them out would be a routing
+ * convenience, not a security measure, and it would destroy a valid session the
+ * moment an administrator is about to grant them a module. Typing the URL of a
+ * module you do not hold is not a reason to lose your session. The boundary
+ * refuses the request — it does not end the session.
  */
 export function shouldClearSession(decision: AccessDecision): boolean {
   return decision.outcome === 'deny' && decision.reason === 'not_approved'

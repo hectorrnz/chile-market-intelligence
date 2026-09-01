@@ -39,9 +39,12 @@ import { isApprovedProfile, ACCESS_DENIED_REASONS } from '../src/lib/auth/approv
 import {
   decideRequestAccess,
   shouldClearSession,
-  type ApprovalLookup,
   type IdentityVerifier,
 } from '../src/lib/auth/requestAccess.ts'
+import {
+  AUTHORIZATION_STATE_SELECT,
+  type AuthorizationStateLookup,
+} from '../src/lib/auth/authorizationState.ts'
 import { dict } from '../src/lib/i18n.ts'
 
 const ROOT = join(import.meta.dirname, '..')
@@ -281,17 +284,33 @@ describe('verified identity and per-request approval', () => {
   /** A verifier that throws (network/provider failure) must fail closed. */
   const throwing: IdentityVerifier = async () => { throw new Error('auth provider unreachable') }
 
-  const approved: ApprovalLookup = async () => ({ id: 'user-1', username: 'approved-user' })
-  const noProfile: ApprovalLookup = async () => null
-  const revoked: ApprovalLookup = async () => ({ id: 'user-1', username: null })
+  // POST-R13.6CDE.2 — approval, role and grants now arrive as ONE state from ONE
+  // query, so these fixtures replace the former separate approval/grant lookups.
+  //
+  // The identity and approval cases below supply an ADMINISTRATOR. Approval is
+  // the only variable they are about, and an administrator satisfies every
+  // MAPPED binding by role — so a module denial can never be mistaken for the
+  // approval denial under test. Module entitlement itself is exercised
+  // exhaustively in tests/platformAccessBoundary.test.ts and
+  // tests/moduleRequestEnforcement.test.ts.
+  const approved: AuthorizationStateLookup = async () => ({
+    ok: true,
+    state: { userId: 'user-1', approved: true, role: 'administrator', grants: [] },
+  })
+  const noProfile: AuthorizationStateLookup = async () => ({ ok: true, state: null })
+  const revoked: AuthorizationStateLookup = async () => ({
+    ok: true,
+    state: { userId: 'user-1', approved: false, role: 'administrator', grants: [] },
+  })
 
   const PAGE = '/portfolio'
+  const API = '/api/market/stocks'
   // POST-R13.5 — `/api/portfolios` no longer routes anywhere: it was the retired
-  // positions tracker's data layer. It is kept here deliberately, because the
-  // property under test is that the policy is DEFAULT-DENY and path-agnostic
-  // — an API path with no handler at all must still fail closed with a JSON
-  // 401, never fall through to a 404 that leaks the route's absence.
-  const API = '/api/portfolios'
+  // positions tracker's data layer. It is kept as a fixture deliberately,
+  // because the property it proves is that the policy is DEFAULT-DENY and
+  // path-agnostic — an API path with no handler at all must still fail closed,
+  // never fall through to a 404 that leaks the route's absence.
+  const NO_HANDLER_API = '/api/portfolios'
 
   // 1 · fake or malformed session cookie cannot pass a private browser route
   test('a forged or malformed session cookie is denied on a private browser route', async () => {
@@ -361,19 +380,26 @@ describe('verified identity and per-request approval', () => {
 
   test('the approval record is re-read on EVERY private request, not cached', async () => {
     let reads = 0
-    const counting: ApprovalLookup = async () => {
+    const counting: AuthorizationStateLookup = async () => {
       reads += 1
-      return { id: 'user-1', username: reads <= 2 ? 'approved-user' : null }
+      return {
+        ok: true,
+        state: { userId: 'user-1', approved: reads <= 2, role: 'administrator', grants: [] },
+      }
     }
     assert.equal((await decideRequestAccess(API, verified, counting)).outcome, 'allow')
     assert.equal((await decideRequestAccess(API, verified, counting)).outcome, 'allow')
     // Third request: the marker is gone. No sign-out, no token refresh, no wait.
     assert.equal((await decideRequestAccess(API, verified, counting)).outcome, 'deny')
-    assert.equal(reads, 3, 'one approval read per private request')
+    assert.equal(reads, 3, 'exactly one authorization read per private request')
   })
 
   test('a deleted approval row is as denying as a cleared username', async () => {
-    for (const lookup of [noProfile, revoked, (async () => ({ id: 'user-1', username: '  ' })) as ApprovalLookup]) {
+    const blankUsername: AuthorizationStateLookup = async () => ({
+      ok: true,
+      state: { userId: 'user-1', approved: false, role: null, grants: ['markets'] },
+    })
+    for (const lookup of [noProfile, revoked, blankUsername]) {
       const d = await decideRequestAccess(API, verified, lookup)
       assert.equal(d.outcome === 'deny' && d.status, 403)
     }
@@ -381,15 +407,45 @@ describe('verified identity and per-request approval', () => {
 
   test('approval is never consulted for an unverified caller', async () => {
     let consulted = false
-    const spy: ApprovalLookup = async () => { consulted = true; return null }
+    const spy: AuthorizationStateLookup = async () => {
+      consulted = true
+      return { ok: true, state: null }
+    }
     await decideRequestAccess(API, rejected, spy)
     assert.equal(consulted, false, 'an unauthenticated caller must learn nothing about approval')
   })
 
-  test('a failing approval lookup fails closed as not_approved', async () => {
-    const broken: ApprovalLookup = async () => { throw new Error('db unreachable') }
-    const d = await decideRequestAccess(API, verified, broken)
-    assert.equal(d.outcome === 'deny' && d.status, 403)
+  // POST-R13.6CDE.2 INVERTED this. A lookup that throws used to be reported as
+  // `not_approved` (403) because approval was all it read. It now reads the
+  // ENTITLEMENT STORE too, and a store that did not answer has told us nothing:
+  // calling that "not approved" blames a correctly-provisioned account for the
+  // deployment's schema version, which is the exact confusion POST-R13.6CDE was
+  // opened to fix. The property that matters — it FAILS CLOSED — is unchanged
+  // and is asserted more strongly here than before: denied, never allowed, in
+  // both the throwing and the honest-failure shapes.
+  test('a failing authorization lookup fails closed as an availability failure', async () => {
+    const throwingLookup: AuthorizationStateLookup = async () => {
+      throw new Error('db unreachable')
+    }
+    const reportedFailure: AuthorizationStateLookup = async () => ({ ok: false })
+    for (const lookup of [throwingLookup, reportedFailure]) {
+      const d = await decideRequestAccess(API, verified, lookup)
+      assert.equal(d.outcome, 'deny')
+      assert.equal(d.outcome === 'deny' && d.reason, 'access_unavailable')
+      assert.equal(d.outcome === 'deny' && d.status, 503)
+    }
+  })
+
+  test('an API path with no handler at all still fails closed', async () => {
+    // Default-deny is path-agnostic: a non-existent private API must never fall
+    // through to a 404 that reveals the route's absence, and must never allow.
+    assert.deepEqual(
+      await decideRequestAccess(NO_HANDLER_API, rejected, approved),
+      { outcome: 'deny', reason: 'unauthenticated', status: 401, json: true },
+    )
+    const d = await decideRequestAccess(NO_HANDLER_API, verified, approved)
+    assert.equal(d.outcome, 'deny', 'an undeclared private API is unreachable, administrators included')
+    assert.equal(d.outcome === 'deny' && d.json, true, 'and it denies as JSON, never a redirect')
   })
 
   // 14 · public auth routes remain reachable; exempt classes are never gated
@@ -489,9 +545,37 @@ describe('middleware wires the policy to the documented HTTP contract', () => {
     assert.doesNotMatch(MW_CODE, /user_metadata/, 'metadata is user-writable, never an approval source')
   })
 
-  test('the approval lookup re-reads user_profiles per request under own-row RLS', () => {
+  test('the authorization lookup re-reads user_profiles per request under own-row RLS', () => {
     assert.match(MW, /from\('user_profiles'\)/)
-    assert.match(MW, /\.select\('id, username'\)/)
+    assert.match(MW, /\.eq\('id', userId\)/)
+    // POST-R13.6CDE.2 — approval, role and grants now arrive in ONE embedded
+    // read, so the assertion covers both halves of that select. Still expressed
+    // as the PROPERTY rather than a frozen literal: a NARROW explicit column
+    // list carrying the approval marker, never `select('*')`.
+    const select = MW.match(/from\('user_profiles'\)\s*\.select\(([^)]*)\)/)
+    assert.ok(select, 'the authorization read must use an explicit column list')
+    assert.match(select[1], /AUTHORIZATION_STATE_SELECT/,
+      'the column list must come from the shared constant, not a second copy')
+    const columns = AUTHORIZATION_STATE_SELECT
+      .replace(/user_module_grants\([^)]*\)/, 'user_module_grants')
+      .split(',')
+      .map((c) => c.trim())
+    assert.ok(columns.includes('username'), 'the approval marker must be read')
+    assert.ok(!columns.includes('*'), 'never select *')
+    assert.ok(columns.every((c) => ['id', 'username', 'role', 'user_module_grants'].includes(c)),
+      `the middleware read must stay narrow, found: ${columns.join(', ')}`)
+    assert.doesNotMatch(MW_CODE, /getSupabaseAdminClient|SERVICE_ROLE/, 'must not bypass RLS')
+  })
+
+  // POST-R13.6CDE.2 — the grants are EMBEDDED in that one read rather than
+  // fetched separately, and are held to the same standard: own-row, user-session
+  // client, explicit column, per request. RLS authorises the embedded rows
+  // independently (`auth.uid() = user_id`), so the join can disclose nothing the
+  // separate read could not.
+  test('the module grants are embedded in that one read, never a second query', () => {
+    assert.match(AUTHORIZATION_STATE_SELECT, /user_module_grants\(module_key\)/)
+    assert.doesNotMatch(MW_CODE, /from\('user_module_grants'\)/,
+      'a separate grant query would reintroduce the third round-trip')
     assert.doesNotMatch(MW_CODE, /getSupabaseAdminClient|SERVICE_ROLE/, 'must not bypass RLS')
   })
 
@@ -509,7 +593,10 @@ describe('middleware wires the policy to the documented HTTP contract', () => {
     const fn = MW.slice(MW.indexOf('function pageDenial'), MW.indexOf('function deny('))
     assert.match(fn, /NextResponse\.redirect/)
     assert.match(fn, /Cache-Control', NO_STORE/)
-    assert.match(fn, /error', 'not_authorized'/)
+    // POST-R13.6CDE.1 — the `?error` value is table-driven now that four reasons
+    // exist. The property is unchanged: an unapproved identity is still flagged.
+    assert.match(fn, /target\.searchParams\.set\('error', errorParam\)/)
+    assert.match(MW, /not_approved: 'not_authorized'/)
     assert.match(fn, /shouldClearSession\(decision\)/)
     assert.match(fn, /response\.cookies\.delete\(cookie\.name\)/)
     assert.match(MW, /SESSION_COOKIE_PREFIX = 'sb-'/)
@@ -522,7 +609,7 @@ describe('middleware wires the policy to the documented HTTP contract', () => {
 
   test('it documents the latency the verified gate costs', () => {
     assert.match(MW, /LATENCY/)
-    assert.match(MW, /TWO sequential Supabase round-trips/)
+    assert.match(MW, /exactly TWO sequential Supabase round-trips/)
   })
 
   test('it fails CLOSED when Supabase is unconfigured', () => {
@@ -876,7 +963,12 @@ describe('administrator provisioning is server-only and complete', () => {
     // This is what makes --revoke deny the next REQUEST, not just the next login.
     assert.match(SCRIPT, /update\(\{ username: null \}\)/)
     assert.ok(!isApprovedProfile({ id: 'u', username: null }))
-    assert.match(read('src/middleware.ts'), /\.select\('id, username'\)/)
+    // The per-request read still carries `username`. POST-R13.6CDE.1 added
+    // `role` beside it for the platform boundary; POST-R13.6CDE.2 embedded the
+    // module grants in the same read and moved the column list into a shared
+    // constant, so the cross-check follows it there rather than re-spelling it.
+    assert.match(read('src/middleware.ts'), /\.select\(AUTHORIZATION_STATE_SELECT\)/)
+    assert.match(AUTHORIZATION_STATE_SELECT, /\busername\b/)
   })
 
   test('a retry cannot create a duplicate or mismatched identity', () => {
