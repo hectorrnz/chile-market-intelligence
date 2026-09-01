@@ -101,7 +101,11 @@ async function main(): Promise<void> {
   const stamp = Date.now()
   const fresh = `invite-proof-${stamp}@invite-proof.invalid`
   const activated = `invite-proof-active-${stamp}@invite-proof.invalid`
-  const REDIRECT = 'http://localhost:3000/auth/callback?next=%2Fauth%2Freset-password'
+  // Must match the local stack's own host and be allow-listed in
+  // supabase/config.toml — see the note there. The shape mirrors what
+  // buildInviteRedirectUrl() produces from the live request origin.
+  const REDIRECT = 'http://127.0.0.1:3000/auth/callback?next=%2Fauth%2Freset-password'
+  const NOT_ALLOWLISTED = 'http://evil.example.com/steal'
 
   console.log('\n── A · generateLink({ type: "invite" }) for a BRAND NEW address ──')
   const a = await admin.auth.admin.generateLink({
@@ -139,10 +143,35 @@ async function main(): Promise<void> {
     !!createdRow && !createdRow.error && createdRow.data?.user?.id === aUserId,
   )
   check(
-    'A8 the created identity has NO password set and is not yet confirmed as signed-in',
-    !!createdRow?.data?.user && createdRow.data.user.last_sign_in_at === null,
+    // GoTrue OMITS the field for an identity that has never signed in rather
+    // than sending an explicit null, so both spellings mean "never signed in".
+    'A8 the created identity has never signed in',
+    !!createdRow?.data?.user &&
+      (createdRow.data.user.last_sign_in_at === null ||
+        createdRow.data.user.last_sign_in_at === undefined),
     `last_sign_in_at=${String(createdRow?.data?.user?.last_sign_in_at)}`,
   )
+
+  // A9 — the hazard behind A6, proven rather than described.
+  //
+  // GoTrue does not reject a redirect_to it does not recognise: it SILENTLY
+  // substitutes site_url and returns success. An invited user would then land on
+  // the site root holding a session, never reaching /auth/callback, so the
+  // password would never be set and nmi_activate_current_user() would never run
+  // — an invitation that appears to work and quietly does not. The deployment
+  // requirement this creates is recorded in supabase/config.toml.
+  const probe = await admin.auth.admin.generateLink({
+    type: 'invite',
+    email: `invite-probe-${stamp}@invite-proof.invalid`,
+    options: { redirectTo: NOT_ALLOWLISTED },
+  })
+  const probeRedirect = (probe.data?.properties as { redirect_to?: string } | null)?.redirect_to
+  check(
+    'A9 a NON-allow-listed redirect is silently replaced, never honoured',
+    !probe.error && typeof probeRedirect === 'string' && !probeRedirect.startsWith('http://evil.'),
+    `redirect_to=${String(probeRedirect)}`,
+  )
+  if (probe.data?.user?.id) await admin.auth.admin.deleteUser(probe.data.user.id)
 
   console.log('\n── B · a SECOND invite for the SAME address (the resend path) ──')
   const b = await admin.auth.admin.generateLink({
