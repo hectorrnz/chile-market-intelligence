@@ -309,6 +309,17 @@ async function createFixtures(cfg: StackConfig): Promise<Map<string, Fixture>> {
         display_name: spec.key,
         role: spec.role,
         portfolio_principal: spec.principal,
+        // R13.6F — every fixture here stands for a LIVE account.
+        //
+        // Lifecycle columns default to NULL because a freshly invited account is
+        // not yet activated, and an unactivated account is denied everything. A
+        // fixture meant to be live must therefore say so, exactly as real
+        // provisioning does; otherwise each assertion below would pass or fail
+        // for the wrong reason — denied because it was never activated, rather
+        // than by the rule actually under test. (The `unapproved` fixture stays
+        // unapproved regardless: approval is a separate, earlier gate and is
+        // carried by a NULL username, not by this column.)
+        activated_at: new Date().toISOString(),
       }),
     })
     if (profile.status >= 300) {
