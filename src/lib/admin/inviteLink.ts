@@ -78,3 +78,43 @@ export function buildInviteRedirectUrl(origin: string): string {
   const base = origin.endsWith('/') ? origin.slice(0, -1) : origin
   return `${base}${AUTH_CALLBACK_PATH}?next=${encodeURIComponent(INVITE_LANDING_PATH)}`
 }
+
+/**
+ * The URL actually EMAILED to an invited person.
+ *
+ * WHY NOT GoTrue's OWN `action_link`
+ * ──────────────────────────────────
+ * Because it cannot work with a server-rendered callback, and the hermetic CI
+ * proof measured exactly that. Following `action_link` reaches
+ * `GET /auth/v1/verify`, which answers `303` to our callback with the session in
+ * the URL **fragment** — `.../auth/callback?next=...#access_token=...`. A
+ * fragment is never transmitted to a server: `/auth/callback` would see only
+ * `next`, never call `exchangeCodeForSession`, never establish a session, and
+ * therefore never call `nmi_activate_current_user()`. The invitation would look
+ * like it worked and leave the account permanently `account_not_activated`.
+ *
+ * So the link points at the application instead, carrying the `hashed_token`
+ * that `generateLink` already returns. The callback redeems it server-side with
+ * `verifyOtp({ token_hash, type })`, which sets the session as cookies on the
+ * response — the same posture the rest of this app's auth already uses, and the
+ * pattern Supabase documents for server-side rendering.
+ *
+ * The one-time token is no more exposed here than in GoTrue's own link: it is the
+ * same value, in the same position, sent to the same address. What changes is who
+ * redeems it — our server rather than the user's browser.
+ */
+export function buildInviteAcceptUrl(origin: string, tokenHash: string): string {
+  if (!isUsableOrigin(origin)) {
+    throw new Error('invalid_origin')
+  }
+  if (typeof tokenHash !== 'string' || tokenHash.trim().length === 0) {
+    throw new Error('invalid_token_hash')
+  }
+  const base = origin.endsWith('/') ? origin.slice(0, -1) : origin
+  return (
+    `${base}${AUTH_CALLBACK_PATH}` +
+    `?token_hash=${encodeURIComponent(tokenHash)}` +
+    `&type=invite` +
+    `&next=${encodeURIComponent(INVITE_LANDING_PATH)}`
+  )
+}

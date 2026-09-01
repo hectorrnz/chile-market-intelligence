@@ -40,10 +40,12 @@
 
 import { execFileSync } from 'node:child_process'
 import { createClient } from '@supabase/supabase-js'
+import { buildInviteAcceptUrl } from '../../src/lib/admin/inviteLink.ts'
 
 interface LocalConfig {
   url: string
   serviceRoleKey: string
+  anonKey: string
 }
 
 function pick(obj: Record<string, unknown>, keys: string[], label: string): string {
@@ -66,6 +68,10 @@ function readLocalConfig(): LocalConfig {
       ['SERVICE_ROLE_KEY', 'service_role_key', 'SECRET_KEY'],
       'the service-role key',
     ),
+    // Redeeming a one-time token is an ANONYMOUS action — it is what the invited
+    // person's own browser does. Using the service-role key here would prove
+    // nothing about whether a real recipient can accept an invitation.
+    anonKey: pick(status, ['ANON_KEY', 'anon_key', 'PUBLISHABLE_KEY'], 'the anon key'),
   }
 }
 
@@ -206,45 +212,59 @@ async function main(): Promise<void> {
   // invitation that looks like it worked. So the link is actually followed and
   // the redirect it produces is inspected.
   console.log('\n── E · following the invite link to see what the callback receives ──')
+  // E1-E2 record WHY the application does not email GoTrue's own action_link.
   const redeemable = typeof bLink === 'string' ? bLink : null
   const redeem = redeemable ? await fetch(redeemable, { redirect: 'manual' }) : null
   const location = redeem?.headers.get('location') ?? ''
+  const hasFragmentTokens = /#.*access_token=/.test(location)
   check(
-    'E1 the verify endpoint redirects rather than rendering',
+    'E1 GoTrue action_link redirects (303) rather than rendering',
     !!redeem && redeem.status >= 300 && redeem.status < 400,
     `status=${redeem ? redeem.status : 'no link to follow'}`,
   )
   check(
-    'E2 it redirects to the application callback, not the site root',
-    location.startsWith('http://127.0.0.1:3000/auth/callback'),
-    shapeOf(location),
+    // The finding this whole path exists to encode: the session comes back in the
+    // FRAGMENT, which a server route can never read. If this ever stops being
+    // true, the app-hosted link below is merely redundant rather than required —
+    // but it must be OBSERVED, not assumed in either direction.
+    'E2 action_link returns the session in the URL FRAGMENT — unreadable by a server',
+    hasFragmentTokens,
+    hasFragmentTokens ? 'implicit fragment, as expected' : `no fragment tokens: ${shapeOf(location)}`,
   )
-  const hasQueryCode = /[?&]code=/.test(location)
-  const hasFragmentTokens = /#.*access_token=/.test(location)
-  const hasError = /[?&#].*error/i.test(location)
-  console.log(
-    `     observed: code=${hasQueryCode} fragmentTokens=${hasFragmentTokens} error=${hasError}`,
+
+  // E3-E6 prove the link the application ACTUALLY emails.
+  const acceptLink = buildInviteAcceptUrl('http://127.0.0.1:3000', String(b.data?.properties?.hashed_token))
+  const acceptUrl = new URL(acceptLink)
+  check(
+    'E3 the emailed link is app-hosted and carries token_hash + type',
+    acceptUrl.pathname === '/auth/callback' &&
+      acceptUrl.searchParams.get('type') === 'invite' &&
+      (acceptUrl.searchParams.get('token_hash') ?? '').length > 0,
+    `${acceptUrl.pathname} params=[${[...acceptUrl.searchParams.keys()].sort().join(',')}]`,
   )
   check(
-    'E3 the redirect carries no error',
-    !hasError,
-    hasError ? shapeOf(location) : '',
+    'E4 it lands the user on the password page, not an invented welcome screen',
+    acceptUrl.searchParams.get('next') === '/auth/reset-password',
+    String(acceptUrl.searchParams.get('next')),
+  )
+
+  // THE load-bearing one: the token in that link really does mint a session
+  // server-side, which is what makes nmi_activate_current_user() reachable.
+  const otp = await createClient(cfg.url, cfg.anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  }).auth.verifyOtp({
+    token_hash: String(b.data?.properties?.hashed_token),
+    type: 'invite',
+  })
+  check(
+    'E5 verifyOtp(token_hash, invite) mints a real session SERVER-SIDE',
+    !otp.error && !!otp.data?.session?.access_token,
+    otp.error ? String((otp.error as { message?: string }).message) : 'session established',
   )
   check(
-    // THE load-bearing one. A failure here means the invitation cannot activate
-    // an account through the implemented callback, whatever else passes.
-    'E4 it carries ?code= — the form /auth/callback exchanges for a session',
-    hasQueryCode && !hasFragmentTokens,
-    hasQueryCode
-      ? 'query code (PKCE) — compatible with exchangeCodeForSession'
-      : hasFragmentTokens
-        ? 'IMPLICIT FRAGMENT — the server callback cannot see this'
-        : 'neither code nor tokens present',
-  )
-  check(
-    'E5 the `next` parameter survives the redirect',
-    location.includes('next='),
-    location.includes('next=') ? '' : 'next= was dropped',
+    'E6 and it is the invited identity, not some other account',
+    otp.data?.user?.id === aUserId,
+    `same=${otp.data?.user?.id === aUserId}`,
   )
 
   console.log('\n── C · invite for an ALREADY-ACTIVATED (password-holding) address ──')
@@ -278,11 +298,16 @@ async function main(): Promise<void> {
   check('C3 STILL exactly one identity for that address — no duplicate', matches2.length === 1,
     `count=${matches2.length}`)
 
-  console.log('\n── D · deleteUser removes a just-created, never-activated identity ──')
-  // The compensating action from lib/admin/inviteOrchestration.ts, proved to work
-  // on the exact kind of identity it is allowed to touch.
+  console.log('\n── D · deleteUser removes an identity this request created ──')
+  // The compensating action from lib/admin/inviteOrchestration.ts, proved against
+  // a real Auth identity. NOTE what this does and does not establish: it shows the
+  // DELETE works. WHEN it is allowed to run — only for an identity this request
+  // provably created, never for a pre-existing or established one — is a decision
+  // made in compensate(), which is pure logic and is proven by the TypeScript
+  // suite (a deliberate break that deletes a pre-existing identity is caught
+  // there). Auth cannot answer a provenance question; it is not asked to.
   const del = aUserId ? await admin.auth.admin.deleteUser(aUserId) : { error: new Error('no id') }
-  check('D1 the just-invited identity can be deleted', !del.error)
+  check('D1 the invited identity can be deleted', !del.error)
   const gone = aUserId ? await admin.auth.admin.getUserById(aUserId) : null
   check('D2 it is really gone', !!gone && (!!gone.error || !gone.data?.user))
 

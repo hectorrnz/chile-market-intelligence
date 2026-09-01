@@ -23,6 +23,7 @@ import type { InvitePorts } from './inviteOrchestration.ts'
 import { sendInviteEmail } from './inviteEmail.ts'
 import { sendNotificationEmail } from '../notifications/emailProvider'
 import { classifyRpcError } from './adminRpc.ts'
+import { buildInviteAcceptUrl } from './inviteLink.ts'
 
 /** The Auth Admin surface used here, narrowed to what is actually called. */
 interface AuthAdminClient {
@@ -37,7 +38,10 @@ interface AuthAdminClient {
         email: string
         options?: { redirectTo?: string }
       }) => Promise<{
-        data: { properties: { action_link?: string } | null; user: { id?: string } | null } | null
+        data: {
+          properties: { action_link?: string; hashed_token?: string } | null
+          user: { id?: string } | null
+        } | null
         error: unknown
       }>
       deleteUser: (id: string) => Promise<{ data: unknown; error: unknown }>
@@ -93,8 +97,22 @@ export function buildInvitePorts(
         return { ok: false, code: 'invite_link_failed' }
       }
       const userId = data?.user?.id
-      const actionLink = data?.properties?.action_link
-      if (typeof userId !== 'string' || typeof actionLink !== 'string' || !actionLink) {
+      // The EMAILED link is built from `hashed_token`, not from GoTrue's own
+      // `action_link`. Following action_link lands on our callback with the
+      // session in the URL FRAGMENT, which a server route can never read — so the
+      // account would never activate. See buildInviteAcceptUrl() for the full
+      // reasoning and the CI proof that measured it.
+      const tokenHash = data?.properties?.hashed_token
+      if (typeof userId !== 'string' || typeof tokenHash !== 'string' || !tokenHash) {
+        return { ok: false, code: 'invite_link_incomplete' }
+      }
+      let actionLink: string
+      try {
+        // `redirectTo` was itself built from the request origin by
+        // buildInviteRedirectUrl(), so re-deriving the origin from it keeps a
+        // single source of truth and needs no change to the port signature.
+        actionLink = buildInviteAcceptUrl(new URL(redirectTo).origin, tokenHash)
+      } catch {
         return { ok: false, code: 'invite_link_incomplete' }
       }
       return { ok: true, userId, actionLink }

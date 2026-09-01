@@ -27,17 +27,47 @@ const DEFAULT_NEXT = '/watchlist'
 
 const NO_STORE = 'no-store, no-cache, must-revalidate, private'
 
+// R13.6F — the one-time-link types this route will redeem server-side.
+//
+// An ALLOW-LIST, not a passthrough: `type` arrives in the query string, and
+// handing an arbitrary value to `verifyOtp` would let a caller choose which
+// verification semantics to invoke. These are the only kinds this application
+// actually issues.
+const SUPPORTED_OTP_TYPES = ['invite', 'recovery', 'magiclink', 'email'] as const
+type SupportedOtpType = (typeof SUPPORTED_OTP_TYPES)[number]
+
+function asSupportedOtpType(raw: string | null): SupportedOtpType | null {
+  return SUPPORTED_OTP_TYPES.includes(raw as SupportedOtpType) ? (raw as SupportedOtpType) : null
+}
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const url  = request.nextUrl
   const code = url.searchParams.get('code')
   const requestedNext = url.searchParams.get('next')
+
+  // R13.6F — THE SECOND REDEMPTION FORM, and the one invitations actually use.
+  //
+  // GoTrue's own `action_link` answers with the session in the URL FRAGMENT, and
+  // a fragment never reaches a server, so a server-rendered callback can never
+  // see it — proven directly against real GoTrue in scripts/ci/authInviteProof.ts
+  // (section E). Invitations therefore carry `token_hash` + `type` and are
+  // redeemed here with `verifyOtp`, which mints the session as cookies on the
+  // response exactly as the code exchange does.
+  //
+  // This is an ADDITIONAL entry, not a relaxation: the token is verified by
+  // GoTrue just as a code is, and everything downstream — the approval gate, the
+  // sign-out of an unapproved identity, activation, the safe-path redirect — is
+  // shared, unchanged, and applies identically to both forms.
+  const tokenHash = url.searchParams.get('token_hash')
+  const otpType = asSupportedOtpType(url.searchParams.get('type'))
+  const hasOtp = typeof tokenHash === 'string' && tokenHash.length > 0 && otpType !== null
 
   const config = getSupabasePublicConfig()
   if (!config) {
     return NextResponse.redirect(new URL('/login?error=not_configured', request.url))
   }
 
-  if (code) {
+  if (code || hasOtp) {
     // One authoritative validator, shared with middleware and the login page.
     const safeNext = requestedNext ? toSafeInternalPath(requestedNext) : DEFAULT_NEXT
     let response = NextResponse.redirect(new URL(safeNext, request.url))
@@ -55,7 +85,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       },
     })
 
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    const { error } = code
+      ? await supabase.auth.exchangeCodeForSession(code)
+      : await supabase.auth.verifyOtp({ token_hash: tokenHash as string, type: otpType as SupportedOtpType })
     if (!error) {
       // ── R1.5 approval boundary ────────────────────────────────────────────
       // Read the profile with THIS client: its session lives in memory here,
@@ -122,7 +154,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       response.headers.set('Cache-Control', NO_STORE)
       return response
     }
-    console.error('[auth/callback] exchangeCodeForSession failed:', error.message, error.status)
+    console.error(
+      `[auth/callback] ${code ? 'exchangeCodeForSession' : 'verifyOtp'} failed:`,
+      error.message,
+      error.status,
+    )
   }
 
   return NextResponse.redirect(new URL('/login?error=callback_failed', request.url))

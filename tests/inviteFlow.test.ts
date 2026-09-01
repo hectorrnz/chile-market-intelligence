@@ -30,6 +30,7 @@ import {
 } from '../src/lib/admin/inviteEmail.ts'
 import {
   buildInviteRedirectUrl,
+  buildInviteAcceptUrl,
   isUsableOrigin,
   INVITE_LANDING_PATH,
   AUTH_CALLBACK_PATH,
@@ -144,6 +145,48 @@ describe('R13.6F § 11 — the invitation destination', () => {
     const fn = src.match(/export function buildInviteRedirectUrl[\s\S]*?\n}/)?.[0]
     assert.match(fn!, /INVITE_LANDING_PATH/)
     assert.doesNotMatch(fn!, /next\s*\??\s*:/, 'the function takes no next parameter')
+  })
+
+  // R13.6F closure — the link that is actually EMAILED.
+  //
+  // GoTrue's own action_link returns the session in the URL fragment, which a
+  // server route can never read, so following it would leave every invited
+  // account unactivated. The emailed link is app-hosted and carries the
+  // hashed_token for server-side redemption. Proven end-to-end against real
+  // GoTrue in scripts/ci/authInviteProof.ts § E; these pin the URL shape.
+  it('the emailed link is app-hosted and redeemable server-side', () => {
+    const url = new URL(buildInviteAcceptUrl('https://preview-abc.vercel.app', 'tok-abc123'))
+    assert.equal(url.origin, 'https://preview-abc.vercel.app')
+    assert.equal(url.pathname, '/auth/callback')
+    assert.equal(url.searchParams.get('token_hash'), 'tok-abc123')
+    assert.equal(url.searchParams.get('type'), 'invite')
+    assert.equal(url.searchParams.get('next'), '/auth/reset-password')
+    // The token belongs in the query, never in a fragment — a fragment is exactly
+    // what made GoTrue's own link unusable here.
+    assert.equal(url.hash, '')
+  })
+
+  it('the emailed link refuses a bad origin or an empty token', () => {
+    assert.throws(() => buildInviteAcceptUrl('https://x.invalid/path', 't'), /invalid_origin/)
+    assert.throws(() => buildInviteAcceptUrl('not-a-url', 't'), /invalid_origin/)
+    for (const bad of ['', '   ']) {
+      assert.throws(() => buildInviteAcceptUrl('https://x.invalid', bad), /invalid_token_hash/)
+    }
+  })
+
+  it('a token needing escaping is encoded, not concatenated raw', () => {
+    const url = new URL(buildInviteAcceptUrl('https://x.invalid', 'a b&next=/evil'))
+    // Round-trips to the original value, and cannot inject a second parameter.
+    assert.equal(url.searchParams.get('token_hash'), 'a b&next=/evil')
+    assert.equal(url.searchParams.get('next'), '/auth/reset-password')
+  })
+
+  it('the callback redeems token_hash only for an allow-listed type', () => {
+    const src = code(read('src/app/auth/callback/route.ts'))
+    assert.match(src, /SUPPORTED_OTP_TYPES/)
+    assert.match(src, /verifyOtp/)
+    // The raw query value is never handed to verifyOtp directly.
+    assert.doesNotMatch(src, /type:\s*url\.searchParams\.get/)
   })
 
   it('no deployment hostname is hard-coded anywhere in the invite path', () => {
