@@ -53,6 +53,18 @@ insert into public.user_profiles (id, username, email, display_name, role, portf
   -- carries a valid principal — approval must still be the outer gate.
   ('77777777-7777-7777-7777-777777777777', null,          'unapproved@test.invalid',  'Unapproved',  'user',          'jaime');
 
+-- R13.6F — these fixtures represent ACTIVE accounts.
+--
+-- The R13.6F lifecycle migration added invited_at/activated_at/disabled_at, and
+-- an account is authorized only when it is approved AND activated AND not
+-- disabled. Those columns are deliberately NULL by default, because a freshly
+-- INVITED account is not yet activated -- so a fixture meant to be live must
+-- say so, exactly as real provisioning does. Without it every assertion below
+-- would pass for the WRONG reason: denied because the fixture was never
+-- activated, rather than because the rule under test denied it.
+update public.user_profiles set activated_at = now()
+ where activated_at is null and disabled_at is null;
+
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 1 · MIGRATION — schema, constraints, defaults
@@ -370,6 +382,18 @@ select throws_ok(
   $$ insert into public.user_profiles (id, username, role, portfolio_principal)
      values ('88888888-8888-8888-8888-888888888888','forged','administrator','jaime') $$,
   '42501', null, 'a user CANNOT insert an authorization-bearing profile row');
+
+-- R13.6F — these fixtures represent ACTIVE accounts.
+--
+-- The R13.6F lifecycle migration added invited_at/activated_at/disabled_at, and
+-- an account is authorized only when it is approved AND activated AND not
+-- disabled. Those columns are deliberately NULL by default, because a freshly
+-- INVITED account is not yet activated -- so a fixture meant to be live must
+-- say so, exactly as real provisioning does. Without it every assertion below
+-- would pass for the WRONG reason: denied because the fixture was never
+-- activated, rather than because the rule under test denied it.
+update public.user_profiles set activated_at = now()
+ where activated_at is null and disabled_at is null;
 
 -- Own-row RLS still lets a user read their own row, and only their own.
 select is((select count(*)::int from public.user_profiles), 1,
@@ -789,6 +813,18 @@ insert into public.user_profiles (id, username, email, display_name, role, portf
 values ('66666666-6666-6666-6666-666666666666','u_noprincipal','noprincipal@test.invalid',
         'No Principal','user', null)
   on conflict (id) do nothing;
+
+-- R13.6F — these fixtures represent ACTIVE accounts.
+--
+-- The R13.6F lifecycle migration added invited_at/activated_at/disabled_at, and
+-- an account is authorized only when it is approved AND activated AND not
+-- disabled. Those columns are deliberately NULL by default, because a freshly
+-- INVITED account is not yet activated -- so a fixture meant to be live must
+-- say so, exactly as real provisioning does. Without it every assertion below
+-- would pass for the WRONG reason: denied because the fixture was never
+-- activated, rather than because the rule under test denied it.
+update public.user_profiles set activated_at = now()
+ where activated_at is null and disabled_at is null;
 
 select pg_temp.as_user('66666666-6666-6666-6666-666666666666');
 select is((select count(*)::int from public.portfolio_snapshot_rows), 0,

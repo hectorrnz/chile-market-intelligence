@@ -45,6 +45,18 @@ insert into public.user_profiles (id, username, email, display_name, role, portf
   -- valid principal.
   ('b7777777-7777-7777-7777-777777777777', null,        'set_unapp@test.invalid', 'Set Unapp', 'user',          'jaime');
 
+-- R13.6F — these fixtures represent ACTIVE accounts.
+--
+-- The R13.6F lifecycle migration added invited_at/activated_at/disabled_at, and
+-- an account is authorized only when it is approved AND activated AND not
+-- disabled. Those columns are deliberately NULL by default, because a freshly
+-- INVITED account is not yet activated -- so a fixture meant to be live must
+-- say so, exactly as real provisioning does. Without it every assertion below
+-- would pass for the WRONG reason: denied because the fixture was never
+-- activated, rather than because the rule under test denied it.
+update public.user_profiles set activated_at = now()
+ where activated_at is null and disabled_at is null;
+
 create or replace function pg_temp.as_user(uid text) returns void language plpgsql as $$
 begin
   perform set_config('request.jwt.claims', json_build_object('sub', uid, 'role','authenticated')::text, true);

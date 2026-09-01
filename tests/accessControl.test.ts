@@ -44,8 +44,39 @@ import {
 import {
   AUTHORIZATION_STATE_SELECT,
   type AuthorizationStateLookup,
+  type AuthorizationState,
 } from '../src/lib/auth/authorizationState.ts'
 import { dict } from '../src/lib/i18n.ts'
+
+/**
+ * R13.6F — builds a complete `AuthorizationState`.
+ *
+ * The type gained `lifecycle`, `usable` and `status` when account lifecycle became
+ * an authorization input. These cases were written to exercise the MODULE rules,
+ * with approval as the gate, so each fixture is an ACTIVE account and says so
+ * explicitly rather than relying on a default — a state that failed to declare its
+ * lifecycle would be treated as never-activated and would deny for the wrong
+ * reason, making every assertion below pass vacuously.
+ */
+function st(o: {
+  userId: string
+  approved: boolean
+  role: string | null
+  grants: readonly string[]
+}): AuthorizationState {
+  return {
+    ...o,
+    lifecycle: {
+      approved: o.approved,
+      invitedAt: null,
+      activatedAt: '2026-01-01T00:00:00.000Z',
+      disabledAt: null,
+    },
+    usable: o.approved,
+    status: 'active',
+  }
+}
+
 
 const ROOT = join(import.meta.dirname, '..')
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
@@ -295,12 +326,12 @@ describe('verified identity and per-request approval', () => {
   // tests/moduleRequestEnforcement.test.ts.
   const approved: AuthorizationStateLookup = async () => ({
     ok: true,
-    state: { userId: 'user-1', approved: true, role: 'administrator', grants: [] },
+    state: st({ userId: 'user-1', approved: true, role: 'administrator', grants: [] }),
   })
   const noProfile: AuthorizationStateLookup = async () => ({ ok: true, state: null })
   const revoked: AuthorizationStateLookup = async () => ({
     ok: true,
-    state: { userId: 'user-1', approved: false, role: 'administrator', grants: [] },
+    state: st({ userId: 'user-1', approved: false, role: 'administrator', grants: [] }),
   })
 
   const PAGE = '/portfolio'
@@ -384,7 +415,7 @@ describe('verified identity and per-request approval', () => {
       reads += 1
       return {
         ok: true,
-        state: { userId: 'user-1', approved: reads <= 2, role: 'administrator', grants: [] },
+        state: st({ userId: 'user-1', approved: reads <= 2, role: 'administrator', grants: [] }),
       }
     }
     assert.equal((await decideRequestAccess(API, verified, counting)).outcome, 'allow')
@@ -397,7 +428,7 @@ describe('verified identity and per-request approval', () => {
   test('a deleted approval row is as denying as a cleared username', async () => {
     const blankUsername: AuthorizationStateLookup = async () => ({
       ok: true,
-      state: { userId: 'user-1', approved: false, role: null, grants: ['markets'] },
+      state: st({ userId: 'user-1', approved: false, role: null, grants: ['markets'] }),
     })
     for (const lookup of [noProfile, revoked, blankUsername]) {
       const d = await decideRequestAccess(API, verified, lookup)
@@ -562,8 +593,22 @@ describe('middleware wires the policy to the documented HTTP contract', () => {
       .map((c) => c.trim())
     assert.ok(columns.includes('username'), 'the approval marker must be read')
     assert.ok(!columns.includes('*'), 'never select *')
-    assert.ok(columns.every((c) => ['id', 'username', 'role', 'user_module_grants'].includes(c)),
-      `the middleware read must stay narrow, found: ${columns.join(', ')}`)
+    // R13.6F widened this list by exactly three columns. They are AUTHORIZATION
+    // INPUTS — a disabled or never-activated account is denied on their strength —
+    // so reading them is the point, and they ride on the same single query rather
+    // than adding a round-trip.
+    assert.ok(
+      columns.every((c) =>
+        ['id', 'username', 'role', 'invited_at', 'activated_at', 'disabled_at', 'user_module_grants'].includes(c),
+      ),
+      `the middleware read must stay narrow, found: ${columns.join(', ')}`,
+    )
+    // The property that actually matters is unchanged, and is now asserted
+    // explicitly rather than implied by the allow-list: no personal data is
+    // shipped into middleware.
+    for (const forbidden of ['email', 'display_name', 'preferences', 'portfolio_principal']) {
+      assert.ok(!columns.includes(forbidden), `${forbidden} must never reach middleware`)
+    }
     assert.doesNotMatch(MW_CODE, /getSupabaseAdminClient|SERVICE_ROLE/, 'must not bypass RLS')
   })
 

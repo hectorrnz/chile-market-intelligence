@@ -447,6 +447,18 @@ describe('approval semantics the migration protects (behavioural)', () => {
       approved: typeof username === 'string' && username.trim().length > 0,
       role: 'administrator',
       grants: [],
+        // R13.6F — this suite varies the APPROVAL MARKER and nothing else, so
+        // the lifecycle is held constant at ACTIVE. Leaving it unset would make
+        // every case deny for a second, unrelated reason, and the test would
+        // stop measuring the marker at all.
+        lifecycle: {
+          approved: typeof username === 'string' && username.trim().length > 0,
+          invitedAt: null,
+          activatedAt: '2026-01-01T00:00:00.000Z',
+          disabledAt: null,
+        },
+        usable: typeof username === 'string' && username.trim().length > 0,
+        status: 'active' as const,
     },
   })
   const approved = state('someone')

@@ -93,6 +93,23 @@ export const ACCESS_DENIED_REASONS = {
   /** Verified Auth identity, but no approved application profile. */
   notApproved: 'not_authorized',
   /**
+   * R13.6F — provisioned, but an administrator has switched the account off.
+   *
+   * Distinct from `not_authorized` on purpose. That code means "this account was
+   * never provisioned here"; this one means "it was, and it has been suspended".
+   * The remedies are opposite — reactivate versus provision — and the account's
+   * role, principal and grants are all still intact waiting for the first.
+   */
+  accountDisabled: 'account_disabled',
+  /**
+   * R13.6F — invited, but the invitation has never been accepted.
+   *
+   * Nothing is wrong with the account: the person has simply not followed their
+   * link yet. Told apart from the two above so an administrator reading a report
+   * resends an invitation instead of editing access that is already correct.
+   */
+  accountNotActivated: 'account_not_activated',
+  /**
    * POST-R13.6CDE.1 — approved, but holds no module at all.
    *
    * A distinct code from `not_authorized` on purpose: the account IS

@@ -89,6 +89,36 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         return denied
       }
 
+      // R13.6F — ACTIVATION.
+      //
+      // Reaching this line means a one-time Supabase link was successfully
+      // exchanged for a session, which is the strongest evidence available that
+      // the invited person genuinely accepted: it cannot be reached by guessing a
+      // user id, and it cannot be reached without possession of the emailed link.
+      //
+      // SERVER-AUTHORITATIVE, AND IT TAKES NO TARGET. `nmi_activate_current_user()`
+      // resolves the account from `auth.uid()` inside PostgreSQL, so there is no
+      // parameter through which one caller could activate somebody else's pending
+      // invitation — the function's shape makes that unrepresentable rather than
+      // merely validated against.
+      //
+      // Idempotent: an already-active account returns `changed: false` and writes
+      // no second audit row, so this runs harmlessly on the ordinary password
+      // recovery path that shares this callback. A DISABLED account raises inside
+      // the function and stays disabled — activation is never a way back in.
+      //
+      // A failure here is deliberately NOT fatal to the redirect. The session is
+      // genuine and the person should still reach the password page; if activation
+      // did not commit, every private route refuses them with
+      // `account_not_activated` until it does, so continuing grants nothing.
+      try {
+        await (supabase as never as {
+          rpc: (fn: string, p?: Record<string, unknown>) => Promise<{ error: unknown }>
+        }).rpc('nmi_activate_current_user', {})
+      } catch {
+        // Deliberately swallowed — see above.
+      }
+
       response.headers.set('Cache-Control', NO_STORE)
       return response
     }

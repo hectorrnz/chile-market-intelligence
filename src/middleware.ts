@@ -74,6 +74,8 @@ const SESSION_COOKIE_PREFIX = 'sb-'
 const REASON_TO_CODE: Record<DenialReason, string> = {
   unauthenticated: ACCESS_DENIED_REASONS.unauthenticated,
   not_approved: ACCESS_DENIED_REASONS.notApproved,
+  account_disabled: ACCESS_DENIED_REASONS.accountDisabled,
+  account_not_activated: ACCESS_DENIED_REASONS.accountNotActivated,
   no_platform_access: ACCESS_DENIED_REASONS.noPlatformAccess,
   module_not_granted: ACCESS_DENIED_REASONS.moduleNotGranted,
   administrator_required: ACCESS_DENIED_REASONS.administratorRequired,
@@ -88,6 +90,8 @@ const REASON_TO_CODE: Record<DenialReason, string> = {
  */
 const PAGE_ERROR_PARAM: Partial<Record<DenialReason, string>> = {
   not_approved: 'not_authorized',
+  account_disabled: ACCESS_DENIED_REASONS.accountDisabled,
+  account_not_activated: ACCESS_DENIED_REASONS.accountNotActivated,
   no_platform_access: ACCESS_DENIED_REASONS.noPlatformAccess,
   module_not_granted: ACCESS_DENIED_REASONS.moduleNotGranted,
   administrator_required: ACCESS_DENIED_REASONS.administratorRequired,

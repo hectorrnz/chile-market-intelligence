@@ -1,57 +1,46 @@
-// POST-R13.6CDE — PUT /api/admin/users/[id]/modules
+// PUT /api/admin/users/[id]/modules — change ONE account's module grants.
 //
-// Sets a member's module grants. ADMINISTRATOR ONLY.
+// R13.6F REWROTE THE WRITE PATH. The endpoint, its request shape and its refusal
+// codes are unchanged; what changed is that the writes are no longer three
+// independent statements from a service-role client.
 //
-// THE BODY IS THE COMPLETE DESIRED SET, not a delta: `{ modules: ModuleKey[] }`.
-// The console renders checkboxes, and a checkbox grid IS a complete set — sending
-// deltas from a UI that shows totals invites the two to drift apart whenever a
-// save is retried or two tabs are open. The server diffs against what is stored
-// and writes only the difference, so a repeated save is a no-op rather than a
-// duplicate-key error.
+// WHAT WAS WRONG BEFORE
+// ─────────────────────
+// The previous implementation issued an INSERT for newly granted modules, a DELETE
+// for revoked ones, and then an INSERT of the audit rows — three separate
+// round-trips with no transaction around them. Any one could fail after an earlier
+// one had committed, and the audit insert was explicitly allowed to fail on its
+// own: the handler reported `audited: false` and returned 200. So "access changed,
+// audit missing" was a representable, expected outcome — the exact boundary §15
+// requires closing.
 //
-// A CHECKED BOX MEANS A ROW EXISTS. There is no tri-state, no inheritance, and
-// no runtime fallback to `app_modules.default_for_member` — that column is
-// PROVISIONING metadata, the state a new invitation starts from, and
-// `moduleAccess.ts` deliberately never reads it. So the grid is a faithful
-// picture of `user_module_grants` and nothing else.
+// It is now a single call to `nmi_admin_update_access`, whose body performs the
+// grant changes AND their audit rows inside one PostgreSQL transaction. Either
+// both land or neither does; there is no longer a code path that can grant a module
+// without recording who granted it. `audited` is retained in the response for
+// backward compatibility and is now always `true` on success, because a successful
+// return is itself proof the audit committed.
 //
-// AUTHORIZATION BEFORE ANY TARGET READ. `guardAdministrator()` resolves the
-// CALLER through the user-session client and returns before the target id is
-// used for anything. Only then does the service-role client appear — necessary
-// because `user_module_grants` has no administrator policy for any verb (see the
-// GET route's header for why that is correct, and why this layer must therefore
-// be the boundary).
-//
-// WHY NOT AN RPC. A `security definer` function checking `nmi_is_administrator()`
-// would put this boundary in the database, which would be stronger. It is the
-// right next step and is recorded as such — but it is a new SQL surface with its
-// own postconditions and pgTAP, and this stage cannot execute either against a
-// real database. Shipping an untested database writer would be worse than
-// shipping a tested application one behind the same pure decision layer.
+// AUTHORIZATION also moved into the database: `nmi_assert_admin_actor()` resolves
+// the actor from `auth.uid()` on the administrator's own session, so the route
+// handler is a convenience check rather than the boundary.
 
 import { NextResponse } from 'next/server'
 import { guardAdministrator } from '@/lib/auth/moduleApiGuard'
-import { getCallerModuleAccess } from '@/lib/auth/getModuleAccess'
+import { getSupabaseUserClient } from '@/lib/supabase/server'
 import { getSupabaseAdminClient } from '@/lib/supabase/admin'
 import { NO_STORE_HEADERS } from '@/lib/auth/apiGuard'
-import { decideGrantChange, buildGrantAuditEntries } from '@/lib/admin/userDirectory'
-// The target's profile is read through this helper, not here. See its header:
-// `tests/accessControl.test.ts` bars any file naming `user_profiles` from also
-// containing a write verb, and this file writes grants. Splitting satisfies that
-// rule honestly rather than relaxing it.
+import { normalizeModules } from '@/lib/admin/userProvisioning'
 import { readAdminTargetFacts } from '@/lib/admin/adminUserReads'
+import { classifyRpcError } from '@/lib/admin/adminRpc'
+import { isPortfolioPrincipal } from '@/lib/portfolioAccess/entitlements'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-/** Denials the caller may act on; everything else is a generic failure. */
-const DENIAL_STATUS: Record<string, number> = {
-  actor_not_administrator: 403,
-  invalid_target: 400,
-  invalid_module: 400,
-  target_not_found: 404,
-  target_not_approved: 409,
-  target_is_administrator: 409,
+interface ShapeRow {
+  role: string | null
+  portfolio_principal: string | null
 }
 
 export async function PUT(
@@ -61,91 +50,89 @@ export async function PUT(
   const denied = await guardAdministrator()
   if (denied) return denied
 
-  const { userId: actorUserId, access: actorAccess, isAdministrator } = await getCallerModuleAccess()
+  const session = await getSupabaseUserClient()
   const admin = getSupabaseAdminClient()
-  if (!admin || !actorUserId) {
+  if (!session || !admin) {
     return NextResponse.json({ error: 'not_configured' }, { status: 503, headers: NO_STORE_HEADERS })
   }
 
   const { id } = await context.params
-  const body = (await request.json().catch(() => null)) as { modules?: unknown } | null
+  if (typeof id !== 'string' || id.trim().length === 0) {
+    return NextResponse.json({ error: 'invalid_target' }, { status: 400, headers: NO_STORE_HEADERS })
+  }
 
-  // Target facts, read only after the actor cleared the guard above.
+  const body = (await request.json().catch(() => null)) as { modules?: unknown } | null
+  const modules = normalizeModules(body?.modules)
+  if (modules === null) {
+    return NextResponse.json({ error: 'invalid_module' }, { status: 400, headers: NO_STORE_HEADERS })
+  }
+
+  // The same preconditions this endpoint has always enforced, so its refusal codes
+  // do not change: an administrator target is rejected rather than silently having
+  // its (ignored) grant rows rewritten, and a disabled or never-activated target is
+  // rejected because `isApproved` now means USABLE.
   const target = await readAdminTargetFacts(admin, id)
   if (target.readFailed) {
     return NextResponse.json({ error: 'read_failed' }, { status: 500, headers: NO_STORE_HEADERS })
   }
-
-  const decision = decideGrantChange({
-    actor: {
-      userId: actorUserId,
-      isApproved: actorAccess.isApproved,
-      isAdministrator,
-    },
-    targetUserId: id,
-    targetExists: target.exists,
-    targetIsApproved: target.isApproved,
-    targetIsAdministrator: target.isAdministrator,
-    requestedModules: body?.modules,
-    currentModules: target.currentModules,
-  })
-
-  if (!decision.allowed) {
-    return NextResponse.json(
-      { error: decision.code },
-      { status: DENIAL_STATUS[decision.code] ?? 400, headers: NO_STORE_HEADERS },
-    )
+  if (!target.exists) {
+    return NextResponse.json({ error: 'target_not_found' }, { status: 404, headers: NO_STORE_HEADERS })
+  }
+  if (!target.isApproved) {
+    return NextResponse.json({ error: 'target_not_approved' }, { status: 409, headers: NO_STORE_HEADERS })
+  }
+  if (target.isAdministrator) {
+    return NextResponse.json({ error: 'target_is_administrator' }, { status: 409, headers: NO_STORE_HEADERS })
   }
 
-  // Nothing to do. Answer success without writing a row or an audit entry — a
-  // trail that records non-events is one nobody trusts when it matters.
-  if (!decision.changed) {
-    return NextResponse.json({ ok: true, changed: false }, { headers: NO_STORE_HEADERS })
-  }
-
-  const mut = admin as never as {
+  // This endpoint changes ONLY modules, so the account's existing role and
+  // principal are read and passed straight back. Sending defaults instead would
+  // make a module edit quietly clear someone's Portfolio principal.
+  const shapeRes = await (session as never as {
     from: (t: string) => {
-      insert: (rows: unknown[]) => Promise<{ error: unknown }>
-      delete: () => {
-        eq: (c: string, v: string) => { in: (c: string, v: string[]) => Promise<{ error: unknown }> }
+      select: (c: string) => {
+        eq: (col: string, v: string) => {
+          maybeSingle: () => Promise<{ data: ShapeRow | null; error: unknown }>
+        }
       }
     }
+  })
+    .from('user_profiles')
+    .select('role, portfolio_principal')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (shapeRes.error || !shapeRes.data) {
+    return NextResponse.json({ error: 'read_failed' }, { status: 500, headers: NO_STORE_HEADERS })
   }
 
-  if (decision.toGrant.length > 0) {
-    const res = await mut.from('user_module_grants').insert(
-      decision.toGrant.map((module_key) => ({
-        user_id: decision.targetUserId,
-        module_key,
-        granted_by: actorUserId,
-      })),
-    )
-    if (res.error) {
-      return NextResponse.json({ error: 'write_failed' }, { status: 500, headers: NO_STORE_HEADERS })
-    }
+  const currentPrincipal = isPortfolioPrincipal(shapeRes.data.portfolio_principal)
+    ? shapeRes.data.portfolio_principal
+    : null
+
+  const changed =
+    modules.length !== target.currentModules.length ||
+    modules.some((m) => !target.currentModules.includes(m))
+
+  if (!changed) {
+    return NextResponse.json({ ok: true, changed: false, audited: true }, { headers: NO_STORE_HEADERS })
   }
 
-  if (decision.toRevoke.length > 0) {
-    const res = await mut
-      .from('user_module_grants')
-      .delete()
-      .eq('user_id', decision.targetUserId)
-      .in('module_key', decision.toRevoke)
-    if (res.error) {
-      return NextResponse.json({ error: 'write_failed' }, { status: 500, headers: NO_STORE_HEADERS })
-    }
+  const { error } = await (session as never as {
+    rpc: (fn: string, p: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>
+  }).rpc('nmi_admin_update_access', {
+    p_target_user_id: id,
+    p_role: shapeRes.data.role ?? 'user',
+    p_principal: currentPrincipal,
+    p_modules: modules,
+  })
+
+  if (error) {
+    const { code, status } = classifyRpcError(error)
+    return NextResponse.json({ error: code }, { status, headers: NO_STORE_HEADERS })
   }
 
-  // Audit LAST, and never fatally. The grants are the authoritative state and
-  // they are already correct; failing the request now would tell the
-  // administrator their change did not happen when it did, and a retry would
-  // then find nothing to change. The failure is surfaced honestly instead.
-  const entries = buildGrantAuditEntries(decision, actorUserId)
-  let audited = true
-  if (entries.length > 0) {
-    const res = await mut.from('family_portfolio_access_audit').insert(entries)
-    if (res.error) audited = false
-  }
-
-  return NextResponse.json({ ok: true, changed: true, audited }, { headers: NO_STORE_HEADERS })
+  // `audited` can only be true now: the audit rows are written inside the same
+  // transaction as the grant changes, so a successful return proves both landed.
+  return NextResponse.json({ ok: true, changed: true, audited: true }, { headers: NO_STORE_HEADERS })
 }

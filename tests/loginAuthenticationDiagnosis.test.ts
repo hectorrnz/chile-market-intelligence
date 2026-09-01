@@ -60,6 +60,14 @@ const ADMIN_ZERO_GRANTS = {
   id: ADMIN_ID,
   username: 'an-administrator',
   role: 'administrator',
+  // R13.6F - the production administrator is ACTIVE. The lifecycle columns
+  // became authorization inputs in 20260817000000, and this fixture claims to
+  // be "the exact production shape", so it must carry them: the migration
+  // backfills activated_at for every already-approved account precisely so the
+  // real administrator keeps working.
+  invited_at: null,
+  activated_at: '2026-01-01T00:00:00.000Z',
+  disabled_at: null,
   user_module_grants: [] as { module_key: string }[],
 }
 

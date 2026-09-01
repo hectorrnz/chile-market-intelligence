@@ -141,7 +141,10 @@ async function main(): Promise<void> {
       }
       upsert: (row: Record<string, unknown>, opts: { onConflict: string }) => Promise<{ error: { message: string } | null }>
       update: (row: Record<string, unknown>) => {
-        eq: (col: string, val: string) => Promise<{ error: { message: string } | null }>
+        eq: (col: string, val: string) => Promise<{ error: { message: string } | null }> & {
+          /** R13.6F — `.is(col, null)` guards the activation stamp; see below. */
+          is: (col: string, val: null) => Promise<{ error: { message: string } | null }>
+        }
       }
     }
   }
@@ -238,6 +241,28 @@ async function main(): Promise<void> {
   }
 
   // 2. Approval record. Without this the account cannot sign in at all.
+  // R13.6F — THIS SCRIPT MUST STAMP `activated_at`, and here is why.
+  //
+  // 20260817000000 made the account lifecycle an authorization input: an account
+  // is usable only when it is approved AND activated AND not disabled. The UI's
+  // invitation path leaves `activated_at` NULL on purpose — the invitee activates
+  // it themselves by following their one-time link, which is what makes activation
+  // mean "somebody really accepted".
+  //
+  // This script has no invitation and no link. It sets a password directly and
+  // hands it over out of band, so the account is ready to use the moment this
+  // command returns. Leaving `activated_at` NULL would therefore produce an
+  // account that looks provisioned in the directory and is refused at every
+  // request — a silent regression in the one tool that exists for emergencies.
+  //
+  // Stamping it here is not a shortcut around the invitation flow: the two paths
+  // agree on the RULE (usable = approved + activated + not disabled) and differ
+  // only in WHO performs the activation, which is exactly the difference between
+  // "an administrator created this account outright" and "somebody accepted an
+  // invitation". `tests/userProvisioning.test.ts` asserts the two stay in step.
+  //
+  // `disabled_at` is deliberately NOT written: re-running this command to repair
+  // an account must never silently re-enable one an administrator switched off.
   const { error: profileError } = await table.from('user_profiles').upsert(
     { id: authUserId, username: args.username, email: args.email, display_name: displayName },
     { onConflict: 'id' },
@@ -252,9 +277,47 @@ async function main(): Promise<void> {
     process.exit(1)
   }
 
+  // R13.6F — ACTIVATE, but only if it is not already activated.
+  //
+  // 20260817000000 made the lifecycle an authorization input: an account is usable
+  // only when it is approved AND activated AND not disabled. The UI's invitation
+  // path leaves `activated_at` NULL deliberately — the invitee activates it by
+  // following their one-time link, which is what makes activation mean "somebody
+  // really accepted".
+  //
+  // This script has no invitation and no link: it sets a password directly and
+  // hands it over out of band, so the account is ready the moment the command
+  // returns. Without this stamp it would look provisioned in the directory and be
+  // refused at every request — a silent regression in the one tool that exists for
+  // emergencies.
+  //
+  // Written as a guarded UPDATE rather than folded into the upsert above, because
+  // an upsert would REWRITE an existing activation date every time this command is
+  // re-run to repair an account. The migration's stated invariant is that an
+  // activation date never moves, and `where activated_at is null` is what keeps it.
+  //
+  // `disabled_at` is deliberately never touched: re-running this must not silently
+  // re-enable an account an administrator switched off.
+  const { error: activationError } = await table
+    .from('user_profiles')
+    .update({ activated_at: new Date().toISOString() })
+    .eq('id', authUserId as string)
+    .is('activated_at', null)
+
+  if (activationError) {
+    console.error('\n✗ PARTIAL PROVISIONING')
+    console.error(`  Auth identity  : ${createdAuthUser ? 'CREATED' : 'updated'} (${authUserId})`)
+    console.error('  Approval record: written')
+    console.error('  Activation     : NOT WRITTEN —', activationError.message)
+    console.error('  The account exists but cannot enter the platform until it is')
+    console.error('  activated. Re-run this command to finish it.')
+    process.exit(1)
+  }
+
   console.log('\n✓ Account provisioned and approved.')
   console.log(`  Auth identity  : ${createdAuthUser ? 'created' : 'updated'} (${authUserId})`)
   console.log('  Approval record: written')
+  console.log('  Activation     : stamped (unchanged if it was already activated)')
   console.log(`  Sign in at /login with username "${args.username}".`)
   if (!args.passwordStdin) {
     console.log('\n  TEMPORARY PASSWORD (shown once — hand over out-of-band, then have')

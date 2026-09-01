@@ -20,6 +20,12 @@
 // who exists — not even whether the id they guessed is real.
 
 import { APP_MODULE_KEYS, isModuleKey, type ModuleKey } from '../auth/moduleAccess.ts'
+import {
+  accountStatus,
+  isAccountUsable,
+  lifecycleFromProfile,
+  type AccountStatus,
+} from '../auth/accountLifecycle.ts'
 import type { PortfolioPrincipal, FamilyPortfolioScope } from '../portfolioAccess/entitlements.ts'
 
 /**
@@ -37,8 +43,11 @@ import type { PortfolioPrincipal, FamilyPortfolioScope } from '../portfolioAcces
  * therefore deferred to the provisioning stage, where `invited_at` is actually
  * produced. See the report's account-status section.
  */
-export const ACCOUNT_STATUSES = ['active', 'pending'] as const
-export type AccountStatus = (typeof ACCOUNT_STATUSES)[number]
+// R13.6F — the status vocabulary moved to `auth/accountLifecycle.ts`, because the
+// same four states are now derived by the authorization layer and by this
+// directory, and two copies would be two things to keep in step. Re-exported so
+// existing importers of this module keep working.
+export { ACCOUNT_STATUSES, type AccountStatus } from '../auth/accountLifecycle.ts'
 
 /** A row of the administrator's user list. Deliberately narrow. */
 export interface DirectoryUser {
@@ -52,6 +61,10 @@ export interface DirectoryUser {
    */
   email: string | null
   status: AccountStatus
+  /** R13.6F lifecycle timestamps, for the administrator directory only. */
+  invitedAt: string | null
+  activatedAt: string | null
+  disabledAt: string | null
   isAdministrator: boolean
   principal: PortfolioPrincipal | null
   /** Explicit `user_module_grants` rows. Empty for an administrator, by design. */
@@ -78,9 +91,37 @@ export interface DirectoryUser {
  * identical is what stops the console from showing "Active" for an account the
  * authorization layer considers unapproved.
  */
-export function accountStatusOf(profile: { username?: string | null } | null | undefined): AccountStatus {
-  const username = typeof profile?.username === 'string' ? profile.username.trim() : ''
-  return username.length > 0 ? 'active' : 'pending'
+/**
+ * The account's status, derived from approval plus the R13.6F lifecycle columns.
+ *
+ * Before R13.6F this was a two-value function over `username` alone, which could
+ * not tell an invited account from a disabled one from a never-provisioned row.
+ * It now delegates to the single lifecycle rule so the directory and the
+ * authorization layer can never disagree about what state an account is in.
+ *
+ * NOTE the deliberate separation §21 requires: `disabled` and "no platform access
+ * because zero modules are granted" are DIFFERENT conditions and are reported
+ * separately — `status` carries the first, `hasPlatformAccess` the second. An
+ * active member with no grants is `active` with `hasPlatformAccess: false`, and
+ * must never be shown as disabled.
+ */
+export function accountStatusOf(
+  profile:
+    | { username?: unknown; invited_at?: unknown; activated_at?: unknown; disabled_at?: unknown }
+    | null
+    | undefined,
+): AccountStatus {
+  return accountStatus(lifecycleFromProfile(profile))
+}
+
+/** True when this profile may be authorized at all — approved, activated, not disabled. */
+export function accountUsableOf(
+  profile:
+    | { username?: unknown; invited_at?: unknown; activated_at?: unknown; disabled_at?: unknown }
+    | null
+    | undefined,
+): boolean {
+  return isAccountUsable(lifecycleFromProfile(profile))
 }
 
 /** Why a module-grant change was refused. */
