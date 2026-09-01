@@ -92,6 +92,10 @@ interface Distance {
   lastMonitoredStale: boolean
 }
 interface DetailResponse {
+  // POST-R13.6B.1 — whether THIS caller may mutate. A module grant opens
+  // reading only; create/edit/delete are administrator-only. Presentation,
+  // never protection: the API re-checks and RLS refuses regardless.
+  canManage?: boolean
   note: StructuredNote
   prices: UnderlyingPrice[]
   metrics: {
@@ -111,9 +115,14 @@ export default function StructuredNoteDetailPage() {
   const router = useRouter()
   const id = params.id
   const [data, setData] = useState<DetailResponse | null>(null)
+  // Absent or non-true => read-only. Never inferred from anything else.
+  const canManage = data?.canManage === true
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [loadFailed, setLoadFailed] = useState(false)
+  // POST-R13.6CDE — see the list page: a 403 is an authorization ANSWER and
+  // renders as such, never as the generic failure state.
+  const [notAuthorized, setNotAuthorized] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteFailed, setDeleteFailed] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -142,6 +151,7 @@ export default function StructuredNoteDetailPage() {
         const res = await fetch(`/api/structured-notes/${id}`, { cache: 'no-store' })
         if (cancelled.value) return
         if (res.status === 404) { setNotFound(true); return }
+        if (res.status === 403) { setNotAuthorized(true); return }
         // R12: any other non-ok (503 not-configured, middleware 401) is a
         // LOAD FAILURE — its JSON error body must never become page data
         // (that crashed the render at `data.note`).
@@ -238,6 +248,12 @@ export default function StructuredNoteDetailPage() {
   if (loading) return (
     <div className="w-full">
       <GlassSurface variant="card"><AsyncState kind="loading" /></GlassSurface>
+    </div>
+  )
+  if (notAuthorized) return (
+    <div className="w-full">
+      {backLink}
+      <GlassSurface variant="card" className="mt-3"><AsyncState kind="not_authorized" /></GlassSurface>
     </div>
   )
   if (loadFailed) return (
@@ -589,6 +605,7 @@ export default function StructuredNoteDetailPage() {
               value={n.custodian}
               knownCustodians={knownCustodians}
               onCommit={setCustodian}
+              readOnly={!canManage}
             />
             <EntityAllocationGrid
               allocations={n.allocations}
@@ -596,6 +613,7 @@ export default function StructuredNoteDetailPage() {
               onSet={setEntityAllocation}
               onAddCustom={(name) => setEntityAllocation(name, 0)}
               masked={masked}
+              readOnly={!canManage}
             />
             {allocError && <p className="mt-2 text-xs text-negative" role="alert">{allocError}</p>}
             {/* R7.1B — the two quantities are stated SEPARATELY, each with its
@@ -628,6 +646,7 @@ export default function StructuredNoteDetailPage() {
               <div>{t.sn.source}: {n.sourceType === 'pdf_extraction' ? t.sn.sourcePdf : t.sn.sourceManual}{n.sourceFileName ? <> · <span className="text-foreground">{n.sourceFileName}</span></> : ''}</div>
               {n.confidenceScore !== null && <div>{t.sn.confidence}: <span className="ui-number text-foreground">{Math.round(n.confidenceScore * 100)}%</span></div>}
             </div>
+            {canManage && (
             <div className="mt-4 pt-3 border-t border-border no-print">
               <button
                 onClick={() => { setDeleteFailed(false); setConfirmingDelete(true) }}
@@ -639,6 +658,7 @@ export default function StructuredNoteDetailPage() {
               </button>
               {deleteFailed && !confirmingDelete && <p className="mt-2 text-xs text-negative" role="alert">{t.sn.deleteError}</p>}
             </div>
+            )}
           </GlassSurface>
         </div>
       </Reveal>
@@ -718,13 +738,14 @@ function FeatureChip({ label }: { label: string }) {
  * entity. "Add entity" appends a custom row. Every change upserts by entity.
  */
 function EntityAllocationGrid({
-  allocations, currency, onSet, onAddCustom, masked,
+  allocations, currency, onSet, onAddCustom, masked, readOnly = false,
 }: {
   allocations: { entityName: string; notionalAmount: number }[]
   currency: string
   onSet: (entity: string, notional: number) => void
   onAddCustom: (entity: string) => void
   masked: boolean
+  readOnly?: boolean
 }) {
   const { t } = useLang()
   const [custom, setCustom] = useState('')
@@ -737,13 +758,15 @@ function EntityAllocationGrid({
     <div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
         {rows.map((name) => (
-          <EntityRow key={name} name={name} currency={currency} value={byName.get(name) ?? 0} onCommit={(v) => onSet(name, v)} removable={extras.includes(name)} onRemove={() => onSet(name, 0)} masked={masked} />
+          <EntityRow key={name} name={name} currency={currency} value={byName.get(name) ?? 0} onCommit={(v) => onSet(name, v)} removable={extras.includes(name) && !readOnly} onRemove={() => onSet(name, 0)} masked={masked} readOnly={readOnly} />
         ))}
       </div>
+      {!readOnly && (
       <form className="flex gap-2 mt-3 no-print" onSubmit={(e) => { e.preventDefault(); const n = custom.trim(); if (n) { onAddCustom(n); setCustom('') } }}>
         <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder={t.sn.entity} aria-label={t.sn.entity} className="px-2.5 py-1 text-sm border border-border rounded-lg bg-surface" />
         <button type="submit" className="px-3 py-1 text-sm rounded-full border border-border nv-transition cursor-pointer hover:border-accent">＋ {t.sn.addAllocation}</button>
       </form>
+      )}
     </div>
   )
 }
@@ -772,8 +795,8 @@ function parseFormattedNumber(formatted: string): number {
  * note, because a note's accounts are all traded through the same institution.
  * An unrecorded custodian is shown honestly, never guessed.
  */
-function CustodianField({ value, knownCustodians, onCommit }: {
-  value: string | null; knownCustodians: string[]; onCommit: (v: string) => void
+function CustodianField({ value, knownCustodians, onCommit, readOnly = false }: {
+  value: string | null; knownCustodians: string[]; onCommit: (v: string) => void; readOnly?: boolean
 }) {
   const { t } = useLang()
   const [draft, setDraft] = useState(value ?? '')
@@ -791,8 +814,9 @@ function CustodianField({ value, knownCustodians, onCommit }: {
         id="sn-custodian"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => { if (draft.trim() !== (value ?? '')) onCommit(draft) }}
+        onBlur={() => { if (!readOnly && draft.trim() !== (value ?? '')) onCommit(draft) }}
         onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+        readOnly={readOnly}
         list={listId}
         placeholder={t.sn.custodianUnavailable}
         aria-label={t.sn.custodian}
@@ -805,7 +829,7 @@ function CustodianField({ value, knownCustodians, onCommit }: {
   )
 }
 
-function EntityRow({ name, currency, value, onCommit, removable, onRemove, masked }: { name: string; currency: string; value: number; onCommit: (v: number) => void; removable: boolean; onRemove: () => void; masked: boolean }) {
+function EntityRow({ name, currency, value, onCommit, removable, onRemove, masked, readOnly = false }: { name: string; currency: string; value: number; onCommit: (v: number) => void; removable: boolean; onRemove: () => void; masked: boolean; readOnly?: boolean }) {
   const { t } = useLang()
   const [draft, setDraft] = useState(value ? formatWithThousands(String(value)) : '')
   // Keep the input in sync when the persisted value changes (render-time prev pattern).
@@ -839,8 +863,9 @@ function EntityRow({ name, currency, value, onCommit, removable, onRemove, maske
         <input
           value={draft}
           onChange={(e) => setDraft(formatWithThousands(e.target.value))}
-          onBlur={() => { const v = parseFormattedNumber(draft); if (v !== value) onCommit(v > 0 ? v : 0) }}
+          onBlur={() => { if (readOnly) return; const v = parseFormattedNumber(draft); if (v !== value) onCommit(v > 0 ? v : 0) }}
           onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+          readOnly={readOnly}
           inputMode="decimal" placeholder="0"
           aria-label={`${t.sn.accountNotional}: ${name} — ${currency}`}
           title={t.sn.accountNotionalHelp}

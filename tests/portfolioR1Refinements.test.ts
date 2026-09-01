@@ -141,11 +141,20 @@ describe('R13.R1 § 2 — primary Portfolio navigation', () => {
     }
   })
 
-  test('navigation carries no authorization logic', () => {
+  // AMENDED by POST-R13.6CDE. Navigation is now entitlement-aware by design, so
+  // "mentions nothing about access" is no longer the property to hold. What must
+  // still hold — and what this rule was really protecting — is that navigation
+  // DECIDES nothing: it reads a resolved snapshot and never derives authority
+  // from a role, a session or the database.
+  test('navigation consumes a resolved snapshot and decides nothing itself', () => {
     const src = read(NAVIGATION)
-    for (const forbidden of ['auth', 'entitle', 'role', 'administrator', 'session']) {
-      assert.ok(!src.toLowerCase().includes(forbidden), `navigation.ts must not mention ${forbidden}`)
+    assert.ok(src.includes('visibleNavGroups'), 'it filters by effective access')
+    for (const forbidden of ['getCurrentUser', 'supabase', 'session', 'user_metadata', 'process.env']) {
+      assert.ok(!src.toLowerCase().includes(forbidden.toLowerCase()), `navigation.ts must not reach for ${forbidden}`)
     }
+    // No role string is compared here — administrator handling lives in the
+    // shared rule, so navigation cannot disagree with the server about it.
+    assert.ok(!/'administrator'/.test(src))
   })
 })
 

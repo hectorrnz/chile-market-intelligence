@@ -1,15 +1,22 @@
 // PATCH  /api/notification-recipients/[id] — edit email/label/active.
 // DELETE /api/notification-recipients/[id] — remove a recipient.
-// Middleware enforces auth. Managed from /settings/notifications.
+//
+// ADMINISTRATOR ONLY (POST-R13.6B.1) — see the collection route for why the
+// recipient list is a capability rather than a grantable module. Managed from
+// /settings.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseUserClient } from '@/lib/supabase/server'
 import { isValidEmail } from '@/lib/auth/credentials'
 import { updateNotificationRecipient, deleteNotificationRecipient } from '@/lib/db/repositories/notificationsRepository'
+import { guardAdministrator } from '@/lib/auth/moduleApiGuard'
 
 export const dynamic = 'force-dynamic'
 
 export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const denied = await guardAdministrator()
+  if (denied) return denied
+
   const client = await getSupabaseUserClient()
   if (!client) return NextResponse.json({ error: 'Not configured' }, { status: 503 })
 
@@ -36,6 +43,9 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
 }
 
 export async function DELETE(_request: NextRequest, ctx: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const denied = await guardAdministrator()
+  if (denied) return denied
+
   const client = await getSupabaseUserClient()
   if (!client) return NextResponse.json({ error: 'Not configured' }, { status: 503 })
   const { id } = await ctx.params

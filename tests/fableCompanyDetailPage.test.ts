@@ -986,8 +986,14 @@ describe('Phase 5C repair — Settings is not hidden or truncated in the top nav
   const navModule = read('src/lib/navigation.ts')
 
   it('every primary-nav item and its order are unchanged (still sourced from navGroups, nothing hardcoded)', () => {
-    assert.match(navSrc, /\{navGroups\.map\(\(group\) => \{/)
-    const keys = [...navModule.matchAll(/key:\s*'(\w+)',\n\s*href:/g)].map(m => m[1])
+    // AMENDED by POST-R13.6CDE: rendered from `visibleNavGroups(access)`, i.e.
+    // `navGroups` filtered by module. The group ORDER and MEMBERSHIP asserted
+    // below are the property this case protects, and they are unchanged.
+    assert.match(navSrc, /\{groups\.map\(\(group\) => \{/)
+    assert.match(navSrc, /visibleNavGroups\(access\)/)
+    // POST-R13.6CDE inserted an optional `module:` line between `key` and
+    // `href`; the ORDER and MEMBERSHIP this case protects are unchanged.
+    const keys = [...navModule.matchAll(/key:\s*'(\w+)',\n(?:\s*module:[^\n]*\n)?\s*href:/g)].map(m => m[1])
     assert.deepEqual(keys, ['overview', 'markets', 'analysis', 'macro', 'earnings', 'portfolio', 'structuredNotes', 'settings'], 'group order/membership must be exactly as before — Settings stays last, nothing removed or reordered')
   })
 
@@ -1016,7 +1022,7 @@ describe('Phase 5C repair — Settings is not hidden or truncated in the top nav
 
   it('preserves active-route behavior — aria-current and the measured sliding indicator are untouched', () => {
     assert.match(navSrc, /aria-current=\{active \? 'page' : undefined\}/)
-    assert.match(navSrc, /useNavIndicator\(activeGroup\?\.key \?\? null/)
+    assert.match(navSrc, /useNavIndicator\(\s*activeGroup\?\.key \?\? null/)
   })
 
   it('preserves keyboard reachability — every pill is a real, focusable <Link>, not a div', () => {

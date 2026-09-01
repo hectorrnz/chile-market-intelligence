@@ -1,5 +1,6 @@
 // Phase 9D — GET /api/structured-notes/monitoring-status
-// Authenticated-only (middleware + shared-book RLS). Read-only summary of the
+// Requires the `structured_notes` module grant (POST-R13.6B.1 — the book is no
+// longer readable by every authenticated account). Read-only summary of the
 // scheduled monitoring job's health: latest run, latest snapshot date, active
 // note count, unsupported/stale underlying counts, and which notes have an
 // observation due soon or flagged for review.
@@ -13,11 +14,15 @@ import {
 } from '@/lib/db/repositories/structuredNotesRepository'
 import { calculateDaysToNextObservation } from '@/lib/structuredNotes/calculations'
 import { detectStalePrice } from '@/lib/structuredNotes/monitoring'
+import { guardModuleRead } from '@/lib/auth/moduleApiGuard'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export async function GET(): Promise<NextResponse> {
+  const denied = await guardModuleRead('structured_notes')
+  if (denied) return denied
+
   const client = await getSupabaseUserClient()
   if (!client) return NextResponse.json({ error: 'Not configured' }, { status: 503 })
 

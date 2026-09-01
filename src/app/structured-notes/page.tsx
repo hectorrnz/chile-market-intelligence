@@ -177,6 +177,10 @@ export default function StructuredNotesPage() {
   const [summary, setSummary] = useState<BookSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
+  // POST-R13.6CDE — an authorization denial is an ANSWER, not a failure, and
+  // must never render as "Something went wrong". 403 means this account does not
+  // hold the module; 503 and everything else remain genuine failures.
+  const [notAuthorized, setNotAuthorized] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [view, setView] = useState<'live' | 'archived'>('live')
   const [statusFilter, setStatusFilter] = useState<string>('all')
@@ -189,13 +193,20 @@ export default function StructuredNotesPage() {
   const [monitoring, setMonitoring] = useState<MonitoringStatus | null>(null)
   // R7.1B — dashboard row deletion. `pendingDelete` holds the note the trash
   // trigger opened the shared confirmation for; nothing mutates until confirm.
+  // POST-R13.6B.1 — the API reports whether THIS caller may mutate the book.
+  // A module grant opens reading only; create/edit/delete are administrator-
+  // only. This hides controls the API would refuse; it is presentation, never
+  // protection — every mutation route re-checks, and RLS refuses regardless.
+  const [canManage, setCanManage] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<StructuredNote | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [deleteFailed, setDeleteFailed] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const ingest = useCallback((json: { notes?: StructuredNote[]; metrics?: NoteDashboardMetrics[]; summary?: BookSummary }) => {
+  const ingest = useCallback((json: { notes?: StructuredNote[]; metrics?: NoteDashboardMetrics[]; summary?: BookSummary; canManage?: boolean }) => {
     setNotes(Array.isArray(json.notes) ? json.notes : [])
+    // Absent or non-true => read-only. Never inferred from anything else.
+    setCanManage(json.canManage === true)
     const byId: Record<string, NoteDashboardMetrics> = {}
     for (const m of json.metrics ?? []) if (m.noteId) byId[m.noteId] = m
     setMetrics(byId)
@@ -219,12 +230,15 @@ export default function StructuredNotesPage() {
     // the honest error state instead.
     try {
       const res = await fetch('/api/structured-notes', { cache: 'no-store' })
-      if (!res.ok) { setLoadFailed(true); return }
+      if (res.status === 403) { setNotes([]); setNotAuthorized(true); setLoadFailed(false); return }
+      if (!res.ok) { setNotAuthorized(false); setLoadFailed(true); return }
       const json = await res.json().catch(() => null)
-      if (!json) { setLoadFailed(true); return }
+      if (!json) { setNotAuthorized(false); setLoadFailed(true); return }
       ingest(json)
+      setNotAuthorized(false)
       setLoadFailed(false)
     } catch {
+      setNotAuthorized(false)
       setLoadFailed(true)
     }
     await loadMonitoring()
@@ -239,14 +253,16 @@ export default function StructuredNotesPage() {
         // R3/R12 — a failed initial load (thrown OR non-ok OR unparseable)
         // renders the honest error state, never the "no structured notes yet"
         // empty copy (the book may well be non-empty).
-        if (!res.ok) { setNotes([]); setLoadFailed(true); return }
+        if (res.status === 403) { setNotes([]); setNotAuthorized(true); setLoadFailed(false); return }
+        if (!res.ok) { setNotes([]); setNotAuthorized(false); setLoadFailed(true); return }
         const json = await res.json().catch(() => null)
         if (cancelled.value) return
-        if (!json) { setNotes([]); setLoadFailed(true); return }
+        if (!json) { setNotes([]); setNotAuthorized(false); setLoadFailed(true); return }
         ingest(json)
+        setNotAuthorized(false)
         setLoadFailed(false)
       } catch {
-        if (!cancelled.value) { setNotes([]); setLoadFailed(true) }
+        if (!cancelled.value) { setNotes([]); setNotAuthorized(false); setLoadFailed(true) }
       } finally {
         if (!cancelled.value) setLoading(false)
       }
@@ -419,14 +435,23 @@ export default function StructuredNotesPage() {
     { status: 'breached', label: t.sn.riskBreached, tip: t.sn.legendBreached },
   ]
 
-  const tableState = loading ? 'loading' as const : loadFailed ? 'error' as const : shown.length === 0 ? 'empty' as const : undefined
+  const tableState = loading
+    ? 'loading' as const
+    // Denial is checked BEFORE failure: the two are mutually exclusive by
+    // construction above, and ordering it first documents which one wins.
+    : notAuthorized ? 'not_authorized' as const
+    : loadFailed ? 'error' as const
+    : shown.length === 0 ? 'empty' as const
+    : undefined
 
   const toolbar = (
     <div className="flex flex-wrap items-center gap-2.5 w-full no-print">
-      <label className={`${PILL_PRIMARY} ${busy ? 'opacity-50 cursor-not-allowed' : ''} focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[var(--nv-focus)]`}>
-        <input ref={fileRef} type="file" accept="application/pdf" onChange={handleFile} className="sr-only" disabled={busy} aria-label={t.sn.upload} />
-        {busy ? t.sn.extracting : t.sn.upload}
-      </label>
+      {canManage && (
+        <label className={`${PILL_PRIMARY} ${busy ? 'opacity-50 cursor-not-allowed' : ''} focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[var(--nv-focus)]`}>
+          <input ref={fileRef} type="file" accept="application/pdf" onChange={handleFile} className="sr-only" disabled={busy} aria-label={t.sn.upload} />
+          {busy ? t.sn.extracting : t.sn.upload}
+        </label>
+      )}
 
       <ChipSelect value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label={t.sn.filterStatus}>
         <option value="all">{t.sn.filterStatus}: {t.sn.filterAll}</option>
@@ -797,7 +822,7 @@ export default function StructuredNotesPage() {
                       </PrivacyValue>
                     </td>
                     <td className={`${cellPad} text-center no-print`}>
-                      <input type="checkbox" checked={isArchived(n)} disabled={calledBusy} onChange={(e) => n.id && setCalled(n.id, e.target.checked)} title={t.sn.dashCalled} aria-label={`${t.sn.colCalled}: ${n.productName}`} />
+                      <input type="checkbox" checked={isArchived(n)} disabled={calledBusy || !canManage} onChange={(e) => n.id && setCalled(n.id, e.target.checked)} title={t.sn.dashCalled} aria-label={`${t.sn.colCalled}: ${n.productName}`} />
                     </td>
                     {/* R7.1B — icon-only delete trigger. It is a real <button>,
                         so the row's own click handler skips it (interactive
@@ -806,6 +831,7 @@ export default function StructuredNotesPage() {
                         accessible name naming the note, tooltip, and the
                         global focus-visible ring. */}
                     <td className={`${cellPad} text-center no-print`}>
+                      {canManage && (
                       <button
                         type="button"
                         onClick={() => { setDeleteFailed(false); setPendingDelete(n) }}
@@ -819,6 +845,7 @@ export default function StructuredNotesPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h12M8.5 6V4.5h3V6M6 6l.7 9.2a1 1 0 0 0 1 .8h4.6a1 1 0 0 0 1-.8L14 6M8.7 9v4.3M11.3 9v4.3" />
                         </svg>
                       </button>
+                      )}
                     </td>
                   </tr>
                 )

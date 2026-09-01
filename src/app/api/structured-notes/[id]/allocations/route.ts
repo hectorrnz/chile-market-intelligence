@@ -12,18 +12,25 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseUserClient } from '@/lib/supabase/server'
 import { upsertAllocation, getStructuredNoteById, getKnownCustodians } from '@/lib/db/repositories/structuredNotesRepository'
 import { calculateNevadaInvestmentNotional, classifyIssueSizePlausibility, nevadaInvestmentCurrency } from '@/lib/structuredNotes/calculations'
+import { guardAdministrator, guardModuleRead } from '@/lib/auth/moduleApiGuard'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 /** The distinct custodians already recorded on notes across the book (suggestion list). */
 export async function GET(): Promise<NextResponse> {
+  const denied = await guardModuleRead('structured_notes')
+  if (denied) return denied
+
   const client = await getSupabaseUserClient()
   if (!client) return NextResponse.json({ error: 'Not configured' }, { status: 503 })
   return NextResponse.json({ custodians: await getKnownCustodians(client) })
 }
 
 export async function POST(request: NextRequest, ctx: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const denied = await guardAdministrator()
+  if (denied) return denied
+
   const client = await getSupabaseUserClient()
   if (!client) return NextResponse.json({ error: 'Not configured' }, { status: 503 })
   const { id } = await ctx.params

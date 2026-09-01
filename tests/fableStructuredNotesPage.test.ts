@@ -214,12 +214,32 @@ describe('R3.5 — API contracts and monitoring/workbook logic unchanged', () =>
 
 describe('R3.6 — real-data states preserved and honest', () => {
   it('loading, error, empty and populated states all exist, via the shared AsyncState kinds', () => {
-    assert.match(PAGE, /loading \? 'loading' as const : loadFailed \? 'error' as const : shown\.length === 0 \? 'empty' as const : undefined/)
+    // AMENDED by POST-R13.6CDE: a FIFTH state joined the four. An authorization
+    // denial used to render as `error` ("Something went wrong"), which invited
+    // the user to retry something that could never succeed. Asserted as an
+    // ordered chain rather than one literal so the branches stay distinguishable.
+    // Whitespace-normalised: the chain is formatted across several lines.
+    const flat = PAGE.replace(/\/\/.*$/gm, '').replace(/\s+/g, ' ')
+    for (const branch of [
+      "const tableState = loading ? 'loading' as const",
+      ": notAuthorized ? 'not_authorized' as const",
+      ": loadFailed ? 'error' as const",
+      ": shown.length === 0 ? 'empty' as const",
+    ]) {
+      assert.ok(flat.includes(branch), `missing branch: ${branch}`)
+    }
     assert.match(PAGE, /stateMessage=\{tableState === 'empty' \? t\.sn\.empty : undefined\}/)
   })
 
   it('a failed initial load renders the error state, never the empty-book copy', () => {
-    assert.match(PAGE, /setNotes\(\[\]\); setLoadFailed\(true\)/)
+    assert.match(PAGE, /setNotes\(\[\]\); setNotAuthorized\(false\); setLoadFailed\(true\)/)
+  })
+
+  it('a DENIAL is not rendered as a failure, and never as a confirmed-empty book', () => {
+    // The two are mutually exclusive at the point of assignment, so the page can
+    // never claim both, and a denied caller never sees "no structured notes yet".
+    assert.match(PAGE, /res\.status === 403.*setNotAuthorized\(true\); setLoadFailed\(false\)/)
+    assert.ok(!/res\.status === 403.*setLoadFailed\(true\)/.test(PAGE))
   })
 
   it('the source footer keeps the real provider and the book-level as-of timestamp', () => {

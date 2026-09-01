@@ -14,11 +14,24 @@
 // `admin` is a capability, not a data scope: it is surfaced as the
 // `isAdministrator` flag (which drives the Admin navigation item), never as a
 // selectable portfolio scope.
+//
+// POST-R13.6CDE — MODULE COMPOSITION. The returned set is now the frozen
+// principal ceiling INTERSECTED with the caller's module grants
+// (`portfolioVisibleScopes`), so revoking `portfolio` or `alternatives` removes
+// the corresponding sub-navigation and scope selector wherever this route feeds
+// them — which is everywhere in the module shell.
+//
+// Composition can only ever NARROW. `scopesFor()` is unchanged and still runs
+// first; intersection cannot produce a scope the ceiling did not contain, so no
+// grant configuration reaches a sibling's personal portfolio. Every downstream
+// route re-checks its own scope server-side regardless of what this returns.
 
 import { NextResponse } from 'next/server'
 
 import { guardPrivateApi } from '@/lib/auth/apiGuard'
 import { getFamilyPortfolioEntitlement } from '@/lib/portfolioAccess/getEntitlement'
+import { getCallerModuleAccess } from '@/lib/auth/getModuleAccess'
+import { portfolioVisibleScopes } from '@/lib/portfolioAccess/portfolioModuleComposition'
 import type { FamilyPortfolioScope } from '@/lib/portfolioAccess/entitlements'
 
 export const runtime = 'nodejs'
@@ -44,8 +57,9 @@ export async function GET() {
   if (denied) return denied
 
   const entitlement = await getFamilyPortfolioEntitlement()
+  const { access } = await getCallerModuleAccess()
 
-  const scopes = entitlement.scopes
+  const scopes = portfolioVisibleScopes(entitlement.input, access)
     .filter((s) => s !== 'admin')
     .map((s) => {
       const label = SCOPE_LABELS[s]

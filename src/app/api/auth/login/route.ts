@@ -33,12 +33,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   // Resolve username → email (server-side only).
-  const { data: profile } = await (admin as unknown as {
+  const { data: profile, error: lookupError } = await (admin as unknown as {
     from: (t: string) => {
       select: (c: string) => {
         eq: (col: string, val: string) => {
           maybeSingle: () => Promise<{
             data: { username: string | null; email: string | null; display_name: string | null } | null
+            error: unknown
           }>
         }
       }
@@ -48,6 +49,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     .select('username, email, display_name')
     .eq('username', username)
     .maybeSingle()
+
+  // POST-R13.6R1.1 — A FAILED LOOKUP IS NOT "NO SUCH USER".
+  //
+  // This error used to be destructured away, so an unreachable database, an
+  // invalid or rotated service-role key, or any PostgREST error produced a
+  // `profile` of null and therefore the same 401 as a wrong password. Every
+  // cause — the account's, the deployment's, the network's — arrived at the
+  // reader as "Incorrect username or password", which is the one message that
+  // sends someone to re-type a password that was never the problem. Diagnosing
+  // exactly that took an entire stage.
+  //
+  // This is NOT a user-enumeration leak. It distinguishes "this deployment
+  // could not answer" from "these credentials were refused" — it says nothing
+  // about whether the username exists, because it is returned before the
+  // username is compared to anything. A caller with a valid username and a
+  // caller with a nonsense one get byte-identical responses in both branches.
+  if (lookupError) {
+    return NextResponse.json({ error: 'lookup_unavailable' }, { status: 503 })
+  }
 
   // R1.5 — the approval boundary, applied at the session-minting point. A
   // Supabase Auth identity with no approved `user_profiles` row can never

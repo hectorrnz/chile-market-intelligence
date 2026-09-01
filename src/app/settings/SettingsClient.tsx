@@ -38,6 +38,7 @@ import { Switch } from '@/components/fable/Switch'
 import { usePrivacyMode } from '@/components/fable/usePrivacyMode'
 import { Reveal } from '@/components/fable/motion'
 import { NotificationRecipientsCard } from './NotificationRecipientsCard'
+import { UsersAccessCard } from './UsersAccessCard'
 import { formatSourceDate } from '@/lib/formatters'
 import { useTheme, type Theme } from '@/lib/useTheme'
 import type { Lang } from '@/lib/i18n'
@@ -360,6 +361,12 @@ export function SettingsClient({ account }: { account: SettingsAccount }) {
           surface here and therefore owns its own component. */}
       <Reveal delayMs={190}>
         <NotificationRecipientsCard />
+      </Reveal>
+
+      {/* POST-R13.6CDE — administrator-only, and it renders null for everyone
+          else rather than appearing disabled. */}
+      <Reveal delayMs={220}>
+        <UsersAccessCard />
       </Reveal>
     </div>
   )

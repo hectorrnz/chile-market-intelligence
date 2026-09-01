@@ -326,8 +326,14 @@ describe('R1 login functional contract (Phase 6B preserved verbatim)', () => {
     assert.match(LOGIN, /<AuthNotice variant="error"/)
     assert.match(AUTH_FORM, /role=\{error \? 'alert' : 'status'\}/)
     assert.match(LOGIN, /json\.error \?\? ''/)
-    // The server-set ?error=not_authorized banner (unapproved identity).
-    assert.match(LOGIN, /'not_authorized' \? t\.auth\.errNotAuthorized : t\.auth\.errorCallback/)
+    // The server-set ?error banner. POST-R13.6CDE.1 turned the single ternary
+    // into a switch, because middleware now redirects here for three distinct
+    // reasons. Asserted as the property — every server-set code has its OWN
+    // message and nothing falls silently into the generic one.
+    assert.match(LOGIN, /case 'not_authorized':\s+return t\.auth\.errNotAuthorized/)
+    assert.match(LOGIN, /case 'no_platform_access':\s+return t\.auth\.errNoPlatformAccess/)
+    assert.match(LOGIN, /case 'module_access_unavailable':\s+return t\.auth\.errAccessUnavailable/)
+    assert.match(LOGIN, /default:\s+return t\.auth\.errorCallback/)
   })
 
   test('username field keeps its exact semantic attributes and receives initial focus', () => {

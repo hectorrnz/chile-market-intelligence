@@ -381,7 +381,31 @@ describe('setUserRole CLI', () => {
 
   test('it is a CLI outside src/, never HTTP-reachable', () => {
     assert.ok(existsSync(join(ROOT, 'scripts/admin/setUserRole.ts')))
-    assert.equal(existsSync(join(ROOT, 'src/app/api/admin')), false)
+    // AMENDED by POST-R13.6CDE. `src/app/api/admin` now exists: the Users &
+    // Access console needs an administrator HTTP surface to read the account
+    // list and set MODULE GRANTS. "No admin API directory" was a proxy for the
+    // real requirement, and the real requirement is unchanged and asserted
+    // directly below — no HTTP route may write role or portfolio_principal, so
+    // ROLE assignment remains CLI-only exactly as this test was defending.
+    {
+      const apiRoot = join(ROOT, 'src/app/api')
+      const apiStack: string[] = [apiRoot]
+      const roleWriters: string[] = []
+      while (apiStack.length) {
+        const dir = apiStack.pop()!
+        for (const e of readdirSync(dir, { withFileTypes: true })) {
+          const full = join(dir, e.name)
+          if (e.isDirectory()) { apiStack.push(full); continue }
+          if (!/\.tsx?$/.test(e.name)) continue
+          const src = readFileSync(full, 'utf8')
+          // A write verb anywhere in a file that also names either column.
+          if (/\.(insert|upsert|update)\(/.test(src) && /(portfolio_principal|['"]role['"])/.test(src)) {
+            roleWriters.push(full)
+          }
+        }
+      }
+      assert.deepEqual(roleWriters, [], 'no HTTP route may write role or portfolio_principal')
+    }
     // No src file may write user_profiles - restated so a regression fails here too.
     const stack: string[] = [join(ROOT, 'src')]
     const offenders: string[] = []

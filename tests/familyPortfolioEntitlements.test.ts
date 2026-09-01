@@ -52,6 +52,7 @@ import {
 } from '../src/lib/portfolioAccess/principalAssignment.ts'
 import { isApprovedProfile } from '../src/lib/auth/approval.ts'
 import { classifyPath, requiresApprovedSession } from '../src/lib/auth/accessPolicy.ts'
+import { AUTHORIZATION_STATE_SELECT } from '../src/lib/auth/authorizationState.ts'
 
 const ROOT = join(import.meta.dirname, '..')
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
@@ -997,9 +998,23 @@ describe('existing behaviour is unchanged', () => {
     assert.doesNotMatch(login, /portfolio_principal|portfolioAccess|nmi_/)
   })
 
-  test('middleware still gates on approval alone and was not given a role dependency', () => {
+  // AMENDED by POST-R13.6CDE.1, which is the stage that gave the gate a role
+  // dependency — deliberately, and only one. The property this test actually
+  // protects is that the FAMILY PORTFOLIO ceiling never leaked into the platform
+  // gate, and that is asserted here more directly than before: middleware may
+  // learn whether the caller is an administrator (so an administrator is never
+  // locked out by a grant table), but it must not read `portfolio_principal`,
+  // must not resolve scopes, and must not call the portfolio SQL predicates.
+  test('middleware learns role for the platform boundary only — never portfolio scope', () => {
     const mw = read('src/middleware.ts')
-    assert.match(mw, /\.select\('id, username'\)/)
-    assert.doesNotMatch(mw, /portfolio_principal|nmi_is_administrator/)
+    // POST-R13.6CDE.2 moved the column list into a shared constant when the
+    // module grants joined the same read. What this test guards is unchanged and
+    // is now stated against the constant itself: role and module grants YES,
+    // anything the Family Portfolio ceiling is built from NO.
+    assert.match(mw, /\.select\(AUTHORIZATION_STATE_SELECT\)/)
+    assert.match(AUTHORIZATION_STATE_SELECT, /\brole\b/)
+    assert.doesNotMatch(AUTHORIZATION_STATE_SELECT, /portfolio_principal/)
+    assert.doesNotMatch(mw, /portfolio_principal|nmi_is_administrator|nmi_portfolio_scopes|nmi_can_access_scope/)
+    assert.doesNotMatch(mw, /portfolioAccess|scopesFor|getEntitlement/)
   })
 })

@@ -23,6 +23,9 @@ on:
     branches:
       - 'feat/portfolio-r13'
       - 'feat/portfolio-r13-**'
+      # POST-R13.6B onwards — the user-access work extends the same entitlement
+      # contract and must clear the same isolated-database gate.
+      - 'feat/user-access-r13-**'
   pull_request:
     paths:
       - 'supabase/migrations/**'
@@ -33,6 +36,12 @@ on:
       - 'src/lib/auth/**'
       - 'scripts/admin/**'
       - 'tests/familyPortfolioEntitlements.test.ts'
+      - 'tests/moduleEntitlements.test.ts'
+      - 'tests/sensitiveSurfaceHardening.test.ts'
+      - 'tests/moduleRequestEnforcement.test.ts'
+      - 'tests/platformAccessBoundary.test.ts'
+      - 'tests/usersAccessIntegration.test.ts'
+      - 'scripts/ci/**'
       - '.github/workflows/r13-family-portfolio-db-validation.yml'
 
 # Read-only: this workflow never commits, never pushes, never comments.
@@ -213,9 +222,24 @@ jobs:
         run: supabase db reset --debug
 
       # Runs EVERY file under supabase/tests/database — the R13.1 entitlement
-      # suite and the R13.R1 evolution-history suite alike.
+      # suite, the R13.R1 evolution-history suite, and (POST-R13.6CDE-C) the
+      # module-grant audit suite alike.
+      #
+      # The totals are printed deliberately: the closure report has to state how
+      # many pgTAP files and assertions actually executed, and reading that off
+      # a scrolled log is how a shrinking suite goes unnoticed.
       - name: Execute the pgTAP suites
-        run: supabase test db
+        run: |
+          set -euo pipefail
+          supabase test db 2>&1 | tee /tmp/pgtap.log
+          echo "== pgTAP totals =="
+          # pg_prove AGGREGATES the per-assertion TAP stream and prints one
+          # summary line, so counting `ok N` lines here reports zero however
+          # many assertions ran. Read its own summary instead.
+          echo "on disk    : $(ls -1 supabase/tests/database/*.sql | wc -l) suite files"
+          grep -E '^Files=[0-9]+, Tests=[0-9]+' /tmp/pgtap.log || true
+          grep -E '^Result: ' /tmp/pgtap.log || true
+          ls -1 supabase/tests/database/*.sql
 
       # Advisory: surfaces missing RLS, mutable search_path and similar issues.
       # Non-blocking because it also flags pre-existing findings outside R13's
@@ -224,10 +248,89 @@ jobs:
         continue-on-error: true
         run: supabase db lint --level warning
 
+      # ── POST-R13.6CDE-C § 17 — THE LOAD-BEARING POSTGREST GATE ────────────
+      #
+      # The authorization path issues ONE query whose whole point is a PostgREST
+      # resource embed:
+      #
+      #   user_profiles -> user_module_grants(module_key)
+      #
+      # Nothing above tests that. `db reset` proves the migration chain, and
+      # pgTAP proves the SQL contract, but PostgREST's relationship resolver is
+      # a separate component with its own schema cache — and if it refuses the
+      # embed, EVERY private request answers 503. So it is proven here, over the
+      # real REST wire, with real user JWTs.
+      #
+      # The schema cache is reloaded first. `db reset` recreated every relation
+      # underneath a PostgREST process that has been running since `supabase
+      # start`, so its cached schema can predate the foreign key the embed
+      # depends on. `NOTIFY pgrst, 'reload schema'` is PostgREST's own supported
+      # reload channel and is exactly what Supabase uses in-product; it is
+      # issued against the LOCAL throwaway database only.
+      #
+      # Best-effort by design: this step is a precondition, not the gate. If the
+      # cache was already fresh the proof passes regardless, and if the reload
+      # could not be issued the proof below still fails loudly rather than
+      # silently reporting a stale answer.
+      - name: Reload the local PostgREST schema cache
+        run: |
+          set +e
+          db_url="$(supabase status -o json \
+            | python3 -c "import json,sys; s=json.load(sys.stdin); print(next((s[k] for k in ('DB_URL','db_url') if s.get(k)), ''))")"
+          if [ -n "${db_url}" ] && command -v psql >/dev/null 2>&1; then
+            psql "${db_url}" -v ON_ERROR_STOP=1 -c "notify pgrst, 'reload schema';" \
+              && echo "schema reload: issued via psql"
+          else
+            container="$(docker ps --filter 'name=supabase_db' --format '{{.Names}}' | head -n 1)"
+            if [ -n "${container}" ]; then
+              docker exec "${container}" psql -U postgres -d postgres \
+                -c "notify pgrst, 'reload schema';" \
+                && echo "schema reload: issued via docker exec ${container}"
+            else
+              echo "::warning::Could not issue a schema reload; the embed proof below remains the gate."
+            fi
+          fi
+          # PostgREST reloads asynchronously.
+          sleep 5
+          exit 0
+
+      # HARD GATE. Creates synthetic identities in the isolated stack, signs
+      # them in for genuine access tokens, issues the application's exact
+      # embedded select with the ANON key (never the service-role key), and
+      # feeds the real response bodies into the application's own parser and
+      # request decision. A refused relationship fails this job; it is never
+      # softened into a permissive fallback.
+      - name: Prove the PostgREST embedded authorization query (§ 17 / § 18)
+        run: node scripts/ci/postgrestEmbedProof.ts
+
       # Both halves of the SQL <-> TypeScript parity contract must agree. The SQL
       # half executed during `db reset`; this is the TypeScript half.
       - name: Run the TypeScript entitlement suite (parity, other half)
         run: node --test "tests/familyPortfolioEntitlements.test.ts"
+
+      # POST-R13.6B — the module entitlement contract has the same two-sided
+      # shape: its SQL truth table executed during `db reset` above, and its
+      # pgTAP assertions ran in `supabase test db`. This is its TypeScript half.
+      - name: Run the TypeScript module entitlement suite (parity, other half)
+        run: node --test "tests/moduleEntitlements.test.ts"
+
+      # POST-R13.6B.1 — the Structured Notes / notification-recipient hardening.
+      # Its executable half (role sessions, RLS, GRANT/REVOKE) ran inside
+      # `supabase test db` above; this is the static half — route wiring, guard
+      # selection, and the migration's shape.
+      - name: Run the TypeScript sensitive-surface hardening suite
+        run: node --test "tests/sensitiveSurfaceHardening.test.ts"
+
+      # POST-R13.6CDE / .1 / .2 — the platform-access boundary, the route/API
+      # module enforcement and the Users & Access console. These are pure
+      # TypeScript suites, but they encode the same authorization contract the
+      # database half enforces, so they run on the same gate: a schema change
+      # that silently broke either side would otherwise pass here.
+      - name: Run the platform-access and module-enforcement suites
+        run: |
+          node --test "tests/platformAccessBoundary.test.ts"
+          node --test "tests/moduleRequestEnforcement.test.ts"
+          node --test "tests/usersAccessIntegration.test.ts"
 
       - name: Run access-control and profile regression suites
         run: |

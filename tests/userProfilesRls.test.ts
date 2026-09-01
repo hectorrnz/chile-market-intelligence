@@ -27,7 +27,11 @@ import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { isApprovedProfile } from '../src/lib/auth/approval.ts'
-import { decideRequestAccess, type ApprovalLookup, type IdentityVerifier } from '../src/lib/auth/requestAccess.ts'
+import {
+  decideRequestAccess,
+  type IdentityVerifier,
+} from '../src/lib/auth/requestAccess.ts'
+import type { AuthorizationStateLookup } from '../src/lib/auth/authorizationState.ts'
 
 const ROOT = join(import.meta.dirname, '..')
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
@@ -430,9 +434,24 @@ describe('the application still matches the surviving policy', () => {
 
 describe('approval semantics the migration protects (behavioural)', () => {
   const verified: IdentityVerifier = async () => ({ user: { id: 'user-1' } })
-  const approved: ApprovalLookup = async () => ({ id: 'user-1', username: 'someone' })
-  const revoked: ApprovalLookup = async () => ({ id: 'user-1', username: null })
-  const deletedRow: ApprovalLookup = async () => null
+  // POST-R13.6CDE.2 — one authorization state, one query. These cases are about
+  // the APPROVAL MARKER, so they hold role and grants constant at values that
+  // satisfy every later layer: an administrator, entitled to enter and to reach
+  // any mapped surface. Only the marker varies, so only the marker can be what
+  // flips the decision. Module entitlement itself is exercised in
+  // tests/moduleRequestEnforcement.test.ts.
+  const state = (username: string | null): AuthorizationStateLookup => async () => ({
+    ok: true,
+    state: {
+      userId: 'user-1',
+      approved: typeof username === 'string' && username.trim().length > 0,
+      role: 'administrator',
+      grants: [],
+    },
+  })
+  const approved = state('someone')
+  const revoked = state(null)
+  const deletedRow: AuthorizationStateLookup = async () => ({ ok: true, state: null })
 
   test('presence of the marker is what grants access', () => {
     assert.ok(isApprovedProfile({ id: 'u', username: 'someone' }))
@@ -447,17 +466,17 @@ describe('approval semantics the migration protects (behavioural)', () => {
   })
 
   test('per-request API approval still works after the migration model', async () => {
-    assert.equal((await decideRequestAccess('/api/portfolios', verified, approved)).outcome, 'allow')
-    const denied = await decideRequestAccess('/api/portfolios', verified, deletedRow)
+    assert.equal((await decideRequestAccess('/api/market/stocks', verified, approved)).outcome, 'allow')
+    const denied = await decideRequestAccess('/api/market/stocks', verified, deletedRow)
     assert.deepEqual(denied, { outcome: 'deny', reason: 'not_approved', status: 403, json: true })
   })
 
   test('revocation still takes effect on the next request, with no expiry wait', async () => {
     let cleared = false
-    const lookup: ApprovalLookup = async () => ({ id: 'user-1', username: cleared ? null : 'someone' })
-    assert.equal((await decideRequestAccess('/api/portfolios', verified, lookup)).outcome, 'allow')
+    const lookup: AuthorizationStateLookup = async (uid) => state(cleared ? null : 'someone')(uid)
+    assert.equal((await decideRequestAccess('/api/market/stocks', verified, lookup)).outcome, 'allow')
     cleared = true // administrator ran --revoke; the token is unchanged and still valid
-    assert.equal((await decideRequestAccess('/api/portfolios', verified, lookup)).outcome, 'deny')
+    assert.equal((await decideRequestAccess('/api/market/stocks', verified, lookup)).outcome, 'deny')
   })
 
   test('a user who could once self-restore now cannot: the app offers no write path', () => {
