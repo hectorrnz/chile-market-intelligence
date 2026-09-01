@@ -194,6 +194,59 @@ async function main(): Promise<void> {
   )
   check('B4 exactly ONE auth identity exists for that address', matches.length === 1, `count=${matches.length}`)
 
+  // ── E · REDEEMING the link: does it reach the callback in a form the
+  //        application can actually consume? (R13.6F § 19)
+  //
+  // Knowing the link POINTS at /auth/callback is not enough. The callback
+  // establishes the session with exchangeCodeForSession(code), reading `code`
+  // from the QUERY STRING, and that session is what makes
+  // nmi_activate_current_user() possible. If GoTrue instead returns tokens in the
+  // URL FRAGMENT (the implicit flow), the fragment never reaches the server, no
+  // session is created there, and activation silently never happens — an
+  // invitation that looks like it worked. So the link is actually followed and
+  // the redirect it produces is inspected.
+  console.log('\n── E · following the invite link to see what the callback receives ──')
+  const redeemable = typeof bLink === 'string' ? bLink : null
+  const redeem = redeemable ? await fetch(redeemable, { redirect: 'manual' }) : null
+  const location = redeem?.headers.get('location') ?? ''
+  check(
+    'E1 the verify endpoint redirects rather than rendering',
+    !!redeem && redeem.status >= 300 && redeem.status < 400,
+    `status=${redeem ? redeem.status : 'no link to follow'}`,
+  )
+  check(
+    'E2 it redirects to the application callback, not the site root',
+    location.startsWith('http://127.0.0.1:3000/auth/callback'),
+    shapeOf(location),
+  )
+  const hasQueryCode = /[?&]code=/.test(location)
+  const hasFragmentTokens = /#.*access_token=/.test(location)
+  const hasError = /[?&#].*error/i.test(location)
+  console.log(
+    `     observed: code=${hasQueryCode} fragmentTokens=${hasFragmentTokens} error=${hasError}`,
+  )
+  check(
+    'E3 the redirect carries no error',
+    !hasError,
+    hasError ? shapeOf(location) : '',
+  )
+  check(
+    // THE load-bearing one. A failure here means the invitation cannot activate
+    // an account through the implemented callback, whatever else passes.
+    'E4 it carries ?code= — the form /auth/callback exchanges for a session',
+    hasQueryCode && !hasFragmentTokens,
+    hasQueryCode
+      ? 'query code (PKCE) — compatible with exchangeCodeForSession'
+      : hasFragmentTokens
+        ? 'IMPLICIT FRAGMENT — the server callback cannot see this'
+        : 'neither code nor tokens present',
+  )
+  check(
+    'E5 the `next` parameter survives the redirect',
+    location.includes('next='),
+    location.includes('next=') ? '' : 'next= was dropped',
+  )
+
   console.log('\n── C · invite for an ALREADY-ACTIVATED (password-holding) address ──')
   const created = await admin.auth.admin.createUser({
     email: activated,
