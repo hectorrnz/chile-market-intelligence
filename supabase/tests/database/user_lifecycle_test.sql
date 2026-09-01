@@ -632,5 +632,83 @@ select is(has_table_privilege('authenticated', 'public.user_profiles', 'INSERT')
 select is(has_table_privilege('anon', 'public.user_profiles', 'SELECT'), false,
   'anon still cannot read user_profiles');
 
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 14 · nmi_admin_provision_invite IS EXECUTED, NOT MERELY DECLARED
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Added after `supabase db lint` found a REAL defect no assertion could have
+-- caught: this function is the single most important new write path, and it was
+-- the ONE administrative RPC that no test ever called. Its `v_username::citext`
+-- cast is unresolvable under `set search_path = ''`, so every real invitation
+-- would have failed at runtime with `type "citext" does not exist`.
+--
+-- The lesson generalises: a function that is only ever asserted to EXIST is not
+-- covered. These assertions run the body end to end.
+
+select pg_temp.as_service();
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+values ('b8888888-8888-8888-8888-888888888888'::uuid, '00000000-0000-0000-0000-000000000000'::uuid,
+        'authenticated', 'authenticated', 'lc_invitee@test.invalid', 'x', now(), now(), now())
+on conflict (id) do nothing;
+
+select pg_temp.as_user('b1111111-1111-1111-1111-111111111111');
+
+-- The happy path actually runs.
+select lives_ok(
+  $$ select public.nmi_admin_provision_invite(
+       'b8888888-8888-8888-8888-888888888888'::uuid,
+       'lc_invitee', 'lc_invitee@test.invalid', 'LC Invitee',
+       'user', 'andres', array['markets','macro']) $$,
+  'nmi_admin_provision_invite EXECUTES — the citext cast no longer breaks it');
+
+select pg_temp.as_service();
+select is((select count(*)::int from public.user_profiles
+           where id = 'b8888888-8888-8888-8888-888888888888'),
+  1, 'the invited profile row exists');
+select isnt((select invited_at from public.user_profiles
+             where id = 'b8888888-8888-8888-8888-888888888888'),
+  null, 'invited_at is stamped');
+select is((select activated_at from public.user_profiles
+           where id = 'b8888888-8888-8888-8888-888888888888'),
+  null, 'activated_at stays NULL — an invitation is not an activation');
+select is((select count(*)::int from public.user_module_grants
+           where user_id = 'b8888888-8888-8888-8888-888888888888'),
+  2, 'the chosen module grants were written');
+-- The audit is asserted by PROPERTY, not by a guessed row count: exactly one
+-- user_invite row, and the trail committed in the same transaction as the
+-- access it describes. Pinning a total would break whenever a kind is added,
+-- without telling anyone anything about atomicity.
+select is((select count(*)::int from public.family_portfolio_access_audit
+           where target_user_id = 'b8888888-8888-8888-8888-888888888888'
+             and field_changed = 'user_invite'),
+  1, 'exactly one user_invite audit row');
+select cmp_ok((select count(*)::int from public.family_portfolio_access_audit
+               where target_user_id = 'b8888888-8888-8888-8888-888888888888'),
+  '>=', 1, 'the invitation is audited in the SAME transaction that provisioned it');
+
+-- The invited account is still denied everything until it activates.
+select pg_temp.as_user('b8888888-8888-8888-8888-888888888888');
+select is((select count(*)::int from unnest(public.nmi_current_module_grants()) g), 0,
+  'an INVITED account holds no effective grants despite its grant rows');
+
+-- A username already taken by someone else is a clean refusal, which is the
+-- branch that dereferenced citext.
+select pg_temp.as_user('b1111111-1111-1111-1111-111111111111');
+select throws_ok(
+  $$ select public.nmi_admin_provision_invite(
+       'b8888888-8888-8888-8888-888888888888'::uuid,
+       'lc_admin', 'other@test.invalid', 'Clash',
+       'user', null, array['markets']) $$,
+  'username_taken', 'a username belonging to another account is refused cleanly');
+
+-- Re-inviting an ACTIVATED account must never silently re-open it.
+select throws_ok(
+  $$ select public.nmi_admin_provision_invite(
+       'b2222222-2222-2222-2222-222222222222'::uuid,
+       'lc_active', 'lc_active@test.invalid', 'LC Active',
+       'user', null, array['markets']) $$,
+  'already_activated', 'an activated account cannot be re-provisioned by invite');
+
+
 select * from finish();
 rollback;

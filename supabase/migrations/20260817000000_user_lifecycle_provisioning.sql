@@ -575,9 +575,18 @@ begin
 
   -- The username is globally unique; a clash must be a clean, stable refusal
   -- rather than a raw constraint-violation string.
+  --
+  -- Written with pg_catalog constructs ONLY. `set search_path = ''` is what makes
+  -- this function safe from schema-injection, but it also means an unqualified
+  -- type name cannot resolve: `v_username::citext` raises
+  -- `type "citext" does not exist` at execution time. `lower(text)` needs no
+  -- search_path, and for this column it is exactly equivalent — usernames are
+  -- validated as ASCII [A-Za-z0-9_.-], so citext's case-insensitive equality and
+  -- lower() agree on every value that can reach here. The citext UNIQUE index is
+  -- still the real enforcement; this check exists only to name the failure.
   if exists (
     select 1 from public.user_profiles p
-    where p.username = v_username::citext and p.id <> p_target_user_id
+    where lower(p.username::text) = lower(v_username) and p.id <> p_target_user_id
   ) then
     raise exception 'username_taken';
   end if;
@@ -594,7 +603,10 @@ begin
   insert into public.user_profiles as up
     (id, username, email, display_name, role, portfolio_principal, invited_at)
   values
-    (p_target_user_id, v_username::citext, v_email, coalesce(v_display, v_username),
+    -- No explicit cast: assignment into the citext column is resolved from the
+    -- target column's type OID, which needs no search_path. Naming the type here
+    -- would reintroduce the same unresolvable reference.
+    (p_target_user_id, v_username, v_email, coalesce(v_display, v_username),
      v_role, v_principal, now())
   on conflict (id) do update
     set username            = excluded.username,
