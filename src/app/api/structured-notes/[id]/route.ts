@@ -17,6 +17,7 @@ import {
   calculateNextObservation,
   calculateDaysToNextObservation,
   calculateCurrentNotional,
+  noteSettlementStatus,
   calculateDistanceToBarrier,
 } from '@/lib/structuredNotes/calculations'
 import type { NoteStatus } from '@/lib/structuredNotes/types'
@@ -84,7 +85,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       worstPerformer: worst,
       nextObservation: nextObs,
       daysToNextObservation: calculateDaysToNextObservation(note.observations, asOf),
-      currentNotional: calculateCurrentNotional(note, note.allocations),
+      currentNotional: calculateCurrentNotional(note, note.allocations, noteSettlementStatus(note, new Date().toISOString().slice(0, 10))),
       distances,
     },
   })

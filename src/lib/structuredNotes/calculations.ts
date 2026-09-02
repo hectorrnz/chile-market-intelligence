@@ -9,6 +9,7 @@
 //   - Missing market data yields `unavailable`/null, never a fabricated number.
 //   - Worst-of logic: a note's status is driven by its weakest underlying.
 
+import { deriveSettlementStatus, type SettlementStatus } from './contractualEvents.ts'
 import type {
   StructuredNote,
   StructuredNoteUnderlying,
@@ -330,12 +331,12 @@ export interface IssuerExposure {
  * `SUMIF(issuer, Monto Vigente)`. Uses each note's current notional.
  */
 export function calculateIssuerExposure(
-  notes: { issuerDisplayName: string | null; status: StructuredNote['status']; allocations: StructuredNoteAllocation[] }[],
+  notes: { issuerDisplayName: string | null; status: StructuredNote['status']; allocations: StructuredNoteAllocation[]; settlement?: SettlementStatus }[],
 ): IssuerExposure[] {
   const byIssuer = new Map<string, IssuerExposure>()
   for (const n of notes) {
     const issuer = (n.issuerDisplayName ?? 'Unknown').trim() || 'Unknown'
-    const notional = calculateCurrentNotional(n, n.allocations)
+    const notional = calculateCurrentNotional(n, n.allocations, n.settlement)
     const cur = byIssuer.get(issuer) ?? { issuer, notional: 0, noteCount: 0 }
     cur.notional += notional
     cur.noteCount += 1
@@ -432,11 +433,11 @@ export interface CustodianExposure {
  * system.
  */
 export function calculateCustodianExposure(
-  notes: { custodian: string | null; status: StructuredNote['status']; allocations: StructuredNoteAllocation[] }[],
+  notes: { custodian: string | null; status: StructuredNote['status']; allocations: StructuredNoteAllocation[]; settlement?: SettlementStatus }[],
 ): CustodianExposure[] {
   const byKey = new Map<string, CustodianExposure>()
   for (const n of notes) {
-    const notional = calculateCurrentNotional(n, n.allocations)
+    const notional = calculateCurrentNotional(n, n.allocations, n.settlement)
     const display = normalizeCustodianName(n.custodian)
     const key = custodianKey(n.custodian) ?? ' unavailable'
     const cur = byKey.get(key) ?? { custodian: display, notional: 0, noteCount: 0 }
@@ -503,4 +504,36 @@ export function calculateTenorMonths(startDate: string | null, endDate: string |
   if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return null
   const months = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth())
   return months >= 0 ? months : null
+}
+
+/**
+ * R13.7B2 § 20 — the SETTLEMENT position of a note, read from persisted state.
+ *
+ * `deriveNoteLifecycle` answers the same question from freshly EVALUATED
+ * observations; this answers it from what the database already holds, which is
+ * what the dashboard, the exposure aggregates and the detail route work from.
+ *
+ * The redemption date is taken from the calling observation itself rather than
+ * the note header: the header's `redemption_date` describes scheduled maturity,
+ * while an early call redeems on its own observation's Mandatory Early
+ * Redemption Date. Using the header would date settlement years late.
+ *
+ * Returns `undefined` for a note that is not autocalled, so passing the result
+ * straight into `calculateCurrentNotional` leaves every other status on its
+ * existing path.
+ */
+export function noteSettlementStatus(
+  note: {
+    status: StructuredNote['status']
+    redemptionDate?: string | null
+    observations?: { status: string; valuationDate: string; redemptionDate?: string | null; paymentDate?: string | null }[]
+  },
+  asOf: string,
+): SettlementStatus | undefined {
+  if (note.status !== 'autocalled') return undefined
+  const calling = (note.observations ?? [])
+    .filter((o) => o.status === 'autocalled')
+    .sort((a, b) => (a.valuationDate < b.valuationDate ? -1 : a.valuationDate > b.valuationDate ? 1 : 0))[0]
+  const redemption = calling?.redemptionDate ?? calling?.paymentDate ?? note.redemptionDate ?? null
+  return deriveSettlementStatus(redemption, asOf)
 }

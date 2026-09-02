@@ -371,7 +371,13 @@ describe('R7.1B §28-37 — Exposure by Custodian', () => {
     const { summary } = buildBookDashboard([], new Map(), null, '2027-01-01')
     assert.ok('custodianExposure' in summary)
     assert.ok('mixedCurrency' in summary)
-    assert.match(read('src/lib/structuredNotes/dashboard.ts'), /custodianExposure: calculateCustodianExposure\(notes\.map\(\(n\) => \(\{ custodian: n\.custodian, status: n\.status, allocations: n\.allocations \}\)\)\)/)
+    // R13.7B2 § 20 — the basis gained a settlement dimension (a called note's
+    // cash stays at the issuer until its redemption date). The point of this
+    // assertion is that custodian and issuer share ONE basis, so it now pins
+    // that equivalence rather than a frozen argument list.
+    const dash = read('src/lib/structuredNotes/dashboard.ts')
+    assert.match(dash, /custodianExposure: calculateCustodianExposure\(notes\.map\(\(n\) => \(\{ custodian: n\.custodian, status: n\.status, allocations: n\.allocations, settlement: noteSettlementStatus\(n, today\) \}\)\)\)/)
+    assert.match(dash, /issuerExposure: calculateIssuerExposure\(notes\.map\(\(n\) => \(\{ issuerDisplayName: n\.issuerDisplayName, status: n\.status, allocations: n\.allocations, settlement: noteSettlementStatus\(n, today\) \}\)\)\)/)
     assert.doesNotMatch(CALC, /export function calculateCustodianExposure[\s\S]{0,2000}?convert/i)
   })
 
@@ -567,8 +573,9 @@ describe('R7.1B §61-68 — regression', () => {
     assert.match(DASH, /title=\{t\.sn\.exposureByIssuer\}/)
     assert.match(DASH, /data=\{summary\.issuerExposure\.map\(\(e\) => \(\{ label: e\.issuer, value: e\.notional \}\)\)\}/)
     assert.match(CALC, /export function calculateIssuerExposure/)
-    // Its own math still runs off currentNotional.
-    assert.match(CALC, /const notional = calculateCurrentNotional\(n, n\.allocations\)/)
+    // Its own math still runs off currentNotional — now with the settlement
+    // dimension (R13.7B2 § 20), identically to the custodian aggregate.
+    assert.match(CALC, /const notional = calculateCurrentNotional\(n, n\.allocations, n\.settlement\)/)
   })
 
   it('63-64. the R7.1A mobile shell and overlay opacity are untouched', () => {

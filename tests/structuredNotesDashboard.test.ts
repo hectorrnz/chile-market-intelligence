@@ -65,16 +65,47 @@ describe('buildBookDashboard (book-level summary)', () => {
     const notes = [
       note({ isin: 'A', issuerDisplayName: 'Citi' }),
       note({ isin: 'B', issuerDisplayName: 'HSBC', autocallBarrierPct: 1 }),
-      note({ isin: 'C', issuerDisplayName: 'Citi', status: 'autocalled' }),
+      // R13.7B2 § 20 — a called note is SETTLED here: its Mandatory Early
+      // Redemption Date has passed, so the cash has left the book and it
+      // correctly contributes nothing.
+      note({
+        isin: 'C', issuerDisplayName: 'Citi', status: 'autocalled',
+        observations: [
+          { observationNumber: 1, observationType: 'autocall', valuationDate: '2026-12-01', paymentDate: null, redemptionDate: '2026-12-08', couponDuePct: null, autocallBarrierPct: 1, couponBarrierPct: null, status: 'autocalled' },
+        ],
+      }),
     ]
     const { summary, metrics } = buildBookDashboard(notes, prices, '2027-01-01T00:00:00Z', today)
     assert.equal(summary.totalNotes, 3)
     assert.equal(summary.activeNotes, 2) // the autocalled one is not active
-    assert.equal(summary.totalCurrentNotional, 2000000) // 2 active × 1M; called note contributes 0
+    assert.equal(summary.totalCurrentNotional, 2000000) // 2 active × 1M; the SETTLED called note contributes 0
     assert.equal(metrics.length, 3)
-    // Citi exposure = 1M active (the called Citi note contributes 0 current notional)
+    // Citi exposure = 1M active (the settled Citi note contributes 0 current notional)
     assert.equal(summary.issuerExposure.find((e) => e.issuer === 'Citi')?.notional, 1000000)
     assert.equal(summary.issuerExposure.find((e) => e.issuer === 'HSBC')?.notional, 1000000)
+  })
+
+  it('R13.7B2 section 20: a called note whose redemption is still future KEEPS its notional', () => {
+    // The window this exists for. The note stopped tracking the underlyings on
+    // 2026-12-28, but the money is still at the issuer until 2027-01-06 — so
+    // dropping it from AUM and from issuer credit exposure on the call date
+    // would understate both, silently, for over a week.
+    const pending = note({
+      isin: 'D', issuerDisplayName: 'Citi', status: 'autocalled',
+      observations: [
+        { observationNumber: 1, observationType: 'autocall', valuationDate: '2026-12-28', paymentDate: null, redemptionDate: '2027-01-06', couponDuePct: null, autocallBarrierPct: 1, couponBarrierPct: null, status: 'autocalled' },
+      ],
+    })
+    const { summary, metrics } = buildBookDashboard([pending], new Map(), null, today)
+    assert.equal(summary.activeNotes, 0, 'it is no longer a LIVE position')
+    assert.equal(summary.totalCurrentNotional, 1000000, 'but its cash is still outstanding')
+    assert.equal(summary.issuerExposure.find((e) => e.issuer === 'Citi')?.notional, 1000000, 'issuer credit exposure persists until settlement')
+    assert.equal(metrics[0].currentNotional, 1000000)
+
+    // ...and once the redemption date passes, it leaves the book on its own.
+    const after = buildBookDashboard([pending], new Map(), null, '2027-01-06')
+    assert.equal(after.summary.totalCurrentNotional, 0)
+    assert.equal(after.summary.issuerExposure.find((e) => e.issuer === 'Citi')?.notional, 0)
   })
   it('flags mixed currency without converting', () => {
     const notes = [note({ isin: 'A', currency: 'USD' }), note({ isin: 'B', currency: 'EUR' })]

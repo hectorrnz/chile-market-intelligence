@@ -17,6 +17,7 @@ import {
   calculateDaysToNextObservation,
   calculateDistanceToBarrier,
   calculateIssuerExposure,
+  noteSettlementStatus,
   calculateEntityExposure,
   calculateCustodianExposure,
 } from './calculations.ts'
@@ -96,7 +97,7 @@ export function computeNoteMetrics(note: StructuredNote, priceMap: Map<string, n
     riskStatus,
     worstPerformer: worst ? { underlyingName: worst.underlyingName, performance: worst.performance } : null,
     minDistanceToCouponBarrier: minDist,
-    currentNotional: calculateCurrentNotional(note, note.allocations),
+    currentNotional: calculateCurrentNotional(note, note.allocations, noteSettlementStatus(note, today)),
     currency: note.currency,
     nextObservationDate: next?.valuationDate ?? null,
     daysToNextObservation: calculateDaysToNextObservation(note.observations, today),
@@ -115,8 +116,20 @@ export function buildBookDashboard(
   const active = notes.filter((n) => n.status === 'active')
   const currencies = new Set(active.map((n) => n.currency))
   const dominant = active[0]?.currency ?? 'USD'
+
+  // R13.7B2 § 20 — OUTSTANDING notional, which is not the same set as the LIVE
+  // book. A note called on its valuation date stops tracking the underlyings,
+  // but its cash is still at the issuer until the Mandatory Early Redemption
+  // Date. Summing only `active` notes dropped that money from AUM and from
+  // issuer credit exposure the instant the call was recognised — days before it
+  // was actually repaid. A called note therefore stays in this total until its
+  // settlement resolves, and `calculateCurrentNotional` zeroes it once it does.
   let totalNotional = 0
-  for (const n of active) totalNotional += calculateCurrentNotional(n, n.allocations)
+  for (const n of notes) {
+    const settlement = noteSettlementStatus(n, today)
+    if (n.status !== 'active' && settlement !== 'pending' && settlement !== 'unknown') continue
+    totalNotional += calculateCurrentNotional(n, n.allocations, settlement)
+  }
 
   // R12: status KPI counts describe the LIVE book — an archived (called/
   // matured/cancelled/defaulted) note must not inflate 'autocallable' or
@@ -137,9 +150,9 @@ export function buildBookDashboard(
     totalCurrentNotional: totalNotional,
     currency: dominant,
     mixedCurrency: currencies.size > 1,
-    issuerExposure: calculateIssuerExposure(notes.map((n) => ({ issuerDisplayName: n.issuerDisplayName, status: n.status, allocations: n.allocations }))),
+    issuerExposure: calculateIssuerExposure(notes.map((n) => ({ issuerDisplayName: n.issuerDisplayName, status: n.status, allocations: n.allocations, settlement: noteSettlementStatus(n, today) }))),
     entityExposure: calculateEntityExposure(notes.map((n) => ({ status: n.status, allocations: n.allocations }))),
-    custodianExposure: calculateCustodianExposure(notes.map((n) => ({ custodian: n.custodian, status: n.status, allocations: n.allocations }))),
+    custodianExposure: calculateCustodianExposure(notes.map((n) => ({ custodian: n.custodian, status: n.status, allocations: n.allocations, settlement: noteSettlementStatus(n, today) }))),
     pricesAsOf: asOf,
   }
   return { metrics, summary }
