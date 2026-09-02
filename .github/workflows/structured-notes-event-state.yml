@@ -1,0 +1,141 @@
+name: Structured Notes Event State
+
+# R13.7B2 § 13 — CI for the contractual event-state engine.
+#
+# WHY THIS EXISTS
+# ───────────────
+# Before R13.7B2 no workflow in this repository ran `npm test`, `npm run lint`
+# or `npm run build` at all: the only push/pull_request workflow stands up an
+# isolated PostgreSQL stack for the entitlement contract. So the Structured
+# Notes repair — a change to how a contractual call event is DETERMINED — had
+# no automated gate whatsoever, and a regression could reach a deployment
+# unchallenged.
+#
+# HERMETIC BY DESIGN. It uses NO repository secret, NO production Supabase
+# project and NO market-data provider. Every suite below is pure: fixtures and
+# in-memory fakes only. The reconciliation TOOL is deliberately NOT run here —
+# it reads production, and CI must never hold credentials that could.
+#
+# The whole-repository `npm test` is not the gate: it carries three
+# long-standing failures in tests/newsModule.test.ts caused by date fixtures
+# that are unrelated to this subsystem, and a gate that is red for an unrelated
+# reason teaches everyone to ignore it. The suites named below must be green.
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - 'fix/structured-notes-state-r13-**'
+  pull_request:
+    paths:
+      - 'src/lib/structuredNotes/**'
+      - 'src/app/api/cron/structured-notes/**'
+      - 'src/app/structured-notes/**'
+      - 'src/lib/db/repositories/structuredNotesRepository.ts'
+      - 'src/lib/providers/market/yahooHistoryProvider.ts'
+      - 'scripts/reconcile/**'
+      - 'tests/structuredNotes*.test.ts'
+      - 'tests/notificationsPlatform.test.ts'
+      - 'vercel.json'
+      - '.github/workflows/structured-notes-event-state.yml'
+
+# Read-only: never commits, never pushes, never comments.
+permissions:
+  contents: read
+
+concurrency:
+  group: sn-event-state-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  event-state:
+    name: Contractual event-state gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout the exact commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies from the lockfile
+        run: npm ci
+
+      - name: Confirm no environment file reached the runner
+        run: |
+          set -euo pipefail
+          # This job must be incapable of touching production. Fail closed
+          # before running anything if a credential file is present.
+          for f in .env .env.local .env.production; do
+            if [ -f "$f" ]; then echo "::error::$f is present — CI must never carry credentials"; exit 1; fi
+          done
+          echo "OK: no environment file present."
+
+      # THE GOLDEN CASE AND THE ENGINE. Run first and alone so a failure here is
+      # unmissable: this suite pins XS3164820824's real contractual levels and
+      # the closes this platform recorded for 2026-08-28, the worst-of / ALL
+      # aggregation, valuation-date close resolution, the market-date and
+      # session-settled logic, the T-1 gates, the distance formulas, the
+      # concurrency claims and the cron schedule.
+      - name: Canonical event-state suite (golden case, WOF, T-1, concurrency, schedule)
+        run: node --test "tests/structuredNotesEventState.test.ts"
+
+      # Every issuer parser must keep emitting autocall observations. This is
+      # the defect's origin: a parser silently dropping them again would make
+      # the engine above unreachable while every one of its own tests still
+      # passed.
+      - name: Issuer parser suites
+        run: |
+          node --test "tests/structuredNotesPdfExtraction.test.ts"
+          node --test "tests/structuredNotesParserRouter.test.ts"
+          node --test "tests/structuredNotesBarclaysParser.test.ts"
+          node --test "tests/structuredNotesBbvaParser.test.ts"
+          node --test "tests/structuredNotesBnpParser.test.ts"
+          node --test "tests/structuredNotesCreditAgricoleParser.test.ts"
+          node --test "tests/structuredNotesSantanderParser.test.ts"
+
+      # T0 evaluation, monitoring routes, notification platform, dashboard and
+      # the settlement-aware notional treatment.
+      - name: Monitoring, notification and calculation suites
+        run: |
+          node --test "tests/structuredNotesMonitoring.test.ts"
+          node --test "tests/structuredNotesMonitoringRoutes.test.ts"
+          node --test "tests/structuredNotesCalculations.test.ts"
+          node --test "tests/structuredNotesDashboard.test.ts"
+          node --test "tests/structuredNotesCustodianExposure.test.ts"
+          node --test "tests/structuredNotesQuoteQuality.test.ts"
+          node --test "tests/structuredNotesMarketDataProviders.test.ts"
+          node --test "tests/structuredNotesWorkbookMapping.test.ts"
+          node --test "tests/notificationsPlatform.test.ts"
+          node --test "tests/fableStructuredNotesPage.test.ts"
+
+      - name: Lint
+        run: npm run lint
+
+      # `tsc --noEmit` reports long-standing type nits in tests/ that predate
+      # this branch. The GATE is that src/ and scripts/ are clean — a type error
+      # in shipped code fails here; a pre-existing test nit does not silently
+      # turn the gate red.
+      - name: Type-check (src/ and scripts/ must be clean)
+        run: |
+          set -uo pipefail
+          npx tsc --noEmit > /tmp/tsc.log 2>&1 || true
+          echo "== src/ and scripts/ diagnostics =="
+          grep -E '^(src|scripts)/' /tmp/tsc.log || echo "  none"
+          count="$(grep -cE '^(src|scripts)/' /tmp/tsc.log || true)"
+          echo "count: ${count:-0}"
+          if [ "${count:-0}" -ne 0 ]; then
+            echo "::error::${count} TypeScript error(s) in src/ or scripts/"
+            exit 1
+          fi
+
+      - name: Production build
+        run: npm run build
