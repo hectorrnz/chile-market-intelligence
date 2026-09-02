@@ -296,11 +296,26 @@ export default function StructuredNoteDetailPage() {
   const pricesAsOf = data.prices.reduce<string | null>((max, p) => (p.asOf && (!max || p.asOf > max) ? p.asOf : max), null)
   const strikeByOrder = new Map(n.underlyings.map((u) => [u.underlyingOrder, u.strikeLevel ?? u.initialLevel]))
   const knockInPctByOrder = new Map(n.underlyings.map((u) => [u.underlyingOrder, u.knockInBarrierPct ?? n.knockInBarrierPct]))
+  // R13.7 § 16 — the gauge's scale is "percent of this underlying's own strike"
+  // (100 = strike), so every reference line must be expressed in that same
+  // normalized unit. Raw index levels are never placed on it: SPX ~7700 and RTY
+  // ~2970 share no axis, and their absolute magnitudes say nothing about
+  // relative distance to their own thresholds.
+  const couponPctByOrder = new Map(n.underlyings.map((u) => [u.underlyingOrder, u.couponBarrierPct ?? n.couponBarrierPct]))
+  const autocallPctByOrder = new Map(n.underlyings.map((u) => [u.underlyingOrder, u.autocallBarrierPct ?? n.autocallBarrierPct]))
 
   const nextObs = data.metrics.nextObservation
   const nextDays = data.metrics.daysToNextObservation
   const nearObs = nextDays !== null && nextDays <= 7 && nextDays >= 0
   const deduped = dedupeObservationsByDate(n.observations)
+  // R13.7 § 14/§ 11 — the contractual call date, derived from the observation
+  // that actually recorded the call. Everything scheduled after it is no longer
+  // a live observation of an existing note and is shown as void rather than
+  // silently left looking pending.
+  const calledOnDate = deduped
+    .filter((o) => o.status === 'autocalled')
+    .map((o) => o.valuationDate)
+    .sort()[0] ?? null
   const observedCount = deduped.filter((o) => o.status !== 'scheduled').length
 
   // Fable §6 lifecycle timeline — issued ✓ · observed ✓ · next ● · maturity ○.
@@ -377,8 +392,9 @@ export default function StructuredNoteDetailPage() {
                   <th scope="col" className={`${thBase} text-left pl-4`}>{t.sn.colUnderlyings}</th>
                   <th scope="col" className={thBase} style={{ minWidth: 160 }}>{t.sn.colLevel}</th>
                   <th scope="col" className={thBase}>{t.sn.currentLevel}</th>
-                  <th scope="col" className={thBase}>{t.sn.distanceCoupon}</th>
-                  <th scope="col" className={thBase}>{t.sn.distanceKnockIn}</th>
+                  <th scope="col" className={thBase} title={t.sn.distanceConvention}>{t.sn.distanceCoupon}</th>
+                  <th scope="col" className={thBase} title={t.sn.distanceConvention}>{t.sn.distanceKnockIn}</th>
+                  <th scope="col" className={thBase} title={t.sn.distanceConvention}>{t.sn.distanceAutocall}</th>
                   <th scope="col" className={`${thBase} pr-4`}>{t.sn.monitoring.lastMonitored}</th>
                 </tr>
               </thead>
@@ -389,10 +405,26 @@ export default function StructuredNoteDetailPage() {
                   // pure display transform of the API's currentLevel.
                   const gaugeLevel = d.currentLevel !== null && strike ? (d.currentLevel / strike) * 100 : null
                   const kiPct = knockInPctByOrder.get(d.underlyingOrder) ?? null
-                  const gaugeMarks: BarrierMark[] = [
+                  const couponPct = couponPctByOrder.get(d.underlyingOrder) ?? null
+                  const autocallPct = autocallPctByOrder.get(d.underlyingOrder) ?? null
+                  // Every contractual threshold, normalized to the same scale.
+                  // Coinciding levels are collapsed (for the current book the
+                  // coupon barrier equals the knock-in at 65%, and the call
+                  // level equals the strike at 100%) so the gauge shows one
+                  // tick per distinct level instead of stacking them.
+                  const rawMarks: BarrierMark[] = [
                     ...(kiPct != null ? [{ kind: 'knockIn' as const, level: kiPct * 100 }] : []),
+                    ...(couponPct != null ? [{ kind: 'coupon' as const, level: couponPct * 100 }] : []),
+                    ...(autocallPct != null ? [{ kind: 'autocall' as const, level: autocallPct * 100 }] : []),
                     { kind: 'strike' as const, level: 100 },
                   ]
+                  const seenLevels = new Set<number>()
+                  const gaugeMarks: BarrierMark[] = rawMarks.filter((m) => {
+                    const key = Math.round(m.level * 100) / 100
+                    if (seenLevels.has(key)) return false
+                    seenLevels.add(key)
+                    return true
+                  })
                   const isWorst = worst !== null && d.underlyingName === worst.underlyingName
                   return (
                     <tr key={d.underlyingOrder} className="border-b border-border last:border-0">
@@ -414,8 +446,14 @@ export default function StructuredNoteDetailPage() {
                         />
                       </td>
                       <td className={`${cell} ui-number`}>{d.currentLevel !== null ? fmtNum(d.currentLevel) : <span className="text-muted-fg">{t.sn.unavailable}</span>}</td>
-                      <td className={`${cell} ui-number font-medium`} style={{ color: distanceTone(d.distanceToCouponBarrier) }}>{fmtPct(d.distanceToCouponBarrier)}</td>
-                      <td className={`${cell} ui-number font-medium`} style={{ color: distanceTone(d.distanceToKnockInBarrier) }}>{fmtPct(d.distanceToKnockInBarrier)}</td>
+                      <td className={`${cell} ui-number font-medium`} title={t.sn.distanceConvention} style={{ color: distanceTone(d.distanceToCouponBarrier) }}>{fmtPct(d.distanceToCouponBarrier)}</td>
+                      <td className={`${cell} ui-number font-medium`} title={t.sn.distanceConvention} style={{ color: distanceTone(d.distanceToKnockInBarrier) }}>{fmtPct(d.distanceToKnockInBarrier)}</td>
+                      {/* R13.7 § 15 — the CALL level is the threshold that decides an
+                          autocall, so it belongs beside the barriers rather than only
+                          inside the event engine. Same metric and sign convention as
+                          its neighbours; no proximity tone, because being close to a
+                          call is not a risk signal the way a barrier is. */}
+                      <td className={`${cell} ui-number`} title={t.sn.distanceConvention}>{fmtPct(d.distanceToAutocallBarrier)}</td>
                       <td className={`${cell} pr-4 ui-number text-xs`}>
                         {d.lastMonitoredDate ? (
                           <span className={d.lastMonitoredStale ? 'text-warning' : 'text-muted-fg'} title={d.lastMonitoredStale ? t.sn.monitoring.priceStale : undefined}>
@@ -551,14 +589,32 @@ export default function StructuredNoteDetailPage() {
                   // client-side date math.
                   const done = o.status !== 'scheduled'
                   const isNext = !done && nextObs !== null && o.valuationDate === nextObs.valuationDate
+                  // R13.7 § 14 — a call is TERMINAL and outranks every other
+                  // outcome on its date. Before the fix a called date could
+                  // render as a plain green "Eligible" (the coupon test) with
+                  // nothing saying the note had ended.
+                  const isCalled = o.status === 'autocalled'
+                  const isVoided = calledOnDate !== null && o.valuationDate > calledOnDate
+                  const typeLabel = o.observationType === 'autocall' ? t.sn.obsTypeAutocall
+                    : o.observationType === 'final' ? t.sn.obsTypeFinal : t.sn.obsTypeCoupon
                   return (
                     <tr
                       key={`${o.observationNumber}-${o.valuationDate}`}
-                      className={`border-b border-border last:border-0 ${done ? 'opacity-60' : ''}`}
-                      style={isNext ? { backgroundColor: 'color-mix(in oklab, var(--warning) 8%, transparent)' } : undefined}
+                      className={`border-b border-border last:border-0 ${done && !isCalled ? 'opacity-60' : ''} ${isVoided ? 'opacity-40 line-through' : ''}`}
+                      style={
+                        isCalled
+                          ? { backgroundColor: 'color-mix(in oklab, var(--positive) 12%, transparent)' }
+                          : isNext
+                            ? { backgroundColor: 'color-mix(in oklab, var(--warning) 8%, transparent)' }
+                            : undefined
+                      }
                       title={o.reviewRequired && o.reviewReason ? `${t.sn.monitoring.reviewReason}: ${o.reviewReason}` : undefined}
                     >
-                      <td className={`${cell} pl-4 ui-number`}>{o.observationNumber}{o.observationType === 'final' ? <span title={t.sn.monitoring.final}> ·F</span> : ''}</td>
+                      <td className={`${cell} pl-4 ui-number`}>
+                        {o.observationNumber}
+                        {' '}
+                        <span className="ui-micro-label text-muted-fg" title={typeLabel}>{typeLabel}</span>
+                      </td>
                       <td className={`${cell} ui-number whitespace-nowrap`}>
                         {isNext && <span aria-hidden="true" style={{ color: 'var(--warning)' }}>● </span>}
                         {isNext && <span className="sr-only">{t.sn.dashNextObs}: </span>}
@@ -568,7 +624,16 @@ export default function StructuredNoteDetailPage() {
                       <td className={`${cell} ui-number`}>{fmtPct(o.couponBarrierPct)}</td>
                       <td className={`${cell} ui-number`}>{fmtPct(o.autocallBarrierPct)}</td>
                       <td className={`${cell} text-xs text-muted-fg`}>
-                        {o.status}{o.reviewRequired ? <span className="text-warning"> ⚠</span> : ''}
+                        {isCalled ? (
+                          <span className="inline-flex items-center h-5 px-2 rounded-full font-medium" style={{ color: 'var(--positive)', backgroundColor: 'color-mix(in oklab, var(--positive) 14%, var(--surface))' }}>
+                            {t.sn.calledOn}
+                          </span>
+                        ) : isVoided ? (
+                          <span title={t.sn.voided}>{t.sn.voided}</span>
+                        ) : (
+                          o.status
+                        )}
+                        {o.reviewRequired ? <span className="text-warning"> ⚠</span> : ''}
                       </td>
                       <td className={`${cell} text-xs`}>
                         {o.couponEligible === true ? <span className="text-positive">{t.sn.monitoring.eligible}</span>

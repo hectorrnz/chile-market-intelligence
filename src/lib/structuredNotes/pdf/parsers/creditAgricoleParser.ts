@@ -21,7 +21,7 @@
 import type { ExtractedField, StructuredNote, StructuredNoteObservation, StructuredNoteUnderlying } from '../../types.ts'
 import { calculateBarrierLevel, calculateCouponAnnualized, frequencyToPeriodsPerYear } from '../../calculations.ts'
 import { resolveUnderlyingSymbol } from '../../underlyingSymbolMap.ts'
-import { extractIsin, extractCurrencyAmount, field, labelValue, labelDate, mapIssuerDisplay, parseNum, parseTermSheetDate } from './shared.ts'
+import { extractIsin, extractCurrencyAmount, field, labelValue, labelDate, mapIssuerDisplay, parseNum, parseTermSheetDate, withAutocallObservations } from './shared.ts'
 import type { IssuerParser } from './types.ts'
 
 export const CREDIT_AGRICOLE_PARSER_VERSION = '9C.creditAgricole.1'
@@ -209,6 +209,17 @@ export const parseCreditAgricole: IssuerParser = (ctx) => {
       status: 'scheduled',
     })
   }
+  // R13.7 § 5 — "Automatic Early Redemption Observation Dates and Automatic
+  // Early Redemption Dates" is this family's autocall schedule (the barrier is
+  // labelled "Early Redemption Barrier"). It previously only supplied the
+  // coupon row's redemption date, so the early-redemption test never ran.
+  const scheduled = withAutocallObservations(
+    observations,
+    earlyRedemptionRows.length > 0 ? earlyRedemptionRows.map((r) => ({ valuationDate: r.valuationDate, redemptionDate: r.paymentDate })) : null,
+    autocallPct,
+  )
+  observations.length = 0
+  observations.push(...scheduled)
   push(field('observations.count', String(observations.length), { sourceSection: 'Dates', confidence: observations.length > 0 ? 'high' : 'low', warning: observations.length > 0 ? null : 'No observation schedule extracted' }))
 
   // ── Structure ─────────────────────────────────────────────────────────────

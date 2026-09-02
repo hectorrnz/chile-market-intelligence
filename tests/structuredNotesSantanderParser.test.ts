@@ -78,26 +78,30 @@ describe('Santander — underlyings (single Initial Level per row, wraps across 
 })
 
 describe('Santander — schedule (two separate numbered vertical lists, zipped by position)', () => {
-  it('extracts 8 observations: 7 coupon + 1 final, correctly ordered', () => {
-    assert.equal(n.observations.length, 8)
+  // R13.7 — INVERTED. This family prints ONE "Observation Date (n)" list that
+  // carries both the memory-coupon test and the Automatic Early Redemption
+  // test; emitting only coupon rows meant the AER level never got evaluated.
+  it('extracts 7 coupon + 7 autocall + 1 final observation, correctly ordered', () => {
     assert.equal(n.observations.filter((o) => o.observationType === 'coupon').length, 7)
+    assert.equal(n.observations.filter((o) => o.observationType === 'autocall').length, 7)
     assert.equal(n.observations.filter((o) => o.observationType === 'final').length, 1)
     assert.equal(n.observations[n.observations.length - 1].observationType, 'final')
   })
   it('zips Observation Date and Interest Payment Date lists by position (n=1 valuation -> n=1 payment)', () => {
-    assert.equal(n.observations[0].valuationDate, '2025-04-01')
-    assert.equal(n.observations[0].paymentDate, '2025-04-08')
-    assert.equal(n.observations[6].valuationDate, '2026-10-01')
-    assert.equal(n.observations[6].paymentDate, '2026-10-08')
+    const coupons = n.observations.filter((o) => o.observationType === 'coupon')
+    assert.equal(coupons[0].valuationDate, '2025-04-01')
+    assert.equal(coupons[0].paymentDate, '2025-04-08')
+    assert.equal(coupons[6].valuationDate, '2026-10-01')
+    assert.equal(coupons[6].paymentDate, '2026-10-08')
   })
   it('the final observation matches Final Observation Date, not the last coupon slot', () => {
     const final = n.observations[n.observations.length - 1]
     assert.equal(final.valuationDate, '2027-01-01')
     assert.equal(final.paymentDate, '2027-01-08')
   })
-  it('produces no duplicate valuation dates', () => {
-    const dates = n.observations.map((o) => o.valuationDate)
-    assert.equal(new Set(dates).size, dates.length)
+  it('produces no duplicate contractual test on any valuation date', () => {
+    const keys = n.observations.map((o) => `${o.valuationDate}::${o.observationType}`)
+    assert.equal(new Set(keys).size, keys.length)
   })
 })
 

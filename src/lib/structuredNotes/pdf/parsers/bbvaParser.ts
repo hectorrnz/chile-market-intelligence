@@ -14,7 +14,7 @@
 import type { ExtractedField, StructuredNote, StructuredNoteObservation, StructuredNoteUnderlying } from '../../types.ts'
 import { calculateBarrierLevel, calculateCouponAnnualized, frequencyToPeriodsPerYear } from '../../calculations.ts'
 import { resolveUnderlyingSymbol } from '../../underlyingSymbolMap.ts'
-import { extractIsin, field, parseNum, parseTermSheetDate } from './shared.ts'
+import { extractIsin, field, parseNum, parseTermSheetDate, withAutocallObservations } from './shared.ts'
 import type { IssuerParser } from './types.ts'
 
 export const BBVA_PARSER_VERSION = '9C.bbva.1'
@@ -130,6 +130,16 @@ export const parseBbva: IssuerParser = (ctx) => {
       status: 'scheduled',
     }
   })
+  // R13.7 § 5 — the "Automatic Early Redemption Valuation Date" table is a
+  // separate contractual test; it was previously consumed only for the
+  // coupon row's `redemptionDate`.
+  const scheduled = withAutocallObservations(
+    observations,
+    autocallRows.length > 0 ? autocallRows.map((r) => ({ valuationDate: r.date1, redemptionDate: r.date2 })) : null,
+    autocallPct,
+  )
+  observations.length = 0
+  observations.push(...scheduled)
   push(field('observations.count', String(observations.length), { sourceSection: 'clause 9 (Coupon Valuation Date schedule)', confidence: observations.length > 0 ? 'high' : 'low', warning: observations.length > 0 ? null : 'No observation schedule extracted' }))
 
   // ── Structure ─────────────────────────────────────────────────────────────

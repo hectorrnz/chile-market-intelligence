@@ -64,15 +64,29 @@ describe('HSBC sample extraction (EU template)', () => {
     assert.equal(spx.yahooSymbol, '^GSPC')
     assert.equal(hn.underlyings.find((u) => u.underlyingName === 'RTY Index')!.yahooSymbol, '^RUT')
   })
-  it('extracts one observation per valuation date (7 coupon + 1 final, no double-count)', () => {
+  // R13.7 — INVERTED. This test previously asserted 0 autocall observations
+  // ("folded into the coupon row"), which is the defect itself: the coupon test
+  // (65% barrier) and the autocall test (100% call level) are contractually
+  // DISTINCT, and folding them into one coupon-typed row meant the call level
+  // was never evaluated anywhere downstream. Same boundary, guarded from the
+  // correct side.
+  it('emits coupon AND autocall as distinct contractual tests on the same dates', () => {
     assert.equal(hn.observations.filter((o) => o.observationType === 'coupon').length, 7)
-    assert.equal(hn.observations.filter((o) => o.observationType === 'autocall').length, 0) // folded into the coupon row
+    assert.equal(hn.observations.filter((o) => o.observationType === 'autocall').length, 7)
     assert.equal(hn.observations.filter((o) => o.observationType === 'final').length, 1)
-    // every valuation date is unique (no coupon+autocall duplicate for the same date)
-    const dates = hn.observations.map((o) => o.valuationDate)
-    assert.equal(new Set(dates).size, dates.length)
-    // each row still carries the autocall barrier
-    assert.ok(hn.observations.every((o) => o.autocallBarrierPct === 1))
+    // The two schedules share their valuation dates — that is exactly why the
+    // old date-only key silently destroyed one of them.
+    const couponDates = hn.observations.filter((o) => o.observationType === 'coupon').map((o) => o.valuationDate)
+    const autocallDates = hn.observations.filter((o) => o.observationType === 'autocall').map((o) => o.valuationDate)
+    assert.deepEqual(autocallDates, couponDates)
+    // No duplicate of the SAME test on the same date (a real extraction artifact).
+    const keys = hn.observations.map((o) => `${o.valuationDate}::${o.observationType}`)
+    assert.equal(new Set(keys).size, keys.length)
+    // Every autocall row carries the call level and no coupon level.
+    for (const o of hn.observations.filter((x) => x.observationType === 'autocall')) {
+      assert.equal(o.autocallBarrierPct, 1)
+      assert.equal(o.couponBarrierPct, null)
+    }
   })
 })
 
@@ -137,13 +151,20 @@ describe('Citi sample extraction — underlyings', () => {
   })
 })
 
-describe('Citi sample extraction — schedule (one row per valuation date)', () => {
-  it('extracts 7 coupon + 1 final observation, no separate autocall rows', () => {
+describe('Citi sample extraction — schedule (distinct contractual tests per date)', () => {
+  // R13.7 — INVERTED, same reasoning as the HSBC block above. The term sheet
+  // prints "Contingent Coupon Valuation Date" and, under its own "Mandatory
+  // Early Redemption" heading, "Autocall Valuation Date". Both must survive.
+  it('extracts 7 coupon + 7 autocall + 1 final observation', () => {
     assert.equal(n.observations.filter((o) => o.observationType === 'coupon').length, 7)
-    assert.equal(n.observations.filter((o) => o.observationType === 'autocall').length, 0)
+    assert.equal(n.observations.filter((o) => o.observationType === 'autocall').length, 7)
     assert.equal(n.observations.filter((o) => o.observationType === 'final').length, 1)
-    const dates = n.observations.map((o) => o.valuationDate)
-    assert.equal(new Set(dates).size, dates.length) // no double-count
+    const keys = n.observations.map((o) => `${o.valuationDate}::${o.observationType}`)
+    assert.equal(new Set(keys).size, keys.length) // no same-test duplicate
+  })
+  it('the final valuation date carries no autocall test (maturity is not an early redemption)', () => {
+    const finalDate = n.observations.find((o) => o.observationType === 'final')!.valuationDate
+    assert.equal(n.observations.filter((o) => o.observationType === 'autocall' && o.valuationDate === finalDate).length, 0)
   })
   it('first coupon observation has valuation + payment dates', () => {
     const first = n.observations.find((o) => o.observationType === 'coupon' && o.observationNumber === 1)!
@@ -152,21 +173,45 @@ describe('Citi sample extraction — schedule (one row per valuation date)', () 
   })
 })
 
-describe('dedupeObservationsByDate (collapses legacy coupon+autocall rows)', () => {
-  it('merges a same-date coupon + autocall pair into one row carrying both barriers', () => {
-    const legacy: StructuredNoteObservation[] = [
-      { observationNumber: 1, observationType: 'coupon', valuationDate: '2026-09-04', paymentDate: '2026-09-14', redemptionDate: null, couponDuePct: 0.025, autocallBarrierPct: null, couponBarrierPct: 0.65, status: 'scheduled' },
-      { observationNumber: 1, observationType: 'autocall', valuationDate: '2026-09-04', paymentDate: null, redemptionDate: '2026-09-14', couponDuePct: null, autocallBarrierPct: 1, couponBarrierPct: null, status: 'scheduled' },
-      { observationNumber: 2, observationType: 'final', valuationDate: '2028-06-05', paymentDate: '2028-06-12', redemptionDate: '2028-06-12', couponDuePct: 0.025, autocallBarrierPct: 1, couponBarrierPct: 0.65, status: 'scheduled' },
-    ]
-    const deduped = dedupeObservationsByDate(legacy)
-    assert.equal(deduped.length, 2) // 15→8 in practice; here 3→2
-    const first = deduped[0]
-    assert.equal(first.valuationDate, '2026-09-04')
-    assert.notEqual(first.observationType, 'autocall')
-    assert.equal(first.couponBarrierPct, 0.65)
-    assert.equal(first.autocallBarrierPct, 1) // folded in from the autocall row
-    assert.equal(first.paymentDate, '2026-09-14')
+describe('dedupeObservationsByDate (R13.7 — preserves distinct contractual tests)', () => {
+  const sameDate: StructuredNoteObservation[] = [
+    { observationNumber: 1, observationType: 'coupon', valuationDate: '2026-09-04', paymentDate: '2026-09-14', redemptionDate: null, couponDuePct: 0.025, autocallBarrierPct: null, couponBarrierPct: 0.65, status: 'scheduled' },
+    { observationNumber: 1, observationType: 'autocall', valuationDate: '2026-09-04', paymentDate: null, redemptionDate: '2026-09-14', couponDuePct: null, autocallBarrierPct: 1, couponBarrierPct: null, status: 'scheduled' },
+    { observationNumber: 2, observationType: 'final', valuationDate: '2028-06-05', paymentDate: '2028-06-12', redemptionDate: '2028-06-12', couponDuePct: 0.025, autocallBarrierPct: 1, couponBarrierPct: 0.65, status: 'scheduled' },
+  ]
+
+  // R13.7 — INVERTED. The previous assertion (3→2, autocall merged away, the
+  // surviving row "not autocall") is the root cause in test form: it required
+  // the function to destroy the 100% call test whenever it shared a date with
+  // the 65% coupon test. Sharing a date makes two contractual conditions
+  // simultaneous, not identical.
+  it('keeps a same-date coupon and autocall as two separate contractual tests', () => {
+    const deduped = dedupeObservationsByDate(sameDate)
+    assert.equal(deduped.length, 3)
+    const coupon = deduped.find((o) => o.valuationDate === '2026-09-04' && o.observationType === 'coupon')!
+    const autocall = deduped.find((o) => o.valuationDate === '2026-09-04' && o.observationType === 'autocall')!
+    assert.ok(coupon && autocall)
+    assert.equal(coupon.couponBarrierPct, 0.65)
+    assert.equal(autocall.autocallBarrierPct, 1)
+    // The two tests never bleed into each other.
+    assert.equal(autocall.couponBarrierPct, null)
+  })
+
+  it('still collapses a TRUE duplicate — the same test twice on the same date', () => {
+    const withDuplicate = [...sameDate, { ...sameDate[0], paymentDate: null, couponDuePct: null }]
+    const deduped = dedupeObservationsByDate(withDuplicate)
+    assert.equal(deduped.length, 3)
+    // Gap-filling only: the present value wins over the duplicate's null.
+    const coupon = deduped.find((o) => o.valuationDate === '2026-09-04' && o.observationType === 'coupon')!
+    assert.equal(coupon.paymentDate, '2026-09-14')
+    assert.equal(coupon.couponDuePct, 0.025)
+  })
+
+  it('renumbers per observation type (the persistence uniqueness key)', () => {
+    const deduped = dedupeObservationsByDate(sameDate)
+    assert.equal(deduped.find((o) => o.observationType === 'coupon')!.observationNumber, 1)
+    assert.equal(deduped.find((o) => o.observationType === 'autocall')!.observationNumber, 1)
+    assert.equal(deduped.find((o) => o.observationType === 'final')!.observationNumber, 1)
   })
 })
 

@@ -32,12 +32,22 @@ import type {
 } from './types.ts'
 import { ARCHIVED_STATUSES } from './types.ts'
 import {
-  calculateCouponEligibility,
-  calculateAutocallEligibility,
   calculateCurrentRiskStatus,
   calculateWorstPerformer,
-  calculateMaturityRedemptionAmount,
 } from './calculations.ts'
+import {
+  evaluateCouponEvent,
+  evaluateAutocallEvent,
+  evaluateKnockInEvent,
+  isBarrierEvent,
+  type ContractualEventEvaluation,
+  type EventOutcome,
+} from './contractualEvents.ts'
+import {
+  toCloseMap,
+  CLOSE_DISAGREEMENT_TOLERANCE,
+  type ResolvedValuationClose,
+} from './valuationClose.ts'
 import { isQuoteStale, STALE_THRESHOLD_OBSERVATION_DAYS, type QuoteQualityReason } from './marketData/quoteQuality.ts'
 
 // ── Observation QA — review-required reason vocabulary (Phase 9E) ───────────
@@ -79,7 +89,7 @@ const REVIEW_REASON_TEXT: Record<ReviewRequiredReason, string> = {
   provider_disagreement: 'multiple providers disagreed on a price beyond the configured threshold',
   market_not_settled: 'one or more underlyings have a market session not yet confirmed closed, or a closing print too recent to trust — waiting for a settled close',
   final_observation_requires_official_verification: 'final redemption is a legal determination — verify against an official calculation-agent or closing-price source before treating as final',
-  non_trading_day_or_unavailable_close: 'no close is available for the valuation date (non-trading day or provider gap)',
+  non_trading_day_or_unavailable_close: 'the valuation-date close is unavailable (non-trading day, provider gap, or no snapshot recorded for that date)',
   ambiguous_underlying_mapping: 'one or more underlyings have no resolved market-data symbol (ambiguous or unverified mapping)',
 }
 
@@ -216,6 +226,22 @@ export function classifyStructuredNoteRisk(
 }
 
 // ── Observation evaluation ───────────────────────────────────────────────────
+//
+// R13.7 — REWRITTEN. Two structural changes:
+//
+//  1. Every contractual test now runs through the canonical engine in
+//     `contractualEvents.ts`. Previously each evaluator re-implemented its own
+//     comparison, and the coupon evaluator hardcoded `autocallEligible: null`
+//     — so a coupon-typed observation could never report the call test even in
+//     principle.
+//
+//  2. Prices arrive as CLOSES FOR THE OBSERVATION'S OWN VALUATION DATE, keyed
+//     by `underlyingOrder`, not as a symbol-keyed map of whatever the run just
+//     fetched. The old signature accepted `latestPrices` and used it for any
+//     due observation regardless of age, so a missed run silently decided a
+//     past contractual date with a later day's price. That input no longer
+//     exists here, which makes the mistake unrepresentable rather than merely
+//     corrected (see `valuationClose.ts`).
 
 export interface ObservationEvaluation {
   observationId: string | undefined
@@ -233,80 +259,159 @@ export interface ObservationEvaluation {
   reviewReason: string | null
   /** Structured reason codes underlying `reviewReason` — see ReviewRequiredReason. Empty when reviewRequired is false. */
   reviewReasons: ReviewRequiredReason[]
+  /** R13.7 — the canonical event result this evaluation was derived from, so a caller never has to re-derive contract logic to render it. */
+  event: ContractualEventEvaluation | null
+  /** R13.7 — the binding (worst-cushion) underlying for this test, by normalized distance to its own threshold. */
+  bindingUnderlying: string | null
+  bindingCushionPct: number | null
 }
 
-function observedLevelsFor(underlyings: StructuredNoteUnderlying[], latestPrices: Map<string, number>): Record<string, number | null> {
+/** `outcome` → the tri-state boolean the persistence layer and UI already speak. `unknown` stays null — never coerced to false. */
+function outcomeToBoolean(outcome: EventOutcome): boolean | null {
+  if (outcome === 'met') return true
+  if (outcome === 'not_met') return false
+  return null
+}
+
+function observedLevelsFromResolved(resolved: readonly ResolvedValuationClose[]): Record<string, number | null> {
   const out: Record<string, number | null> = {}
-  for (const u of underlyings) out[u.underlyingName] = priceForUnderlying(u, latestPrices)
+  for (const r of resolved) out[r.underlyingName] = r.close
   return out
 }
 
-function worstPerformerFields(underlyings: StructuredNoteUnderlying[], latestPrices: Map<string, number>): { ticker: string | null; ret: number | null } {
-  const prices = pricesForNote(underlyings, latestPrices, null)
+/** Describes where the evaluated levels came from, so a persisted observation records its own evidence tier rather than a generic provider label. */
+function observedSourceFor(resolved: readonly ResolvedValuationClose[], suffix = ''): string {
+  const tiers = new Set(resolved.map((r) => r.source))
+  const base = tiers.has('persisted_snapshot') && tiers.has('provider_history')
+    ? 'valuation-date close (persisted snapshot + provider history)'
+    : tiers.has('persisted_snapshot')
+      ? 'valuation-date close (persisted snapshot)'
+      : tiers.has('provider_history')
+        ? 'valuation-date close (provider history)'
+        : 'valuation-date close unavailable'
+  // The provenance disclaimer is part of the string itself so a persisted
+  // observation can never be read as an official determination.
+  return base + ' — monitoring estimate' + suffix
+}
+
+/**
+ * Worst performer by PERFORMANCE vs initial level — retained unchanged for the
+ * existing `worst_performer_*` columns. Note this is a different question from
+ * the binding leg of a specific test (which measures cushion to THAT test's
+ * threshold); both are reported because they answer different things.
+ */
+function worstPerformerFromResolved(
+  underlyings: StructuredNoteUnderlying[],
+  resolved: readonly ResolvedValuationClose[],
+): { ticker: string | null; ret: number | null } {
+  const prices: UnderlyingPrice[] = underlyings.map((u) => {
+    const r = resolved.find((x) => x.underlyingOrder === u.underlyingOrder)
+    return {
+      underlyingOrder: u.underlyingOrder,
+      yahooSymbol: u.yahooSymbol,
+      price: r?.close ?? null,
+      source: r?.close != null ? 'valuation-date-close' : 'unavailable',
+      sourceSymbol: u.yahooSymbol,
+      asOf: null,
+    }
+  })
   const worst = calculateWorstPerformer(underlyings, prices)
   return { ticker: worst?.underlyingName ?? null, ret: worst?.performance ?? null }
 }
 
 /**
- * Structured, per-underlying review reasons for a DUE observation. Uses the
- * tighter observation-grade staleness threshold (STALE_THRESHOLD_OBSERVATION_DAYS)
- * — a decision that drives a status transition demands fresher data than a
- * routine dashboard read. Omitting `quoteMeta` degrades gracefully: an
- * unresolved underlying still reports `ambiguous_underlying_mapping` and a
- * missing price still reports `missing_price`, matching pre-9E behavior.
+ * Structured review reasons for a DUE observation, derived from how each
+ * underlying's valuation-date close actually resolved.
+ *
+ * A missing close is `non_trading_day_or_unavailable_close` rather than
+ * `missing_price`: for a past contractual date the question is not "is today's
+ * quote stale" but "does a close for THAT date exist at all". Cross-source
+ * disagreement beyond tolerance is surfaced as `provider_disagreement` so a
+ * mismatch forces human review instead of a silent pick-one.
  */
-function reviewReasonsForUnderlyings(
-  underlyings: StructuredNoteUnderlying[],
-  latestPrices: Map<string, number>,
+function reviewReasonsForResolved(
+  resolved: readonly ResolvedValuationClose[],
   quoteMeta: Map<string, QuoteMetaEntry> | undefined,
-  referenceDate: string,
+  underlyings: StructuredNoteUnderlying[],
+  liveQuoteDate?: string,
 ): ReviewRequiredReason[] {
   const reasons = new Set<ReviewRequiredReason>()
-  for (const u of underlyings) {
-    if (!u.yahooSymbol) {
-      reasons.add('ambiguous_underlying_mapping')
-      continue
-    }
-    const price = priceForUnderlying(u, latestPrices)
-    const meta = quoteMeta?.get(u.yahooSymbol)
-    if (price === null) {
-      if (meta?.nonTradingDay) reasons.add('non_trading_day_or_unavailable_close')
+  for (const r of resolved) {
+    const u = underlyings.find((x) => x.underlyingOrder === r.underlyingOrder)
+    const meta = u?.yahooSymbol ? quoteMeta?.get(u.yahooSymbol) : undefined
+
+    if (r.close === null) {
+      if (r.unavailableReason === 'unsupported_symbol' || meta?.supported === false) reasons.add('unsupported_symbol')
       else if (meta?.providerError) reasons.add('provider_error')
-      else if (meta && meta.supported === false) reasons.add('unsupported_symbol')
-      else reasons.add('missing_price')
+      else reasons.add('non_trading_day_or_unavailable_close')
       continue
     }
-    if (meta) {
-      if (isQuoteStale(meta.asOf, referenceDate, STALE_THRESHOLD_OBSERVATION_DAYS)) reasons.add('stale_price')
+
+    // A cross-source mismatch is never resolved by silently picking a tier.
+    if (r.disagreementPct !== null && r.disagreementPct > CLOSE_DISAGREEMENT_TOLERANCE) reasons.add('provider_disagreement')
+
+    // LIVE-QUOTE quality applies only to a close that IS the live quote — i.e.
+    // an observation whose valuation date is the date `quoteMeta` describes.
+    // This is what keeps § 25 honest: when the run fires before the session has
+    // settled, TODAY'S observation is flagged `market_not_settled` and defers
+    // rather than being decided on an intraday level. For a PAST valuation date
+    // the close comes from a recorded snapshot or provider history, so today's
+    // freshness says nothing about it and must not be attached.
+    const describesThisClose = liveQuoteDate === undefined || r.valuationDate === liveQuoteDate
+    if (meta && describesThisClose) {
+      if (isQuoteStale(meta.asOf, new Date().toISOString(), STALE_THRESHOLD_OBSERVATION_DAYS)) reasons.add('stale_price')
       if (meta.qualityReasons?.includes('large_price_move_warning')) reasons.add('large_price_move_warning')
       if (meta.qualityReasons?.includes('provider_disagreement')) reasons.add('provider_disagreement')
       if (meta.qualityReasons?.includes('market_not_settled')) reasons.add('market_not_settled')
     }
   }
+  for (const u of underlyings) {
+    if (!u.yahooSymbol) reasons.add('ambiguous_underlying_mapping')
+  }
   return [...reasons]
 }
 
-/** Coupon observation: eligible iff every underlying is at/above its coupon barrier level. Missing prices -> null (unknown), never a fabricated eligibility. */
+/** Shared skeleton for every observation evaluator — one place that assembles the persisted shape from a canonical event result. */
+function baseEvaluation(
+  note: Pick<StructuredNote, 'underlyings'>,
+  observation: StructuredNoteObservation,
+  resolved: readonly ResolvedValuationClose[],
+  event: ContractualEventEvaluation,
+  reasons: ReviewRequiredReason[],
+  sourceSuffix = '',
+): Omit<ObservationEvaluation, 'couponEligible' | 'autocallEligible' | 'finalBarrierBreached' | 'reviewRequired' | 'reviewReason' | 'reviewReasons'> {
+  const { ticker, ret } = worstPerformerFromResolved(note.underlyings, resolved)
+  void reasons
+  return {
+    observationId: observation.id,
+    observationType: observation.observationType,
+    due: true,
+    observedAt: new Date().toISOString(),
+    observedSource: observedSourceFor(resolved, sourceSuffix),
+    observedLevels: observedLevelsFromResolved(resolved),
+    worstPerformerTicker: ticker,
+    worstPerformerReturn: ret,
+    event,
+    bindingUnderlying: event.bindingLeg?.underlyingName ?? null,
+    bindingCushionPct: event.bindingLeg?.relativeToThresholdPct ?? null,
+  }
+}
+
+/** Contingent coupon: every underlying at/above ITS OWN coupon barrier on the valuation date. */
 export function evaluateCouponObservation(
   note: Pick<StructuredNote, 'underlyings'>,
   observation: StructuredNoteObservation,
-  latestPrices: Map<string, number>,
+  resolved: readonly ResolvedValuationClose[],
   quoteMeta?: Map<string, QuoteMetaEntry>,
+  liveQuoteDate?: string,
 ): ObservationEvaluation {
-  const eligible = calculateCouponEligibility(note.underlyings, pricesForNote(note.underlyings, latestPrices, null))
-  const { ticker, ret } = worstPerformerFields(note.underlyings, latestPrices)
-  const now = new Date().toISOString()
-  const reasons = reviewReasonsForUnderlyings(note.underlyings, latestPrices, quoteMeta, now)
+  const event = evaluateCouponEvent(note.underlyings, toCloseMap(resolved))
+  const reasons = reviewReasonsForResolved(resolved, quoteMeta, note.underlyings, liveQuoteDate)
+  const eligible = outcomeToBoolean(event.outcome)
   const reviewRequired = reasons.length > 0 || eligible === null
   return {
-    observationId: observation.id,
+    ...baseEvaluation(note, observation, resolved, event, reasons),
     observationType: 'coupon',
-    due: true,
-    observedAt: now,
-    observedSource: 'yahoo-finance (monitoring estimate)',
-    observedLevels: observedLevelsFor(note.underlyings, latestPrices),
-    worstPerformerTicker: ticker,
-    worstPerformerReturn: ret,
     couponEligible: eligible,
     autocallEligible: null,
     finalBarrierBreached: null,
@@ -316,27 +421,28 @@ export function evaluateCouponObservation(
   }
 }
 
-/** Autocall observation: eligible iff every underlying is at/above its autocall barrier level. This is the one observation type allowed to drive an automatic status transition (see shouldUpdateNoteStatus) — and only when `reviewRequired` is false. */
+/**
+ * Autocall / Mandatory Early Redemption: every underlying at/above ITS OWN
+ * call level on the valuation date.
+ *
+ * This is the observation type allowed to drive an automatic status
+ * transition (see shouldUpdateNoteStatus) — and only when `reviewRequired` is
+ * false, i.e. every leg resolved cleanly from a valuation-date close.
+ */
 export function evaluateAutocallObservation(
   note: Pick<StructuredNote, 'underlyings'>,
   observation: StructuredNoteObservation,
-  latestPrices: Map<string, number>,
+  resolved: readonly ResolvedValuationClose[],
   quoteMeta?: Map<string, QuoteMetaEntry>,
+  liveQuoteDate?: string,
 ): ObservationEvaluation {
-  const eligible = calculateAutocallEligibility(note.underlyings, pricesForNote(note.underlyings, latestPrices, null))
-  const { ticker, ret } = worstPerformerFields(note.underlyings, latestPrices)
-  const now = new Date().toISOString()
-  const reasons = reviewReasonsForUnderlyings(note.underlyings, latestPrices, quoteMeta, now)
+  const event = evaluateAutocallEvent(note.underlyings, toCloseMap(resolved))
+  const reasons = reviewReasonsForResolved(resolved, quoteMeta, note.underlyings, liveQuoteDate)
+  const eligible = outcomeToBoolean(event.outcome)
   const reviewRequired = reasons.length > 0 || eligible === null
   return {
-    observationId: observation.id,
+    ...baseEvaluation(note, observation, resolved, event, reasons),
     observationType: 'autocall',
-    due: true,
-    observedAt: now,
-    observedSource: 'yahoo-finance (monitoring estimate)',
-    observedLevels: observedLevelsFor(note.underlyings, latestPrices),
-    worstPerformerTicker: ticker,
-    worstPerformerReturn: ret,
     couponEligible: null,
     autocallEligible: eligible,
     finalBarrierBreached: null,
@@ -347,40 +453,30 @@ export function evaluateAutocallObservation(
 }
 
 /**
- * Final/maturity observation: estimates the barrier-breach outcome from
- * current monitoring prices, but ALWAYS flags `reviewRequired` — the app has
- * no official calculation-agent or verified closing-price feed, so the
- * legal redemption amount can never be treated as final here.
+ * Final/maturity observation: estimates the barrier outcome from the
+ * valuation-date closes, but ALWAYS flags `reviewRequired` — the app has no
+ * official calculation-agent feed, so the legal redemption amount can never be
+ * treated as final here. Unchanged policy from Phase 9D.
  */
 export function evaluateFinalObservation(
   note: Pick<StructuredNote, 'underlyings'>,
   observation: StructuredNoteObservation,
-  latestPrices: Map<string, number>,
+  resolved: readonly ResolvedValuationClose[],
   quoteMeta?: Map<string, QuoteMetaEntry>,
+  liveQuoteDate?: string,
 ): ObservationEvaluation {
-  const finalLevels = new Map<number, number>()
-  for (const u of note.underlyings) {
-    const p = priceForUnderlying(u, latestPrices)
-    if (p !== null) finalLevels.set(u.underlyingOrder, p)
-  }
-  const estimate = calculateMaturityRedemptionAmount(note, finalLevels)
-  const { ticker, ret } = worstPerformerFields(note.underlyings, latestPrices)
-  const now = new Date().toISOString()
-  const reasons = reviewReasonsForUnderlyings(note.underlyings, latestPrices, quoteMeta, now)
+  const event = evaluateKnockInEvent(note.underlyings, toCloseMap(resolved))
+  const reasons = reviewReasonsForResolved(resolved, quoteMeta, note.underlyings, liveQuoteDate)
   reasons.push('final_observation_requires_official_verification')
   return {
-    observationId: observation.id,
+    ...baseEvaluation(note, observation, resolved, event, reasons, ', not an official calculation-agent close'),
     observationType: 'final',
-    due: true,
-    observedAt: now,
-    observedSource: 'yahoo-finance (monitoring estimate, not an official calculation-agent close)',
-    observedLevels: observedLevelsFor(note.underlyings, latestPrices),
-    worstPerformerTicker: ticker,
-    worstPerformerReturn: ret,
     couponEligible: null,
     autocallEligible: null,
-    finalBarrierBreached: estimate.barrierEvent,
-    reviewRequired: true, // final/maturity payoff always requires manual verification in this phase
+    // `met` means protection held, so a barrier EVENT is the negation.
+    // `unknown` stays null rather than becoming "no breach" (§ 9).
+    finalBarrierBreached: isBarrierEvent(event),
+    reviewRequired: true,
     reviewReason: reasonsToText(reasons),
     reviewReasons: reasons,
   }
@@ -390,11 +486,15 @@ export function evaluateFinalObservation(
  * Dispatches to the correct evaluator for an observation that is due (its
  * valuation date is on or before `asOf`) and still `scheduled`. Returns null
  * for an observation that isn't due yet or has already been finalized.
+ *
+ * `resolved` MUST be the closes for `observation.valuationDate` — build it
+ * with `resolveValuationCloses(...)`, which is the only supported way to
+ * obtain one.
  */
 export function evaluateObservation(
   note: Pick<StructuredNote, 'underlyings'>,
   observation: StructuredNoteObservation,
-  latestPrices: Map<string, number>,
+  resolved: readonly ResolvedValuationClose[],
   asOf: string,
   quoteMeta?: Map<string, QuoteMetaEntry>,
 ): ObservationEvaluation | null {
@@ -403,9 +503,9 @@ export function evaluateObservation(
   const asOfDate = Date.parse(asOf)
   if (Number.isNaN(valDate) || Number.isNaN(asOfDate) || valDate > asOfDate) return null
 
-  if (observation.observationType === 'coupon') return evaluateCouponObservation(note, observation, latestPrices, quoteMeta)
-  if (observation.observationType === 'autocall') return evaluateAutocallObservation(note, observation, latestPrices, quoteMeta)
-  return evaluateFinalObservation(note, observation, latestPrices, quoteMeta)
+  if (observation.observationType === 'coupon') return evaluateCouponObservation(note, observation, resolved, quoteMeta, asOf)
+  if (observation.observationType === 'autocall') return evaluateAutocallObservation(note, observation, resolved, quoteMeta, asOf)
+  return evaluateFinalObservation(note, observation, resolved, quoteMeta, asOf)
 }
 
 // ── Status transitions ───────────────────────────────────────────────────────
@@ -418,17 +518,16 @@ export interface NoteStatusUpdate {
 /**
  * Whether a note's status should transition as a result of an observation
  * evaluation. Conservative by design:
- *   - Autocall eligible + no missing prices -> 'autocalled' (deterministic:
- *     the barrier math is exact and Yahoo's regular-market price is an
- *     adequate signal for a binary "at/above the level" check).
+ *   - Autocall eligible + every leg resolved from a valuation-date close ->
+ *     'autocalled'. The barrier math is exact and a settled close is an
+ *     adequate signal for a binary "at/above the level" check.
  *   - Final observation with a barrier breach is NEVER auto-transitioned to
- *     'matured' — the legal payoff requires manual verification (see
- *     evaluateFinalObservation) — the note keeps its current status and the
- *     observation is left flagged reviewRequired for a human to close out.
- *   - A note the user has already archived is never touched (the caller is
- *     expected to only invoke this for notes returned by
- *     getActiveStructuredNotesForMonitoring, but this guard is defense in
- *     depth in case of a stale in-memory list).
+ *     'matured' — the legal payoff requires manual verification.
+ *   - An already-archived note is never touched.
+ *
+ * TERMINAL: a call derives from a contractual event on a fixed date, so no
+ * later price movement can reverse it — there is no input here through which
+ * it could (§ 11).
  */
 export function shouldUpdateNoteStatus(
   note: Pick<StructuredNote, 'status'>,
@@ -436,7 +535,7 @@ export function shouldUpdateNoteStatus(
 ): NoteStatusUpdate | null {
   if (ARCHIVED_STATUSES.includes(note.status)) return null
   if (observationResult.observationType === 'autocall' && observationResult.autocallEligible === true && !observationResult.reviewRequired) {
-    return { newStatus: 'autocalled', reason: 'Autocall barrier met on the scheduled autocall observation date (monitoring estimate).' }
+    return { newStatus: 'autocalled', reason: 'Autocall condition met on the contractual autocall valuation date (all underlyings at or above their respective call levels, evaluated on that date’s closes).' }
   }
   return null
 }
@@ -444,10 +543,10 @@ export function shouldUpdateNoteStatus(
 /**
  * Maps an observation evaluation to its resulting `ObservationStatus`. Only
  * transitions away from `scheduled` when the outcome is deterministic and
- * complete; anything reviewRequired (missing prices, or any final/maturity
- * observation) lands on `observed` — evaluated, but not finalized — never
- * silently left at `scheduled` (which would look untouched) nor jumped
- * straight to a terminal status the app cannot actually vouch for.
+ * complete; anything reviewRequired (an unresolved valuation-date close, or
+ * any final/maturity observation) lands on `observed` — evaluated, but not
+ * finalized — never silently left at `scheduled` (which would look untouched)
+ * nor jumped to a terminal status the app cannot vouch for.
  */
 export function deriveObservationStatus(evaluation: ObservationEvaluation): StructuredNoteObservation['status'] {
   if (evaluation.reviewRequired) return 'observed'

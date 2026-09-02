@@ -153,6 +153,19 @@ export async function getYahooDailyCloses(
   symbol: string,
   from: Date,
   to: Date,
+  /**
+   * R13.7 § 10 — derive each bar's date in the EXCHANGE's timezone rather than
+   * in UTC. Omitting it preserves the exact pre-R13.7 behaviour (UTC date), so
+   * the One Pager benchmark path is byte-unchanged; the structured-notes
+   * contractual-observation path passes `America/New_York` because a valuation
+   * date is a date at the exchange, and a bar stamped after 19:00 local would
+   * otherwise be filed under the following calendar day.
+   *
+   * Measured live 2026-09-02: ^GSPC/^RUT daily bars are stamped 13:30:00Z
+   * (09:30 America/New_York), so the two agree today — a property of the
+   * current feed, not a guarantee worth relying on.
+   */
+  exchangeTimeZone?: string,
 ): Promise<ProviderResult<SymbolDailyCloses>> {
   try {
     const YahooFinance = (await import('yahoo-finance2')).default
@@ -180,7 +193,17 @@ export async function getYahooDailyCloses(
       const d = q.date instanceof Date ? q.date : new Date(q.date)
       if (Number.isNaN(d.getTime())) continue
       if (!Number.isFinite(q.close)) continue
-      bars.push({ date: d.toISOString().slice(0, 10), close: q.close, volume: q.volume ?? null })
+      let barDate = d.toISOString().slice(0, 10)
+      if (exchangeTimeZone) {
+        try {
+          barDate = new Intl.DateTimeFormat('en-CA', { timeZone: exchangeTimeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
+        } catch {
+          // An unusable timezone falls back to the UTC date rather than
+          // dropping a real bar — the caller's cross-source check still guards
+          // against a mismatched date.
+        }
+      }
+      bars.push({ date: barDate, close: q.close, volume: q.volume ?? null })
     }
 
     // Same zero-volume repeated-close filler removal as the ticker path — a

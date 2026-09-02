@@ -88,11 +88,15 @@ describe('BNP Paribas — underlyings (clean table row with absolute levels)', (
 })
 
 describe('BNP Paribas — schedule (ordinal-date rows)', () => {
-  it('extracts one observation per valuation date plus a final observation', () => {
+  // R13.7 — INVERTED: a unique-valuation-date assertion is precisely what
+  // forbade the autocall test from coexisting with the coupon test it shares a
+  // date with. Uniqueness now applies per (date, test), not per date.
+  it('extracts coupon and autocall observations per valuation date, plus a final observation', () => {
     assert.ok(n.observations.length >= 5)
     assert.equal(n.observations.filter((o) => o.observationType === 'final').length, 1)
-    const dates = n.observations.map((o) => o.valuationDate)
-    assert.equal(new Set(dates).size, dates.length)
+    assert.ok(n.observations.filter((o) => o.observationType === 'autocall').length > 0)
+    const keys = n.observations.map((o) => `${o.valuationDate}::${o.observationType}`)
+    assert.equal(new Set(keys).size, keys.length)
   })
 })
 

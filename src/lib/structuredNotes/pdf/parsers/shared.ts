@@ -336,29 +336,129 @@ export function checkCouponPlausibility(couponRateAnnualized: number | null, cou
 }
 
 /**
- * Collapses a persisted note's observations to one row per valuation date
- * (merging any legacy separate coupon/autocall rows) — used by the detail
- * page so already-imported notes show a single, non-double-counted schedule.
+ * R13.7 § 6 — de-duplicates TRUE extraction artifacts without ever erasing a
+ * contractual event.
+ *
+ * WHAT THIS FUNCTION USED TO DO, AND WHY IT WAS WRONG
+ * ───────────────────────────────────────────────────
+ * It keyed purely on `valuationDate`, so when a coupon observation and an
+ * autocall observation fell on the same date — which for these product
+ * families is the NORMAL case, not an anomaly — it kept the coupon row, threw
+ * the autocall row away, and even rewrote a surviving `'autocall'` type to
+ * `'coupon'`. Two contractually distinct tests (65% coupon barrier vs 100%
+ * call level) were merged into the weaker one, and the call test then never
+ * ran anywhere downstream.
+ *
+ * THE INVARIANT NOW
+ * ─────────────────
+ * A coupon test, an autocall test and a final test are DIFFERENT CONTRACTUAL
+ * CONDITIONS. Sharing a calendar date makes them simultaneous, not identical.
+ * The key is therefore `(valuationDate, observationType)`: genuine duplicates
+ * of the SAME test on the SAME date still collapse (that is a real extraction
+ * artifact), while different tests always survive alongside each other.
+ *
+ * Merging two rows of the same type fills gaps only — a present value is never
+ * overwritten by a later duplicate.
  */
 export function dedupeObservationsByDate(observations: StructuredNoteObservation[]): StructuredNoteObservation[] {
-  const byDate = new Map<string, StructuredNoteObservation>()
+  const byKey = new Map<string, StructuredNoteObservation>()
   for (const o of observations) {
-    const existing = byDate.get(o.valuationDate)
-    if (!existing) { byDate.set(o.valuationDate, { ...o }); continue }
-    // Merge: keep the coupon/final row; fold in the autocall barrier + payment.
-    const keep = o.observationType === 'autocall' ? existing : o
-    const other = o.observationType === 'autocall' ? o : existing
-    byDate.set(o.valuationDate, {
-      ...keep,
-      observationType: keep.observationType === 'autocall' ? 'coupon' : keep.observationType,
-      paymentDate: keep.paymentDate ?? other.paymentDate ?? null,
-      redemptionDate: keep.redemptionDate ?? other.redemptionDate ?? null,
-      couponDuePct: keep.couponDuePct ?? other.couponDuePct,
-      couponBarrierPct: keep.couponBarrierPct ?? other.couponBarrierPct,
-      autocallBarrierPct: keep.autocallBarrierPct ?? other.autocallBarrierPct,
+    const key = `${o.valuationDate}::${o.observationType}`
+    const existing = byKey.get(key)
+    if (!existing) { byKey.set(key, { ...o }); continue }
+    byKey.set(key, {
+      ...existing,
+      paymentDate: existing.paymentDate ?? o.paymentDate ?? null,
+      redemptionDate: existing.redemptionDate ?? o.redemptionDate ?? null,
+      couponDuePct: existing.couponDuePct ?? o.couponDuePct,
+      couponBarrierPct: existing.couponBarrierPct ?? o.couponBarrierPct,
+      autocallBarrierPct: existing.autocallBarrierPct ?? o.autocallBarrierPct,
     })
   }
-  return [...byDate.values()]
-    .sort((a, b) => a.valuationDate.localeCompare(b.valuationDate))
-    .map((o, i) => ({ ...o, observationNumber: i + 1 }))
+  return renumberObservations([...byKey.values()])
+}
+
+/** Observation-type ordering on a shared date: coupon, then autocall, then final — the order the events are read in the term sheet and presented in the UI. */
+const TYPE_ORDER: Record<StructuredNoteObservation['observationType'], number> = { coupon: 0, autocall: 1, final: 2 }
+
+/**
+ * Sorts by valuation date (then by event type) and renumbers PER TYPE.
+ *
+ * Numbering is per-type because the persistence layer's uniqueness constraint
+ * is `(note_id, observation_type, observation_number)` — a coupon #3 and an
+ * autocall #3 are distinct rows, and numbering them in one shared sequence
+ * would leave gaps in both while conveying nothing.
+ */
+export function renumberObservations(observations: StructuredNoteObservation[]): StructuredNoteObservation[] {
+  const counters: Record<string, number> = {}
+  return [...observations]
+    .sort((a, b) => a.valuationDate.localeCompare(b.valuationDate) || TYPE_ORDER[a.observationType] - TYPE_ORDER[b.observationType])
+    .map((o) => {
+      counters[o.observationType] = (counters[o.observationType] ?? 0) + 1
+      return { ...o, observationNumber: counters[o.observationType] }
+    })
+}
+
+/** A contractual autocall opportunity read from a term sheet's own early-redemption schedule. */
+export interface AutocallScheduleEntry {
+  valuationDate: string
+  /** The Mandatory Early Redemption / early cash settlement date for this opportunity. */
+  redemptionDate: string | null
+}
+
+/**
+ * R13.7 § 5 — emits the AUTOCALL observations a contract defines, alongside
+ * the coupon observations a parser has already built.
+ *
+ * Every issuer parser in this app had the same shape: it located the early
+ * redemption schedule, zipped it positionally against the coupon schedule, and
+ * then used it only to fill in a `redemptionDate` — the autocall test itself
+ * was never emitted as an evaluable observation. This helper is the single
+ * place that now does it, so a future parser cannot reintroduce the defect by
+ * forgetting a step.
+ *
+ * `entries` is the contract's OWN autocall schedule when the parser found one.
+ * When it did not, but each scheduled observation nonetheless carries an
+ * autocall barrier (the term sheet states a single call level applying to
+ * every observation date, e.g. Santander's "Observation Date (n)" list), the
+ * autocall dates are taken from the non-final coupon observations. In both
+ * cases an autocall row is created ONLY where the contract actually defines a
+ * call level for that date — never inferred for a note with no call feature.
+ */
+export function withAutocallObservations(
+  observations: StructuredNoteObservation[],
+  entries: AutocallScheduleEntry[] | null,
+  autocallBarrierPct: number | null,
+): StructuredNoteObservation[] {
+  const source: AutocallScheduleEntry[] = entries && entries.length > 0
+    ? entries
+    : observations
+        .filter((o) => o.observationType === 'coupon' && o.autocallBarrierPct !== null)
+        .map((o) => ({ valuationDate: o.valuationDate, redemptionDate: o.redemptionDate ?? o.paymentDate ?? null }))
+
+  const finalDates = new Set(observations.filter((o) => o.observationType === 'final').map((o) => o.valuationDate))
+
+  const autocalls: StructuredNoteObservation[] = []
+  for (const e of source) {
+    if (!e.valuationDate) continue
+    // The final valuation date is governed by the maturity/knock-in test, not
+    // by an early-redemption test — a note cannot be "called early" at maturity.
+    if (finalDates.has(e.valuationDate)) continue
+    const pct = autocallBarrierPct ?? observations.find((o) => o.valuationDate === e.valuationDate)?.autocallBarrierPct ?? null
+    if (pct === null) continue
+    autocalls.push({
+      observationNumber: 0, // assigned by renumberObservations
+      observationType: 'autocall',
+      valuationDate: e.valuationDate,
+      paymentDate: e.redemptionDate,
+      redemptionDate: e.redemptionDate,
+      // An autocall row tests the call level only. Leaving the coupon fields
+      // null keeps the two contractual tests from bleeding into each other.
+      couponDuePct: null,
+      autocallBarrierPct: pct,
+      couponBarrierPct: null,
+      status: 'scheduled',
+    })
+  }
+  return renumberObservations([...observations, ...autocalls])
 }

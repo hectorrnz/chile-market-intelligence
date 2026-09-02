@@ -20,6 +20,18 @@
     {
       "path": "/api/cron/refresh-calendar-enrichment",
       "schedule": "30 22 * * 1-5"
+    },
+    {
+      "path": "/api/cron/structured-notes/autocall-warning",
+      "schedule": "20 20 * * 1-5"
+    },
+    {
+      "path": "/api/cron/structured-notes/autocall-warning",
+      "schedule": "15 21 * * 1-5"
+    },
+    {
+      "path": "/api/cron/structured-notes/autocall-warning",
+      "schedule": "45 21 * * 1-5"
     }
   ]
 }

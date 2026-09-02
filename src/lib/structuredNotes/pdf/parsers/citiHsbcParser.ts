@@ -28,7 +28,8 @@ import type {
 } from '../../types.ts'
 import { frequencyToPeriodsPerYear, calculateBarrierLevel, calculateCouponAnnualized } from '../../calculations.ts'
 import { resolveUnderlyingSymbol } from '../../underlyingSymbolMap.ts'
-import { field, labelValue, labelDate, mapIssuerDisplay, parseNum, parsePct, parseTermSheetDate, KNOWN_TICKERS } from './shared.ts'
+import { field, labelValue, labelDate, mapIssuerDisplay, parseNum, parsePct, parseTermSheetDate, withAutocallObservations, KNOWN_TICKERS } from './shared.ts'
+import type { AutocallScheduleEntry } from './shared.ts'
 import type { IssuerParser, Line } from './types.ts'
 
 export const CITI_HSBC_PARSER_VERSION = '9B.multi.1'
@@ -283,12 +284,23 @@ function extractSchedule(
   const autocallPairs = collectPairs(/^Autocall Valuation Date\s+Mandatory Early Redemption Date$/i)
 
   if (couponPairs.length > 0 || autocallPairs.length > 0) {
+    // R13.7 § 5 — the two schedules are DISTINCT CONTRACTUAL TESTS. Previously
+    // `autocallPairs` was parsed and then used only as a fallback source of
+    // dates when no coupon table was found; the autocall test itself was never
+    // emitted, so the 100% call level was never evaluated anywhere. Both are
+    // now emitted, even though for this family their valuation dates coincide.
     const base = couponPairs.length > 0 ? couponPairs : autocallPairs
     base.forEach((pr, i) => observations.push({ observationNumber: i + 1, observationType: 'coupon', valuationDate: pr.valuation, paymentDate: pr.payment, redemptionDate: pr.payment, couponDuePct: ctx.couponRatePeriodic, autocallBarrierPct: ctx.autocallPct, couponBarrierPct: ctx.couponBarrierPct, status: 'scheduled' }))
     if (ctx.finalValuationDate && ctx.maturityDate) {
       observations.push({ observationNumber: base.length + 1, observationType: 'final', valuationDate: ctx.finalValuationDate, paymentDate: ctx.maturityDate, redemptionDate: ctx.maturityDate, couponDuePct: ctx.couponRatePeriodic, autocallBarrierPct: ctx.autocallPct, couponBarrierPct: ctx.couponBarrierPct, status: 'scheduled' })
     }
-    return observations
+    // The contract's own early-redemption schedule when it has one; otherwise
+    // the coupon dates, which for this family ARE the autocall dates (the term
+    // sheet prints the same dates under both headings).
+    const autocallEntries = autocallPairs.length > 0
+      ? autocallPairs.map((pr) => ({ valuationDate: pr.valuation, redemptionDate: pr.payment }))
+      : null
+    return withAutocallObservations(observations, autocallEntries, ctx.autocallPct)
   }
 
   // Template B (HSBC/EU): one combined table row per valuation date. The row
@@ -297,6 +309,7 @@ function extractSchedule(
   // valuation date, carrying both barriers.
   const dmy = /\d{1,2} [A-Za-z]{3,}\.? \d{4}/g
   let n = 0
+  const autocallEntries: AutocallScheduleEntry[] = []
   for (const l of lines) {
     if (!/^\d{1,2}\s/.test(l.text)) continue
     const dates = l.text.match(dmy)
@@ -309,6 +322,13 @@ function extractSchedule(
     const isFinal = isoDates.length === 2 && /(?:^|\s)-(?:\s|$)/.test(l.text)
     n += 1
     observations.push({ observationNumber: n, observationType: isFinal ? 'final' : 'coupon', valuationDate: couponVal, paymentDate: couponPay, redemptionDate: couponPay, couponDuePct: ctx.couponRatePeriodic, autocallBarrierPct: isFinal ? ctx.autocallPct : ctx.autocallPct, couponBarrierPct: ctx.couponBarrierPct, status: 'scheduled' })
+    // R13.7 § 5 — the combined EU row leads with the autocall valuation and
+    // mandatory-early-redemption dates and ends with the coupon pair. Those
+    // leading dates were previously discarded outright; they are the contract's
+    // own early-redemption schedule and now become real autocall observations.
+    if (!isFinal && isoDates.length >= 4) {
+      autocallEntries.push({ valuationDate: isoDates[isoDates.length - 4], redemptionDate: isoDates[isoDates.length - 3] })
+    }
   }
-  return observations
+  return withAutocallObservations(observations, autocallEntries.length > 0 ? autocallEntries : null, ctx.autocallPct)
 }

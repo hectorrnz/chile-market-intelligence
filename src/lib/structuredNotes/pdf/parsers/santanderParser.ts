@@ -24,7 +24,7 @@
 import type { ExtractedField, StructuredNote, StructuredNoteObservation, StructuredNoteUnderlying } from '../../types.ts'
 import { calculateCouponAnnualized, frequencyToPeriodsPerYear } from '../../calculations.ts'
 import { resolveUnderlyingSymbol } from '../../underlyingSymbolMap.ts'
-import { extractIsin, field, labelDateJoined, labelValue, mapIssuerDisplay, parseNum, parseTermSheetDate } from './shared.ts'
+import { extractIsin, field, labelDateJoined, labelValue, mapIssuerDisplay, parseNum, parseTermSheetDate, withAutocallObservations } from './shared.ts'
 import type { IssuerParser, Line } from './types.ts'
 
 export const SANTANDER_PARSER_VERSION = '9F.santander.1'
@@ -157,6 +157,15 @@ export const parseSantander: IssuerParser = (ctx) => {
       status: 'scheduled',
     }
   })
+  // R13.7 § 5 — this family prints ONE "Observation Date (n)" list that serves
+  // both the memory coupon and the Automatic Early Redemption test (the AER
+  // level is stated once, note-level, and applies to every non-final
+  // observation date). There is no separate autocall table to pass, so the
+  // autocall observations are derived from the very dates the contract says
+  // carry an AER level — never invented for a note without a call feature.
+  const scheduled = withAutocallObservations(observations, null, autocallPct)
+  observations.length = 0
+  observations.push(...scheduled)
   push(field('observations.count', String(observations.length), { sourceSection: 'Observation Date (n)', confidence: observations.length > 0 ? 'high' : 'low', warning: observations.length > 0 ? null : 'No observation schedule extracted' }))
 
   // ── Structure ─────────────────────────────────────────────────────────────

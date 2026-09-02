@@ -547,6 +547,222 @@ export async function getLatestStructuredNotePriceSnapshots(client: Client, note
   return out
 }
 
+/**
+ * R13.7 § 24 — DELIVERY STATE, kept separate from event detection.
+ *
+ * The event identity is `(note_id, event_type, valuation_date)`. The
+ * observation row already IS that identity for a given note and date, so the
+ * delivery record lives in its existing `metadata jsonb` under `notifications`
+ * — no migration, and the same "reuse the metadata column" pattern Phases
+ * 9D/9E used for their own diagnostics.
+ *
+ * Detection is pure and re-runnable; only this marker decides whether an alert
+ * has already gone out. That separation is what lets a failed delivery be
+ * retried without the detector having to remember anything.
+ */
+export async function getObservationNotificationState(
+  client: Client,
+  observationId: string,
+): Promise<Record<string, unknown>> {
+  const res = await q(client)
+    .from('structured_note_observations')
+    .select('metadata')
+    .eq('id', observationId)
+    .maybeSingle()
+  const meta = (res.data as { metadata?: Record<string, unknown> } | null)?.metadata ?? {}
+  const notifications = meta['notifications']
+  return (notifications && typeof notifications === 'object') ? notifications as Record<string, unknown> : {}
+}
+
+/**
+ * R13.7B2 § 6 — CONCURRENCY.
+ *
+ * A read-then-write delivery marker is NOT idempotent under concurrent workers:
+ * two crons firing together both read "absent", both send, both mark sent. Two
+ * Vercel cron slots plus a manual invocation make that a real arrangement, not
+ * a theoretical one.
+ *
+ * The fix is a compare-and-swap CLAIM, taken before delivery, expressed as a
+ * SINGLE conditional UPDATE. Under Postgres READ COMMITTED, concurrent updates
+ * to one row serialize: the loser blocks, then re-evaluates its WHERE predicate
+ * against the winner's committed version, finds it no longer matches, and
+ * updates zero rows. Exactly one worker can claim. This needs no migration and
+ * no RPC — only a filter on the existing `metadata jsonb`, verified live
+ * against the production schema before it was relied upon.
+ *
+ * Claim states, all inside `metadata.notifications[eventType]`:
+ *   absent                     → claimable
+ *   { claimToken, claimedAt }  → in flight (reclaimable once stale)
+ *   { ..., notifiedAt }        → delivered, terminal
+ */
+export const NOTIFICATION_CLAIM_STALE_MS = 15 * 60 * 1000
+
+/** Why a claim attempt did not yield the right to send. */
+export type ClaimRefusal = 'already_delivered' | 'claim_in_flight' | 'lost_race' | 'not_found'
+
+export type NotificationClaim =
+  | { claimed: true; token: string }
+  | { claimed: false; reason: ClaimRefusal; existing: Record<string, unknown> | null }
+
+/**
+ * Event types are interpolated into a PostgREST JSON path, so they are
+ * restricted to a plain identifier. This can therefore never become an
+ * injection vector, and a typo fails loudly instead of silently addressing the
+ * wrong key.
+ */
+function assertEventKey(eventType: string): void {
+  if (!/^[a-z][a-z0-9_]*$/.test(eventType)) throw new Error(`Unsafe notification event type: ${eventType}`)
+}
+
+function readClaimRecord(meta: Record<string, unknown>, eventType: string): Record<string, unknown> | null {
+  const notifications = meta['notifications']
+  if (!notifications || typeof notifications !== 'object') return null
+  const rec = (notifications as Record<string, unknown>)[eventType]
+  return rec && typeof rec === 'object' ? rec as Record<string, unknown> : null
+}
+
+/**
+ * Attempts to become the single worker responsible for delivering `eventType`
+ * for this observation. Returns a token that `completeObservationNotification`
+ * or `releaseObservationNotification` must present.
+ *
+ * A stale claim (a worker that crashed between claiming and delivering) is
+ * reclaimed by compare-and-swap on its token, so a crash costs at most one
+ * cron interval rather than the alert entirely.
+ */
+export async function claimObservationNotification(
+  client: Client,
+  observationId: string,
+  eventType: string,
+  now: Date = new Date(),
+  staleMs: number = NOTIFICATION_CLAIM_STALE_MS,
+): Promise<NotificationClaim> {
+  assertEventKey(eventType)
+
+  const cur = await q(client)
+    .from('structured_note_observations')
+    .select('metadata')
+    .eq('id', observationId)
+    .maybeSingle()
+  if (!cur.data) return { claimed: false, reason: 'not_found', existing: null }
+
+  const meta = ((cur.data as { metadata?: Record<string, unknown> }).metadata ?? {}) as Record<string, unknown>
+  const existing = readClaimRecord(meta, eventType)
+
+  if (existing && existing['notifiedAt']) return { claimed: false, reason: 'already_delivered', existing }
+
+  const priorToken = typeof existing?.['claimToken'] === 'string' ? existing['claimToken'] as string : null
+  if (existing && priorToken) {
+    const claimedAt = Date.parse(String(existing['claimedAt'] ?? ''))
+    const fresh = Number.isFinite(claimedAt) && now.getTime() - claimedAt < staleMs
+    if (fresh) return { claimed: false, reason: 'claim_in_flight', existing }
+  }
+
+  const token = `${now.toISOString()}#${Math.random().toString(36).slice(2, 10)}`
+  const notifications = ((meta['notifications'] && typeof meta['notifications'] === 'object') ? meta['notifications'] : {}) as Record<string, unknown>
+  const next = { ...meta, notifications: { ...notifications, [eventType]: { claimToken: token, claimedAt: now.toISOString() } } }
+
+  // The compare-and-swap. Which predicate applies is decided by what the read
+  // above saw: an absent record swaps on "still absent"; a stale record swaps
+  // on "still carrying the token I saw". Either way a competing worker that
+  // committed first invalidates the predicate and this update touches 0 rows.
+  let update = q(client)
+    .from('structured_note_observations')
+    .update({ metadata: next })
+    .eq('id', observationId)
+  update = priorToken
+    ? update.eq(`metadata->notifications->${eventType}->>claimToken`, priorToken)
+    : update.is(`metadata->notifications->${eventType}`, null)
+
+  const res = await update.select('id')
+  if (res.error) return { claimed: false, reason: 'lost_race', existing }
+  const rows = (res.data ?? []) as unknown[]
+  return rows.length === 1 ? { claimed: true, token } : { claimed: false, reason: 'lost_race', existing }
+}
+
+/** Marks a claimed event as delivered. Compare-and-swaps on the claim token so a reclaimed slot is never overwritten by the worker that lost it. */
+export async function completeObservationNotification(
+  client: Client,
+  observationId: string,
+  eventType: string,
+  token: string,
+  detail: Record<string, unknown>,
+  now: Date = new Date(),
+): Promise<boolean> {
+  assertEventKey(eventType)
+  const cur = await q(client)
+    .from('structured_note_observations')
+    .select('metadata')
+    .eq('id', observationId)
+    .maybeSingle()
+  const meta = ((cur.data as { metadata?: Record<string, unknown> } | null)?.metadata ?? {}) as Record<string, unknown>
+  const notifications = ((meta['notifications'] && typeof meta['notifications'] === 'object') ? meta['notifications'] : {}) as Record<string, unknown>
+  const next = {
+    ...meta,
+    notifications: { ...notifications, [eventType]: { ...detail, claimToken: token, notifiedAt: now.toISOString() } },
+  }
+  const res = await q(client)
+    .from('structured_note_observations')
+    .update({ metadata: next })
+    .eq('id', observationId)
+    .eq(`metadata->notifications->${eventType}->>claimToken`, token)
+    .select('id')
+  return !res.error && ((res.data ?? []) as unknown[]).length === 1
+}
+
+/**
+ * Gives a claim back after a failed delivery, so the next run retries rather
+ * than the alert being lost to a marker that was written optimistically.
+ * Compare-and-swaps on the token for the same reason as completion.
+ */
+export async function releaseObservationNotification(
+  client: Client,
+  observationId: string,
+  eventType: string,
+  token: string,
+): Promise<boolean> {
+  assertEventKey(eventType)
+  const cur = await q(client)
+    .from('structured_note_observations')
+    .select('metadata')
+    .eq('id', observationId)
+    .maybeSingle()
+  const meta = ((cur.data as { metadata?: Record<string, unknown> } | null)?.metadata ?? {}) as Record<string, unknown>
+  const notifications = { ...((meta['notifications'] && typeof meta['notifications'] === 'object') ? meta['notifications'] : {}) as Record<string, unknown> }
+  delete notifications[eventType]
+  const res = await q(client)
+    .from('structured_note_observations')
+    .update({ metadata: { ...meta, notifications } })
+    .eq('id', observationId)
+    .eq(`metadata->notifications->${eventType}->>claimToken`, token)
+    .select('id')
+  return !res.error && ((res.data ?? []) as unknown[]).length === 1
+}
+
+/**
+ * R13.7 § 9 — snapshots recorded FOR specific market dates, for one note.
+ *
+ * The evidence tier that lets a contractual observation be evaluated against
+ * the close of its OWN valuation date instead of whatever the run happened to
+ * fetch. Deliberately date-scoped: there is no variant that returns "the most
+ * recent" row, because substituting a nearby date is exactly the failure this
+ * exists to prevent.
+ */
+export async function getStructuredNotePriceSnapshotsForDates(
+  client: Client,
+  noteId: string,
+  priceDates: string[],
+): Promise<{ underlyingId: string; priceDate: string; price: number | null; source: string }[]> {
+  if (!noteId || priceDates.length === 0) return []
+  const res = await q(client)
+    .from('structured_note_price_snapshots')
+    .select('underlying_id, price_date, price, source')
+    .eq('note_id', noteId)
+    .in('price_date', [...new Set(priceDates)])
+  const rows = (res.data ?? []) as { underlying_id: string; price_date: string; price: number | null; source: string }[]
+  return rows.map((r) => ({ underlyingId: r.underlying_id, priceDate: r.price_date, price: r.price, source: r.source }))
+}
+
 export interface MonitoringRunInput {
   runType: 'scheduled_snapshot' | 'manual_refresh' | 'observation_check' | 'backfill'
 }
@@ -616,8 +832,46 @@ export interface ObservationResultUpdate {
   metadata?: Record<string, unknown>
 }
 
-/** Writes a monitoring job's evaluation of one observation. Never touches extraction-time fields (couponDuePct, autocallBarrierPct, couponBarrierPct). */
-export async function updateObservationResult(client: Client, observationId: string, result: ObservationResultUpdate): Promise<boolean> {
+/**
+ * Writes a monitoring job's evaluation of one observation. Never touches
+ * extraction-time fields (couponDuePct, autocallBarrierPct, couponBarrierPct).
+ *
+ * R13.7B2 § 6 — when `expectStatus` is supplied the write becomes a conditional
+ * state transition (`WHERE id = ? AND status = ?`) and the return value means
+ * "THIS worker performed the transition". Two concurrent crons that both read
+ * an observation as `scheduled` therefore cannot both process it: one updates a
+ * row, the other updates none. Omitting `expectStatus` preserves the original
+ * unconditional behaviour exactly.
+ */
+export async function updateObservationResult(
+  client: Client,
+  observationId: string,
+  result: ObservationResultUpdate,
+  expectStatus?: StructuredNoteObservation['status'],
+): Promise<boolean> {
+  if (expectStatus !== undefined) {
+    const guarded = await q(client)
+      .from('structured_note_observations')
+      .update({
+        status: result.status,
+        observed_at: result.observedAt,
+        observed_source: result.observedSource,
+        observed_source_symbol: result.observedSourceSymbol ?? null,
+        observed_levels: result.observedLevels,
+        worst_performer_ticker: result.worstPerformerTicker,
+        worst_performer_return: result.worstPerformerReturn,
+        coupon_eligible: result.couponEligible,
+        autocall_eligible: result.autocallEligible,
+        final_barrier_breached: result.finalBarrierBreached,
+        review_required: result.reviewRequired,
+        review_reason: result.reviewReason,
+        ...(result.metadata ? { metadata: result.metadata } : {}),
+      })
+      .eq('id', observationId)
+      .eq('status', expectStatus)
+      .select('id')
+    return !guarded.error && ((guarded.data ?? []) as unknown[]).length === 1
+  }
   const res = await q(client)
     .from('structured_note_observations')
     .update({

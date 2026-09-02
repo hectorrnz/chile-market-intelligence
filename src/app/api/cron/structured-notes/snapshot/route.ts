@@ -35,6 +35,9 @@ import {
   createStructuredNoteMonitoringRun,
   completeStructuredNoteMonitoringRun,
   updateObservationResult,
+  claimObservationNotification,
+  completeObservationNotification,
+  releaseObservationNotification,
   updateNoteStatusFromObservation,
 } from '@/lib/db/repositories/structuredNotesRepository'
 import { fetchMonitoringPrices } from '@/lib/structuredNotes/structuredNoteMonitoringProvider'
@@ -44,7 +47,9 @@ import {
   evaluateObservation,
   deriveObservationStatus,
   shouldUpdateNoteStatus,
+  type ObservationEvaluation,
 } from '@/lib/structuredNotes/monitoring'
+import { resolveNoteValuationCloses } from '@/lib/structuredNotes/valuationCloseResolver'
 import { createNotification, getActiveNotificationRecipientEmails } from '@/lib/db/repositories/notificationsRepository'
 import { sendNotificationEmail } from '@/lib/notifications/emailProvider'
 import type { StructuredNote } from '@/lib/structuredNotes/types'
@@ -61,12 +66,26 @@ async function notifyStructuredNoteCalled(
   client: ReturnType<typeof getSupabaseAdminClient>,
   note: StructuredNote,
   origin: string,
+  valuationDate: string,
+  redemptionDate: string | null,
+  evaluation: ObservationEvaluation,
 ): Promise<void> {
   if (!client || !note.id) return
   const linkUrl = `${origin}/structured-notes/${note.id}`
   const label = note.isin ?? note.issuerDisplayName ?? note.id
   const title = `Structured note called: ${label}`
-  const body = `${note.issuerDisplayName ?? 'Issuer'} note ${note.isin ?? note.id} was automatically called on today's scheduled autocall observation (monitoring estimate).`
+
+  // R13.7 § 18 — the message states the CONTRACTUAL basis rather than "called
+  // today": the call belongs to its valuation date, which is not necessarily
+  // the day the run detected it (a catch-up run may confirm an earlier date).
+  const legLines = (evaluation.event?.legs ?? [])
+    .map((l) => `${l.underlyingName}: close ${l.close ?? '—'} vs call level ${l.threshold ?? '—'}`)
+    .join(' · ')
+  const settlementLine = redemptionDate
+    ? ` Proceeds are due on the mandatory early redemption date ${redemptionDate}; the position remains outstanding until then.`
+    : ' The mandatory early redemption date is not recorded for this observation — settlement is unconfirmed.'
+  const body = `${note.issuerDisplayName ?? 'Issuer'} note ${note.isin ?? note.id} met its autocall condition on the contractual valuation date ${valuationDate}: every underlying closed at or above its own call level (${legLines}).${settlementLine} Monitoring estimate — not an official calculation-agent determination.`
+
   await createNotification(client, {
     notificationType: 'structured_note_called',
     title,
@@ -89,6 +108,9 @@ async function notifyStructuredNoteCalled(
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 export const maxDuration = 60
+
+/** R13.7B2 § 24 — deliberately distinct from the T-1 `potential_autocall` identity so a warning and a confirmation can never suppress one another. */
+const CALL_EVENT_TYPE = 'autocall_confirmed'
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -127,8 +149,47 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const reviewRequiredObservationIds: string[] = []
 
     for (const note of notes) {
-      for (const observation of note.observations) {
-        const evalResult = evaluateObservation(note, observation, priceResult.prices, asOf, priceResult.quoteMeta)
+      // R13.7 § 9/§ 18 — resolve the OFFICIAL CLOSE FOR EACH OBSERVATION'S OWN
+      // VALUATION DATE before evaluating anything. Previously every due
+      // observation was decided with the price map fetched for today, so a
+      // missed run silently evaluated a past contractual date against a later
+      // day's level.
+      //
+      // Observations are processed in valuation-date order so that when a run
+      // catches up on several at once, an earlier autocall terminates the note
+      // before any later observation is treated as live (§ 7 precedence).
+      const dueObservations = note.observations
+        .filter((o) => o.status === 'scheduled' && o.valuationDate <= asOf)
+        .sort((a, b) => a.valuationDate.localeCompare(b.valuationDate))
+      if (dueObservations.length === 0) continue
+
+      // Today's snapshot rows were just written above; inject them so the
+      // same-run evaluation sees them without a read-back round trip.
+      const orderByUnderlyingId = new Map((note.underlyings ?? []).filter((u) => u.id).map((u) => [u.id!, u.underlyingOrder]))
+      const todaysSnapshots = snapshotRows
+        .filter((r) => r.noteId === note.id && orderByUnderlyingId.has(r.underlyingId))
+        .map((r) => ({ underlyingOrder: orderByUnderlyingId.get(r.underlyingId)!, priceDate: r.priceDate, close: r.price, source: r.source }))
+
+      let closes: Awaited<ReturnType<typeof resolveNoteValuationCloses>>
+      try {
+        closes = await resolveNoteValuationCloses(client, note, dueObservations.map((o) => o.valuationDate), todaysSnapshots)
+      } catch (e) {
+        errors.push(`failed to resolve valuation-date closes for note ${note.id}: ${e instanceof Error ? e.message.slice(0, 120) : 'unknown'}`)
+        continue
+      }
+
+      // Tracks a call detected earlier in THIS loop, so subsequent
+      // observations of the same note are not evaluated as live events.
+      let terminatedOn: string | null = null
+
+      for (const observation of dueObservations) {
+        // § 11 — once called, later contractual observations are no longer live
+        // observations of an existing note; they are left untouched for the
+        // reconciliation stage rather than evaluated or silently finalized.
+        if (terminatedOn !== null && observation.valuationDate > terminatedOn) continue
+
+        const resolved = closes.byDate.get(observation.valuationDate) ?? []
+        const evalResult = evaluateObservation(note, observation, resolved, asOf, priceResult.quoteMeta)
         if (!evalResult) continue
         observationsChecked += 1
         if (!observation.id) continue
@@ -150,16 +211,49 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           reviewRequired: evalResult.reviewRequired,
           reviewReason: evalResult.reviewReason,
           metadata: { reviewReasons: evalResult.reviewReasons },
-        })
-        if (ok) observationsUpdated += 1
-        else errors.push(`failed to update observation ${observation.id} for note ${note.id}`)
+        }, 'scheduled')
+        // R13.7B2 § 6 — the write above is conditional on the observation still
+        // being `scheduled`, so it is an atomic claim on PROCESSING this
+        // observation. Filtering on `scheduled` when the list was read is not
+        // enough: two concurrent runs both read it as scheduled. Exactly one
+        // update can now match a row.
+        if (!ok) {
+          // Either a concurrent run claimed it, or the write failed. In both
+          // cases this worker must not continue down the note's schedule: the
+          // claimant may be applying a call that would void the later
+          // observations this loop is about to reach.
+          warnings.push(`observation ${observation.id} for note ${note.id} was not applied by this run (claimed by a concurrent run, or the write failed) — skipping the rest of this note`)
+          break
+        }
+        observationsUpdated += 1
 
         const statusUpdate = shouldUpdateNoteStatus(note, evalResult)
         if (statusUpdate && note.id) {
           const noteOk = await updateNoteStatusFromObservation(client, note.id, statusUpdate.newStatus)
           if (noteOk) {
             notesUpdated += 1
-            if (statusUpdate.newStatus === 'autocalled') await notifyStructuredNoteCalled(client, note, req.nextUrl.origin)
+            terminatedOn = observation.valuationDate
+            if (statusUpdate.newStatus === 'autocalled') {
+              // § 24 — event identity is (note, event type, valuation date),
+              // and the observation row IS that identity. The claim is taken
+              // atomically rather than inferred from the observation status:
+              // the status transition above already gates sequential reruns,
+              // but only a compare-and-swap makes the alert at-most-once when
+              // two runs overlap.
+              const claim = await claimObservationNotification(client, observation.id, CALL_EVENT_TYPE)
+              if (claim.claimed) {
+                try {
+                  await notifyStructuredNoteCalled(client, note, req.nextUrl.origin, observation.valuationDate, observation.redemptionDate ?? null, evalResult)
+                  await completeObservationNotification(client, observation.id, CALL_EVENT_TYPE, claim.token, {
+                    valuationDate: observation.valuationDate,
+                    redemptionDate: observation.redemptionDate ?? null,
+                  })
+                } catch {
+                  await releaseObservationNotification(client, observation.id, CALL_EVENT_TYPE, claim.token)
+                  warnings.push(`call notification delivery failed for note ${note.id} (${observation.valuationDate}) — claim released, will retry on the next run`)
+                }
+              }
+            }
           } else {
             errors.push(`failed to update note ${note.id} status to ${statusUpdate.newStatus}`)
           }

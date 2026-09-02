@@ -91,11 +91,16 @@ describe('Crédit Agricole — underlyings', () => {
 })
 
 describe('Crédit Agricole — schedule (one row per valuation date, no double count)', () => {
-  it('extracts 4 quarterly observations, folding the early-redemption barrier into each row', () => {
-    assert.equal(n.observations.length, 4)
-    assert.ok(n.observations.every((o) => o.autocallBarrierPct === 1))
-    const dates = n.observations.map((o) => o.valuationDate)
-    assert.equal(new Set(dates).size, dates.length)
+  // R13.7 — INVERTED. "Folding the early-redemption barrier into each row" was
+  // the defect: the Early Redemption Barrier became an inert number on a
+  // coupon row instead of an evaluable contractual test.
+  it('emits the early-redemption schedule as real autocall observations', () => {
+    assert.equal(n.observations.filter((o) => o.observationType === 'coupon').length, 4)
+    const autocalls = n.observations.filter((o) => o.observationType === 'autocall')
+    assert.ok(autocalls.length > 0)
+    assert.ok(autocalls.every((o) => o.autocallBarrierPct === 1))
+    const keys = n.observations.map((o) => `${o.valuationDate}::${o.observationType}`)
+    assert.equal(new Set(keys).size, keys.length)
   })
 })
 

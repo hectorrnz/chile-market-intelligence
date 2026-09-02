@@ -285,11 +285,36 @@ export function calculateAllocationTotal(allocations: StructuredNoteAllocation[]
 /**
  * Current notional at risk. Workbook R52 `=IF(status="llamada",0,Total)`.
  * Called/matured/cancelled → 0; otherwise the active-allocation total.
+ *
+ * R13.7 § 11–12 — SETTLEMENT CONTEXT (optional, additive).
+ * ────────────────────────────────────────────────────────
+ * A call and its cash are not the same event. These contracts pair an
+ * "Autocall Valuation Date" with a later "Mandatory Early Redemption Date"
+ * (~7–10 days apart in the current book). Between the two the position has
+ * stopped tracking the underlyings — the redemption amount is fixed — but the
+ * money is still AT THE ISSUER. Zeroing the notional on the valuation date
+ * would understate both AUM and issuer credit exposure for that window, and
+ * would do so silently.
+ *
+ * So the platform now distinguishes:
+ *   contractually called  (status 'autocalled', effective the valuation date)
+ *   settlement pending    (notional still outstanding, until redemption date)
+ *   settled               (notional leaves the book)
+ *
+ * `settlement` is OPTIONAL and omitting it preserves the exact pre-R13.7
+ * behaviour, so no existing caller changes meaning by accident. When supplied,
+ * `'pending'` and `'unknown'` both retain the notional — `'unknown'` because an
+ * unrecorded redemption date is not evidence that cash arrived, and keeping
+ * exposure visible is the conservative direction.
  */
 export function calculateCurrentNotional(
   note: Pick<StructuredNote, 'status'>,
   allocations: StructuredNoteAllocation[],
+  settlement?: 'pending' | 'settled' | 'unknown',
 ): number {
+  if (note.status === 'autocalled' && settlement !== undefined && settlement !== 'settled') {
+    return calculateAllocationTotal(allocations)
+  }
   if (note.status === 'autocalled' || note.status === 'matured' || note.status === 'cancelled') return 0
   return calculateAllocationTotal(allocations)
 }

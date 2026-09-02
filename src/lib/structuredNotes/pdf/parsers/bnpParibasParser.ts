@@ -17,7 +17,8 @@
 import type { ExtractedField, StructuredNote, StructuredNoteObservation, StructuredNoteUnderlying } from '../../types.ts'
 import { calculateCouponAnnualized, frequencyToPeriodsPerYear } from '../../calculations.ts'
 import { resolveUnderlyingSymbol } from '../../underlyingSymbolMap.ts'
-import { extractIsin, field, labelDateJoined, labelValue, mapIssuerDisplay, parseNum, parseTermSheetDate, yearsBetweenIsoDates } from './shared.ts'
+import { extractIsin, field, labelDateJoined, labelValue, mapIssuerDisplay, parseNum, parseTermSheetDate, yearsBetweenIsoDates, withAutocallObservations } from './shared.ts'
+import type { AutocallScheduleEntry } from './shared.ts'
 import type { IssuerParser } from './types.ts'
 
 export const BNP_PARIBAS_PARSER_VERSION = '9C.bnpParibas.2'
@@ -213,6 +214,7 @@ export const parseBnpParibas: IssuerParser = (ctx) => {
 
   // ── Schedule — clean single-line rows: "<t> <date> <date> <date>" (valuation, autocall redemption, coupon payment) ──
   const observations: StructuredNoteObservation[] = []
+  const periodicAutocalls: AutocallScheduleEntry[] = []
   const scheduleRowRe = /(\d+)\s+([A-Za-z]+\s+\d{1,2}(?:st|nd|rd|th),\s+\d{4})\s+([A-Za-z]+\s+\d{1,2}(?:st|nd|rd|th),\s+\d{4})\s+([A-Za-z]+\s+\d{1,2}(?:st|nd|rd|th),\s+\d{4})/g
   let sm: RegExpExecArray | null
   let n = 0
@@ -228,6 +230,12 @@ export const parseBnpParibas: IssuerParser = (ctx) => {
       couponDuePct: couponRatePeriodic, autocallBarrierPct: autocallPct, couponBarrierPct,
       status: 'scheduled',
     })
+    // R13.7 § 5 — column 3 of this family's schedule row IS the autocall
+    // redemption date, and the row's valuation date is the autocall valuation
+    // date. Previously it only landed in `redemptionDate`, so the periodic
+    // early-redemption test was never evaluated (only the prose-only Catapult
+    // fallback below ever produced a real autocall observation).
+    periodicAutocalls.push({ valuationDate: valuation, redemptionDate: autocallDate ?? couponPay })
   }
   // Fallback: the "Autocallable Certificate Plus"/Catapult template has no
   // periodic schedule table at all — its single early-redemption opportunity
@@ -258,6 +266,9 @@ export const parseBnpParibas: IssuerParser = (ctx) => {
       status: 'scheduled',
     })
   }
+  const scheduled = withAutocallObservations(observations, periodicAutocalls.length > 0 ? periodicAutocalls : null, autocallPct)
+  observations.length = 0
+  observations.push(...scheduled)
   push(field('observations.count', String(observations.length), { sourceSection: 'schedule', confidence: observations.length > 0 ? 'high' : 'low', warning: observations.length > 0 ? null : 'No observation schedule extracted' }))
 
   // ── Structure ─────────────────────────────────────────────────────────────

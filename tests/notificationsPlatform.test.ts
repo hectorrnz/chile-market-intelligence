@@ -143,7 +143,10 @@ describe('cron route — notifies + emails on autocall (structured_note_called)'
   })
   it('email delivery failures never fail the whole monitoring run (best-effort, swallowed)', () => {
     const idx = CRON_ROUTE.indexOf('async function notifyStructuredNoteCalled')
-    const body = CRON_ROUTE.slice(idx, idx + 1200)
+    // R13.7 widened the window: the notification body now states the
+    // contractual basis (valuation date, per-leg evidence, settlement), so the
+    // function is longer. The property asserted is unchanged.
+    const body = CRON_ROUTE.slice(idx, idx + 3000)
     assert.ok(body.includes('try {'))
     assert.ok(body.includes('} catch {'))
   })

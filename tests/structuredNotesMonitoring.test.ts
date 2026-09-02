@@ -18,6 +18,7 @@ import {
 } from '../src/lib/structuredNotes/monitoring.ts'
 import type { StructuredNote, StructuredNoteObservation } from '../src/lib/structuredNotes/types.ts'
 import type { QuoteMetaEntry } from '../src/lib/structuredNotes/monitoring.ts'
+import type { ResolvedValuationClose } from '../src/lib/structuredNotes/valuationClose.ts'
 
 function note(over: Partial<StructuredNote> = {}): StructuredNote {
   return {
@@ -116,28 +117,48 @@ describe('classifyStructuredNoteRisk', () => {
   })
 })
 
+// R13.7 — evaluators now consume CLOSES FOR THE OBSERVATION'S VALUATION DATE
+// (`ResolvedValuationClose[]`), not a symbol-keyed map of today's prices. This
+// helper keeps the existing test intentions intact while expressing the input
+// in the new, date-anchored shape.
+function closesFor(prices: Map<string, number>, valuationDate = '2027-01-01'): ResolvedValuationClose[] {
+  return note().underlyings.map((u) => {
+    const close = u.yahooSymbol ? prices.get(u.yahooSymbol) ?? null : null
+    return {
+      underlyingOrder: u.underlyingOrder,
+      underlyingName: u.underlyingName,
+      valuationDate,
+      close,
+      source: close === null ? ('unavailable' as const) : ('persisted_snapshot' as const),
+      corroborated: false,
+      disagreementPct: null,
+      unavailableReason: close === null ? ('no_close_for_valuation_date' as const) : null,
+    }
+  })
+}
+
 describe('evaluateCouponObservation — worst-of strict eligibility', () => {
   it('is eligible only if every underlying clears its coupon barrier', () => {
     const prices = new Map([['^GSPC', 7000], ['^RUT', 2700]])
-    const result = evaluateCouponObservation(note(), note().observations[0], prices)
+    const result = evaluateCouponObservation(note(), note().observations[0], closesFor(prices))
     assert.equal(result.couponEligible, true)
     assert.equal(result.reviewRequired, false)
   })
   it('is not eligible if any single underlying breaches (strict worst-of)', () => {
     const prices = new Map([['^GSPC', 4900], ['^RUT', 2700]]) // SPX below its coupon barrier
-    const result = evaluateCouponObservation(note(), note().observations[0], prices)
+    const result = evaluateCouponObservation(note(), note().observations[0], closesFor(prices))
     assert.equal(result.couponEligible, false)
   })
   it('flags reviewRequired (not a fabricated false) when a price is missing', () => {
     const prices = new Map([['^GSPC', 7000]]) // RTY missing
-    const result = evaluateCouponObservation(note(), note().observations[0], prices)
+    const result = evaluateCouponObservation(note(), note().observations[0], closesFor(prices))
     assert.equal(result.couponEligible, null)
     assert.equal(result.reviewRequired, true)
     assert.match(result.reviewReason ?? '', /unavailable/)
   })
   it('never claims to be an official calculation-agent source', () => {
     const prices = new Map([['^GSPC', 7000], ['^RUT', 2700]])
-    const result = evaluateCouponObservation(note(), note().observations[0], prices)
+    const result = evaluateCouponObservation(note(), note().observations[0], closesFor(prices))
     assert.match(result.observedSource ?? '', /monitoring estimate/i)
     assert.doesNotMatch(result.observedSource ?? '', /official/i)
   })
@@ -146,16 +167,16 @@ describe('evaluateCouponObservation — worst-of strict eligibility', () => {
 describe('evaluateAutocallObservation — worst-of strict eligibility', () => {
   it('is eligible only if every underlying is at/above its autocall barrier', () => {
     const prices = new Map([['^GSPC', 7576], ['^RUT', 2927]])
-    const result = evaluateAutocallObservation(note(), note().observations[0], prices)
+    const result = evaluateAutocallObservation(note(), note().observations[0], closesFor(prices))
     assert.equal(result.autocallEligible, true)
   })
   it('is not eligible if any underlying is below its autocall barrier', () => {
     const prices = new Map([['^GSPC', 7000], ['^RUT', 2927]])
-    const result = evaluateAutocallObservation(note(), note().observations[0], prices)
+    const result = evaluateAutocallObservation(note(), note().observations[0], closesFor(prices))
     assert.equal(result.autocallEligible, false)
   })
   it('flags reviewRequired on missing data', () => {
-    const result = evaluateAutocallObservation(note(), note().observations[0], new Map())
+    const result = evaluateAutocallObservation(note(), note().observations[0], closesFor(new Map()))
     assert.equal(result.autocallEligible, null)
     assert.equal(result.reviewRequired, true)
   })
@@ -164,19 +185,19 @@ describe('evaluateAutocallObservation — worst-of strict eligibility', () => {
 describe('evaluateFinalObservation — always reviewRequired (never a final legal determination)', () => {
   it('estimates a barrier breach from current levels but always flags reviewRequired', () => {
     const prices = new Map([['^GSPC', 4000], ['^RUT', 2700]]) // SPX below knock-in
-    const result = evaluateFinalObservation(note(), note().observations[0], prices)
+    const result = evaluateFinalObservation(note(), note().observations[0], closesFor(prices))
     assert.equal(result.finalBarrierBreached, true)
     assert.equal(result.reviewRequired, true)
     assert.match(result.reviewReason ?? '', /legal determination/i)
   })
   it('is still reviewRequired even when no breach is detected', () => {
     const prices = new Map([['^GSPC', 7576], ['^RUT', 2927]])
-    const result = evaluateFinalObservation(note(), note().observations[0], prices)
+    const result = evaluateFinalObservation(note(), note().observations[0], closesFor(prices))
     assert.equal(result.finalBarrierBreached, false)
     assert.equal(result.reviewRequired, true)
   })
   it('produces no NaN/Infinity', () => {
-    const result = evaluateFinalObservation(note(), note().observations[0], new Map())
+    const result = evaluateFinalObservation(note(), note().observations[0], closesFor(new Map()))
     assert.ok(result.worstPerformerReturn === null || Number.isFinite(result.worstPerformerReturn))
   })
 })
@@ -184,28 +205,28 @@ describe('evaluateFinalObservation — always reviewRequired (never a final lega
 describe('evaluateObservation — dispatch + due-date gating', () => {
   it('returns null for an observation not yet due', () => {
     const future: StructuredNoteObservation = { ...note().observations[0], valuationDate: '2028-01-01' }
-    assert.equal(evaluateObservation(note(), future, new Map(), today), null)
+    assert.equal(evaluateObservation(note(), future, closesFor(new Map()), today), null)
   })
   it('returns null for an observation that is not scheduled (already finalized)', () => {
     const done: StructuredNoteObservation = { ...note().observations[0], status: 'coupon_paid' }
-    assert.equal(evaluateObservation(note(), done, new Map(), today), null)
+    assert.equal(evaluateObservation(note(), done, closesFor(new Map()), today), null)
   })
   it('dispatches to the coupon evaluator for a due coupon observation', () => {
     const prices = new Map([['^GSPC', 7000], ['^RUT', 2700]])
-    const result = evaluateObservation(note(), note().observations[0], prices, today)
+    const result = evaluateObservation(note(), note().observations[0], closesFor(prices), today)
     assert.equal(result?.observationType, 'coupon')
     assert.equal(result?.couponEligible, true)
   })
   it('dispatches to the autocall evaluator', () => {
     const obs: StructuredNoteObservation = { ...note().observations[0], observationType: 'autocall' }
     const prices = new Map([['^GSPC', 7576], ['^RUT', 2927]])
-    const result = evaluateObservation(note(), obs, prices, today)
+    const result = evaluateObservation(note(), obs, closesFor(prices), today)
     assert.equal(result?.observationType, 'autocall')
     assert.equal(result?.autocallEligible, true)
   })
   it('dispatches to the final evaluator', () => {
     const obs: StructuredNoteObservation = { ...note().observations[0], observationType: 'final' }
-    const result = evaluateObservation(note(), obs, new Map(), today)
+    const result = evaluateObservation(note(), obs, closesFor(new Map()), today)
     assert.equal(result?.observationType, 'final')
     assert.equal(result?.reviewRequired, true)
   })
@@ -213,71 +234,78 @@ describe('evaluateObservation — dispatch + due-date gating', () => {
 
 describe('shouldUpdateNoteStatus — conservative automatic transitions', () => {
   it('transitions to autocalled when the autocall observation is cleanly eligible', () => {
-    const evalResult = evaluateAutocallObservation(note(), note().observations[0], new Map([['^GSPC', 7576], ['^RUT', 2927]]))
+    const evalResult = evaluateAutocallObservation(note(), note().observations[0], closesFor(new Map([['^GSPC', 7576], ['^RUT', 2927]])))
     const update = shouldUpdateNoteStatus(note(), evalResult)
     assert.equal(update?.newStatus, 'autocalled')
   })
   it('never transitions on a final observation, even with a breach (requires manual verification)', () => {
-    const evalResult = evaluateFinalObservation(note(), note().observations[0], new Map([['^GSPC', 4000], ['^RUT', 2700]]))
+    const evalResult = evaluateFinalObservation(note(), note().observations[0], closesFor(new Map([['^GSPC', 4000], ['^RUT', 2700]])))
     assert.equal(shouldUpdateNoteStatus(note(), evalResult), null)
   })
   it('never reactivates or touches an already-archived note', () => {
     const archived = note({ status: 'autocalled' })
-    const evalResult = evaluateAutocallObservation(archived, archived.observations[0], new Map([['^GSPC', 7576], ['^RUT', 2927]]))
+    const evalResult = evaluateAutocallObservation(archived, archived.observations[0], closesFor(new Map([['^GSPC', 7576], ['^RUT', 2927]])))
     assert.equal(shouldUpdateNoteStatus(archived, evalResult), null)
   })
   it('does not transition when eligibility could not be determined (missing prices)', () => {
-    const evalResult = evaluateAutocallObservation(note(), note().observations[0], new Map())
+    const evalResult = evaluateAutocallObservation(note(), note().observations[0], closesFor(new Map()))
     assert.equal(shouldUpdateNoteStatus(note(), evalResult), null)
   })
 })
 
 describe('deriveObservationStatus', () => {
   it('maps a clean coupon-eligible evaluation to coupon_paid', () => {
-    const r = evaluateCouponObservation(note(), note().observations[0], new Map([['^GSPC', 7000], ['^RUT', 2700]]))
+    const r = evaluateCouponObservation(note(), note().observations[0], closesFor(new Map([['^GSPC', 7000], ['^RUT', 2700]])))
     assert.equal(deriveObservationStatus(r), 'coupon_paid')
   })
   it('maps a clean coupon-ineligible evaluation to coupon_missed', () => {
-    const r = evaluateCouponObservation(note(), note().observations[0], new Map([['^GSPC', 4900], ['^RUT', 2700]]))
+    const r = evaluateCouponObservation(note(), note().observations[0], closesFor(new Map([['^GSPC', 4900], ['^RUT', 2700]])))
     assert.equal(deriveObservationStatus(r), 'coupon_missed')
   })
   it('maps a clean autocall-eligible evaluation to autocalled', () => {
-    const r = evaluateAutocallObservation(note(), note().observations[0], new Map([['^GSPC', 7576], ['^RUT', 2927]]))
+    const r = evaluateAutocallObservation(note(), note().observations[0], closesFor(new Map([['^GSPC', 7576], ['^RUT', 2927]])))
     assert.equal(deriveObservationStatus(r), 'autocalled')
   })
   it('maps any reviewRequired evaluation to observed, never a fabricated terminal status', () => {
-    const r = evaluateCouponObservation(note(), note().observations[0], new Map())
+    const r = evaluateCouponObservation(note(), note().observations[0], closesFor(new Map()))
     assert.equal(deriveObservationStatus(r), 'observed')
   })
   it('always maps a final observation to observed, never matured', () => {
-    const r = evaluateFinalObservation(note(), note().observations[0], new Map([['^GSPC', 7576], ['^RUT', 2927]]))
+    const r = evaluateFinalObservation(note(), note().observations[0], closesFor(new Map([['^GSPC', 7576], ['^RUT', 2927]])))
     assert.equal(deriveObservationStatus(r), 'observed')
   })
 })
 
 describe('observation QA — quoteMeta-driven review reasons (Phase 9E)', () => {
-  it('reports missing_price when a quoteMeta entry is absent and the price is null', () => {
-    const result = evaluateCouponObservation(note(), note().observations[0], new Map([['^GSPC', 7000]])) // ^RUT missing, no quoteMeta
-    assert.ok(result.reviewReasons.includes('missing_price'))
+  // R13.7 — the code changed with the semantics. For a CONTRACTUAL VALUATION
+  // DATE the question is not "is today's quote missing" but "does a close for
+  // that date exist at all", so an absent close reports
+  // `non_trading_day_or_unavailable_close`. The property under test is
+  // unchanged and is the one that matters: never a fabricated false.
+  it('reports an unavailable valuation-date close (never a fabricated false) when a close is absent', () => {
+    const result = evaluateCouponObservation(note(), note().observations[0], closesFor(new Map([['^GSPC', 7000]]))) // ^RUT missing, no quoteMeta
+    assert.ok(result.reviewReasons.includes('non_trading_day_or_unavailable_close'))
+    assert.equal(result.couponEligible, null)
+    assert.equal(result.reviewRequired, true)
   })
   it('reports unsupported_symbol when quoteMeta marks the symbol unsupported', () => {
     const quoteMeta = new Map([['^RUT', { asOf: null, supported: false, providerError: false }]])
-    const result = evaluateCouponObservation(note(), note().observations[0], new Map([['^GSPC', 7000]]), quoteMeta)
+    const result = evaluateCouponObservation(note(), note().observations[0], closesFor(new Map([['^GSPC', 7000]])), quoteMeta)
     assert.ok(result.reviewReasons.includes('unsupported_symbol'))
   })
   it('reports provider_error when quoteMeta flags a provider error for a missing price', () => {
     const quoteMeta = new Map([['^RUT', { asOf: null, supported: true, providerError: true }]])
-    const result = evaluateCouponObservation(note(), note().observations[0], new Map([['^GSPC', 7000]]), quoteMeta)
+    const result = evaluateCouponObservation(note(), note().observations[0], closesFor(new Map([['^GSPC', 7000]])), quoteMeta)
     assert.ok(result.reviewReasons.includes('provider_error'))
   })
   it('reports non_trading_day_or_unavailable_close when quoteMeta flags it', () => {
     const quoteMeta = new Map([['^RUT', { asOf: null, supported: true, providerError: false, nonTradingDay: true }]])
-    const result = evaluateCouponObservation(note(), note().observations[0], new Map([['^GSPC', 7000]]), quoteMeta)
+    const result = evaluateCouponObservation(note(), note().observations[0], closesFor(new Map([['^GSPC', 7000]])), quoteMeta)
     assert.ok(result.reviewReasons.includes('non_trading_day_or_unavailable_close'))
   })
   it('reports ambiguous_underlying_mapping when an underlying never resolved a symbol at all', () => {
     const n = note({ underlyings: [{ ...note().underlyings[0], yahooSymbol: null }, note().underlyings[1]] })
-    const result = evaluateCouponObservation(n, n.observations[0], new Map([['^RUT', 2700]]))
+    const result = evaluateCouponObservation(n, n.observations[0], closesFor(new Map([['^RUT', 2700]])))
     assert.ok(result.reviewReasons.includes('ambiguous_underlying_mapping'))
   })
   it('reports stale_price using the tighter observation threshold via quoteMeta.asOf', () => {
@@ -286,7 +314,7 @@ describe('observation QA — quoteMeta-driven review reasons (Phase 9E)', () => 
       ['^GSPC', { asOf: twoDaysAgo, supported: true, providerError: false }],
       ['^RUT', { asOf: twoDaysAgo, supported: true, providerError: false }],
     ])
-    const result = evaluateCouponObservation(note(), note().observations[0], new Map([['^GSPC', 7000], ['^RUT', 2700]]), quoteMeta)
+    const result = evaluateCouponObservation(note(), note().observations[0], closesFor(new Map([['^GSPC', 7000], ['^RUT', 2700]])), quoteMeta)
     assert.ok(result.reviewReasons.includes('stale_price'))
     assert.equal(result.reviewRequired, true)
   })
@@ -296,7 +324,7 @@ describe('observation QA — quoteMeta-driven review reasons (Phase 9E)', () => 
       ['^GSPC', { asOf: now, supported: true, providerError: false, qualityReasons: ['large_price_move_warning'] }],
       ['^RUT', { asOf: now, supported: true, providerError: false }],
     ])
-    const result = evaluateCouponObservation(note(), note().observations[0], new Map([['^GSPC', 7000], ['^RUT', 2700]]), quoteMeta)
+    const result = evaluateCouponObservation(note(), note().observations[0], closesFor(new Map([['^GSPC', 7000], ['^RUT', 2700]])), quoteMeta)
     assert.ok(result.reviewReasons.includes('large_price_move_warning'))
   })
   it('reports market_not_settled when quoteMeta carries that quality reason', () => {
@@ -305,7 +333,7 @@ describe('observation QA — quoteMeta-driven review reasons (Phase 9E)', () => 
       ['^GSPC', { asOf: now, supported: true, providerError: false, qualityReasons: ['market_not_settled'] }],
       ['^RUT', { asOf: now, supported: true, providerError: false }],
     ])
-    const result = evaluateCouponObservation(note(), note().observations[0], new Map([['^GSPC', 7000], ['^RUT', 2700]]), quoteMeta)
+    const result = evaluateCouponObservation(note(), note().observations[0], closesFor(new Map([['^GSPC', 7000], ['^RUT', 2700]])), quoteMeta)
     assert.ok(result.reviewReasons.includes('market_not_settled'))
     assert.equal(result.reviewRequired, true)
   })
@@ -315,7 +343,7 @@ describe('observation QA — quoteMeta-driven review reasons (Phase 9E)', () => 
       ['^GSPC', { asOf: now, supported: true, providerError: false }],
       ['^RUT', { asOf: now, supported: true, providerError: false }],
     ])
-    const result = evaluateCouponObservation(note(), note().observations[0], new Map([['^GSPC', 7000], ['^RUT', 2700]]), quoteMeta)
+    const result = evaluateCouponObservation(note(), note().observations[0], closesFor(new Map([['^GSPC', 7000], ['^RUT', 2700]])), quoteMeta)
     assert.deepEqual(result.reviewReasons, [])
     assert.equal(result.reviewRequired, false)
   })
@@ -325,17 +353,17 @@ describe('observation QA — quoteMeta-driven review reasons (Phase 9E)', () => 
       ['^GSPC', { asOf: now, supported: true, providerError: false }],
       ['^RUT', { asOf: now, supported: true, providerError: false }],
     ])
-    const result = evaluateFinalObservation(note(), note().observations[0], new Map([['^GSPC', 7576], ['^RUT', 2927]]), quoteMeta)
+    const result = evaluateFinalObservation(note(), note().observations[0], closesFor(new Map([['^GSPC', 7576], ['^RUT', 2927]])), quoteMeta)
     assert.ok(result.reviewReasons.includes('final_observation_requires_official_verification'))
     assert.equal(result.reviewRequired, true)
   })
-  it('omitting quoteMeta preserves pre-9E behavior (reasons collapse to missing_price only)', () => {
-    const result = evaluateCouponObservation(note(), note().observations[0], new Map([['^GSPC', 7000]]))
-    assert.deepEqual(result.reviewReasons, ['missing_price'])
+  it('omitting quoteMeta still reports the unavailable close, and nothing it cannot know', () => {
+    const result = evaluateCouponObservation(note(), note().observations[0], closesFor(new Map([['^GSPC', 7000]])))
+    assert.deepEqual(result.reviewReasons, ['non_trading_day_or_unavailable_close'])
   })
   it('evaluateObservation threads quoteMeta through to the dispatched evaluator', () => {
     const quoteMeta = new Map([['^RUT', { asOf: null, supported: false, providerError: false }]])
-    const result = evaluateObservation(note(), note().observations[0], new Map([['^GSPC', 7000]]), today, quoteMeta)
+    const result = evaluateObservation(note(), note().observations[0], closesFor(new Map([['^GSPC', 7000]])), today, quoteMeta)
     assert.ok(result?.reviewReasons.includes('unsupported_symbol'))
   })
 })

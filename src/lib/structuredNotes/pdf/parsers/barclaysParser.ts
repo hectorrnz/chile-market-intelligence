@@ -19,7 +19,7 @@
 import type { ExtractedField, StructuredNote, StructuredNoteObservation, StructuredNoteUnderlying } from '../../types.ts'
 import { calculateCouponAnnualized, frequencyToPeriodsPerYear } from '../../calculations.ts'
 import { resolveUnderlyingSymbol } from '../../underlyingSymbolMap.ts'
-import { extractCurrencyAmount, extractIsin, field, labelDate, labelValue, mapIssuerDisplay, parseNum, parseTermSheetDate } from './shared.ts'
+import { extractCurrencyAmount, extractIsin, field, labelDate, labelValue, mapIssuerDisplay, parseNum, parseTermSheetDate, withAutocallObservations } from './shared.ts'
 import type { IssuerParser } from './types.ts'
 
 export const BARCLAYS_PARSER_VERSION = '9C.barclays.1'
@@ -158,7 +158,7 @@ export const parseBarclays: IssuerParser = (ctx) => {
     return {
       observationNumber: i + 1, observationType: 'coupon',
       valuationDate: row.valuationDate, paymentDate: row.otherDate, redemptionDate: ac?.otherDate ?? null,
-      couponDuePct: row.pct, autocallBarrierPct: ac ? autocallPct : autocallPct, couponBarrierPct,
+      couponDuePct: row.pct, autocallBarrierPct: autocallPct, couponBarrierPct,
       status: 'scheduled',
     }
   })
@@ -170,6 +170,17 @@ export const parseBarclays: IssuerParser = (ctx) => {
       status: 'scheduled',
     })
   }
+  // R13.7 § 5 — the "Autocall Valuation Date(s) / Specified Early Cash
+  // Redemption Date(s)" table is a contractual test in its own right. It was
+  // previously read only to populate `redemptionDate` on the coupon row, so
+  // the Autocall Barrier was never evaluated.
+  const scheduled = withAutocallObservations(
+    observations,
+    autocallRows.length > 0 ? autocallRows.map((r) => ({ valuationDate: r.valuationDate, redemptionDate: r.otherDate })) : null,
+    autocallPct,
+  )
+  observations.length = 0
+  observations.push(...scheduled)
   push(field('observations.count', String(observations.length), { sourceSection: 'INTEREST', confidence: observations.length > 0 ? 'high' : 'low', warning: observations.length > 0 ? null : 'No observation schedule extracted' }))
 
   // ── Structure ─────────────────────────────────────────────────────────────
