@@ -90,6 +90,19 @@ export type IdentityVerifier = () => Promise<VerifiedIdentity>
 export type DenialReason =
   | 'unauthenticated'
   | 'not_approved'
+  /**
+   * R13.6F — provisioned, but an administrator has switched this account off.
+   * DISTINCT from `not_approved` because the remedies are opposite: this account
+   * must be REACTIVATED, not provisioned again, and its grants, role and principal
+   * are all still intact waiting for that.
+   */
+  | 'account_disabled'
+  /**
+   * R13.6F — invited, but the invitation has never been accepted. Also distinct:
+   * nothing is wrong with the account, the person simply has not followed their
+   * link, and the fix is to resend the invitation rather than change any access.
+   */
+  | 'account_not_activated'
   /** Approved, but holds no module: no application access at all. */
   | 'no_platform_access'
   /** Inside the platform, but this surface belongs to a module not held. */
@@ -168,6 +181,33 @@ export async function decideRequestAccess(
     return { outcome: 'deny', reason: 'not_approved', status: 403, json }
   }
 
+  // 2b · R13.6F — THE LIFECYCLE GATE, applied before role or grants are consulted.
+  //
+  // A disabled account with a still-valid Supabase session is refused HERE, on the
+  // very next request, because the state is re-read every time rather than trusted
+  // from the token. Hiding navigation or deleting a cookie would not be enough and
+  // is not what happens: `moduleAccessOf` also collapses `isApproved` to false for
+  // this state, so even a caller that bypassed this branch entirely would hold no
+  // module and no scope — and PostgreSQL RLS refuses them a third time underneath.
+  //
+  // Two distinct reasons because the remedies differ: reactivate versus resend.
+  // Ordered disabled-first to match `accountStatus` precedence, so an account
+  // disabled before it was ever accepted reports as disabled rather than pending.
+  // Read DEFENSIVELY. `parseAuthorizationRow` always populates `lifecycle`, but
+  // this function takes its state from an injected lookup, and a state object
+  // assembled by some other caller — a future adapter, an older build, a test —
+  // could omit it. Dereferencing it directly threw a TypeError instead of
+  // denying, which in middleware is strictly worse than any denial: an exception
+  // escaping here is not a decision at all. Absent lifecycle is therefore read as
+  // NOT ACTIVATED, which fails closed.
+  const lifecycle = state.lifecycle
+  if (lifecycle?.disabledAt) {
+    return { outcome: 'deny', reason: 'account_disabled', status: 403, json }
+  }
+  if (!lifecycle?.activatedAt) {
+    return { outcome: 'deny', reason: 'account_not_activated', status: 403, json }
+  }
+
   const access = moduleAccessOf(state)
 
   // 3 · STEP A — PLATFORM ENTITLEMENT. Approval says the account exists; this
@@ -206,7 +246,22 @@ export async function decideRequestAccess(
  * moment an administrator is about to grant them a module. Typing the URL of a
  * module you do not hold is not a reason to lose your session. The boundary
  * refuses the request — it does not end the session.
+ *
+ * R13.6F adds `account_disabled`, which belongs with `not_approved` rather than
+ * with those four: the account has been switched off deliberately, so its cookie
+ * will keep failing on every subsequent request until an administrator acts.
+ *
+ * This is DEFENCE IN DEPTH, never the mechanism. Clearing a cookie is advice to a
+ * cooperating browser and nothing more; a caller who simply keeps replaying the
+ * cookie is still refused here on every request, still holds no module because
+ * `moduleAccessOf` collapses their access, and is still refused by PostgreSQL RLS
+ * underneath. Deleting the cookie only stops the pointless replay.
+ *
+ * NOT done for `account_not_activated`: that session was minted by following a
+ * live invitation link, and the very next thing the invitee does is activate. Ending
+ * their session mid-acceptance would break the flow it exists to serve.
  */
 export function shouldClearSession(decision: AccessDecision): boolean {
-  return decision.outcome === 'deny' && decision.reason === 'not_approved'
+  if (decision.outcome !== 'deny') return false
+  return decision.reason === 'not_approved' || decision.reason === 'account_disabled'
 }

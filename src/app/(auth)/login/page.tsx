@@ -66,6 +66,16 @@ function callbackErrorToMessage(t: ReturnType<typeof useLang>['t'], code: string
     // was never provisioned for this platform.
     case 'not_authorized':
       return t.auth.errNotAuthorized
+    // R13.6F — provisioned, but switched off by an administrator. A third distinct
+    // message: telling a disabled user they are "not authorized" would send them
+    // asking to be set up again, when their account, role, principal and grants are
+    // all still there and one reactivation away.
+    case 'account_disabled':
+      return t.auth.errAccountDisabled
+    // R13.6F — invited, never accepted. The remedy is the invitation link, not an
+    // access change, so it must not read like either of the two above.
+    case 'account_not_activated':
+      return t.auth.errAccountNotActivated
     // POST-R13.6CDE.1 — approved, but granted no module, so there is no
     // application to enter. Deliberately a DIFFERENT message from the one above:
     // this account is provisioned and the administrator needs to grant it

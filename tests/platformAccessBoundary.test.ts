@@ -60,7 +60,24 @@ function code(src: string): string {
 const MIDDLEWARE = read('src/middleware.ts')
 const REQUEST_ACCESS = read('src/lib/auth/requestAccess.ts')
 const LOGIN_PAGE = read('src/app/(auth)/login/page.tsx')
-const CONSOLE = read('src/app/settings/users/UsersAccessClient.tsx')
+// R13.6F — the console is no longer ONE file.
+//
+// The manage flow moved out of `UsersAccessClient.tsx` into `ManageUserDialog.tsx`
+// (and the shared role/principal/module fieldset into `AccountAccessFields.tsx`)
+// when invitation, role, principal and lifecycle editing were added: a single
+// component holding all of it would have been unreadable.
+//
+// The assertions below are about the CONSOLE'S BEHAVIOUR, not about which file
+// happens to hold a line, so they scan the whole surface. Scanning the set rather
+// than re-pointing each assertion at a specific new file also means a future
+// refactor that moves a control again cannot quietly make one of them vacuous.
+const CONSOLE_FILES = [
+  'src/app/settings/users/UsersAccessClient.tsx',
+  'src/app/settings/users/ManageUserDialog.tsx',
+  'src/app/settings/users/InviteUserDialog.tsx',
+  'src/app/settings/users/AccountAccessFields.tsx',
+] as const
+const CONSOLE = CONSOLE_FILES.map(read).join(String.fromCharCode(10))
 const USERS_ROUTE = read('src/app/api/admin/users/route.ts')
 // Imported as SOURCE, not as a module: `moduleApiGuard.ts` pulls in `next/server`,
 // which Node's native test runner cannot resolve.
@@ -104,6 +121,18 @@ const auth = (profile: ProfileFixture, grants: GrantFixture): AuthorizationState
         approved: username.length > 0,
         role: profile.role ?? null,
         grants: grants.grants,
+          // R13.6F — every fixture in this suite is an ACTIVE account. The suite
+          // measures the PLATFORM-ENTITLEMENT boundary (zero grants vs one), so
+          // the lifecycle is held constant: an unset lifecycle would deny for a
+          // different reason and each assertion below would pass vacuously.
+          lifecycle: {
+            approved: username.length > 0,
+            invitedAt: null,
+            activatedAt: '2026-01-01T00:00:00.000Z',
+            disabledAt: null,
+          },
+          usable: username.length > 0,
+          status: 'active' as const,
       },
     }
   }
@@ -691,22 +720,55 @@ describe('Users & Access — zero-module semantics', () => {
   })
 
   it('clearing every switch warns BEFORE the save, while the switches are clear', () => {
+    // R13.6F kept this property and improved its source: the warning is no longer
+    // a hand-written condition in the console but comes from
+    // `provisioningWarnings()` — the same pure rule the invite form and the tests
+    // use. The i18n key moved with it (noPlatformAccessNote -> warnNoModules).
     const src = code(CONSOLE)
-    assert.ok(/shown\.length === 0/.test(src))
-    assert.ok(/t\.usersAccess\.noPlatformAccessNote/.test(src))
+    assert.ok(/shown\.length === 0/.test(src), 'the empty-set condition is still computed')
+    assert.ok(/t\.usersAccess\.warnNoModules/.test(src), 'and it is surfaced before saving')
+    assert.ok(
+      /provisioningWarnings/.test(src),
+      'the warning comes from the shared rule, not a second hand-written condition',
+    )
+    for (const lang of [dict.en, dict.es]) {
+      assert.ok(lang.usersAccess.warnNoModules.trim().length > 0)
+    }
   })
 
   it('a save that removes the last module is confirmed in the app\'s OWN dialog', () => {
     const src = code(CONSOLE)
     assert.ok(!/window\.confirm/.test(src), 'never the browser-native confirm')
-    assert.ok(/<ModalShell/.test(src))
-    assert.ok(/role="alertdialog"/.test(src))
+    // R13.6F routes it through the shared `DestructiveConfirm`, which is the
+    // component that renders role="alertdialog" — so the console no longer spells
+    // that attribute itself. Asserted at BOTH ends, so the guarantee is not lost
+    // in the indirection.
+    assert.ok(/<DestructiveConfirm/.test(src), "the app's own dialog, never the browser's")
+    assert.ok(
+      /role="alertdialog"/.test(code(read('src/components/fable/ModalShell.tsx'))),
+      'and that shared component really is an alertdialog',
+    )
     assert.ok(/t\.usersAccess\.revokeAllTitle/.test(src))
     assert.ok(/t\.usersAccess\.revokeAllBody/.test(src))
     // The Save button routes through the guard, never straight to the mutation.
     assert.ok(/onClick=\{requestSave\}/.test(src))
     const guard = src.slice(src.indexOf('function requestSave'))
-    assert.ok(/shown\.length === 0[\s\S]{0,80}setConfirmRevoke\(true\)/.test(guard))
+
+    // The guard now reads the RESULTING module set rather than the rendered
+    // switches, and — an R13.6F improvement, not a weakening — it only prompts
+    // when the account currently HAS platform access, so confirming is asked for
+    // exactly when something is really being taken away.
+    assert.ok(
+      /modules\.length === 0[\s\S]{0,200}setConfirmRevoke\(true\)/.test(guard),
+      'an empty resulting module set routes to the confirmation',
+    )
+    assert.ok(
+      /hasPlatformAccess/.test(guard),
+      'and only when the account actually has access to lose',
+    )
+    // A member, never an administrator: an administrator holds modules by role, so
+    // clearing their (ignored) switches takes nothing away.
+    assert.ok(/role === 'user'/.test(guard))
   })
 
   it('the confirmation says what is lost, in both languages', () => {
@@ -722,10 +784,35 @@ describe('Users & Access — zero-module semantics', () => {
     assert.match(dict.en.usersAccess.revokeAllBody, /not deleted/i)
   })
 
-  it('no lifecycle state is invented to express this', () => {
-    const src = code(read('src/lib/admin/userDirectory.ts'))
-    const list = src.slice(src.indexOf('ACCOUNT_STATUSES'), src.indexOf('export type AccountStatus'))
-    assert.ok(!/disabled/.test(list), 'a Disabled state the schema cannot express must not be fabricated')
+  it('every lifecycle state the console shows is backed by a real column', () => {
+    // R13.6F INVERTS this assertion, deliberately.
+    //
+    // It used to read "a Disabled state the schema cannot express must not be
+    // fabricated", and that was right at the time: the schema had one bit
+    // (username present or absent), so a Disabled chip would have been a label
+    // with nothing behind it.
+    //
+    // 20260817000000 gave the schema the columns. The property worth protecting is
+    // therefore unchanged — a displayed state must correspond to something stored
+    // — so it is asserted from the other side: the four states exist, and each
+    // non-trivial one is derived from a column the migration actually adds.
+    const lifecycle = code(read('src/lib/auth/accountLifecycle.ts'))
+    const migration = read('supabase/migrations/20260817000000_user_lifecycle_provisioning.sql')
+
+    for (const state of ['active', 'invited', 'disabled', 'unprovisioned']) {
+      assert.ok(new RegExp(`'${state}'`).test(lifecycle), `${state} is a declared state`)
+    }
+    for (const column of ['invited_at', 'activated_at', 'disabled_at']) {
+      assert.match(
+        migration,
+        new RegExp(`add column if not exists\\s+${column}\\s+timestamptz`),
+        `${column} is a real column, so the state it backs is not fabricated`,
+      )
+    }
+    // Derived, never stored: a status column would be a second source of truth
+    // that could disagree with the timestamps that justify it.
+    assert.doesNotMatch(migration, /add column if not exists\s+status\b/)
+    assert.match(lifecycle, /export function accountStatus/)
   })
 })
 

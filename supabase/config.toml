@@ -46,7 +46,15 @@ max_rows = 1000
 # `auth.users`. Disabling auth would make the entitlement tests unrunnable.
 enabled = true
 site_url = "http://127.0.0.1:3000"
-additional_redirect_urls = ["http://127.0.0.1:3000"]
+# R13.6F — the invitation link must come back pointing at the application's own
+# callback, because that is where the session is established and where
+# nmi_activate_current_user() is called. GoTrue does NOT honour an arbitrary
+# redirect_to: one that is not allow-listed here is SILENTLY replaced by
+# site_url, with no error. scripts/ci/authInviteProof.ts proves both halves of
+# that behaviour, so the requirement cannot be forgotten. A wildcard is used
+# because the callback carries a `next` query string, and this is a disposable
+# local stack that is destroyed with the runner.
+additional_redirect_urls = ["http://127.0.0.1:3000", "http://127.0.0.1:3000/**"]
 jwt_expiry = 3600
 enable_refresh_token_rotation = true
 refresh_token_reuse_interval = 10

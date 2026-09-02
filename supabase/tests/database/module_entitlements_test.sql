@@ -50,6 +50,18 @@ insert into public.user_profiles (id, username, email, display_name, role, portf
   -- account is given every grant below. Approval must still be the outer gate.
   ('a5555555-5555-5555-5555-555555555555', null,             'mod_unapproved@test.invalid', 'Unapproved', 'user',          'jaime');
 
+-- R13.6F — these fixtures represent ACTIVE accounts.
+--
+-- The R13.6F lifecycle migration added invited_at/activated_at/disabled_at, and
+-- an account is authorized only when it is approved AND activated AND not
+-- disabled. Those columns are deliberately NULL by default, because a freshly
+-- INVITED account is not yet activated -- so a fixture meant to be live must
+-- say so, exactly as real provisioning does. Without it every assertion below
+-- would pass for the WRONG reason: denied because the fixture was never
+-- activated, rather than because the rule under test denied it.
+update public.user_profiles set activated_at = now()
+ where activated_at is null and disabled_at is null;
+
 -- Explicit grants. `mod_nogrant` deliberately receives none.
 insert into public.user_module_grants (user_id, module_key) values
   ('a2222222-2222-2222-2222-222222222222', 'markets'),

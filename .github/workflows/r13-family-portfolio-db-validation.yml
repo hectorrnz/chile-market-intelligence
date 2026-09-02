@@ -26,6 +26,10 @@ on:
       # POST-R13.6B onwards — the user-access work extends the same entitlement
       # contract and must clear the same isolated-database gate.
       - 'feat/user-access-r13-**'
+      # R13.6F — user provisioning & lifecycle. Same entitlement contract, same
+      # isolated-database gate: the lifecycle columns are now an authorization
+      # input, so they must clear pgTAP before they can reach a deployment.
+      - 'feat/user-provisioning-r13-**'
   pull_request:
     paths:
       - 'supabase/migrations/**'
@@ -41,6 +45,9 @@ on:
       - 'tests/moduleRequestEnforcement.test.ts'
       - 'tests/platformAccessBoundary.test.ts'
       - 'tests/usersAccessIntegration.test.ts'
+      - 'tests/userLifecycle.test.ts'
+      - 'tests/userProvisioning.test.ts'
+      - 'tests/inviteFlow.test.ts'
       - 'scripts/ci/**'
       - '.github/workflows/r13-family-portfolio-db-validation.yml'
 
@@ -302,6 +309,15 @@ jobs:
       # softened into a permissive fallback.
       - name: Prove the PostgREST embedded authorization query (§ 17 / § 18)
         run: node scripts/ci/postgrestEmbedProof.ts
+
+      # R13.6F § 28 — the invitation flow rests on one Auth Admin call whose
+      # SERVER behaviour cannot be read off the installed package: whether it
+      # creates auth.users, what id comes back, and what a second invite for the
+      # same address does. The compensating delete and the resend path both depend
+      # on those answers, so they are proved against the real GoTrue in this
+      # disposable stack rather than assumed.
+      - name: Prove the Auth Admin invite contract (R13.6F § 28)
+        run: node scripts/ci/authInviteProof.ts
 
       # Both halves of the SQL <-> TypeScript parity contract must agree. The SQL
       # half executed during `db reset`; this is the TypeScript half.

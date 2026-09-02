@@ -29,7 +29,7 @@ import {
   decideGrantChange,
   normalizeRequestedModules,
   buildGrantAuditEntries,
-  accountStatusOf,
+  accountStatusOf, accountUsableOf,
   ACCOUNT_STATUSES,
 } from '../src/lib/admin/userDirectory.ts'
 import { APP_MODULE_KEYS, type ModuleKey } from '../src/lib/auth/moduleAccess.ts'
@@ -57,7 +57,24 @@ const MODULES_ROUTE = read('src/app/api/admin/users/[id]/modules/route.ts')
 const ME_ROUTE = read('src/app/api/me/access/route.ts')
 const USERS_PAGE = read('src/app/settings/users/page.tsx')
 const SETTINGS_CARD = read('src/app/settings/UsersAccessCard.tsx')
-const CONSOLE = read('src/app/settings/users/UsersAccessClient.tsx')
+// R13.6F — the console is no longer ONE file.
+//
+// The manage flow moved out of `UsersAccessClient.tsx` into `ManageUserDialog.tsx`
+// (and the shared role/principal/module fieldset into `AccountAccessFields.tsx`)
+// when invitation, role, principal and lifecycle editing were added: a single
+// component holding all of it would have been unreadable.
+//
+// The assertions below are about the CONSOLE'S BEHAVIOUR, not about which file
+// happens to hold a line, so they scan the whole surface. Scanning the set rather
+// than re-pointing each assertion at a specific new file also means a future
+// refactor that moves a control again cannot quietly make one of them vacuous.
+const CONSOLE_FILES = [
+  'src/app/settings/users/UsersAccessClient.tsx',
+  'src/app/settings/users/ManageUserDialog.tsx',
+  'src/app/settings/users/InviteUserDialog.tsx',
+  'src/app/settings/users/AccountAccessFields.tsx',
+] as const
+const CONSOLE = CONSOLE_FILES.map(read).join(String.fromCharCode(10))
 const HOME = read('src/app/page.tsx')
 const SN_LIST = read('src/app/structured-notes/page.tsx')
 const SN_DETAIL = read('src/app/structured-notes/[id]/page.tsx')
@@ -342,8 +359,21 @@ describe('POST-R13.6CDE · F — the admin routes authorize before reading', () 
   }
 
   it('the list route selects a narrow column list, never *', () => {
-    assert.ok(USERS_ROUTE.includes("select('id, email, display_name, username, role, portfolio_principal')"))
-    assert.ok(!/\.select\(['"]\*['"]\)/.test(USERS_ROUTE))
+    // R13.6F widened this by exactly the three lifecycle columns, which the
+    // directory needs to tell Invited from Active from Disabled. The property is
+    // unchanged — an explicit list, no wildcard — so it is asserted as a property
+    // rather than as one frozen string that has to be retyped on every change.
+    const m = USERS_ROUTE.match(/\.select\('([^']+)'\)/)
+    assert.ok(m, 'the list route uses an explicit column list')
+    const columns = m![1].split(',').map((c) => c.trim())
+    assert.ok(!/\.select\(['"]\*['"]\)/.test(USERS_ROUTE), 'never select *')
+    for (const required of [
+      'id', 'email', 'display_name', 'username', 'role', 'portfolio_principal',
+      'invited_at', 'activated_at', 'disabled_at',
+    ]) {
+      assert.ok(columns.includes(required), `${required} must be read`)
+    }
+    assert.ok(!columns.includes('preferences'), 'no column the console does not use')
   })
 
   it('the list route never returns a secret or preferences blob', () => {
@@ -360,18 +390,36 @@ describe('POST-R13.6CDE · F — the admin routes authorize before reading', () 
     assert.match(USERS_ROUTE, /grantsRes\.error[\s\S]{0,200}status: 500/)
   })
 
-  it('the write route takes a complete set and diffs server-side', () => {
-    assert.ok(MODULES_ROUTE.includes('decideGrantChange'))
-    assert.ok(MODULES_ROUTE.includes('decision.toGrant'))
-    assert.ok(MODULES_ROUTE.includes('decision.toRevoke'))
+  it('the write route takes a complete set and diffs it inside ONE transaction', () => {
+    // R13.6F moved the diff from the route into PostgreSQL, deliberately.
+    //
+    // The old shape issued an INSERT, then a DELETE, then an audit INSERT as three
+    // independent statements, and reported `audited: false` with a 200 when the
+    // last one failed — so "access changed, audit missing" was a representable
+    // outcome. `nmi_admin_update_access` performs the grant changes AND their
+    // audit rows in one transaction, so the property asserted here is now the
+    // stronger one: the route sends the complete desired set and lets the database
+    // reconcile it atomically.
+    assert.ok(MODULES_ROUTE.includes('nmi_admin_update_access'), 'writes through the transactional RPC')
+    assert.ok(MODULES_ROUTE.includes('p_modules'), 'sends the complete desired set')
+    // The separate statements are GONE — the route must not write grants itself.
+    const c = code(MODULES_ROUTE)
+    assert.ok(!/from\('user_module_grants'\)/.test(c), 'no direct grant table write remains')
+    assert.ok(!/from\('family_portfolio_access_audit'\)/.test(c), 'no separate audit insert remains')
   })
 
   it('the write route writes nothing when nothing changed', () => {
-    assert.match(MODULES_ROUTE, /if \(!decision\.changed\)[\s\S]{0,160}changed: false/)
+    assert.match(MODULES_ROUTE, /if \(!changed\)[\s\S]{0,200}changed: false/)
   })
 
   it('the write route never widens a denial into a success', () => {
-    assert.match(MODULES_ROUTE, /if \(!decision\.allowed\)[\s\S]{0,200}status: DENIAL_STATUS/)
+    // Every refusal — the route's own preconditions and the database's — returns
+    // the refusal's status, never a 200.
+    assert.match(MODULES_ROUTE, /target_not_found[\s\S]{0,80}status: 404/)
+    assert.match(MODULES_ROUTE, /target_not_approved[\s\S]{0,80}status: 409/)
+    assert.match(MODULES_ROUTE, /target_is_administrator[\s\S]{0,80}status: 409/)
+    // An RPC refusal is classified, and its status is what is returned.
+    assert.match(MODULES_ROUTE, /classifyRpcError\(error\)[\s\S]{0,220}status(,| )/)
   })
 })
 
@@ -410,27 +458,60 @@ describe('POST-R13.6CDE · H — the checkbox grid mirrors stored rows', () => {
     // meaning something the authorization layer does not believe. Compared
     // against comment-stripped source: several of these files EXPLAIN why they
     // do not use it, and an explanation must not fail the check it documents.
-    for (const [name, src] of [['console', CONSOLE], ['list', USERS_ROUTE], ['write', MODULES_ROUTE]] as const) {
+    // R13.6F — the LIST and WRITE paths still must never mention it: those decide
+    // and report access, and a default has no standing there.
+    for (const [name, src] of [['list', USERS_ROUTE], ['write', MODULES_ROUTE]] as const) {
       assert.ok(!code(src).includes('default_for_member'), name)
+    }
+
+    // The console now legitimately reads it in ONE place — pre-ticking the switches
+    // on a NEW member's invitation form (§7). That is provisioning metadata used as
+    // provisioning metadata. The property protected here is that it stays confined
+    // to that: it appears only in the invite dialog, and never in the directory,
+    // the manage dialog, or the shared access fieldset, where it could look like a
+    // statement about what an EXISTING account holds.
+    const invite = code(read('src/app/settings/users/InviteUserDialog.tsx'))
+    assert.ok(invite.includes('defaultModulesForNewMember'), 'the invite form seeds from the helper')
+    for (const f of [
+      'src/app/settings/users/UsersAccessClient.tsx',
+      'src/app/settings/users/ManageUserDialog.tsx',
+      'src/app/settings/users/AccountAccessFields.tsx',
+    ]) {
+      assert.ok(!code(read(f)).includes('default_for_member'), f)
+      assert.ok(!code(read(f)).includes('defaultModulesForNewMember'), f)
     }
   })
 
-  it('a failed save discards the draft and re-reads authoritative state', () => {
-    const save = CONSOLE.slice(CONSOLE.indexOf('async function save()'))
+  it('a failed save re-reads authoritative state on every path', () => {
+    // R13.6F moved the manage flow into its own dialog, whose draft is local state
+    // re-seeded from the directory row each time it opens - so "discard the draft"
+    // is now structural rather than an explicit reset. The property that matters is
+    // unchanged and is what is asserted: no path through save() leaves the console
+    // showing an optimistic value, because every one re-reads the server.
+    const dialog = code(read('src/app/settings/users/ManageUserDialog.tsx'))
+    const save = dialog.slice(dialog.indexOf('async function save()'))
     const body = save.slice(0, save.indexOf('\n  }'))
-    assert.ok(body.includes("setSaveState('error')"))
-    // Every error path must clear the draft AND reload.
-    assert.equal((body.match(/setDraft\(null\)/g) ?? []).length >= 3, true)
-    assert.equal((body.match(/await reload\(\)/g) ?? []).length >= 3, true)
+    assert.ok(body.includes('setError('), 'a failure is surfaced, never swallowed')
+    const reloads = (body.match(/await reload\(\)/g) ?? []).length
+    assert.ok(reloads >= 3, `every path re-reads authoritative state (found ${reloads})`)
   })
 
-  it('offers no module checkboxes for an administrator target', () => {
-    assert.match(CONSOLE, /open\.isAdministrator \? \([\s\S]{0,300}adminBypassNote/)
+  it('offers no usable module switches for an administrator target', () => {
+    // An administrator holds every module by role, so a switch there would imply a
+    // grant that does not exist and is never consulted.
+    const fields = code(read('src/app/settings/users/AccountAccessFields.tsx'))
+    assert.match(fields, /disabled=\{[^}]*isAdmin[^}]*\}/, 'the switches are disabled for an administrator')
+    assert.ok(fields.includes('adminBypassNote'), 'and the full-access reason is stated')
   })
 
   it('presents portfolio scope as a locked statement, never as controls', () => {
-    assert.ok(CONSOLE.includes('portfolioLocked'))
-    // No checkbox may be bound to a portfolio scope.
+    // The ceiling is frozen, and the console must not appear to offer it for
+    // editing. R13.6F renders it as the immutable ceiling plus the effective result.
+    const fields = code(read('src/app/settings/users/AccountAccessFields.tsx'))
+    assert.ok(fields.includes('ceilingLabel'), 'the immutable ceiling is stated')
+    assert.ok(fields.includes('principalCeiling'), 'and it comes from the frozen rule')
+    assert.ok(fields.includes('projectedPortfolioScopes'), 'the effective result is composed, not typed')
+    // No control may be bound to a scope, anywhere on the console surface.
     assert.ok(!/type="checkbox"[\s\S]{0,200}portfolioScopes/.test(CONSOLE))
     assert.ok(!/portfolioScopes[\s\S]{0,200}type="checkbox"/.test(CONSOLE))
   })
@@ -678,23 +759,52 @@ describe('POST-R13.6CDE · M — Structured Notes tells the truth about why', ()
 
 // ─────────────────────────────────────────────────────────────────────────────
 describe('POST-R13.6CDE · N — account status is not fabricated', () => {
-  it('reports only the two states the schema can express', () => {
-    assert.deepEqual([...ACCOUNT_STATUSES], ['active', 'pending'])
-    assert.ok(!DIRECTORY.includes("'disabled'"), 'no disabled state without a column that records one')
+  it('reports exactly the states the schema can express - now four', () => {
+    // R13.6F INVERTS this, deliberately. It used to assert two states and the
+    // ABSENCE of 'disabled', because the schema had one bit and a Disabled chip
+    // would have been a label with nothing behind it. 20260817000000 added the
+    // columns, so the same property - never show a state the schema cannot record
+    // - is now asserted the other way round.
+    assert.deepEqual([...ACCOUNT_STATUSES], ['active', 'invited', 'disabled', 'unprovisioned'])
+    const migration = read('supabase/migrations/20260817000000_user_lifecycle_provisioning.sql')
+    for (const column of ['invited_at', 'activated_at', 'disabled_at']) {
+      assert.match(migration, new RegExp('add column if not exists\\s+' + column), column)
+    }
   })
 
   it('matches the approval definition used by every authorization layer', () => {
-    assert.equal(accountStatusOf({ username: 'someone' }), 'active')
-    assert.equal(accountStatusOf({ username: '   ' }), 'pending')
-    assert.equal(accountStatusOf({ username: null }), 'pending')
-    assert.equal(accountStatusOf(null), 'pending')
-    assert.equal(accountStatusOf(undefined), 'pending')
+    // R13.6F - status is derived from approval PLUS the lifecycle columns, so an
+    // approved account only reads 'active' once it has actually been activated.
+    assert.equal(
+      accountStatusOf({ username: 'someone', activated_at: '2026-01-01T00:00:00.000Z' }),
+      'active',
+    )
+    assert.equal(accountStatusOf({ username: 'someone', invited_at: '2026-01-01T00:00:00.000Z' }), 'invited')
+    assert.equal(accountStatusOf({ username: 'someone', disabled_at: '2026-02-01T00:00:00.000Z' }), 'disabled')
+
+    // Approval itself is still exactly the predicate every authorization layer uses.
+    for (const blank of [{ username: '   ' }, { username: null }, null, undefined]) {
+      assert.equal(accountUsableOf(blank), false, JSON.stringify(blank))
+    }
+    assert.equal(
+      accountUsableOf({ username: 'someone', activated_at: '2026-01-01T00:00:00.000Z' }),
+      true,
+    )
   })
 
-  it('records why disabled is absent rather than leaving it unexplained', () => {
-    assert.match(DIRECTORY, /disabled_at/)
-    assert.match(DIRECTORY, /deferred/i)
-  })
+  it('disabled is no longer deferred - it is derived from a real column', () => {
+      // R13.6F. This assertion previously required the directory to EXPLAIN why a
+      // Disabled state was absent. It still PASSED after the lifecycle shipped -
+      // `disabled_at` and the word "deferred" both happened to survive elsewhere
+      // in the file - which made it a guard that no longer guarded anything.
+      // Updated to assert what is now true, so it fails if the derivation is
+      // ever removed.
+      assert.match(DIRECTORY, /disabled_at/)
+      assert.match(DIRECTORY, /accountStatus/, 'status is derived, not fabricated')
+      const off = { username: 'x', activated_at: '2026-01-01T00:00:00.000Z', disabled_at: '2026-02-01T00:00:00.000Z' }
+      assert.equal(accountStatusOf(off), 'disabled')
+      assert.equal(accountUsableOf(off), false, 'and it actually denies, rather than being a label')
+    })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -706,11 +816,31 @@ describe('POST-R13.6CDE · O — no regression in the existing boundaries', () =
     }
   })
 
-  it('role and principal are displayed, never written, from the console', () => {
-    assert.ok(CONSOLE.includes('managedElsewhere'))
-    assert.ok(!/method: 'PUT'[\s\S]{0,200}(role|principal)/.test(CONSOLE))
-    assert.ok(!MODULES_ROUTE.includes("'role'"), 'the module route must not write a role')
-    assert.ok(!MODULES_ROUTE.includes('portfolio_principal'))
+  it('role and principal ARE now written from the console, audited and guarded', () => {
+    // R13.6F REVERSES this assertion, which is the point of the stage: the console
+    // used to say "CLI only" for role and principal, and section 17 required that
+    // to end.
+    //
+    // What replaces the old prohibition is not "anything goes" - it is that the
+    // write goes through the one transactional, audited, administrator-checked
+    // path, and that the last-administrator invariant sits underneath it.
+    const dialog = code(read('src/app/settings/users/ManageUserDialog.tsx'))
+    assert.match(dialog, /method: 'PUT'/, 'the console saves through PUT')
+    assert.ok(dialog.includes('role'), 'role is editable')
+    assert.ok(dialog.includes('principal'), 'principal is editable')
+    assert.ok(!CONSOLE.includes('managedElsewhere'), 'the "CLI only" copy is gone')
+
+    const accessRoute = code(read('src/app/api/admin/users/[id]/route.ts'))
+    assert.ok(accessRoute.includes('nmi_admin_update_access'), 'through the transactional RPC')
+    assert.ok(accessRoute.includes('resolveAccountShape'), 'validated and canonicalized first')
+
+    // The MODULES-only endpoint still must not CHANGE either: it reads the current
+    // values and passes them straight back, so a module edit cannot clear someone's
+    // Portfolio principal as a side effect.
+    assert.match(MODULES_ROUTE, /select\('role, portfolio_principal'\)/)
+    assert.match(MODULES_ROUTE, /p_role: shapeRes\.data\.role/)
+    assert.match(MODULES_ROUTE, /p_principal: currentPrincipal/)
+    assert.ok(!/body\??\.role/.test(MODULES_ROUTE), 'never a role taken from the request body')
   })
 
   it('notification recipients never became a module checkbox', () => {

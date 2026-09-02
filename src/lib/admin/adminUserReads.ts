@@ -23,16 +23,26 @@
 // (`scripts/admin/setUserRole.ts`), outside the Next.js router and unreachable
 // over HTTP. Nothing in this stage changes that.
 
-import { accountStatusOf } from './userDirectory.ts'
+import { accountStatusOf, accountUsableOf } from './userDirectory.ts'
 import { moduleAccessFromProfile } from '../auth/moduleAccess.ts'
+import type { AccountStatus } from '../auth/accountLifecycle.ts'
 
 /** The facts `decideGrantChange` needs about a target account. */
 export interface AdminTargetFacts {
   exists: boolean
+  /**
+   * R13.6F — USABLE, not merely approved: activated and not disabled as well.
+   *
+   * Renaming this would have touched every caller for no benefit; what changed is
+   * the MEANING, and it changed in the safe direction — a disabled account is no
+   * longer a valid target for a mutation that assumes a live user.
+   */
   isApproved: boolean
   isAdministrator: boolean
   /** Raw `module_key` values, unvalidated — the decision layer narrows them. */
   currentModules: string[]
+  /** R13.6F — the derived status, so a caller can say WHY a target was refused. */
+  status: AccountStatus
   /** True when a read failed. The caller must NOT treat this as "no access". */
   readFailed: boolean
 }
@@ -42,6 +52,7 @@ const UNREADABLE: AdminTargetFacts = {
   isApproved: false,
   isAdministrator: false,
   currentModules: [],
+  status: 'unprovisioned',
   readFailed: true,
 }
 
@@ -66,7 +77,13 @@ export async function readAdminTargetFacts(
         select: (c: string) => {
           eq: (col: string, val: string) => {
             maybeSingle: () => Promise<{
-              data: { username: string | null; role: string | null } | null
+              data: {
+                username: string | null
+                role: string | null
+                invited_at: string | null
+                activated_at: string | null
+                disabled_at: string | null
+              } | null
               error: unknown
             }>
           }
@@ -75,7 +92,7 @@ export async function readAdminTargetFacts(
     }
   )
     .from('user_profiles')
-    .select('id, username, role')
+    .select('id, username, role, invited_at, activated_at, disabled_at')
     .eq('id', targetUserId)
     .maybeSingle()
 
@@ -104,9 +121,14 @@ export async function readAdminTargetFacts(
 
   return {
     exists: profile !== null,
-    isApproved: accountStatusOf(profile) === 'active',
+    // R13.6F — `accountStatusOf(...) === 'active'` would NOT have been correct
+    // here: an unapproved row that happens to carry an activated_at also derives
+    // status 'active' (see the lifecycle truth table). Usability is the predicate
+    // that actually combines approval with the lifecycle, so it is the one used.
+    isApproved: accountUsableOf(profile),
     isAdministrator: access.isAdministrator,
     currentModules: (grantRes.data ?? []).map((r) => r.module_key),
+    status: accountStatusOf(profile),
     readFailed: false,
   }
 }

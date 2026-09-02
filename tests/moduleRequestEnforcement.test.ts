@@ -39,6 +39,7 @@ import {
   moduleAccessOf,
   AUTHORIZATION_STATE_SELECT,
   type AuthorizationStateLookup,
+  type AuthorizationState,
 } from '../src/lib/auth/authorizationState.ts'
 import {
   resolvePathModule,
@@ -49,6 +50,36 @@ import { classifyPath, requiresApprovedSession } from '../src/lib/auth/accessPol
 import { ACCESS_DENIED_REASONS } from '../src/lib/auth/approval.ts'
 import { scopesFor } from '../src/lib/portfolioAccess/entitlements.ts'
 import { portfolioVisibleScopes } from '../src/lib/portfolioAccess/portfolioModuleComposition.ts'
+
+/**
+ * R13.6F — builds a complete `AuthorizationState`.
+ *
+ * The type gained `lifecycle`, `usable` and `status` when account lifecycle became
+ * an authorization input. These cases were written to exercise the MODULE rules,
+ * with approval as the gate, so each fixture is an ACTIVE account and says so
+ * explicitly rather than relying on a default — a state that failed to declare its
+ * lifecycle would be treated as never-activated and would deny for the wrong
+ * reason, making every assertion below pass vacuously.
+ */
+function st(o: {
+  userId: string
+  approved: boolean
+  role: string | null
+  grants: readonly string[]
+}): AuthorizationState {
+  return {
+    ...o,
+    lifecycle: {
+      approved: o.approved,
+      invitedAt: null,
+      activatedAt: '2026-01-01T00:00:00.000Z',
+      disabledAt: null,
+    },
+    usable: o.approved,
+    status: 'active',
+  }
+}
+
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
@@ -66,12 +97,12 @@ const rejected: IdentityVerifier = async () => ({ user: null })
 /** An approved member holding exactly these modules. */
 const memberWith = (...grants: string[]): AuthorizationStateLookup => async () => ({
   ok: true,
-  state: { userId: USER.id, approved: true, role: 'member', grants },
+  state: st({ userId: USER.id, approved: true, role: 'member', grants }),
 })
 /** An approved administrator, deliberately holding no grant rows. */
 const admin: AuthorizationStateLookup = async () => ({
   ok: true,
-  state: { userId: USER.id, approved: true, role: 'administrator', grants: [] },
+  state: st({ userId: USER.id, approved: true, role: 'administrator', grants: [] }),
 })
 const storeFailed: AuthorizationStateLookup = async () => ({ ok: false })
 
@@ -373,7 +404,7 @@ describe('Portfolio and Alternatives are independent grants', () => {
         const grants = APP_MODULE_KEYS.filter((_, i) => (mask >> i) & 1)
         const visible = portfolioVisibleScopes(
           entitlement,
-          moduleAccessOf({ userId: 'u', approved: true, role: 'member', grants }),
+          moduleAccessOf(st({ userId: 'u', approved: true, role: 'member', grants })),
         )
         for (const s of visible) {
           assert.ok(ceiling.includes(s), `${principal} saw ${s}, outside the ceiling`)
@@ -610,8 +641,8 @@ describe('an unclassified private surface is unreachable', () => {
 
   it('bindingSatisfiedBy denies an unmapped binding for every possible caller', () => {
     for (const access of [
-      moduleAccessOf({ userId: 'u', approved: true, role: 'administrator', grants: [] }),
-      moduleAccessOf({ userId: 'u', approved: true, role: 'member', grants: [...APP_MODULE_KEYS] }),
+      moduleAccessOf(st({ userId: 'u', approved: true, role: 'administrator', grants: [] })),
+      moduleAccessOf(st({ userId: 'u', approved: true, role: 'member', grants: [...APP_MODULE_KEYS] })),
     ]) {
       assert.equal(bindingSatisfiedBy({ kind: 'unmapped' }, access), false)
     }
@@ -700,6 +731,12 @@ describe('parseAuthorizationRow — the fail-closed parse (§13)', () => {
     id: USER.id,
     username: 'member-1',
     role: 'member',
+    // R13.6F — an ACTIVE account. The lifecycle columns are authorization inputs
+    // now, and a fixture that omitted them would parse as never-activated: every
+    // assertion here would still pass, but for the wrong reason.
+    invited_at: null,
+    activated_at: '2026-01-01T00:00:00.000Z',
+    disabled_at: null,
     user_module_grants: [{ module_key: 'macro' }],
     ...over,
   })
@@ -724,7 +761,7 @@ describe('parseAuthorizationRow — the fail-closed parse (§13)', () => {
     assert.equal(r.ok, true)
     assert.equal(r.ok && r.state?.approved, true)
     assert.deepEqual(r.ok && r.state ? [...r.state.grants] : null, [])
-    assert.equal(moduleAccessOf(r.ok && r.state ? r.state : { userId: '', approved: false, role: null, grants: [] }).isAdministrator, true)
+    assert.equal(moduleAccessOf(r.ok && r.state ? r.state : st({ userId: '', approved: false, role: null, grants: [] })).isAdministrator, true)
   })
 
   it('a member with one grant parses that grant and only that grant', () => {
@@ -798,14 +835,14 @@ describe('parseAuthorizationRow — the fail-closed parse (§13)', () => {
       const r = parseAuthorizationRow(USER.id, row({ role }))
       assert.equal(r.ok && r.state?.role, null)
       assert.equal(
-        moduleAccessOf(r.ok && r.state ? r.state : { userId: '', approved: false, role: null, grants: [] }).isAdministrator,
+        moduleAccessOf(r.ok && r.state ? r.state : st({ userId: '', approved: false, role: null, grants: [] })).isAdministrator,
         false,
       )
     }
   })
 
   it('an unapproved state is never administrator, whatever the role column says', () => {
-    const access = moduleAccessOf({ userId: 'u', approved: false, role: 'administrator', grants: [] })
+    const access = moduleAccessOf(st({ userId: 'u', approved: false, role: 'administrator', grants: [] }))
     assert.equal(access.isAdministrator, false)
   })
 

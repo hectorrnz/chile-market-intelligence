@@ -48,8 +48,22 @@
 // `getModuleAccess.ts`.
 
 import type { ModuleAccessInput } from './moduleAccess.ts'
+import {
+  isAccountUsable,
+  lifecycleFromProfile,
+  accountStatus,
+  type AccountLifecycle,
+  type AccountStatus,
+} from './accountLifecycle.ts'
 
-/** The three authorization facts, resolved together from one row. */
+/**
+ * The authorization facts, resolved together from one row.
+ *
+ * R13.6F added the lifecycle triple. It rides on the SAME query — three more
+ * columns on a row already being read — so the single-query design is preserved
+ * exactly: there is still no second round-trip and still no second snapshot taken
+ * at a different instant.
+ */
 export interface AuthorizationState {
   readonly userId: string
   /** Non-empty `user_profiles.username` — the platform approval marker. */
@@ -58,6 +72,18 @@ export interface AuthorizationState {
   readonly role: string | null
   /** Explicit `user_module_grants.module_key` values, unvalidated strings. */
   readonly grants: readonly string[]
+  /** R13.6F — `invited_at` / `activated_at` / `disabled_at`, plus approval. */
+  readonly lifecycle: AccountLifecycle
+  /**
+   * R13.6F — approved AND activated AND NOT disabled.
+   *
+   * This is what every downstream rule receives as its `isApproved` input (see
+   * `moduleAccessOf`), so lifecycle enforcement is applied once, at the input,
+   * rather than re-checked by each consumer.
+   */
+  readonly usable: boolean
+  /** R13.6F — derived, for administrator presentation only. Never authorization. */
+  readonly status: AccountStatus
 }
 
 /**
@@ -83,6 +109,10 @@ export interface AuthorizationRow {
   id?: unknown
   username?: unknown
   role?: unknown
+  /** R13.6F lifecycle columns, read on the same row. */
+  invited_at?: unknown
+  activated_at?: unknown
+  disabled_at?: unknown
   /** PostgREST names the embedded resource after the related table. */
   user_module_grants?: unknown
 }
@@ -121,6 +151,18 @@ export function parseAuthorizationRow(
 
   const username = typeof row.username === 'string' ? row.username.trim() : ''
 
+  // R13.6F — read from the same row. A deployment whose database predates
+  // 20260817000000 returns these columns as `undefined`, which `lifecycleFromProfile`
+  // reads as "never activated" and therefore DENIES. That is the correct direction
+  // for a fail-closed system, and it is why the migration backfills `activated_at`
+  // for every already-approved account before the code that reads it ships.
+  const lifecycle = lifecycleFromProfile({
+    username: row.username,
+    invited_at: row.invited_at,
+    activated_at: row.activated_at,
+    disabled_at: row.disabled_at,
+  })
+
   return {
     ok: true,
     state: {
@@ -128,6 +170,9 @@ export function parseAuthorizationRow(
       approved: username.length > 0,
       role: typeof row.role === 'string' ? row.role : null,
       grants,
+      lifecycle,
+      usable: isAccountUsable(lifecycle),
+      status: accountStatus(lifecycle),
     },
   }
 }
@@ -141,9 +186,26 @@ export function parseAuthorizationRow(
  * both are asserted against the same truth table.
  */
 export function moduleAccessOf(state: AuthorizationState): ModuleAccessInput {
+  // Defensive for the same reason `decideRequestAccess` is: a state assembled by
+  // something other than `parseAuthorizationRow` could omit `usable`, and reading
+  // `undefined` as permission would be the one direction that must never happen.
+  const usable = state.usable === true
+  // R13.6F — USABILITY, not bare approval, is the outer gate.
+  //
+  // This one substitution is what makes lifecycle enforcement complete in
+  // TypeScript, and it mirrors exactly what the migration does in SQL by feeding
+  // `nmi_profile_usable(...)` into the `is_approved` argument of
+  // `nmi_module_allowed` and `nmi_portfolio_scopes`.
+  //
+  // Both of those rules already deny EVERYTHING — administrators included — when
+  // `isApproved` is false. So a disabled or never-activated account loses every
+  // module, `canEnterPlatform`, and every Portfolio scope through rules that are
+  // not themselves modified. Enforcing at the input rather than at each consumer
+  // is what makes it impossible for a module or scope added later to escape the
+  // check by forgetting to repeat it.
   return {
-    isApproved: state.approved,
-    isAdministrator: state.approved && state.role === 'administrator',
+    isApproved: usable,
+    isAdministrator: usable && state.role === 'administrator',
     grants: state.grants,
   }
 }
@@ -155,4 +217,5 @@ export function moduleAccessOf(state: AuthorizationState): ModuleAccessInput {
  * string. Two hand-written copies would be two things to keep in step, and the
  * one that drifted would be the one nobody looked at.
  */
-export const AUTHORIZATION_STATE_SELECT = 'id, username, role, user_module_grants(module_key)'
+export const AUTHORIZATION_STATE_SELECT =
+  'id, username, role, invited_at, activated_at, disabled_at, user_module_grants(module_key)'
