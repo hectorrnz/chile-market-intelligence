@@ -494,6 +494,13 @@ describe('POST-R13.6B.1 — the executable half covers the bypass path', () => {
     assert.ok(PGTAP.includes('an administrator CAN read the recipient list'))
     assert.ok(PGTAP.includes('service_role can still read recipients for delivery'))
     assert.ok(PGTAP.includes('service_role can still write price snapshots'))
+    // R13.7B2.1 — the delivery cron's write capability is now asserted
+    // DIRECTLY. Before 20260818000000 `notifications` carried no explicit grant
+    // in any migration, so the cron could only write it by inheriting a hosted
+    // project's default privileges; the pgTAP file could do no better than
+    // compare it against an untouched control.
+    assert.ok(PGTAP.includes('now granted explicitly, not inherited'))
+    assert.ok(PGTAP.includes('service_role can still write the monitoring/audit sink'))
   })
 
   it('proves personal notification state survives the hardening', () => {

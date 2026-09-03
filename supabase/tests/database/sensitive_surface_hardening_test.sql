@@ -337,17 +337,24 @@ select ok(has_table_privilege('service_role', 'public.structured_note_monitoring
   'service_role can still open a monitoring run');
 select ok(has_table_privilege('service_role', 'public.structured_note_observations', 'UPDATE'),
   'service_role can still record an observation result');
--- `notifications` is outside this migration's scope entirely: it carries no
--- explicit grant in ANY migration, so in this isolated stack NEITHER
--- `service_role` nor `authenticated` holds a privilege on it -- while a hosted
--- project's default privileges grant both (the delivery cron writes to it on
--- every run). Asserting the raw privilege would test the environment, so this
--- uses the same parity form as section 8: the only thing this stage can and
--- must prove is that 20260815000000 did not narrow it.
-select is(
-  has_table_privilege('service_role', 'public.notifications', 'INSERT'),
-  has_table_privilege('service_role', 'public.watchlists', 'INSERT'),
-  'notifications keeps the same service_role INSERT posture as an untouched control');
+-- R13.7B2.1 REPLACED A PARITY ASSERTION HERE, and the reason is worth stating.
+--
+-- Until 20260818000000, `notifications` carried NO explicit grant in any
+-- migration. In this isolated stack that meant NEITHER `service_role` nor
+-- `authenticated` held any privilege on it, while a hosted project's default
+-- privileges granted both -- so the delivery cron's ability to write the feed
+-- at all was inherited from the environment rather than stated by the schema.
+-- The old assertion could therefore only compare it against an untouched
+-- control and prove that 20260815000000 had not narrowed it.
+--
+-- 20260818000000 states the grant, which is a strengthening: service_role's
+-- write capability is now a property of the schema in EVERY environment, and
+-- can be asserted directly. This is the same reason the reads in section 8
+-- became real role-session tests instead of privilege comparisons.
+select ok(has_table_privilege('service_role', 'public.notifications', 'INSERT'),
+  'service_role can still deliver a notification -- now granted explicitly, not inherited');
+select ok(has_table_privilege('service_role', 'public.structured_note_monitoring_runs', 'INSERT'),
+  'service_role can still write the monitoring/audit sink -- explicitly granted');
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
