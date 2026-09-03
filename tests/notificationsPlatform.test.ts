@@ -38,6 +38,43 @@ describe('migration hygiene', () => {
     assert.ok(!MIGRATION.includes('"notifications_update"'))
     assert.ok(!MIGRATION.includes('"notifications_delete"'))
   })
+  // HISTORICAL, same shape as the recipient assertions below. This migration
+  // gave every authenticated account the whole feed, and its own header called
+  // that intentional. The file is unchanged so the assertion still describes
+  // it — but it stopped describing the system at R13.7B2.1, because every row
+  // the feed has ever carried is a Structured Notes operational alert naming an
+  // ISIN, a contractual valuation date and each underlying's level against its
+  // own call threshold. The paired test below is what keeps this honest.
+  it('historically let any authenticated account read the whole feed', () => {
+    assert.ok(MIGRATION.includes('create policy "notifications_select" on notifications for select using (auth.uid() is not null)'))
+    assert.ok(MIGRATION.includes('Any authenticated user can read the whole feed'))
+  })
+
+  it('is SUPERSEDED: the feed is administrator-only, at the database and at the route', () => {
+    const hardening = readFileSync(
+      new URL('../supabase/migrations/20260818000000_structured_notes_operational_alert_hardening.sql', import.meta.url),
+      'utf8',
+    )
+    // Pin the FEED policy's own predicate, not merely the policy name and the
+    // presence of the function somewhere in the file — the monitoring-run
+    // policy also calls it, so a name-only check would survive the feed being
+    // quietly re-gated behind a module grant.
+    assert.match(
+      hardening,
+      /create policy "notifications_admin_select" on public\.notifications\s+for select to authenticated\s+using \(\(select public\.nmi_is_administrator\(\)\)\)/,
+    )
+    // Still no user-reachable write path, and still no module gate: alert
+    // access is a role, never something a module grant can confer.
+    assert.ok(!/create policy [^\n]*for (insert|update|delete)/i.test(hardening))
+    assert.ok(hardening.includes('still references the module gate'))
+    // Personal read-state is explicitly preserved, as in the earlier stage.
+    assert.ok(hardening.includes('notification_reads must keep its three per-user policies'))
+
+    // The INVOCATION, not the import: deleting the guard while leaving the
+    // import behind is exactly the shape a careless edit takes.
+    const route = readFileSync(new URL('../src/app/api/notifications/route.ts', import.meta.url), 'utf8')
+    assert.match(route, /if \(!\(await callerIsPlatformAdministrator\(\)\)\)/)
+  })
   it('notification_reads is per-user (auth.uid() = user_id) for select/insert/delete', () => {
     const block = MIGRATION.slice(MIGRATION.indexOf('notification_reads_select'), MIGRATION.indexOf('notification_recipients ('))
     assert.ok(block.includes('auth.uid() = user_id'))

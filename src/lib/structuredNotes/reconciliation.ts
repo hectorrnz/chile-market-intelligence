@@ -312,6 +312,163 @@ export function reconcileNote(input: ReconcileInput): NoteReconciliation {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// R13.7B2.1 § 35–37 — DURABLE AUDIT RECORD AND HISTORICAL-CORRECTION MESSAGE
+//
+// Still pure, still proposal-only. These builders exist so the exact payload an
+// applying stage must write, and the exact message it must post, are reviewable
+// and testable now rather than improvised at apply time.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Why a reconciliation write happened. One value; a different cause needs its own code. */
+export const RECONCILIATION_REASON_CODE = 'r13_7_missed_autocall_detection'
+
+/**
+ * The `structured_note_monitoring_runs.run_type` a reconciliation writes under.
+ * Already permitted by that column's CHECK constraint and unused as a value, so
+ * an audit row is distinguishable from every scheduled monitoring run.
+ */
+export const RECONCILIATION_RUN_TYPE = 'backfill'
+
+/**
+ * The historical-correction notification type.
+ *
+ * DELIBERATELY DISTINCT from both live types. A correction concerns a call that
+ * already happened — posting it as `structured_note_called` would read as
+ * breaking news about a settled position, and would share an identity with the
+ * live event, so a genuine future call on the same note could be suppressed as a
+ * duplicate. `historicalCorrectionCollides` below is the executable guard.
+ */
+export const HISTORICAL_CORRECTION_NOTIFICATION_TYPE = 'structured_note_historical_correction'
+
+/** The two live operational alert types, for collision checks. */
+export const LIVE_NOTIFICATION_TYPES = [
+  'structured_note_potential_autocall',
+  'structured_note_called',
+] as const
+
+/** True if the historical type could ever be mistaken for a live one. Must always be false. */
+export function historicalCorrectionCollides(): boolean {
+  return (LIVE_NOTIFICATION_TYPES as readonly string[]).includes(HISTORICAL_CORRECTION_NOTIFICATION_TYPE)
+}
+
+export interface ReconciliationMutationSummary {
+  notesExamined: number
+  notesStatusChanged: number
+  notesUnchanged: number
+  observationsInserted: number
+  observationsVoided: number
+}
+
+export interface ReconciliationAuditRecord {
+  runType: typeof RECONCILIATION_RUN_TYPE
+  operationId: string
+  actor: string
+  reasonCode: typeof RECONCILIATION_REASON_CODE
+  reconciliationTimestamp: string
+  mutationSummary: ReconciliationMutationSummary
+  notes: Record<string, unknown>[]
+}
+
+/**
+ * The single durable audit row for one reconciliation operation.
+ *
+ * Destined for `structured_note_monitoring_runs` under `run_type = 'backfill'`,
+ * which is service-role-write-only and — after 20260818000000 — administrator-only
+ * to read. Deliberately a DB row and not a log line: logs rotate, and this is the
+ * only record of why six production notes changed state.
+ *
+ * Covers EVERY note examined, not only the corrected ones: "we looked at this
+ * note and deliberately changed nothing" is itself an audit finding.
+ */
+export function buildReconciliationAuditRecord(
+  results: NoteReconciliation[],
+  ctx: { operationId: string; actor: string; timestamp: string },
+): ReconciliationAuditRecord {
+  const changed = results.filter((r) => r.classification === 'confirmed_missed_autocall')
+  return {
+    runType: RECONCILIATION_RUN_TYPE,
+    operationId: ctx.operationId,
+    actor: ctx.actor,
+    reasonCode: RECONCILIATION_REASON_CODE,
+    reconciliationTimestamp: ctx.timestamp,
+    mutationSummary: {
+      notesExamined: results.length,
+      notesStatusChanged: changed.length,
+      notesUnchanged: results.length - changed.length,
+      observationsInserted: results.reduce((n, r) => n + r.observationsToInsert.length, 0),
+      observationsVoided: results.reduce((n, r) => n + r.voidedObservationDates.length, 0),
+    },
+    notes: results.map((r) => ({
+      ...r.proposedAuditRecord,
+      classification: r.classification,
+      settlement: r.settlement,
+      observationsInserted: r.observationsToInsert.length,
+      voidedObservationDates: r.voidedObservationDates,
+      proposedChanges: r.proposedChanges,
+      actor: ctx.actor,
+      reconciliationTimestamp: ctx.timestamp,
+      operationId: ctx.operationId,
+    })),
+  }
+}
+
+export interface HistoricalCorrectionNotification {
+  notificationType: typeof HISTORICAL_CORRECTION_NOTIFICATION_TYPE
+  title: string
+  body: string
+  relatedEntityType: 'structured_note'
+  relatedEntityId: string
+  metadata: Record<string, unknown>
+  /**
+   * Option B: administrator in-platform only. Empty by construction — a
+   * historical correction never emails, so there is no code path in which a
+   * recipient list could be assembled for one.
+   */
+  emailRecipients: readonly never[]
+}
+
+/**
+ * The one administrator-only notification for a corrected historical call.
+ *
+ * Returns null for anything not classified `confirmed_missed_autocall`: a note
+ * whose state did not change must not produce a correction notice.
+ */
+export function buildHistoricalCorrectionNotification(
+  r: NoteReconciliation,
+  correctionDate: string,
+): HistoricalCorrectionNotification | null {
+  if (r.classification !== 'confirmed_missed_autocall') return null
+  const label = r.isin ?? r.issuerDisplayName ?? r.noteId
+  const called = r.expectedCallDate ?? 'an earlier valuation date'
+  return {
+    notificationType: HISTORICAL_CORRECTION_NOTIFICATION_TYPE,
+    title: `Historical correction — ${label}`,
+    body:
+      `${label} was contractually called on ${called}. ` +
+      `NMI has corrected a previously missed autocall detection: the autocall observation was never ` +
+      `evaluated because the importing parser emitted no autocall test for this note. ` +
+      `Correction applied ${correctionDate}. ` +
+      `This is a historical reconciliation, not a new call event — no new early redemption has occurred. ` +
+      (r.settlement === 'settled'
+        ? `The position redeemed on ${r.expectedRedemptionDate ?? 'its contractual redemption date'} and is settled.`
+        : `Redemption is ${r.expectedRedemptionDate ?? 'not recorded'}; the notional remains outstanding until then.`),
+    relatedEntityType: 'structured_note',
+    relatedEntityId: r.noteId,
+    metadata: {
+      reasonCode: RECONCILIATION_REASON_CODE,
+      historicalCorrection: true,
+      originalCallDate: r.expectedCallDate,
+      redemptionDate: r.expectedRedemptionDate,
+      correctionDate,
+      previousStatus: r.storedStatus,
+      correctedStatus: r.expectedStatus,
+      settlement: r.settlement,
+    },
+    emailRecipients: [],
+  }
+}
+
 /** Book-level roll-up of a reconciliation sweep. */
 export function summarizeReconciliation(results: NoteReconciliation[]): Record<ReconciliationClassification, number> {
   const out: Record<ReconciliationClassification, number> = {

@@ -22,6 +22,7 @@ import {
 } from '@/lib/structuredNotes/calculations'
 import type { NoteStatus } from '@/lib/structuredNotes/types'
 import { guardAdministrator, guardModuleReadWithCapability } from '@/lib/auth/moduleApiGuard'
+import { buildReviewFixture, isReviewFixtureId, reviewFixturesEnabled } from '@/lib/structuredNotes/fixtures/calledStateFixture'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -36,17 +37,34 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   if (!client) return NextResponse.json({ error: 'Not configured' }, { status: 503 })
   const { id } = await ctx.params
 
-  const note = await getStructuredNoteById(client, id)
+  // R13.7B2.1 § 27 — owner review fixture, Preview/development ONLY.
+  //
+  // Reached only AFTER the module guard above, so this is not an authorization
+  // bypass; on the production deployment `reviewFixturesEnabled()` is false and
+  // the ids fall through to the normal lookup, where they are simply unknown
+  // notes and 404. The payload is a hardcoded constant — no request parameter
+  // shapes it — and it touches neither the database nor a market-data
+  // provider, which is what makes the rendering deterministic.
+  //
+  // It exists because Preview reads PRODUCTION data, production is not yet
+  // reconciled, and mutating it to manufacture a reviewable Called state is
+  // both forbidden and wrong. Everything below this branch is the real
+  // pipeline: the fixture supplies inputs, not outputs.
+  const fixture = reviewFixturesEnabled() ? buildReviewFixture(id) : null
+
+  const note = fixture ? fixture.note : await getStructuredNoteById(client, id)
   if (!note) return NextResponse.json({ error: 'not_found' }, { status: 404 })
 
-  const prices = await fetchUnderlyingPrices(
-    note.underlyings.map((u) => ({
-      underlyingOrder: u.underlyingOrder,
-      sourceTicker: u.sourceTicker,
-      underlyingName: u.underlyingName,
-      yahooSymbol: u.yahooSymbol,
-    })),
-  )
+  const prices = fixture
+    ? fixture.prices
+    : await fetchUnderlyingPrices(
+        note.underlyings.map((u) => ({
+          underlyingOrder: u.underlyingOrder,
+          sourceTicker: u.sourceTicker,
+          underlyingName: u.underlyingName,
+          yahooSymbol: u.yahooSymbol,
+        })),
+      )
 
   const asOf = new Date().toISOString().slice(0, 10)
   const worst = calculateWorstPerformer(note.underlyings, prices)
@@ -56,7 +74,9 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   // Latest PERSISTED snapshot per underlying (from the scheduled monitoring
   // cron) — distinct from the live `prices` above (fetched fresh on every
   // page load for the "Update" button's immediate-refresh behavior).
-  const latestSnapshots = note.id ? await getLatestStructuredNotePriceSnapshots(client, [note.id]) : new Map()
+  const latestSnapshots = fixture
+    ? fixture.snapshots
+    : note.id ? await getLatestStructuredNotePriceSnapshots(client, [note.id]) : new Map()
 
   const distances = note.underlyings.map((u) => {
     const price = prices.find((p) => p.underlyingOrder === u.underlyingOrder)
@@ -98,6 +118,11 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
   const client = await getSupabaseUserClient()
   if (!client) return NextResponse.json({ error: 'Not configured' }, { status: 503 })
   const { id } = await ctx.params
+
+  // The review fixture is read-only. It exists in no table, so a write would
+  // silently affect nothing anyway — refusing outright means a reviewer who
+  // clicks an action on it gets an honest answer instead of a no-op.
+  if (isReviewFixtureId(id)) return NextResponse.json({ error: 'read_only_fixture' }, { status: 403 })
 
   let body: Record<string, unknown>
   try {
@@ -145,6 +170,7 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: str
   if (!client) return NextResponse.json({ error: 'Not configured' }, { status: 503 })
   const { id } = await ctx.params
   if (!id || typeof id !== 'string') return NextResponse.json({ error: 'invalid_id' }, { status: 400 })
+  if (isReviewFixtureId(id)) return NextResponse.json({ error: 'read_only_fixture' }, { status: 403 })
   const result = await deleteStructuredNote(client, id)
   if (result === 'not_found') return NextResponse.json({ error: 'not_found' }, { status: 404 })
   if (result !== 'ok') return NextResponse.json({ error: 'delete_failed' }, { status: 500 })

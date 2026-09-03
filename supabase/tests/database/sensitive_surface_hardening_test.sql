@@ -351,49 +351,114 @@ select is(
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- 8 · PERSONAL NOTIFICATION STATE IS UNTOUCHED
+-- 8 · OPERATIONAL ALERT ACCESS, AND PERSONAL STATE LEFT INTACT
 -- ═══════════════════════════════════════════════════════════════════════════
--- Hardening the SHARED address book must not take away a member's OWN read
--- markers. This is the "do not break category A while fixing category B" proof.
+-- Two things at once: the operational surfaces (the notification feed and the
+-- reconciliation audit sink) are administrator-only, AND hardening them did not
+-- take away a member's OWN read markers. The "do not break category A while
+-- fixing category B" proof.
 
--- These are PARITY assertions rather than member-role reads, deliberately.
--- `notifications` and `notification_reads` carry NO explicit grant in any
--- migration: exactly like `watchlists`, they rely entirely on whatever
--- Supabase's default privileges give `authenticated`, and that default is not
--- identical between this isolated CLI stack and a hosted project. Asserting
--- "a member can read the feed" would therefore test the ENVIRONMENT, not this
--- migration -- and it fails in this stack for a reason that predates this
--- stage entirely (20260815000000 contains no DDL of any kind for either
--- table).
+-- R13.7B2.1 REPLACED THE ASSERTIONS THAT USED TO STAND HERE. Read this before
+-- assuming the change was a loosening.
 --
--- What actually must be proven is that this migration did not sweep the
--- personal tables into the hardening. Comparing them against the untouched
--- control `watchlists` -- same class, same reliance on defaults -- proves that
--- in EITHER environment: had 20260815000000 revoked from them, they would no
--- longer match the control.
+-- This section previously proved, by comparison against the untouched control
+-- `watchlists`, that 20260815000000 had NOT swept `notifications` into the
+-- hardening -- and it called the feed "the personal feed". That framing was
+-- wrong, and the assertion locked the error in place.
+--
+-- `notifications` is a SHARED feed (20260713000000 says so in its own opening
+-- paragraph), and every row this application has ever written to it is a
+-- Structured Notes operational alert carrying an ISIN, a contractual valuation
+-- date and each underlying's close against its own call threshold. Under the
+-- old policy -- `using (auth.uid() is not null)` -- a member holding no module
+-- grant at all could read all of it. 20260818000000 closes that.
+--
+-- The environment-dependence that forced parity assertions is also gone:
+-- 20260818000000 states the grant explicitly instead of inheriting Supabase's
+-- defaults, so the feed can now be READ AS A MEMBER here, which is a far
+-- stronger proof than comparing privilege bits.
+--
+-- `notification_reads` is genuinely personal and genuinely untouched -- its
+-- proofs below are unchanged in substance.
 
 select pg_temp.as_service();
 insert into public.notifications (id, notification_type, title, body)
-values ('bbbb0007-0000-0000-0000-000000000007', 'system', 'Fixture', 'Fixture body');
+values ('bbbb0007-0000-0000-0000-000000000007', 'structured_note_called',
+        'Fixture call alert', 'Fixture body naming a contractual valuation date');
 insert into public.notification_reads (notification_id, user_id)
 values ('bbbb0007-0000-0000-0000-000000000007', 'b3333333-3333-3333-3333-333333333333');
+insert into public.structured_note_monitoring_runs (id, run_type, status, metadata)
+values ('bbbb0008-0000-0000-0000-000000000008', 'backfill', 'success',
+        '{"reasonCode": "r13_7_missed_autocall_detection"}'::jsonb);
 
-select is(
-  has_table_privilege('authenticated', 'public.notifications', 'SELECT'),
-  has_table_privilege('authenticated', 'public.watchlists', 'SELECT'),
-  'notifications keeps the same authenticated SELECT posture as an untouched control table');
-select is(
-  has_table_privilege('authenticated', 'public.notification_reads', 'INSERT'),
-  has_table_privilege('authenticated', 'public.watchlists', 'INSERT'),
-  'notification_reads keeps the same authenticated INSERT posture as an untouched control');
+-- ── The feed is administrator-only ─────────────────────────────────────────
 
-select ok(exists(
-    select 1 from pg_catalog.pg_policies
-    where schemaname = 'public' and tablename = 'notifications'
-      and cmd = 'SELECT' and qual like '%uid()%'
-      and coalesce(qual, '') not like '%nmi_can_access_module%'),
-  'the personal feed is NOT re-gated behind a module grant');
+select pg_temp.as_user('b1111111-1111-1111-1111-111111111111');
+select is((select count(*)::int from public.notifications), 1,
+  'an administrator reads the operational notification feed');
 
+select pg_temp.as_user('b2222222-2222-2222-2222-222222222222');
+select is((select count(*)::int from public.notifications), 0,
+  'a member WITH structured_notes cannot read operational notifications');
+
+select pg_temp.as_user('b3333333-3333-3333-3333-333333333333');
+select is((select count(*)::int from public.notifications), 0,
+  'a member without structured_notes cannot read operational notifications');
+
+select pg_temp.as_user('b4444444-4444-4444-4444-444444444444');
+select is((select count(*)::int from public.notifications), 0,
+  'an unapproved account cannot read operational notifications despite its grant');
+
+-- anon holds NO privilege after 20260818000000, so this is a 42501, not an
+-- RLS-filtered empty read. Asserting "0 rows" here would error the suite.
+select pg_temp.as_anon();
+select throws_ok($$ select count(*) from public.notifications $$,
+  '42501', null, 'anonymous cannot read operational notifications');
+
+-- ── The reconciliation audit sink is administrator-only ────────────────────
+-- A `backfill` row carries previous/corrected note state, the original
+-- contractual event date, per-leg evidence and the acting administrator. It is
+-- operator audit evidence, not note content, so the module grant is not enough.
+
+select pg_temp.as_user('b1111111-1111-1111-1111-111111111111');
+select is((select count(*)::int from public.structured_note_monitoring_runs), 1,
+  'an administrator reads the reconciliation audit sink');
+
+select pg_temp.as_user('b2222222-2222-2222-2222-222222222222');
+select is((select count(*)::int from public.structured_note_monitoring_runs), 0,
+  'a member WITH structured_notes cannot read the reconciliation audit sink');
+
+select pg_temp.as_user('b3333333-3333-3333-3333-333333333333');
+select is((select count(*)::int from public.structured_note_monitoring_runs), 0,
+  'a member without structured_notes cannot read the reconciliation audit sink');
+
+select pg_temp.as_anon();
+select throws_ok($$ select count(*) from public.structured_note_monitoring_runs $$,
+  '42501', null, 'anonymous cannot read the reconciliation audit sink');
+
+-- ── Neither table is writable by any member ────────────────────────────────
+-- Both hold `authenticated` SELECT only, so a write is refused at the
+-- privilege level (42501) rather than filtered by RLS.
+
+select pg_temp.as_user('b1111111-1111-1111-1111-111111111111');
+select throws_ok(
+  $$ insert into public.notifications (notification_type, title) values ('x', 'y') $$,
+  '42501', null, 'not even an administrator can write the feed from a session client');
+select throws_ok(
+  $$ insert into public.structured_note_monitoring_runs (run_type, status) values ('backfill', 'success') $$,
+  '42501', null, 'not even an administrator can write the audit sink from a session client');
+
+-- ── The granted member still has the product surface they are entitled to ──
+-- Proves the narrowing was surgical: the module grant still works everywhere
+-- it should, so these denials are about the two operational tables only.
+
+select pg_temp.as_user('b2222222-2222-2222-2222-222222222222');
+select is((select count(*)::int from public.structured_notes), 1,
+  'the granted member still reads the note book itself');
+
+-- ── Personal read-state is untouched ───────────────────────────────────────
+
+select pg_temp.as_service();
 select is((select count(*)::int from pg_catalog.pg_policies
             where schemaname = 'public' and tablename = 'notification_reads'), 3,
   'notification_reads keeps all three of its per-user policies');
@@ -401,6 +466,11 @@ select is((select count(*)::int from pg_catalog.pg_policies
 select is((select count(*)::int from public.notification_reads
             where user_id = 'b3333333-3333-3333-3333-333333333333'), 1,
   'the member OWN read marker survives the hardening');
+
+select is(
+  has_table_privilege('authenticated', 'public.notification_reads', 'INSERT'),
+  has_table_privilege('authenticated', 'public.watchlists', 'INSERT'),
+  'notification_reads keeps the same authenticated INSERT posture as an untouched control');
 
 
 -- ═══════════════════════════════════════════════════════════════════════════

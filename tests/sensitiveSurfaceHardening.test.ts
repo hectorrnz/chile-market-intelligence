@@ -497,24 +497,51 @@ describe('POST-R13.6B.1 — the executable half covers the bypass path', () => {
   })
 
   it('proves personal notification state survives the hardening', () => {
-    // Proven by PARITY against an untouched control table rather than by a
-    // member-role read. The personal tables carry no explicit grant in any
-    // migration, so a member-role read would assert the environment's default
-    // privileges — which differ between the isolated CI stack and a hosted
-    // project — instead of asserting anything about this migration.
-    assert.ok(PGTAP.includes("has_table_privilege('authenticated', 'public.watchlists', 'SELECT')"))
-    assert.ok(PGTAP.includes('same authenticated SELECT posture as an untouched control table'))
+    // `notification_reads` is genuinely personal and genuinely untouched by
+    // 20260815000000, so it is still proven by PARITY against an untouched
+    // control table: it carries no explicit grant in any migration, and a
+    // member-role read would assert the environment's default privileges —
+    // which differ between the isolated CI stack and a hosted project —
+    // instead of asserting anything about the migration.
     assert.ok(PGTAP.includes('same authenticated INSERT posture as an untouched control'))
-    assert.ok(PGTAP.includes('the personal feed is NOT re-gated behind a module grant'))
     assert.ok(PGTAP.includes('keeps all three of its per-user policies'))
     assert.ok(PGTAP.includes('the member OWN read marker survives the hardening'))
   })
 
-  it('never touches the personal notification tables with any DDL', () => {
-    // The parity assertion above is only meaningful because this is true: the
-    // migration must contain no grant, revoke, policy or ALTER for either
-    // personal table. Anything else and the control comparison would be
-    // comparing two tables this migration had both changed.
+  it('proves the notification FEED is administrator-only, by real role reads', () => {
+    // R13.7B2.1 REPLACED the parity assertion that used to stand here.
+    //
+    // The feed was previously described as "personal" and asserted to be NOT
+    // gated. It is a SHARED feed carrying nothing but Structured Notes
+    // operational alerts, so that assertion was locking an exposure in place.
+    // 20260818000000 makes it administrator-only AND states its grant
+    // explicitly — which is what allows a real member-role read here instead
+    // of an environment-dependent privilege comparison.
+    assert.ok(PGTAP.includes('a member WITH structured_notes cannot read operational notifications'))
+    assert.ok(PGTAP.includes('a member without structured_notes cannot read operational notifications'))
+    assert.ok(PGTAP.includes('an unapproved account cannot read operational notifications despite its grant'))
+    assert.ok(PGTAP.includes('anonymous cannot read operational notifications'))
+    assert.ok(PGTAP.includes('an administrator reads the operational notification feed'))
+    // Non-vacuity: the granted member is denied the feed while still holding
+    // the product surface, so the denial is about this table, not a broken grant.
+    assert.ok(PGTAP.includes('the granted member still reads the note book itself'))
+  })
+
+  it('proves the reconciliation audit sink is administrator-only', () => {
+    assert.ok(PGTAP.includes('an administrator reads the reconciliation audit sink'))
+    assert.ok(PGTAP.includes('a member WITH structured_notes cannot read the reconciliation audit sink'))
+    assert.ok(PGTAP.includes('a member without structured_notes cannot read the reconciliation audit sink'))
+    assert.ok(PGTAP.includes('anonymous cannot read the reconciliation audit sink'))
+    // Both operational surfaces stay service-role-write-only.
+    assert.ok(PGTAP.includes('not even an administrator can write the feed from a session client'))
+    assert.ok(PGTAP.includes('not even an administrator can write the audit sink from a session client'))
+  })
+
+  it('never touches the notification tables with any DDL', () => {
+    // Scope guard on THIS migration (20260815000000). It must contain no grant,
+    // revoke, policy or ALTER for either table — which is both what makes the
+    // notification_reads parity comparison meaningful, and the reason the feed
+    // stayed exposed until 20260818000000 closed it.
     for (const t of ['notifications', 'notification_reads']) {
       const ddl = new RegExp(
         `(grant|revoke|create policy|drop policy|alter table)[^;]*\bpublic\.${t}\b`,

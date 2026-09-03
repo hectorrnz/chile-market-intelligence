@@ -6,6 +6,7 @@ import { getSupabaseUserClient } from '@/lib/supabase/server'
 import { getApprovedUser } from '@/lib/auth/getUser'
 import { unauthenticatedJson, notAuthorizedJson } from '@/lib/auth/apiGuard'
 import { listNotifications, markAllNotificationsRead } from '@/lib/db/repositories/notificationsRepository'
+import { callerIsPlatformAdministrator } from '@/lib/auth/getModuleAccess'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,6 +21,13 @@ export async function POST(): Promise<NextResponse> {
     return access.reason === 'unauthenticated' ? unauthenticatedJson() : notAuthorizedJson()
   }
   const user = access.user
+
+  // R13.7B2.1 — same administrator-only gate as GET /api/notifications. A
+  // member has nothing to mark read, and must not learn a notification id by
+  // way of the count this would otherwise return.
+  if (!(await callerIsPlatformAdministrator())) {
+    return NextResponse.json({ ok: true, markedCount: 0 })
+  }
 
   const notifications = await listNotifications(client, user.id)
   const unreadIds = notifications.filter((n) => !n.isRead).map((n) => n.id)

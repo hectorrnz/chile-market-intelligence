@@ -36,6 +36,9 @@ on:
       - 'scripts/reconcile/**'
       - 'tests/structuredNotes*.test.ts'
       - 'tests/notificationsPlatform.test.ts'
+      - 'tests/sensitiveSurfaceHardening.test.ts'
+      - 'src/app/api/notifications/**'
+      - 'supabase/migrations/**'
       - 'vercel.json'
       - '.github/workflows/structured-notes-event-state.yml'
 
@@ -116,6 +119,17 @@ jobs:
           node --test "tests/structuredNotesWorkbookMapping.test.ts"
           node --test "tests/notificationsPlatform.test.ts"
           node --test "tests/fableStructuredNotesPage.test.ts"
+
+      # R13.7B2.1 — WHO may read an operational alert, and who may read the
+      # reconciliation audit evidence. Separate step so a security regression is
+      # never buried among functional failures. The role-session half of this
+      # proof (a real member reading with their own token) runs in the DB
+      # validation workflow, which applies the migration chain and executes
+      # every pgTAP suite.
+      - name: Operational alert access control
+        run: |
+          node --test "tests/structuredNotesAlertAccess.test.ts"
+          node --test "tests/sensitiveSurfaceHardening.test.ts"
 
       - name: Lint
         run: npm run lint
