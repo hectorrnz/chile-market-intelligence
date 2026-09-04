@@ -91,6 +91,14 @@ jobs:
       - name: Canonical event-state suite (golden case, WOF, T-1, concurrency, schedule)
         run: node --test "tests/structuredNotesEventState.test.ts"
 
+      # R13.7B2.2 — the owner-review corrections. Separate step so a regression
+      # in the CONTRACT PRESENTATION (one row per valuation date, decimal-fraction
+      # percentages, human-readable statuses, the normalized gauge's stated basis)
+      # is distinguishable from a failure of the engine above. The percentage-unit
+      # checks in particular guard a defect that renders a 65% barrier as 6500%.
+      - name: Contract presentation and percentage units
+        run: node --test "tests/structuredNotesScheduleDisplay.test.ts"
+
       # Every issuer parser must keep emitting autocall observations. This is
       # the defect's origin: a parser silently dropping them again would make
       # the engine above unreachable while every one of its own tests still

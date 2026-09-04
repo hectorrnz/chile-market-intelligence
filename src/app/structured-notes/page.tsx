@@ -121,14 +121,19 @@ function fmtNum(v: number | null | undefined): string {
 }
 
 const RISK_TONE: Record<string, string> = {
-  safe: 'var(--positive)', watch: 'var(--warning)', breached: 'var(--negative)', autocallable: 'var(--accent)', unavailable: 'var(--muted-fg)',
+  // R13.7B2.2 § 3/§ 6 — `called` is a TERMINAL state, distinct from the
+  // `autocallable` forecast, and the owner review specified red for it. The
+  // label text always names the status, so meaning is never color-alone.
+  safe: 'var(--positive)', watch: 'var(--warning)', breached: 'var(--negative)', autocallable: 'var(--accent)', called: 'var(--negative)', unavailable: 'var(--muted-fg)',
 }
 
 const REVIEW_STATE_TONE: Record<ReviewState, string> = {
   ready: 'var(--positive)', review_recommended: 'var(--accent)', review_required: 'var(--warning)', unsupported: 'var(--negative)',
 }
 // Severity order used when sorting/filtering by status — most urgent first.
-const STATUS_RANK: Record<string, number> = { breached: 0, autocallable: 1, watch: 2, safe: 3, unavailable: 4 }
+// `called` is terminal rather than a live risk level, so it sorts after every
+// live classification and before the "no data" bucket.
+const STATUS_RANK: Record<string, number> = { breached: 0, autocallable: 1, watch: 2, safe: 3, called: 4, unavailable: 5 }
 const CHART_PALETTE = ['#004A64', '#1A6630', '#8B0E04', '#B07A12', '#0E7FB8', '#5B6770', '#7399C6', '#2E7D32', '#9A6A00', '#417B9C']
 type SortKey = 'issued' | 'issuer' | 'status' | 'next'
 
@@ -374,7 +379,7 @@ export default function StructuredNotesPage() {
     } finally { setBusy(false) }
   }
 
-  const riskLabel = (s: string) => ({ safe: t.sn.riskSafe, watch: t.sn.riskWatch, breached: t.sn.riskBreached, autocallable: t.sn.riskAutocallable, unavailable: t.sn.riskUnavailable }[s] ?? s)
+  const riskLabel = (s: string) => ({ safe: t.sn.riskSafe, watch: t.sn.riskWatch, breached: t.sn.riskBreached, autocallable: t.sn.riskAutocallable, called: t.sn.riskCalled, unavailable: t.sn.riskUnavailable }[s] ?? s)
   const isArchived = (n: StructuredNote) => ARCHIVED_STATUSES.includes(n.status)
 
   const issuers = [...new Set(notes.map((n) => n.issuerDisplayName).filter((x): x is string => !!x))].sort()
@@ -394,7 +399,7 @@ export default function StructuredNotesPage() {
     let cmp = 0
     if (sortKey === 'issued') cmp = (a.issueDate ?? a.tradeDate ?? '').localeCompare(b.issueDate ?? b.tradeDate ?? '')
     else if (sortKey === 'issuer') cmp = (a.issuerDisplayName ?? '').localeCompare(b.issuerDisplayName ?? '')
-    else if (sortKey === 'status') cmp = (STATUS_RANK[ma?.riskStatus ?? 'unavailable'] ?? 5) - (STATUS_RANK[mb?.riskStatus ?? 'unavailable'] ?? 5)
+    else if (sortKey === 'status') cmp = (STATUS_RANK[ma?.riskStatus ?? 'unavailable'] ?? 9) - (STATUS_RANK[mb?.riskStatus ?? 'unavailable'] ?? 9)
     else if (sortKey === 'next') cmp = (ma?.nextObservationDate ?? '').localeCompare(mb?.nextObservationDate ?? '')
     return sortDir === 'asc' ? cmp : -cmp
   })
@@ -433,6 +438,9 @@ export default function StructuredNotesPage() {
     { status: 'watch', label: t.sn.riskWatch, tip: t.sn.legendWatch },
     { status: 'autocallable', label: t.sn.riskAutocallable, tip: t.sn.legendAutocallable },
     { status: 'breached', label: t.sn.riskBreached, tip: t.sn.legendBreached },
+    // R13.7B2.2 § 6 — the terminal state gets its own legend entry; it is not a
+    // shade of "autocallable".
+    { status: 'called', label: t.sn.riskCalled, tip: t.sn.legendCalled },
   ]
 
   const tableState = loading
@@ -459,6 +467,7 @@ export default function StructuredNotesPage() {
         <option value="watch">{t.sn.riskWatch}</option>
         <option value="autocallable">{t.sn.riskAutocallable}</option>
         <option value="breached">{t.sn.riskBreached}</option>
+        <option value="called">{t.sn.riskCalled}</option>
         <option value="unavailable">{t.sn.riskUnavailable}</option>
       </ChipSelect>
       <ChipSelect value={issuerFilter} onChange={(e) => setIssuerFilter(e.target.value)} aria-label={t.sn.filterIssuer}>

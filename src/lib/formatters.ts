@@ -144,6 +144,35 @@ export function formatSourceDate(isoDate: string): string {
   return `${day}-${month}`
 }
 
+/**
+ * R13.7B2.2 § 11 — the UNAMBIGUOUS full calendar date of an as-of value.
+ *
+ * `formatSourceDate` above is the platform-wide dense convention: `HH:MM` for a
+ * timestamp from earlier today, `DD-MM` otherwise. That is right for a terminal
+ * table refreshed many times a day, and it is a documented convention that this
+ * function deliberately does NOT change.
+ *
+ * It is wrong for one specific case: a Structured Note's contractual levels,
+ * where "28-08" gave the owner review no year and no month/day ordering — and
+ * where the date is a fixed valuation date months in the past, not a refresh
+ * time. Those surfaces opt in to this formatter instead.
+ *
+ * Renders the calendar date in the Chile timezone for a real timestamp (so an
+ * evening UTC close does not print as the following day), and reads a date-only
+ * string straight through without ever fabricating a time. ISO ordering is
+ * deliberate: locale-independent and unambiguous in both EN and ES.
+ */
+export function formatSourceDateFull(isoDate: string): string {
+  // A date-only string carries no time-of-day, so it is already the calendar
+  // date — passing it through `new Date()` would introduce a timezone shift.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return isoDate
+  if (!/^\d{4}-\d{2}-\d{2}T/.test(isoDate)) return isoDate
+  const dt = new Date(isoDate)
+  if (isNaN(dt.getTime())) return isoDate
+  const { year, month, day } = santiagoDateParts(dt)
+  return year && month && day ? `${year}-${month}-${day}` : isoDate
+}
+
 // ─── R13.R5C.2 · THE PORTFOLIO ZERO-DISPLAY CONTRACT ─────────────────────────
 //
 // Two marks, one rule, applied to every user-visible figure in the Portfolio

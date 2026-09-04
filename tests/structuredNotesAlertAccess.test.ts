@@ -39,6 +39,7 @@ import {
   CALLED_SETTLED_FIXTURE_ID,
 } from '../src/lib/structuredNotes/fixtures/calledStateFixture.ts'
 import { calculateCurrentNotional, noteSettlementStatus } from '../src/lib/structuredNotes/calculations.ts'
+import { DEFAULT_ENTITIES } from '../src/lib/structuredNotes/types.ts'
 
 const read = (p: string) => readFileSync(new URL(p, import.meta.url), 'utf8')
 
@@ -436,10 +437,78 @@ describe('R13.7B2.1 § 27 — the called-state fixture is safe and faithful', ()
     }
   })
 
-  it('carries no private allocation data', () => {
+  // R13.7B2.2 § 7/§ 12 — REPLACES "allocations must be empty".
+  //
+  // An empty allocation list made `calculateCurrentNotional` return 0 for the
+  // PENDING fixture, which contradicted the settlement-aware notional contract
+  // the fixture exists to demonstrate: a called-but-unsettled note is still
+  // outstanding. The real requirement was never "no allocations" — it was "no
+  // PRIVATE allocations". That is what is asserted now, from the other side.
+  it('carries no private allocation data — synthetic accounts only', () => {
     for (const id of [CALLED_PENDING_FIXTURE_ID, CALLED_SETTLED_FIXTURE_ID]) {
-      assert.deepEqual(buildReviewFixture(id)!.note.allocations, [])
+      const { note } = buildReviewFixture(id)!
+      assert.ok(note.allocations.length > 0, 'a position is required to demonstrate settlement')
+      for (const a of note.allocations) {
+        assert.match(a.entityName, /FIXTURE/, `allocation entity must be openly synthetic: ${a.entityName}`)
+        // None of the real in-house sociedades may appear.
+        assert.ok(!DEFAULT_ENTITIES.includes(a.entityName as (typeof DEFAULT_ENTITIES)[number]), `real sociedad leaked into the fixture: ${a.entityName}`)
+      }
+      // A round synthetic total, and deliberately BELOW the issue size — the
+      // two are different quantities and must not be confusable.
+      const total = note.allocations.reduce((s, a) => s + a.notionalAmount, 0)
+      assert.equal(total, 1_000_000)
+      assert.ok(note.issueSize !== null && total < note.issueSize, 'position must not be presented as the issuance')
     }
+  })
+
+  // § 4 — the unit bug that produced "6500.00%" / "10000.00%" on screen. The
+  // canonical representation platform-wide is a DECIMAL FRACTION.
+  it('states every percentage as a decimal fraction, matching every live note', () => {
+    for (const id of [CALLED_PENDING_FIXTURE_ID, CALLED_SETTLED_FIXTURE_ID]) {
+      const { note } = buildReviewFixture(id)!
+      assert.equal(note.couponBarrierPct, 0.65)
+      assert.equal(note.knockInBarrierPct, 0.65)
+      assert.equal(note.autocallBarrierPct, 1)
+      assert.equal(note.issuePricePct, 1)
+      for (const u of note.underlyings) {
+        assert.equal(u.couponBarrierPct, 0.65)
+        assert.equal(u.knockInBarrierPct, 0.65)
+        assert.equal(u.autocallBarrierPct, 1)
+      }
+      for (const o of note.observations) {
+        assert.ok(o.couponBarrierPct === null || o.couponBarrierPct === 0.65)
+        assert.ok(o.autocallBarrierPct === null || o.autocallBarrierPct === 1)
+      }
+    }
+  })
+
+  // § 4 — the coupon rate is the note's OWN contractual rate. The first fixture
+  // carried 2.5375% / 10.15%, which belongs to XS3180975347.
+  it('uses this note own coupon rate, read from the filed terms', () => {
+    const { note } = buildReviewFixture(CALLED_PENDING_FIXTURE_ID)!
+    assert.equal(note.couponRatePeriodic, 0.025, '2.50% per quarter')
+    assert.equal(note.couponRateAnnualized, 0.1, '10.00% p.a.')
+    assert.equal(note.couponFrequency, 'quarterly')
+    for (const o of note.observations.filter((x) => x.observationType === 'coupon')) {
+      assert.equal(o.couponDuePct, 0.025)
+    }
+  })
+
+  // § 5 — the remaining General Terms, all read from the persisted record.
+  it('reproduces the filed identity and key dates', () => {
+    const { note } = buildReviewFixture(CALLED_PENDING_FIXTURE_ID)!
+    assert.equal(note.guarantorName, 'Citigroup Global Markets Limited')
+    assert.equal(note.currency, 'USD')
+    assert.equal(note.issueSize, 1_500_000)
+    assert.equal(note.denomination, 1_000)
+    assert.equal(note.tradeDate, '2026-05-28')
+    assert.equal(note.issueDate, '2026-06-04')
+    assert.equal(note.initialValuationDate, '2026-05-28')
+    assert.equal(note.finalValuationDate, '2028-05-30')
+    // Contractual maturity survives an early call and is never erased (§ 6).
+    assert.equal(note.maturityDate, '2028-06-06')
+    // Filed order: RTY is underlying 1, SPX is underlying 2.
+    assert.deepEqual(note.underlyings.map((u) => u.underlyingName), ['RTY Index', 'SPX Index'])
   })
 
   it('is unmistakably labelled as a fixture on screen', () => {
@@ -462,11 +531,16 @@ describe('R13.7B2.1 § 27 — the called-state fixture is safe and faithful', ()
     const { note } = buildReviewFixture(CALLED_PENDING_FIXTURE_ID)!
     assert.equal(note.isin, 'XS3164820824')
     assert.equal(note.status, 'autocalled')
-    assert.equal(note.redemptionDate, '2026-09-04')
     const called = note.observations.filter((o) => o.status === 'autocalled')
     assert.equal(called.length, 1)
     assert.equal(called[0].valuationDate, '2026-08-28')
     assert.equal(called[0].observationType, 'autocall')
+    // R13.7B2.2 — the settlement date belongs to the CALLING OBSERVATION, not
+    // the note header. The header carries scheduled maturity (2028-06-06, as
+    // filed); reading settlement from it would date it years late, which is
+    // exactly why `noteSettlementStatus` reads the observation.
+    assert.equal(note.redemptionDate, '2028-06-06')
+    assert.ok(called[0].redemptionDate !== null && called[0].redemptionDate !== note.redemptionDate)
   })
 
   it('shows coupon AND autocall as separate tests on the calling date', () => {
@@ -491,32 +565,61 @@ describe('R13.7B2.1 § 27 — the called-state fixture is safe and faithful', ()
 
   it('the call level IS the initial level, so the pinned cushions reproduce', () => {
     const { note, prices } = buildReviewFixture(CALLED_PENDING_FIXTURE_ID)!
-    const cushion = (order: number) => {
-      const u = note.underlyings.find((x) => x.underlyingOrder === order)!
-      const p = prices.find((x) => x.underlyingOrder === order)!.price!
+    // Keyed by NAME, not by index: the fixture now uses the filed underlying
+    // order (RTY = 1, SPX = 2), and a positional assertion would silently swap
+    // the two indices' identities.
+    const cushion = (name: string) => {
+      const u = note.underlyings.find((x) => x.underlyingName === name)!
+      const p = prices.find((x) => x.underlyingOrder === u.underlyingOrder)!.price!
       return (p / u.autocallBarrierLevel!) - 1
     }
     // The golden case: SPX +1.9359%, RTY +1.0825%, RTY binding.
-    assert.ok(Math.abs(cushion(1) - 0.019359) < 1e-5, `SPX cushion was ${cushion(1)}`)
-    assert.ok(Math.abs(cushion(2) - 0.010825) < 1e-5, `RTY cushion was ${cushion(2)}`)
-    assert.ok(cushion(2) < cushion(1), 'RTY must be the binding leg')
+    assert.ok(Math.abs(cushion('SPX Index') - 0.019359) < 1e-5, `SPX cushion was ${cushion('SPX Index')}`)
+    assert.ok(Math.abs(cushion('RTY Index') - 0.010825) < 1e-5, `RTY cushion was ${cushion('RTY Index')}`)
+    assert.ok(cushion('RTY Index') < cushion('SPX Index'), 'RTY must be the binding leg')
     for (const u of note.underlyings) {
       assert.equal(u.autocallBarrierLevel, u.initialLevel, 'autocall barrier is 100% of initial')
     }
   })
 
   it('settlement is DERIVED, and the two fixtures land on opposite sides of it', () => {
-    const asOf = '2026-09-03'
+    // A date after the settled fixture's real Mandatory Early Redemption Date
+    // (2026-09-04) and well before the pending fixture's (2026-12-07), so the
+    // two states are unambiguous and stay so for the whole review window.
+    const asOf = '2026-09-10'
     assert.equal(noteSettlementStatus(buildReviewFixture(CALLED_PENDING_FIXTURE_ID)!.note, asOf), 'pending')
     assert.equal(noteSettlementStatus(buildReviewFixture(CALLED_SETTLED_FIXTURE_ID)!.note, asOf), 'settled')
   })
 
-  it('a called-but-unsettled fixture keeps its notional; a settled one does not', () => {
-    const asOf = '2026-09-03'
+  // R13.7B2.2 § 7 — STRENGTHENED. The old assertion was `>= 0`, which any
+  // number satisfies and which the empty allocation list passed while showing
+  // the owner "NOTIONAL: USD 0" on a note that was still outstanding.
+  it('a called-but-unsettled fixture keeps its FULL notional; a settled one drops to zero', () => {
+    const asOf = '2026-09-10'
     const pending = buildReviewFixture(CALLED_PENDING_FIXTURE_ID)!.note
     const settled = buildReviewFixture(CALLED_SETTLED_FIXTURE_ID)!.note
-    assert.ok(calculateCurrentNotional(pending, pending.allocations, noteSettlementStatus(pending, asOf)) >= 0)
+    assert.equal(calculateCurrentNotional(pending, pending.allocations, noteSettlementStatus(pending, asOf)), 1_000_000)
     assert.equal(calculateCurrentNotional(settled, settled.allocations, noteSettlementStatus(settled, asOf)), 0)
+  })
+
+  // The pending fixture must not silently expire into "settled" mid-review —
+  // that is precisely the failure mode that would leave § 7 undemonstrable.
+  it('the pending fixture stays pending well past the review window', () => {
+    const pending = buildReviewFixture(CALLED_PENDING_FIXTURE_ID)!.note
+    for (const asOf of ['2026-09-04', '2026-09-30', '2026-11-30']) {
+      assert.equal(noteSettlementStatus(pending, asOf), 'pending', `flipped early at ${asOf}`)
+    }
+    // And it does settle eventually — the state is genuinely date-derived, not
+    // hardcoded to "pending forever".
+    assert.equal(noteSettlementStatus(pending, '2026-12-07'), 'settled')
+  })
+
+  // The settled fixture is settled from its real redemption date onward.
+  it('the settled fixture is settled on and after its real redemption date', () => {
+    const settled = buildReviewFixture(CALLED_SETTLED_FIXTURE_ID)!.note
+    assert.equal(noteSettlementStatus(settled, '2026-09-03'), 'pending', 'the day before is still pending')
+    assert.equal(noteSettlementStatus(settled, '2026-09-04'), 'settled')
+    assert.equal(noteSettlementStatus(settled, '2027-01-01'), 'settled')
   })
 })
 

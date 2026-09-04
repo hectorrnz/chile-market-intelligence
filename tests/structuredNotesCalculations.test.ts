@@ -133,8 +133,19 @@ describe('risk status (no fake status without market data)', () => {
   it('autocallable when all ≥ autocall barrier', () => {
     assert.equal(calculateCurrentRiskStatus({ underlyings: us, status: 'active' }, [price(1, 2927), price(2, 7576)]), 'autocallable')
   })
-  it('autocalled note is always autocallable status', () => {
-    assert.equal(calculateCurrentRiskStatus({ underlyings: us, status: 'autocalled' }, []), 'autocallable')
+  // R13.7B2.2 § 6 — INVERTED, deliberately. A called note used to report
+  // `autocallable`, whose own definition is "would autocall on the NEXT
+  // observation date" — meaningless for a note that has already ended and has
+  // no next date. The owner review read the resulting hero as a live position.
+  // A called note is now `called`: terminal, and never confusable with the
+  // forecast state.
+  it('an autocalled note reports the TERMINAL status, never the autocallable forecast', () => {
+    assert.equal(calculateCurrentRiskStatus({ underlyings: us, status: 'autocalled' }, []), 'called')
+  })
+  it('a live note whose condition is currently met still reports the forecast state', () => {
+    // The two must stay distinguishable: same prices, different note status.
+    assert.equal(calculateCurrentRiskStatus({ underlyings: us, status: 'active' }, [price(1, 2927), price(2, 7576)]), 'autocallable')
+    assert.equal(calculateCurrentRiskStatus({ underlyings: us, status: 'autocalled' }, [price(1, 2927), price(2, 7576)]), 'called')
   })
 })
 

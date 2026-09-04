@@ -184,7 +184,13 @@ export function calculateCurrentRiskStatus(
   prices: UnderlyingPrice[],
   watchBand = 0.05,
 ): RiskStatus {
-  if (note.status === 'autocalled') return 'autocallable'
+  // R13.7B2.2 § 6 — a called note is CALLED, not "autocallable". `autocallable`
+  // means "would autocall on the next observation date", which is false for a
+  // note that has already ended: it has no next observation. Reporting the
+  // forecast state for a terminal one is what made the detail hero read as a
+  // live position under owner review. Settlement (pending/settled) is a
+  // separate axis and is never folded into this classification.
+  if (note.status === 'autocalled') return 'called'
   if (note.status === 'matured' || note.status === 'cancelled') return 'unavailable'
   if (note.underlyings.length === 0) return 'unavailable'
 

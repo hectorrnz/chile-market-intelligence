@@ -276,7 +276,10 @@ const EVENT_DOT: Record<HomeEventKind, string> = {
 }
 
 const RISK_DOT: Record<string, string> = {
-  safe: 'var(--positive)', watch: 'var(--warning)', breached: 'var(--negative)', autocallable: 'var(--accent)', unavailable: 'var(--muted-fg)',
+  // R13.7B2.2 § 6 — `called` is terminal, not the `autocallable` forecast. Home's
+  // attention list already skips non-active notes, so this entry only guards the
+  // dot lookup against ever falling through for an archived note.
+  safe: 'var(--positive)', watch: 'var(--warning)', breached: 'var(--negative)', autocallable: 'var(--accent)', called: 'var(--negative)', unavailable: 'var(--muted-fg)',
 }
 
 // ── Pure fetchers (module scope, no setState) — every state write lands in a

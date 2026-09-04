@@ -66,6 +66,7 @@ import { useLang } from '@/components/providers/LangProvider'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { DEFAULT_ENTITIES } from '@/lib/structuredNotes/types'
 import { dedupeObservationsByDate } from '@/lib/structuredNotes/pdf/extractStructuredNoteTerms'
+import { buildScheduleRows, findCallDate, type ScheduleOutcome, type ScheduleRow } from '@/lib/structuredNotes/observationSchedule'
 import { calculateNevadaInvestmentNotional, classifyIssueSizePlausibility, nevadaInvestmentCurrency } from '@/lib/structuredNotes/calculations'
 import type { StructuredNote, UnderlyingPrice, RiskStatus } from '@/lib/structuredNotes/types'
 import { fmtPct, fmtNum, distanceTone, shortUnderlying, StatCapsule, RISK_TONE } from '../page'
@@ -100,6 +101,13 @@ interface DetailResponse {
   prices: UnderlyingPrice[]
   metrics: {
     riskStatus: RiskStatus
+    /**
+     * R13.7B2.2 § 6 — settlement of a CALLED note, a separate axis from risk
+     * status. Null for any note that is not called. Derived server-side from the
+     * calling observation's own Mandatory Early Redemption Date, so the label
+     * and `currentNotional` below can never disagree.
+     */
+    settlement?: 'pending' | 'settled' | 'unknown' | null
     worstPerformer: { underlyingName: string; performance: number | null } | null
     nextObservation: { valuationDate: string; observationType: string } | null
     daysToNextObservation: number | null
@@ -239,7 +247,7 @@ export default function StructuredNoteDetailPage() {
     }
   }
 
-  const riskLabel = (s: string) => ({ safe: t.sn.riskSafe, watch: t.sn.riskWatch, breached: t.sn.riskBreached, autocallable: t.sn.riskAutocallable, unavailable: t.sn.riskUnavailable }[s] ?? s)
+  const riskLabel = (s: string) => ({ safe: t.sn.riskSafe, watch: t.sn.riskWatch, breached: t.sn.riskBreached, autocallable: t.sn.riskAutocallable, called: t.sn.riskCalled, unavailable: t.sn.riskUnavailable }[s] ?? s)
 
   const backLink = (
     <Link href="/structured-notes" className="text-sm text-accent no-print">← {t.sn.back}</Link>
@@ -307,16 +315,32 @@ export default function StructuredNoteDetailPage() {
   const nextObs = data.metrics.nextObservation
   const nextDays = data.metrics.daysToNextObservation
   const nearObs = nextDays !== null && nextDays <= 7 && nextDays >= 0
+  // Canonical rows: coupon and autocall stay SEPARATE (the R13.7 repair).
   const deduped = dedupeObservationsByDate(n.observations)
+  // R13.7B2.2 § 2 — display view: ONE row per contractual valuation date, with
+  // the coupon and autocall outcomes side by side. Presentation only — nothing
+  // here merges, rewrites or drops a canonical observation.
+  const scheduleRows = buildScheduleRows(deduped)
   // R13.7 § 14/§ 11 — the contractual call date, derived from the observation
   // that actually recorded the call. Everything scheduled after it is no longer
   // a live observation of an existing note and is shown as void rather than
   // silently left looking pending.
-  const calledOnDate = deduped
-    .filter((o) => o.status === 'autocalled')
-    .map((o) => o.valuationDate)
-    .sort()[0] ?? null
-  const observedCount = deduped.filter((o) => o.status !== 'scheduled').length
+  const calledOnDate = findCallDate(deduped)
+  const observedCount = scheduleRows.filter((r) => r.state !== 'scheduled').length
+
+  // R13.7B2.2 § 6 — a called note is terminal: its operationally relevant date
+  // is the Mandatory Early Redemption Date of the calling observation, not the
+  // original maturity (which stays in General Terms, never erased).
+  const isCalled = n.status === 'autocalled'
+  const settlement = data.metrics.settlement ?? null
+  const callingRow = calledOnDate !== null ? scheduleRows.find((r) => r.valuationDate === calledOnDate) ?? null : null
+  const settlementLabel = settlement === 'pending' ? t.sn.settlementPending
+    : settlement === 'settled' ? t.sn.settlementSettled
+    : settlement === 'unknown' ? t.sn.settlementUnknown
+    : undefined
+  const settlementLegend = settlement === 'pending' ? t.sn.legendSettlementPending
+    : settlement === 'settled' ? t.sn.legendSettlementSettled
+    : undefined
 
   // Fable §6 lifecycle timeline — issued ✓ · observed ✓ · next ● · maturity ○.
   // Row classification comes from the API's own data (status + the resolver's
@@ -352,7 +376,17 @@ export default function StructuredNoteDetailPage() {
       {/* Monitoring summary — the R3 capsule anatomy, decision-first order */}
       <Reveal delayMs={70}>
         <div className="grid gap-3 mb-3.5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
-          <StatCapsule label={t.sn.riskStatus} value={riskLabel(data.metrics.riskStatus)} tone={RISK_TONE[data.metrics.riskStatus]} title={legendFor(t, data.metrics.riskStatus)} />
+          {/* R13.7B2.2 § 6 — for a called note the state is "Called" with the
+              settlement position as its own sub-line. Never "Autocallable",
+              which means "would call on the NEXT date" and is meaningless for a
+              note that has no next date. */}
+          <StatCapsule
+            label={t.sn.riskStatus}
+            value={riskLabel(data.metrics.riskStatus)}
+            sub={isCalled ? settlementLabel : undefined}
+            tone={RISK_TONE[data.metrics.riskStatus]}
+            title={[legendFor(t, data.metrics.riskStatus), settlementLegend].filter(Boolean).join(' ')}
+          />
           <StatCapsule
             label={t.sn.worstPerformer}
             value={worst ? `${shortUnderlying(worst.underlyingName)} ${fmtPct(worst.performance)}` : t.sn.unavailable}
@@ -360,15 +394,28 @@ export default function StructuredNoteDetailPage() {
             title={worst?.underlyingName}
           />
           <StatCapsule label={t.sn.distanceKnockIn} value={worstKnockInDistance !== null ? fmtPct(worstKnockInDistance) : '—'} tone={distanceTone(worstKnockInDistance)} />
-          <StatCapsule
-            label={t.sn.dashNextObs}
-            value={nextObs ? `${nextObs.valuationDate}${nextDays !== null ? ` (${nextDays}d)` : ''}` : '—'}
-            tone={nearObs ? 'var(--negative)' : undefined}
-          />
-          <StatCapsule label={t.sn.colCoupon} value={fmtPct(n.couponRateAnnualized)} />
+          {/* A called note has no next observation — the date that matters is
+              the one it was called on. */}
+          {isCalled ? (
+            <StatCapsule label={t.sn.calledOnLabel} value={calledOnDate ?? '—'} tone="var(--negative)" title={t.sn.legendCalled} />
+          ) : (
+            <StatCapsule
+              label={t.sn.dashNextObs}
+              value={nextObs ? `${nextObs.valuationDate}${nextDays !== null ? ` (${nextDays}d)` : ''}` : '—'}
+              tone={nearObs ? 'var(--negative)' : undefined}
+            />
+          )}
+          <StatCapsule label={t.sn.colCoupon} value={fmtPct(n.couponRateAnnualized)} sub={n.couponRatePeriodic !== null ? `${fmtPct(n.couponRatePeriodic)} · ${n.couponFrequency ?? ''}`.trim() : undefined} />
           {/* R11: private amount — same masking boundary as the book total. */}
-          <StatCapsule label={t.sn.colNotional} value={`${n.currency} ${fmtNum(data.metrics.currentNotional)}`} masked={masked} />
-          <StatCapsule label={t.sn.colMaturity} value={n.maturityDate ?? '—'} />
+          <StatCapsule label={t.sn.colNotional} value={`${n.currency} ${fmtNum(data.metrics.currentNotional)}`} sub={isCalled ? settlementLabel : undefined} masked={masked} />
+          {/* § 6 — for a called note the redemption/settlement date is the
+              operationally relevant one; contractual maturity is preserved in
+              General Terms below, never erased. */}
+          {isCalled ? (
+            <StatCapsule label={t.sn.redemptionSettlement} value={callingRow?.paymentDate ?? '—'} sub={settlementLabel} title={settlementLegend} />
+          ) : (
+            <StatCapsule label={t.sn.colMaturity} value={n.maturityDate ?? '—'} />
+          )}
         </div>
       </Reveal>
 
@@ -380,7 +427,14 @@ export default function StructuredNoteDetailPage() {
             minWidth={680}
             footer={
               <>
-                <TableSourceFooter source={t.sn.sourceMarket} asOf={pricesAsOf} />
+                {/* R13.7B2.2 § 8 — the marks are named in VISIBLE text, not only
+                    in the SVG tooltip, so the gauge is readable without hover
+                    and without knowing the implementation. */}
+                <GaugeLegend />
+                {/* § 11 — an unambiguous full calendar date. These levels are a
+                    fixed contractual valuation close, not a refresh time, so the
+                    dense "28-08" convention is wrong here. */}
+                <TableSourceFooter className="mt-1.5" source={t.sn.sourceMarket} asOf={pricesAsOf} asOfFormat="full" />
                 <p className="ui-meta text-muted-fg mt-1">{t.sn.monitoring.estimateDisclaimer}</p>
               </>
             }
@@ -390,7 +444,7 @@ export default function StructuredNoteDetailPage() {
               <thead>
                 <tr>
                   <th scope="col" className={`${thBase} text-left pl-4`}>{t.sn.colUnderlyings}</th>
-                  <th scope="col" className={thBase} style={{ minWidth: 160 }}>{t.sn.colLevel}</th>
+                  <th scope="col" className={thBase} style={{ minWidth: 190 }} title={t.sn.gaugeLegend}>{t.sn.gaugeNormalized}</th>
                   <th scope="col" className={thBase}>{t.sn.currentLevel}</th>
                   <th scope="col" className={thBase} title={t.sn.distanceConvention}>{t.sn.distanceCoupon}</th>
                   <th scope="col" className={thBase} title={t.sn.distanceConvention}>{t.sn.distanceKnockIn}</th>
@@ -412,48 +466,79 @@ export default function StructuredNoteDetailPage() {
                   // coupon barrier equals the knock-in at 65%, and the call
                   // level equals the strike at 100%) so the gauge shows one
                   // tick per distinct level instead of stacking them.
+                  //
+                  // `*Pct` fields are DECIMAL FRACTIONS platform-wide (0.65 is
+                  // 65%) — every parser emits `Number(match) / 100` and
+                  // `calculateBarrierLevel` multiplies without dividing — so
+                  // × 100 puts them on the gauge's 0–130 percent-of-strike axis.
                   const rawMarks: BarrierMark[] = [
-                    ...(kiPct != null ? [{ kind: 'knockIn' as const, level: kiPct * 100 }] : []),
-                    ...(couponPct != null ? [{ kind: 'coupon' as const, level: couponPct * 100 }] : []),
-                    ...(autocallPct != null ? [{ kind: 'autocall' as const, level: autocallPct * 100 }] : []),
-                    { kind: 'strike' as const, level: 100 },
+                    ...(kiPct != null ? [{ kind: 'knockIn' as const, level: kiPct * 100, label: `${t.sn.gaugeMarkKnockIn} (${(kiPct * 100).toFixed(0)})` }] : []),
+                    ...(couponPct != null ? [{ kind: 'coupon' as const, level: couponPct * 100, label: `${t.sn.gaugeMarkCoupon} (${(couponPct * 100).toFixed(0)})` }] : []),
+                    ...(autocallPct != null ? [{ kind: 'autocall' as const, level: autocallPct * 100, label: `${t.sn.gaugeMarkAutocall} (${(autocallPct * 100).toFixed(0)})` }] : []),
+                    { kind: 'strike' as const, level: 100, label: t.sn.gaugeMarkStrike },
                   ]
-                  const seenLevels = new Set<number>()
-                  const gaugeMarks: BarrierMark[] = rawMarks.filter((m) => {
+                  // Coinciding levels are collapsed to ONE tick whose label
+                  // names every threshold sitting there — for the current book
+                  // the coupon barrier equals the knock-in at 65 and the call
+                  // level equals the strike at 100, and drawing two
+                  // indistinguishable lines said nothing (§ 8).
+                  const byLevel = new Map<number, BarrierMark>()
+                  for (const m of rawMarks) {
                     const key = Math.round(m.level * 100) / 100
-                    if (seenLevels.has(key)) return false
-                    seenLevels.add(key)
-                    return true
-                  })
+                    const seen = byLevel.get(key)
+                    if (!seen) byLevel.set(key, { ...m })
+                    else if (m.label && seen.label && !seen.label.includes(m.label)) seen.label = `${seen.label} · ${m.label}`
+                  }
+                  const gaugeMarks: BarrierMark[] = [...byLevel.values()]
                   const isWorst = worst !== null && d.underlyingName === worst.underlyingName
                   return (
                     <tr key={d.underlyingOrder} className="border-b border-border last:border-0">
                       <td className={`${cell} text-left pl-4 whitespace-nowrap`}>
                         <span className="text-foreground" title={d.underlyingName}>{d.underlyingName}</span>
+                        {/* R13.7B2.2 § 9 — "Worst" must never be read as "the
+                            smaller index level". The explanation is carried by
+                            the badge's own title AND repeated in the legend
+                            below, so it is never hover-only. */}
                         {isWorst && (
-                          <span className="ml-1.5 inline-flex items-center h-5 px-2 rounded-full text-xs font-medium align-middle" style={{ color: 'var(--warning)', backgroundColor: 'color-mix(in oklab, var(--warning) 12%, var(--surface))' }}>
+                          <span
+                            className="ml-1.5 inline-flex items-center h-5 px-2 rounded-full text-xs font-medium align-middle cursor-help"
+                            style={{ color: 'var(--warning)', backgroundColor: 'color-mix(in oklab, var(--warning) 12%, var(--surface))' }}
+                            title={t.sn.worstExplain}
+                          >
                             {t.sn.colWorst}
                           </span>
                         )}
                       </td>
                       <td className={cell}>
+                        {/* § 8 — the reading is NORMALIZED (100 = this
+                            underlying's own initial, which is also its call
+                            level), never a raw index level. The basis is stated
+                            on the gauge itself, not left as a bare "101.9". */}
                         <BarrierGauge
                           current={gaugeLevel}
                           marks={gaugeMarks}
-                          width={140}
+                          width={150}
                           height={18}
-                          summary={gaugeLevel !== null ? `${t.fable.barrier.current} ${gaugeLevel.toFixed(1)}` : undefined}
+                          summary={gaugeLevel !== null ? `${t.sn.gaugeNormalized} ${gaugeLevel.toFixed(2)} — ${t.sn.gaugeBasis}` : undefined}
                         />
                       </td>
+                      {/* The RAW market level always stays visible beside the
+                          normalized gauge (§ 8) — they answer different
+                          questions and neither replaces the other. */}
                       <td className={`${cell} ui-number`}>{d.currentLevel !== null ? fmtNum(d.currentLevel) : <span className="text-muted-fg">{t.sn.unavailable}</span>}</td>
-                      <td className={`${cell} ui-number font-medium`} title={t.sn.distanceConvention} style={{ color: distanceTone(d.distanceToCouponBarrier) }}>{fmtPct(d.distanceToCouponBarrier)}</td>
-                      <td className={`${cell} ui-number font-medium`} title={t.sn.distanceConvention} style={{ color: distanceTone(d.distanceToKnockInBarrier) }}>{fmtPct(d.distanceToKnockInBarrier)}</td>
+                      {/* R13.7B2.2 § 10 — the LOCKED formula and sign are
+                          unchanged (`threshold / current − 1`); each cell now
+                          also carries the plain-language reading of its own
+                          value, so a bare "−35.70%" is never the only thing on
+                          screen. */}
+                      <td className={`${cell} ui-number font-medium`} title={moveText(t, d.distanceToCouponBarrier, t.sn.couponBarrier)} style={{ color: distanceTone(d.distanceToCouponBarrier) }}>{fmtPct(d.distanceToCouponBarrier)}</td>
+                      <td className={`${cell} ui-number font-medium`} title={moveText(t, d.distanceToKnockInBarrier, t.sn.colKnockIn)} style={{ color: distanceTone(d.distanceToKnockInBarrier) }}>{fmtPct(d.distanceToKnockInBarrier)}</td>
                       {/* R13.7 § 15 — the CALL level is the threshold that decides an
                           autocall, so it belongs beside the barriers rather than only
                           inside the event engine. Same metric and sign convention as
                           its neighbours; no proximity tone, because being close to a
                           call is not a risk signal the way a barrier is. */}
-                      <td className={`${cell} ui-number`} title={t.sn.distanceConvention}>{fmtPct(d.distanceToAutocallBarrier)}</td>
+                      <td className={`${cell} ui-number`} title={moveText(t, d.distanceToAutocallBarrier, t.sn.gaugeMarkAutocall)}>{fmtPct(d.distanceToAutocallBarrier)}</td>
                       <td className={`${cell} pr-4 ui-number text-xs`}>
                         {d.lastMonitoredDate ? (
                           <span className={d.lastMonitoredStale ? 'text-warning' : 'text-muted-fg'} title={d.lastMonitoredStale ? t.sn.monitoring.priceStale : undefined}>
@@ -583,68 +668,48 @@ export default function StructuredNoteDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {deduped.map((o) => {
-                  // Classified from the API's own data: completed = the stored
-                  // status; next = the resolver's nextObservation date. No
-                  // client-side date math.
-                  const done = o.status !== 'scheduled'
-                  const isNext = !done && nextObs !== null && o.valuationDate === nextObs.valuationDate
-                  // R13.7 § 14 — a call is TERMINAL and outranks every other
-                  // outcome on its date. Before the fix a called date could
-                  // render as a plain green "Eligible" (the coupon test) with
-                  // nothing saying the note had ended.
-                  const isCalled = o.status === 'autocalled'
-                  const isVoided = calledOnDate !== null && o.valuationDate > calledOnDate
-                  const typeLabel = o.observationType === 'autocall' ? t.sn.obsTypeAutocall
-                    : o.observationType === 'final' ? t.sn.obsTypeFinal : t.sn.obsTypeCoupon
+                {/* R13.7B2.2 § 2 — ONE row per contractual valuation date. The
+                    canonical coupon and autocall observations remain separate
+                    records (that is the R13.7 repair); this view puts their two
+                    outcomes side by side, the way the term sheet states them,
+                    instead of emitting "1 COUPON" and "1 AUTOCALL" as two
+                    physical rows for one Observation Date. */}
+                {scheduleRows.map((r) => {
+                  const isNext = r.state === 'scheduled' && nextObs !== null && r.valuationDate === nextObs.valuationDate
+                  const rowCalled = r.state === 'called'
+                  const rowVoid = r.state === 'void'
                   return (
                     <tr
-                      key={`${o.observationNumber}-${o.valuationDate}`}
-                      className={`border-b border-border last:border-0 ${done && !isCalled ? 'opacity-60' : ''} ${isVoided ? 'opacity-40 line-through' : ''}`}
+                      key={r.key}
+                      className={`border-b border-border last:border-0 ${r.state === 'observed' ? 'opacity-60' : ''} ${rowVoid ? 'opacity-40 line-through' : ''}`}
                       style={
-                        isCalled
-                          ? { backgroundColor: 'color-mix(in oklab, var(--positive) 12%, transparent)' }
+                        rowCalled
+                          ? { backgroundColor: 'color-mix(in oklab, var(--negative) 12%, transparent)' }
                           : isNext
                             ? { backgroundColor: 'color-mix(in oklab, var(--warning) 8%, transparent)' }
                             : undefined
                       }
-                      title={o.reviewRequired && o.reviewReason ? `${t.sn.monitoring.reviewReason}: ${o.reviewReason}` : undefined}
+                      title={r.reviewRequired && r.reviewReason ? `${t.sn.monitoring.reviewReason}: ${r.reviewReason}` : undefined}
                     >
                       <td className={`${cell} pl-4 ui-number`}>
-                        {o.observationNumber}
-                        {' '}
-                        <span className="ui-micro-label text-muted-fg" title={typeLabel}>{typeLabel}</span>
+                        {r.displayNumber}
+                        {r.hasFinal && <span className="ml-1 ui-micro-label text-muted-fg" title={t.sn.obsFinalTag}>{t.sn.obsTypeFinal}</span>}
                       </td>
                       <td className={`${cell} ui-number whitespace-nowrap`}>
                         {isNext && <span aria-hidden="true" style={{ color: 'var(--warning)' }}>● </span>}
                         {isNext && <span className="sr-only">{t.sn.dashNextObs}: </span>}
-                        {o.valuationDate}
+                        {r.valuationDate}
                       </td>
-                      <td className={`${cell} ui-number`}>{o.paymentDate ?? o.redemptionDate ?? '—'}</td>
-                      <td className={`${cell} ui-number`}>{fmtPct(o.couponBarrierPct)}</td>
-                      <td className={`${cell} ui-number`}>{fmtPct(o.autocallBarrierPct)}</td>
-                      <td className={`${cell} text-xs text-muted-fg`}>
-                        {isCalled ? (
-                          <span className="inline-flex items-center h-5 px-2 rounded-full font-medium" style={{ color: 'var(--positive)', backgroundColor: 'color-mix(in oklab, var(--positive) 14%, var(--surface))' }}>
-                            {t.sn.calledOn}
-                          </span>
-                        ) : isVoided ? (
-                          <span title={t.sn.voided}>{t.sn.voided}</span>
-                        ) : (
-                          o.status
-                        )}
-                        {o.reviewRequired ? <span className="text-warning"> ⚠</span> : ''}
-                      </td>
+                      <td className={`${cell} ui-number`}>{r.paymentDate ?? '—'}</td>
+                      <td className={`${cell} ui-number`}>{fmtPct(r.couponBarrierPct)}</td>
+                      <td className={`${cell} ui-number`}>{fmtPct(r.autocallBarrierPct)}</td>
+                      {/* § 3 — human-readable, never the storage enum. */}
                       <td className={`${cell} text-xs`}>
-                        {o.couponEligible === true ? <span className="text-positive">{t.sn.monitoring.eligible}</span>
-                          : o.couponEligible === false ? <span className="text-negative">{t.sn.monitoring.notEligible}</span>
-                          : <span className="text-muted-fg">—</span>}
+                        <RowStateChip state={r.state} />
+                        {r.reviewRequired ? <span className="text-warning"> ⚠</span> : ''}
                       </td>
-                      <td className={`${cell} pr-4 text-xs`}>
-                        {o.autocallEligible === true ? <span className="text-positive">{t.sn.monitoring.eligible}</span>
-                          : o.autocallEligible === false ? <span className="text-negative">{t.sn.monitoring.notEligible}</span>
-                          : <span className="text-muted-fg">—</span>}
-                      </td>
+                      <td className={`${cell} text-xs`}><OutcomeCell outcome={r.coupon} /></td>
+                      <td className={`${cell} pr-4 text-xs`}><OutcomeCell outcome={r.autocall} /></td>
                     </tr>
                   )
                 })}
@@ -760,7 +825,108 @@ export default function StructuredNoteDetailPage() {
 
 /** Full legend sentence for a risk status — capsule tooltip only; the label text itself always names the status. */
 function legendFor(t: ReturnType<typeof useLang>['t'], s: RiskStatus): string | undefined {
-  return { safe: t.sn.legendSafe, watch: t.sn.legendWatch, breached: t.sn.legendBreached, autocallable: t.sn.legendAutocallable, unavailable: t.sn.legendUnavailable }[s]
+  return { safe: t.sn.legendSafe, watch: t.sn.legendWatch, breached: t.sn.legendBreached, autocallable: t.sn.legendAutocallable, called: t.sn.legendCalled, unavailable: t.sn.legendUnavailable }[s]
+}
+
+/**
+ * R13.7B2.2 § 10 — the plain-language reading of ONE distance value.
+ *
+ * The metric itself is untouched: `moveToThresholdPct = threshold / current − 1`,
+ * negative when the level must FALL. This only says that in words for the
+ * specific value in the cell, because a standalone "−35.70%" told the owner
+ * review neither the direction nor which level it referred to.
+ *
+ * Deliberately NOT the negation of the cushion metric — the two have different
+ * denominators (§ 15 of R13.7), so this sentence is derived from the same
+ * number the cell prints and from no other.
+ */
+function moveText(t: ReturnType<typeof useLang>['t'], v: number | null | undefined, levelName: string): string {
+  if (v === null || v === undefined || !Number.isFinite(v)) return t.sn.distanceConvention
+  const pct = `${Math.abs(v * 100).toFixed(2)}%`
+  const direction = v < 0 ? t.sn.declineTo : v > 0 ? t.sn.riseTo : t.sn.atLevel
+  return v === 0
+    ? `${direction} ${levelName} · ${t.sn.distanceConvention}`
+    : `${pct} ${direction} ${levelName} · ${t.sn.distanceConvention}`
+}
+
+/** Chip colors for a schedule row's lifecycle state. Owner-specified: Called is RED; the label always names the state, so meaning is never color-alone. */
+const ROW_STATE_TONE: Record<ScheduleRow['state'], string> = {
+  called: 'var(--negative)',
+  void: 'var(--muted-fg)',
+  matured: 'var(--accent)',
+  observed: 'var(--muted-fg)',
+  scheduled: 'var(--muted-fg)',
+}
+
+function RowStateChip({ state }: { state: ScheduleRow['state'] }) {
+  const { t } = useLang()
+  const label = t.sn.obsState[state]
+  const tone = ROW_STATE_TONE[state]
+  if (state === 'scheduled' || state === 'observed') {
+    return <span className="text-muted-fg">{label}</span>
+  }
+  return (
+    <span
+      className="inline-flex items-center h-5 px-2 rounded-full font-medium whitespace-nowrap"
+      style={{ color: tone, backgroundColor: `color-mix(in oklab, ${tone} 14%, var(--surface))` }}
+    >
+      {label}
+    </span>
+  )
+}
+
+/**
+ * One contractual test's outcome on one date (§ 3).
+ *
+ * `none` renders an em dash with an explanation rather than "not eligible":
+ * production currently holds no autocall observations at all, and describing a
+ * test that never ran as a negative result would be a fabrication.
+ */
+function OutcomeCell({ outcome }: { outcome: ScheduleOutcome }) {
+  const { t } = useLang()
+  if (outcome === 'none') return <span className="text-muted-fg cursor-help" title={t.sn.obsOutcomeNoneHelp}>—</span>
+  const label = t.sn.obsOutcome[outcome]
+  const cls =
+    outcome === 'paid' || outcome === 'eligible' ? 'text-positive'
+      : outcome === 'called' ? 'text-negative font-medium'
+      : outcome === 'missed' || outcome === 'not_eligible' ? 'text-negative'
+      : 'text-muted-fg'
+  return <span className={cls}>{label}</span>
+}
+
+/**
+ * R13.7B2.2 § 8 — the gauge's legend, as VISIBLE text under the table.
+ *
+ * Every marker on the gauge is named here, so a reader never meets an
+ * unexplained vertical line or an unexplained "101.94". The color swatches
+ * repeat the gauge's own `KIND_COLOR` mapping, and each is accompanied by its
+ * name — the legend is readable in monochrome.
+ */
+function GaugeLegend() {
+  const { t } = useLang()
+  const items: { color: string; label: string }[] = [
+    { color: 'var(--accent-2)', label: t.sn.gaugeMarkCurrent },
+    { color: 'var(--muted-fg)', label: t.sn.gaugeMarkStrike },
+    { color: 'var(--accent)', label: t.sn.gaugeMarkAutocall },
+    { color: 'var(--warning)', label: t.sn.gaugeMarkCoupon },
+    { color: 'var(--critical)', label: t.sn.gaugeMarkKnockIn },
+  ]
+  return (
+    <div className="ui-meta text-muted-fg">
+      <p>{t.sn.gaugeLegend}</p>
+      <ul className="flex flex-wrap gap-x-3 gap-y-1 mt-1" aria-label={t.sn.gaugeLegend}>
+        {items.map((it) => (
+          <li key={it.label} className="inline-flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: it.color }} aria-hidden="true" />
+            <span>{it.label}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1">{t.sn.gaugeMarksCoincide}</p>
+      <p className="mt-1">{t.sn.worstExplain}</p>
+      <p className="mt-1">{t.sn.distanceConvention}</p>
+    </div>
+  )
 }
 
 /** Lifecycle-status pill (active/autocalled/matured/…) — same color-mix pill language as the R3 dashboard. */

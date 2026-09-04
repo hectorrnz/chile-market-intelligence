@@ -26,12 +26,32 @@ export type ObservationStatus =
 export type AssetClass = 'index' | 'etf' | 'equity' | 'fund' | 'other'
 export type FieldConfidence = 'high' | 'medium' | 'low'
 
-/** Live/computed risk classification for a note as of a valuation date. */
+/**
+ * Live/computed risk classification for a note as of a valuation date.
+ *
+ * COMPUTED, NEVER PERSISTED. No column, migration, notification payload or API
+ * contract stores a `RiskStatus` — it is derived per request from the note's
+ * own status plus current levels, so extending this union is a presentation
+ * change, not a schema change.
+ */
 export type RiskStatus =
   | 'safe' // all underlyings comfortably above coupon barrier
   | 'watch' // at least one underlying within the watch band above coupon barrier
   | 'breached' // at least one underlying at/below its knock-in/coupon barrier
   | 'autocallable' // all underlyings at/above autocall barrier (would autocall on next date)
+  /**
+   * R13.7B2.2 § 6 — the note HAS been called. A terminal state, not a forecast.
+   *
+   * Previously an `autocalled` note reported `autocallable`, whose own
+   * definition one line above is "would autocall on next date" — for a note
+   * that has already ended there is no next date, and the owner review read the
+   * hero as still describing a live position. The two are contractually
+   * different: `autocallable` is a live note whose condition is currently
+   * satisfied; `called` is a note whose condition WAS satisfied and which no
+   * longer tracks the underlyings. Settlement (pending vs settled) is a
+   * separate axis carried by `SettlementStatus`, never folded in here.
+   */
+  | 'called'
   | 'unavailable' // insufficient market data to classify — never a fake status
 
 export interface StructuredNoteUnderlying {

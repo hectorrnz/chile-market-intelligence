@@ -95,6 +95,12 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     }
   })
 
+  // R13.7B2.2 § 6 — settlement is a SEPARATE axis from risk status, derived from
+  // the calling observation's own Mandatory Early Redemption Date. Computed once
+  // here so the notional and the hero label can never disagree about whether the
+  // cash has been repaid. `undefined` for any note that is not called.
+  const settlement = noteSettlementStatus(note, asOf)
+
   return NextResponse.json({
     // See the list route: a UI courtesy, never the boundary.
     canManage,
@@ -102,10 +108,11 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     prices,
     metrics: {
       riskStatus,
+      settlement: settlement ?? null,
       worstPerformer: worst,
       nextObservation: nextObs,
       daysToNextObservation: calculateDaysToNextObservation(note.observations, asOf),
-      currentNotional: calculateCurrentNotional(note, note.allocations, noteSettlementStatus(note, new Date().toISOString().slice(0, 10))),
+      currentNotional: calculateCurrentNotional(note, note.allocations, settlement),
       distances,
     },
   })

@@ -50,7 +50,24 @@ describe('R4.1 — Fable detail composition on /structured-notes/[id]', () => {
     for (const key of ['riskStatus', 'worstPerformer', 'distanceKnockIn', 'dashNextObs', 'colCoupon', 'colNotional', 'colMaturity']) {
       assert.ok(DETAIL.includes(`t.sn.${key}`), `capsule ${key} must be present`)
     }
-    assert.match(DETAIL, /<StatCapsule label=\{t\.sn\.riskStatus\} value=\{riskLabel\(data\.metrics\.riskStatus\)\} tone=\{RISK_TONE\[data\.metrics\.riskStatus\]\}/)
+    // R13.7B2.2 § 6 — the status capsule now also carries the settlement
+    // sub-line for a called note, so the assertion is on the bindings rather
+    // than on one single-line JSX spelling.
+    assert.match(DETAIL, /label=\{t\.sn\.riskStatus\}/)
+    assert.match(DETAIL, /value=\{riskLabel\(data\.metrics\.riskStatus\)\}/)
+    assert.match(DETAIL, /tone=\{RISK_TONE\[data\.metrics\.riskStatus\]\}/)
+  })
+
+  // R13.7B2.2 § 6 — a called note is terminal; the hero says so, and swaps the
+  // forward-looking capsules for the ones that still mean something.
+  it('a called note shows Called + settlement, not the autocallable forecast', () => {
+    assert.match(DETAIL, /const isCalled = n\.status === 'autocalled'/)
+    assert.match(DETAIL, /called: t\.sn\.riskCalled/)
+    for (const key of ['t.sn.settlementPending', 't.sn.settlementSettled', 't.sn.calledOnLabel', 't.sn.redemptionSettlement']) {
+      assert.ok(DETAIL.includes(key), `${key} must be present`)
+    }
+    // Contractual maturity is NOT erased — it stays in the terms grid.
+    assert.match(DETAIL, /<TermField k=\{t\.sn\.colMaturity\} v=\{n\.maturityDate\} \/>/)
   })
 
   it('uses only shared Fable primitives and reduced-motion-gated wrappers', () => {
@@ -178,18 +195,33 @@ describe('R4.4 — every real section remains represented', () => {
     assert.match(DETAIL, /\{t\.sn\.colWorst\}/)
   })
 
-  it('schedule: the COMPLETE deduped observation table with eligibility and review flags', () => {
+  // R13.7B2.2 § 2 — REWRITTEN. The canonical de-duplication still runs (coupon
+  // and autocall stay separate records — the R13.7 repair), but the TABLE is
+  // now built by the presentation aggregator: one row per valuation date,
+  // carrying both outcomes. The old assertion required per-observation `o.*`
+  // bindings, which is exactly the internal event model the owner review said
+  // should not be exposed.
+  it('schedule: canonical de-duplication feeds a ONE-ROW-PER-DATE display view', () => {
     assert.match(DETAIL, /dedupeObservationsByDate\(n\.observations\)/)
-    for (const field of ['o.observationNumber', 'o.valuationDate', 'o.paymentDate', 'o.redemptionDate', 'o.couponBarrierPct', 'o.autocallBarrierPct', 'o.status', 'o.couponEligible', 'o.autocallEligible', 'o.reviewRequired', 'o.reviewReason']) {
-      assert.ok(DETAIL.includes(field), `observation field ${field} must be present`)
+    assert.match(DETAIL, /buildScheduleRows\(deduped\)/)
+    for (const field of ['r.valuationDate', 'r.paymentDate', 'r.couponBarrierPct', 'r.autocallBarrierPct', 'r.state', 'r.coupon', 'r.autocall', 'r.reviewRequired', 'r.reviewReason']) {
+      assert.ok(DETAIL.includes(field), `schedule row field ${field} must be present`)
     }
-    assert.match(DETAIL, /t\.sn\.monitoring\.eligible/)
-    assert.match(DETAIL, /t\.sn\.monitoring\.notEligible/)
+    // Exactly one <tr> generator over the aggregated rows.
+    assert.match(DETAIL, /scheduleRows\.map\(\(r\) =>/)
+    assert.ok(!DETAIL.includes('deduped.map('), 'the raw canonical rows must not be rendered one-per-<tr>')
+  })
+
+  it('schedule statuses are human-readable, never storage enums', () => {
+    assert.match(DETAIL, /t\.sn\.obsState\[state\]/)
+    assert.match(DETAIL, /t\.sn\.obsOutcome\[outcome\]/)
+    // The raw enum must not be printed as a cell value.
+    assert.ok(!/\{\s*o\.status\s*\}/.test(DETAIL), 'raw observation status must not be rendered')
   })
 
   it('schedule rows distinguish past, next, and future from API data — no client date math', () => {
-    assert.match(DETAIL, /const done = o\.status !== 'scheduled'/)
-    assert.match(DETAIL, /o\.valuationDate === nextObs\.valuationDate/)
+    assert.match(DETAIL, /r\.state === 'scheduled' && nextObs !== null/)
+    assert.match(DETAIL, /r\.valuationDate === nextObs\.valuationDate/)
     assert.ok(!DETAIL_CODE.includes('new Date()'), 'no client-side today-classification')
     // the next observation is visually marked AND announced (● + sr-only)
     assert.match(DETAIL, /<span className="sr-only">\{t\.sn\.dashNextObs\}: <\/span>/)
@@ -231,9 +263,13 @@ describe('R4.4 — every real section remains represented', () => {
   })
 
   it('the current-levels table keeps the Yahoo footer, real as-of, and the estimate disclaimer', () => {
-    assert.match(DETAIL, /<TableSourceFooter source=\{t\.sn\.sourceMarket\} asOf=\{pricesAsOf\}/)
+    assert.match(DETAIL, /source=\{t\.sn\.sourceMarket\} asOf=\{pricesAsOf\}/)
     assert.match(DETAIL, /p\.asOf && \(!max \|\| p\.asOf > max\)/)
     assert.match(DETAIL, /t\.sn\.monitoring\.estimateDisclaimer/)
+    // R13.7B2.2 § 11 — these levels are a fixed contractual valuation close, so
+    // the as-of is rendered as an unambiguous full date rather than the dense
+    // platform-wide "DD-MM" convention.
+    assert.match(DETAIL, /asOfFormat="full"/)
   })
 })
 

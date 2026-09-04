@@ -77,10 +77,19 @@ export function BarrierGauge({ current, marks, min = 0, max = 130, summary, widt
     <span className={`inline-flex flex-col gap-0.5 ${className}`}>
       <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} role="img" aria-label={accessibleText}>
         <line x1={0} y1={height / 2} x2={width} y2={height / 2} stroke="var(--border-strong)" strokeWidth={2.5} strokeLinecap="round" />
+        {/* R13.7B2.2 § 8 — every mark names itself. An unlabelled vertical line
+            on a normalized scale is unreadable: the owner review could not tell
+            which tick was the knock-in, the coupon barrier or the call level.
+            The <title> is the SVG-native tooltip; the visible legend beside the
+            table carries the same names, so meaning is never hover-only. */}
         {marks.map((m, i) => (
-          <line key={i} x1={toX(m.level)} x2={toX(m.level)} y1={height / 2 - 6} y2={height / 2 + 6} stroke={KIND_COLOR[m.kind]} strokeWidth={2} />
+          <line key={i} x1={toX(m.level)} x2={toX(m.level)} y1={height / 2 - 6} y2={height / 2 + 6} stroke={KIND_COLOR[m.kind]} strokeWidth={2}>
+            {m.label ? <title>{m.label}</title> : null}
+          </line>
         ))}
-        <circle cx={toX(current)} cy={height / 2} r={4} fill={dotColor} stroke={dotColor} strokeOpacity={0.25} strokeWidth={5} />
+        <circle cx={toX(current)} cy={height / 2} r={4} fill={dotColor} stroke={dotColor} strokeOpacity={0.25} strokeWidth={5}>
+          <title>{accessibleText}</title>
+        </circle>
       </svg>
       <span className="ui-meta text-muted-fg">{accessibleText}</span>
     </span>

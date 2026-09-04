@@ -760,20 +760,56 @@ describe('gauge reference lines share one unit system', () => {
 
   it('a raw absolute barrier level is never placed on the gauge', () => {
     // Putting SPX ~7565 and RTY ~2940 on one 0-130 track would be meaningless.
-    const gaugeBlock = DETAIL.slice(DETAIL.indexOf('const rawMarks'), DETAIL.indexOf('const seenLevels'))
-    assert.ok(gaugeBlock.length > 0)
+    // Anchored on the mark-construction block's own boundaries rather than on
+    // an incidental local variable name (R13.7B2.2 renamed the de-duplicator),
+    // so the invariant is what is asserted, not the spelling.
+    const from = DETAIL.indexOf('const rawMarks')
+    const to = DETAIL.indexOf('const gaugeMarks')
+    assert.ok(from > 0 && to > from, 'the gauge mark-construction block must be locatable')
+    const gaugeBlock = DETAIL.slice(from, to)
     for (const raw of ['autocallBarrierLevel', 'couponBarrierLevel', 'knockInBarrierLevel']) {
       assert.ok(!gaugeBlock.includes(raw), 'raw level must not feed the normalized gauge: ' + raw)
     }
   })
 
   it('coinciding thresholds collapse to one tick instead of stacking', () => {
-    assert.ok(DETAIL.includes('seenLevels'))
+    const from = DETAIL.indexOf('const rawMarks')
+    const to = DETAIL.indexOf('const gaugeMarks')
+    const block = DETAIL.slice(from, to)
+    // One tick per DISTINCT normalized level, keyed on the rounded level.
+    assert.match(block, /Math\.round\(m\.level \* 100\) \/ 100/)
+    assert.match(block, /byLevel/)
   })
 
   it('the distance columns declare their sign convention', () => {
     assert.ok(DETAIL.includes('t.sn.distanceConvention'))
     assert.ok(DETAIL.includes('t.sn.distanceAutocall'))
+  })
+
+  // R13.7B2.2 § 8 — the normalized reading must be self-explanatory. An
+  // unlabelled "Current 101.9" against raw levels of 7,711 and 2,972 was the
+  // single most confusing element of the owner review.
+  it('the gauge states its basis instead of printing a bare number', () => {
+    assert.ok(DETAIL.includes('t.sn.gaugeNormalized'), 'the reading must be named as normalized')
+    assert.ok(DETAIL.includes('t.sn.gaugeBasis'), 'the 100 = initial / call level basis must be stated')
+    assert.ok(!DETAIL.includes('t.fable.barrier.current'), 'the bare "Current <n>" summary must be gone')
+  })
+
+  it('every gauge mark carries a name, and the legend repeats them visibly', () => {
+    const from = DETAIL.indexOf('const rawMarks')
+    const to = DETAIL.indexOf('const gaugeMarks')
+    const block = DETAIL.slice(from, to)
+    for (const key of ['t.sn.gaugeMarkKnockIn', 't.sn.gaugeMarkCoupon', 't.sn.gaugeMarkAutocall', 't.sn.gaugeMarkStrike']) {
+      assert.ok(block.includes(key), 'unnamed gauge mark: ' + key)
+    }
+    // Not hover-only: a visible legend component renders the same names.
+    assert.match(DETAIL, /function GaugeLegend\(\)/)
+    assert.match(DETAIL, /<GaugeLegend \/>/)
+  })
+
+  it('the raw market level stays visible alongside the normalized gauge', () => {
+    assert.ok(DETAIL.includes('t.sn.currentLevel'))
+    assert.match(DETAIL, /fmtNum\(d\.currentLevel\)/)
   })
 })
 
