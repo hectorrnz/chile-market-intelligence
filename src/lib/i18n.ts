@@ -1011,7 +1011,10 @@ export const dict = {
       gaugeMarkKnockIn: 'Knock-in barrier',
       gaugeMarkCoupon: 'Coupon barrier',
       gaugeMarkAutocall: 'Call level',
-      gaugeMarkCurrent: 'Current level',
+      // The current-level dot is coloured by proximity to the knock-in barrier
+      // (BarrierGauge's own thresholds), so the legend says so rather than
+      // implying a fixed colour.
+      gaugeMarkCurrent: 'Current level (dot — colour shows proximity to knock-in)',
       gaugeMarksCoincide: 'Marks at the same normalized level are drawn once and named together.',
       worstExplain: 'Binding (worst-of) leg: the underlying with the smallest normalized cushion above its own contractual level. It is never decided by comparing raw index levels — SPX near 7,700 and RTY near 2,970 are not comparable to each other.',
       unavailable: 'Unavailable',
@@ -1096,6 +1099,9 @@ export const dict = {
       currentLevel: 'Current level',
       valuationDate: 'Valuation',
       paymentDate: 'Payment',
+      // R13.7B2.2 § 2 — one column per contractual date on the aggregated
+      // schedule: coupon payment and early redemption settle on the same date.
+      paymentRedemptionDate: 'Payment / redemption',
       deleting: 'Deleting…',
       deleteError: 'Delete failed',
       removeEntity: 'Remove',
@@ -2719,7 +2725,7 @@ export const dict = {
       gaugeMarkKnockIn: 'Barrera de knock-in',
       gaugeMarkCoupon: 'Barrera de cupón',
       gaugeMarkAutocall: 'Nivel de llamada',
-      gaugeMarkCurrent: 'Nivel actual',
+      gaugeMarkCurrent: 'Nivel actual (punto — el color indica la cercanía al knock-in)',
       gaugeMarksCoincide: 'Las marcas que coinciden en el mismo nivel normalizado se dibujan una vez y se nombran juntas.',
       worstExplain: 'Pata determinante (worst-of): el subyacente con el menor colchón normalizado sobre su propio nivel contractual. Nunca se decide comparando niveles brutos de los índices — SPX cerca de 7.700 y RTY cerca de 2.970 no son comparables entre sí.',
       obsTypeAutocall: 'Autocall',
@@ -2805,6 +2811,7 @@ export const dict = {
       currentLevel: 'Nivel actual',
       valuationDate: 'Valuación',
       paymentDate: 'Pago',
+      paymentRedemptionDate: 'Pago / redención',
       deleting: 'Eliminando…',
       deleteError: 'Error al eliminar',
       removeEntity: 'Quitar',

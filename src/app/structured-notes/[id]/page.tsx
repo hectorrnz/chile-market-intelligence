@@ -659,7 +659,7 @@ export default function StructuredNoteDetailPage() {
                 <tr>
                   <th scope="col" className={`${thBase} pl-4`}>#</th>
                   <th scope="col" className={thBase}>{t.sn.valuationDate}</th>
-                  <th scope="col" className={thBase}>{t.sn.paymentDate}</th>
+                  <th scope="col" className={thBase}>{t.sn.paymentRedemptionDate}</th>
                   <th scope="col" className={thBase}>{t.sn.couponBarrier}</th>
                   <th scope="col" className={thBase}>{t.sn.autocallBarrier}</th>
                   <th scope="col" className={thBase}>{t.sn.colStatus}</th>
@@ -904,8 +904,12 @@ function OutcomeCell({ outcome }: { outcome: ScheduleOutcome }) {
  */
 function GaugeLegend() {
   const { t } = useLang()
-  const items: { color: string; label: string }[] = [
-    { color: 'var(--accent-2)', label: t.sn.gaugeMarkCurrent },
+  // Threshold marks are TICKS on the gauge and are drawn as ticks here, in
+  // BarrierGauge's own KIND_COLOR. The current level is a DOT whose fill is
+  // proximity-based (it changes with the reading), so its swatch is an outlined
+  // circle rather than a fixed colour that would misdescribe it — the label
+  // says so too.
+  const ticks: { color: string; label: string }[] = [
     { color: 'var(--muted-fg)', label: t.sn.gaugeMarkStrike },
     { color: 'var(--accent)', label: t.sn.gaugeMarkAutocall },
     { color: 'var(--warning)', label: t.sn.gaugeMarkCoupon },
@@ -915,9 +919,13 @@ function GaugeLegend() {
     <div className="ui-meta text-muted-fg">
       <p>{t.sn.gaugeLegend}</p>
       <ul className="flex flex-wrap gap-x-3 gap-y-1 mt-1" aria-label={t.sn.gaugeLegend}>
-        {items.map((it) => (
+        <li className="inline-flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full shrink-0" style={{ border: '1.5px solid var(--muted-fg)' }} aria-hidden="true" />
+          <span>{t.sn.gaugeMarkCurrent}</span>
+        </li>
+        {ticks.map((it) => (
           <li key={it.label} className="inline-flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: it.color }} aria-hidden="true" />
+            <span className="shrink-0" style={{ display: 'inline-block', width: 2, height: 10, backgroundColor: it.color }} aria-hidden="true" />
             <span>{it.label}</span>
           </li>
         ))}
