@@ -283,12 +283,17 @@ Decorative or distracting motion remains prohibited.
 | Drawer slide | 320ms |
 | Hover transition | 150–300ms |
 | Content pulse (currency/period/privacy change) | 430ms |
+| Barrier-gauge current-level halo (locating cue for the one data-bearing reading on a normalized track; the dot itself is static) | 2.8s loop, ring scale 1→1.9 + fade to 0, ~30% of the period fully faded — owner-approved R13.7B2.2.1 § 6 |
 | Login Ken-Burns (atmosphere, login only) | 60s alternate, scale 1→1.07 |
 | Login / app fade | .75s / .7s |
 
 ### 12.2 Prohibited motion
 - Motion with no informational purpose — looping ambient animation on app screens, animated
-  icons, parallax, bouncing, attention-seeking pulses on idle content.
+  icons, parallax, bouncing, attention-seeking pulses on idle content. The single sanctioned
+  exception is the barrier-gauge current-level halo (§12.1): the owner approved it in
+  R13.7B2.2.1 as a *locating* cue for the one data-bearing reading on a normalized track, on the
+  conditions that the dot itself never moves, nothing flashes, the raw level text beside it stays
+  static, and reduced motion removes it outright. It is not a precedent for other loops.
 - Motion that delays data. A value must never be unreadable while it animates in; count-up
   starts from a plausible value and completes fast.
 - Motion on high-frequency updates — live price ticks do not animate.

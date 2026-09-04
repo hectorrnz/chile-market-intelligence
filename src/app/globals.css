@@ -476,6 +476,7 @@
   --dur-drawer:   320ms;  /* drawer movement */
   --dur-nav:      380ms;  /* pill-indicator movement */
   --dur-pulse:    430ms;  /* content pulse */
+  --dur-level-pulse: 2800ms;  /* barrier-gauge current-level halo loop (R13.7B2.2.1 § 6) */
   --dur-reveal:   640ms;  /* section reveal */
   --dur-countup:  650ms;  /* KPI count-up */
   --dur-bar:      660ms;  /* bar width */
@@ -1121,6 +1122,21 @@
   .nv-pulse {
     animation: nvPulse 2.6s ease-in-out infinite;
   }
+  /* Barrier-gauge current-level halo (R13.7B2.2.1 § 6). The ring around the
+     current-level dot dilates from its resting size and fades, on a slow loop
+     — a LOCATING cue for the single data-bearing reading on a normalized
+     track, owner-approved as the one exception to design_principles § 12.2.
+     The dot itself never moves and nothing flashes: the loop spends ~30% of
+     its period fully faded, so it reads as a soft breath, not an alert.
+     Rest state (and the reduced-motion state, § 8 below) is the same faint
+     ring the gauge always drew. Applied to an SVG <circle>, hence the
+     fill-box transform origin. */
+  .nv-level-pulse {
+    transform-box: fill-box;
+    transform-origin: center;
+    opacity: .28;
+    animation: nvLevelPulse var(--dur-level-pulse) var(--ease-primary) infinite;
+  }
   /* Content pulse — a brief ONE-SHOT cue on a currency/period/privacy/value
      change (design_principles §12.1, 430ms), distinct from .nv-pulse's
      infinite ambient loop (the login "secure connection" dot). Reuses the
@@ -1211,6 +1227,7 @@ table :is(.nv-glass-auth, .nv-glass-nav, .nv-glass-kpi, .nv-glass-card, .nv-glas
 ───────────────────────────────────────────────────────────────────────────── */
 @keyframes nvKen   { from { transform: scale(1) translateY(0) } to { transform: scale(1.07) translateY(-8px) } }
 @keyframes nvPulse { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
+@keyframes nvLevelPulse { 0% { transform: scale(1); opacity: .32 } 70%, 100% { transform: scale(1.9); opacity: 0 } }
 @keyframes nvSpin  { to { transform: rotate(360deg) } }
 @keyframes nvPop   { from { opacity: 0; transform: translateY(-6px) scale(.985) } to { opacity: 1; transform: none } }
 @keyframes nvSlide { from { opacity: 0; transform: translateX(26px) } to { opacity: 1; transform: none } }
@@ -1324,6 +1341,14 @@ body {
     animation: none !important;
     transform: none !important;
     opacity: 1 !important;
+  }
+  /* Barrier-gauge halo (R13.7B2.2.1 § 6): the loop is removed outright and the
+     ring rests at its faint static state — the gauge is then exactly the
+     pre-motion gauge. */
+  .nv-level-pulse {
+    animation: none !important;
+    transform: none !important;
+    opacity: .28 !important;
   }
 
   /* Button hover microinteraction (R13.R2F2) — the lift itself is motion, so

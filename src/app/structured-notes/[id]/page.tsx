@@ -31,16 +31,18 @@
 //                 worst-performer designation as VISIBLE text (never
 //                 color/hover-only), last-monitored + stale flags, and the
 //                 Yahoo footer + estimate disclaimer.
-//   Terms       — the Fable terms grid, grouped into Identity · Coupon &
-//                 barriers · Key dates instead of the legacy undifferentiated
-//                 grid; boolean features (memory coupon, principal
-//                 protection) render as chips only when true.
-//   Underlyings — contractual levels table (order, name, symbol, initial,
-//                 strike, knock-in, coupon, autocall).
-//   Schedule    — the Fable lifecycle timeline (issued ✓ · observed n/m ✓ ·
-//                 next ● · maturity ○) as the card's header strip, above the
-//                 COMPLETE real observation table (every historical row kept;
-//                 completed rows muted, the next observation highlighted).
+//   Terms +     — ONE block (R13.7B2.2.1 § 7): the Fable terms grid, grouped
+//   Underlyings   into Identity · Coupon & barriers · Key dates (boolean
+//                 features render as chips only when true), then a horizontal
+//                 divider, then the contractual underlying-levels table
+//                 (order, name, symbol, initial, strike, knock-in, coupon,
+//                 autocall) on the dense surface. Two sections, one card — no
+//                 dead space under a short side-by-side table.
+//   Schedule    — the Fable lifecycle timeline (issued ✓ · observed dates
+//                 n / m · next ● or called-on · maturity ○) as the card's
+//                 header strip, above the COMPLETE real observation table —
+//                 one row per valuation date, rendered in full with NO inner
+//                 scroll region (R13.7B2.2.1 § 1); the page scrolls.
 //   Allocation  — the account allocation grid (upsert API, custom entities,
 //                 thousands formatting) on Fable card glass. R7.1B adds the
 //                 per-account CUSTODIAN field and states Nevada's investment
@@ -67,13 +69,14 @@ import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { DEFAULT_ENTITIES } from '@/lib/structuredNotes/types'
 import { dedupeObservationsByDate } from '@/lib/structuredNotes/pdf/extractStructuredNoteTerms'
 import { buildScheduleRows, findCallDate, type ScheduleOutcome, type ScheduleRow } from '@/lib/structuredNotes/observationSchedule'
+import { mergeCoincidingMarks, markLevelKey, isCouponKnockInMark, isInitialCallMark, type GaugeMarkInput, type MergedGaugeMark } from '@/lib/structuredNotes/gaugeMarks'
 import { calculateNevadaInvestmentNotional, classifyIssueSizePlausibility, nevadaInvestmentCurrency } from '@/lib/structuredNotes/calculations'
 import type { StructuredNote, UnderlyingPrice, RiskStatus } from '@/lib/structuredNotes/types'
 import { fmtPct, fmtNum, distanceTone, shortUnderlying, StatCapsule, RISK_TONE } from '../page'
 import { PageHeader } from '@/components/fable/PageHeader'
 import { GlassSurface } from '@/components/fable/GlassSurface'
 import { TableCard } from '@/components/fable/TableCard'
-import { BarrierGauge, type BarrierMark } from '@/components/fable/BarrierGauge'
+import { BarrierGauge, BARRIER_KIND_COLOR, type BarrierMark } from '@/components/fable/BarrierGauge'
 import { AsyncState } from '@/components/fable/AsyncState'
 import { DestructiveConfirm } from '@/components/fable/ModalShell'
 import { usePrivacyMode } from '@/components/fable/usePrivacyMode'
@@ -311,6 +314,26 @@ export default function StructuredNoteDetailPage() {
   // relative distance to their own thresholds.
   const couponPctByOrder = new Map(n.underlyings.map((u) => [u.underlyingOrder, u.couponBarrierPct ?? n.couponBarrierPct]))
   const autocallPctByOrder = new Map(n.underlyings.map((u) => [u.underlyingOrder, u.autocallBarrierPct ?? n.autocallBarrierPct]))
+  // Every contractual threshold of ONE underlying, normalized to the gauge's
+  // 0–130 percent-of-initial axis. `*Pct` fields are DECIMAL FRACTIONS
+  // platform-wide (0.65 is 65%) — every parser emits `Number(match) / 100` and
+  // `calculateBarrierLevel` multiplies without dividing — so × 100 is the only
+  // transform. Raw index levels are never placed here.
+  const rawMarksFor = (order: number): GaugeMarkInput[] => {
+    const kiPct = knockInPctByOrder.get(order) ?? null
+    const couponPct = couponPctByOrder.get(order) ?? null
+    const autocallPct = autocallPctByOrder.get(order) ?? null
+    return [
+      ...(kiPct != null ? [{ kind: 'knockIn' as const, level: kiPct * 100 }] : []),
+      ...(couponPct != null ? [{ kind: 'coupon' as const, level: couponPct * 100 }] : []),
+      ...(autocallPct != null ? [{ kind: 'autocall' as const, level: autocallPct * 100 }] : []),
+      { kind: 'strike' as const, level: 100 },
+    ]
+  }
+  // R13.7B2.2.1 § 2 — the legend lists the marks THIS note actually draws (the
+  // union across its underlyings, coinciding levels merged), so it can never
+  // name a tick the gauge does not show or show a tick the legend does not name.
+  const legendMarks = mergeCoincidingMarks(n.underlyings.flatMap((u) => rawMarksFor(u.underlyingOrder)))
 
   const nextObs = data.metrics.nextObservation
   const nextDays = data.metrics.daysToNextObservation
@@ -326,7 +349,13 @@ export default function StructuredNoteDetailPage() {
   // a live observation of an existing note and is shown as void rather than
   // silently left looking pending.
   const calledOnDate = findCallDate(deduped)
-  const observedCount = scheduleRows.filter((r) => r.state !== 'scheduled').length
+  // R13.7B2.2.1 § 4 — progress is counted over DISPLAY rows (one per valuation
+  // date), never over canonical event records: "8/15" mixed the two and read
+  // as nonsense. A date is observed once it has actually been evaluated
+  // (observed / called / matured); a date void after a call was never
+  // observed, and a scheduled date not yet.
+  const observedCount = scheduleRows.filter((r) => r.state === 'observed' || r.state === 'called' || r.state === 'matured').length
+  const voidCount = scheduleRows.filter((r) => r.state === 'void').length
 
   // R13.7B2.2 § 6 — a called note is terminal: its operationally relevant date
   // is the Mandatory Early Redemption Date of the calling observation, not the
@@ -345,10 +374,21 @@ export default function StructuredNoteDetailPage() {
   // Fable §6 lifecycle timeline — issued ✓ · observed ✓ · next ● · maturity ○.
   // Row classification comes from the API's own data (status + the resolver's
   // nextObservation), never from client-side date math.
-  const timeline: { label: string; value: string; dot: string; strong?: boolean }[] = [
+  const timeline: { label: string; value: string; dot: string; strong?: boolean; title?: string }[] = [
     { label: t.sn.colIssued, value: n.issueDate ?? n.tradeDate ?? '—', dot: 'var(--positive)' },
-    { label: t.sn.monitoring.observedAt, value: `${observedCount}/${deduped.length}`, dot: observedCount > 0 ? 'var(--positive)' : 'var(--muted-fg)' },
-    { label: t.sn.dashNextObs, value: nextObs ? `${nextObs.valuationDate}${nextDays !== null ? ` (${nextDays}d)` : ''}` : '—', dot: 'var(--warning)', strong: true },
+    // § 4 — "Observed dates 1 / 8": evaluated valuation dates over ALL display
+    // rows. The help text says what is and is not counted.
+    {
+      label: t.sn.obsProgress,
+      value: `${observedCount} / ${scheduleRows.length}`,
+      dot: observedCount > 0 ? 'var(--positive)' : 'var(--muted-fg)',
+      title: voidCount > 0 ? `${t.sn.obsProgressHelp} (${voidCount} ${t.sn.obsState.void.toLowerCase()})` : t.sn.obsProgressHelp,
+    },
+    // A called note has no next observation; the date that matters is the one
+    // it was called on — the same swap the hero capsules make (§ 6).
+    isCalled
+      ? { label: t.sn.calledOnLabel, value: calledOnDate ?? '—', dot: 'var(--negative)', strong: true, title: t.sn.legendCalled }
+      : { label: t.sn.dashNextObs, value: nextObs ? `${nextObs.valuationDate}${nextDays !== null ? ` (${nextDays}d)` : ''}` : '—', dot: 'var(--warning)', strong: true },
     { label: t.sn.colMaturity, value: n.maturityDate ?? '—', dot: 'var(--muted-fg)' },
   ]
 
@@ -381,7 +421,7 @@ export default function StructuredNoteDetailPage() {
               which means "would call on the NEXT date" and is meaningless for a
               note that has no next date. */}
           <StatCapsule
-            label={t.sn.riskStatus}
+            label={t.sn.colStatus}
             value={riskLabel(data.metrics.riskStatus)}
             sub={isCalled ? settlementLabel : undefined}
             tone={RISK_TONE[data.metrics.riskStatus]}
@@ -430,7 +470,7 @@ export default function StructuredNoteDetailPage() {
                 {/* R13.7B2.2 § 8 — the marks are named in VISIBLE text, not only
                     in the SVG tooltip, so the gauge is readable without hover
                     and without knowing the implementation. */}
-                <GaugeLegend />
+                <GaugeLegend marks={legendMarks} />
                 {/* § 11 — an unambiguous full calendar date. These levels are a
                     fixed contractual valuation close, not a refresh time, so the
                     dense "28-08" convention is wrong here. */}
@@ -458,38 +498,19 @@ export default function StructuredNoteDetailPage() {
                   // Level indexed to 100 at strike — the R3 gauge's own scale, a
                   // pure display transform of the API's currentLevel.
                   const gaugeLevel = d.currentLevel !== null && strike ? (d.currentLevel / strike) * 100 : null
-                  const kiPct = knockInPctByOrder.get(d.underlyingOrder) ?? null
-                  const couponPct = couponPctByOrder.get(d.underlyingOrder) ?? null
                   const autocallPct = autocallPctByOrder.get(d.underlyingOrder) ?? null
-                  // Every contractual threshold, normalized to the same scale.
-                  // Coinciding levels are collapsed (for the current book the
-                  // coupon barrier equals the knock-in at 65%, and the call
-                  // level equals the strike at 100%) so the gauge shows one
-                  // tick per distinct level instead of stacking them.
-                  //
-                  // `*Pct` fields are DECIMAL FRACTIONS platform-wide (0.65 is
-                  // 65%) — every parser emits `Number(match) / 100` and
-                  // `calculateBarrierLevel` multiplies without dividing — so
-                  // × 100 puts them on the gauge's 0–130 percent-of-strike axis.
-                  const rawMarks: BarrierMark[] = [
-                    ...(kiPct != null ? [{ kind: 'knockIn' as const, level: kiPct * 100, label: `${t.sn.gaugeMarkKnockIn} (${(kiPct * 100).toFixed(0)})` }] : []),
-                    ...(couponPct != null ? [{ kind: 'coupon' as const, level: couponPct * 100, label: `${t.sn.gaugeMarkCoupon} (${(couponPct * 100).toFixed(0)})` }] : []),
-                    ...(autocallPct != null ? [{ kind: 'autocall' as const, level: autocallPct * 100, label: `${t.sn.gaugeMarkAutocall} (${(autocallPct * 100).toFixed(0)})` }] : []),
-                    { kind: 'strike' as const, level: 100, label: t.sn.gaugeMarkStrike },
-                  ]
-                  // Coinciding levels are collapsed to ONE tick whose label
-                  // names every threshold sitting there — for the current book
-                  // the coupon barrier equals the knock-in at 65 and the call
-                  // level equals the strike at 100, and drawing two
-                  // indistinguishable lines said nothing (§ 8).
-                  const byLevel = new Map<number, BarrierMark>()
-                  for (const m of rawMarks) {
-                    const key = Math.round(m.level * 100) / 100
-                    const seen = byLevel.get(key)
-                    if (!seen) byLevel.set(key, { ...m })
-                    else if (m.label && seen.label && !seen.label.includes(m.label)) seen.label = `${seen.label} · ${m.label}`
-                  }
-                  const gaugeMarks: BarrierMark[] = [...byLevel.values()]
+                  // R13.7B2.2.1 § 2 — coinciding thresholds collapse to ONE tick
+                  // (pure helper, unit-tested), and the label names exactly
+                  // what sits there: on this book the coupon and knock-in
+                  // barriers coincide at 65 → one "Coupon / knock-in barrier"
+                  // mark; the call level coincides with the initial level at
+                  // 100 → one "Initial / call level" mark. The call level and
+                  // the coupon barrier are NOT the same and are never merged.
+                  const rawMarks = rawMarksFor(d.underlyingOrder)
+                  const gaugeMarks: BarrierMark[] = mergeCoincidingMarks(rawMarks).map((m) => ({ kind: m.kind, level: m.level, label: gaugeMarkLabel(t, m) }))
+                  // The stated basis is honest per underlying: "initial / call
+                  // level" only when the call level really is 100% of initial.
+                  const basis = autocallPct != null && markLevelKey(autocallPct * 100) === 100 ? t.sn.gaugeBasis : t.sn.gaugeBasisInitialOnly
                   const isWorst = worst !== null && d.underlyingName === worst.underlyingName
                   return (
                     <tr key={d.underlyingOrder} className="border-b border-border last:border-0">
@@ -519,7 +540,7 @@ export default function StructuredNoteDetailPage() {
                           marks={gaugeMarks}
                           width={150}
                           height={18}
-                          summary={gaugeLevel !== null ? `${t.sn.gaugeNormalized} ${gaugeLevel.toFixed(2)} — ${t.sn.gaugeBasis}` : undefined}
+                          summary={gaugeLevel !== null ? `${t.sn.gaugeNormalized} ${gaugeLevel.toFixed(2)} — ${basis}` : undefined}
                         />
                       </td>
                       {/* The RAW market level always stays visible beside the
@@ -555,10 +576,16 @@ export default function StructuredNoteDetailPage() {
         </div>
       </Reveal>
 
-      {/* Terms + contractual underlying levels */}
+      {/* Terms + contractual underlying levels — ONE block (R13.7B2.2.1 § 7).
+          The two cards used to sit side by side, leaving dead space under the
+          short underlyings table. They are now one card: the terms grid on
+          top, a horizontal divider, then the underlyings table on the dense
+          surface (the same anatomy TableCard uses — glass on the card, a
+          near-opaque surface under the table, never glass under dense text).
+          Nothing was dropped: every term field, every underlying column. */}
       <Reveal delayMs={130}>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 mb-3.5 items-start">
-          <GlassSurface variant="card" as="section" className="px-5 py-4">
+        <GlassSurface variant="card" as="section" className="mb-3.5 overflow-hidden flex flex-col">
+          <div className="px-5 pt-4 pb-4">
             <h2 className="ui-label text-muted-fg mb-3">{t.sn.generalTerms}</h2>
             {(n.memoryCoupon || n.principalProtection) && (
               <div className="flex flex-wrap gap-1.5 mb-3">
@@ -594,47 +621,61 @@ export default function StructuredNoteDetailPage() {
               <TermField k={t.sn.colMaturity} v={n.maturityDate} />
               <TermField k={t.sn.redemption} v={n.redemptionDate} />
             </TermGroup>
-          </GlassSurface>
+          </div>
 
-          <TableCard title={t.sn.underlyings} minWidth={560}>
-            <table className="w-full" style={{ fontSize: 'var(--fs-table-cell)' }}>
-              <caption className="sr-only">{t.sn.underlyings}</caption>
-              <thead>
-                <tr>
-                  <th scope="col" className={`${thBase} pl-4`}>#</th>
-                  <th scope="col" className={`${thBase} text-left`}>{t.sn.colUnderlyings}</th>
-                  <th scope="col" className={thBase}>{t.sn.symbolLabel}</th>
-                  <th scope="col" className={thBase}>{t.sn.initialLevel}</th>
-                  <th scope="col" className={thBase}>{t.sn.strikeLevel}</th>
-                  <th scope="col" className={thBase}>{t.sn.colKnockIn}</th>
-                  <th scope="col" className={thBase}>{t.sn.monitoring.coupon}</th>
-                  <th scope="col" className={`${thBase} pr-4`}>{t.sn.monitoring.autocall}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {n.underlyings.map((u) => (
-                  <tr key={u.underlyingOrder} className="border-b border-border last:border-0">
-                    <td className={`${cell} pl-4 ui-number`}>{u.underlyingOrder}</td>
-                    <td className={`${cell} text-left text-foreground`}>{u.underlyingName}</td>
-                    <td className={`${cell} font-mono text-xs`}>{u.yahooSymbol ?? '—'}</td>
-                    <td className={`${cell} ui-number`}>{fmtNum(u.initialLevel)}</td>
-                    <td className={`${cell} ui-number`}>{fmtNum(u.strikeLevel)}</td>
-                    <td className={`${cell} ui-number`}>{fmtNum(u.knockInBarrierLevel)}</td>
-                    <td className={`${cell} ui-number`}>{fmtNum(u.couponBarrierLevel)}</td>
-                    <td className={`${cell} pr-4 ui-number`}>{fmtNum(u.autocallBarrierLevel)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </TableCard>
-        </div>
+          {/* The divider: one block, two sections. */}
+          <div className="px-5 pt-3 pb-2 border-t border-border">
+            <h2 className="ui-label text-muted-fg">{t.sn.underlyings}</h2>
+          </div>
+          {/* Dense table on the near-opaque surface, scrolling inside the card
+              (never the page) exactly as TableCard does. */}
+          <GlassSurface variant="dense">
+            <div className="overflow-x-auto">
+              <div style={{ minWidth: 560 }}>
+                <table className="w-full" style={{ fontSize: 'var(--fs-table-cell)' }}>
+                  <caption className="sr-only">{t.sn.underlyings}</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" className={`${thBase} pl-4`}>#</th>
+                      <th scope="col" className={`${thBase} text-left`}>{t.sn.colUnderlyings}</th>
+                      <th scope="col" className={thBase}>{t.sn.symbolLabel}</th>
+                      <th scope="col" className={thBase}>{t.sn.initialLevel}</th>
+                      <th scope="col" className={thBase}>{t.sn.strikeLevel}</th>
+                      <th scope="col" className={thBase}>{t.sn.colKnockIn}</th>
+                      <th scope="col" className={thBase}>{t.sn.monitoring.coupon}</th>
+                      <th scope="col" className={`${thBase} pr-4`}>{t.sn.monitoring.autocall}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {n.underlyings.map((u) => (
+                      <tr key={u.underlyingOrder} className="border-b border-border last:border-0">
+                        <td className={`${cell} pl-4 ui-number`}>{u.underlyingOrder}</td>
+                        <td className={`${cell} text-left text-foreground`}>{u.underlyingName}</td>
+                        <td className={`${cell} font-mono text-xs`}>{u.yahooSymbol ?? '—'}</td>
+                        <td className={`${cell} ui-number`}>{fmtNum(u.initialLevel)}</td>
+                        <td className={`${cell} ui-number`}>{fmtNum(u.strikeLevel)}</td>
+                        <td className={`${cell} ui-number`}>{fmtNum(u.knockInBarrierLevel)}</td>
+                        <td className={`${cell} ui-number`}>{fmtNum(u.couponBarrierLevel)}</td>
+                        <td className={`${cell} pr-4 ui-number`}>{fmtNum(u.autocallBarrierLevel)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </GlassSurface>
+        </GlassSurface>
       </Reveal>
 
       {/* Observation schedule — Fable lifecycle timeline over the COMPLETE
           real schedule (one row per valuation date; coupon + autocall
           coincide). Coupon/Autocall columns show the scheduled monitoring
           job's evaluation once a valuation date arrives — a monitoring
-          estimate, never an official calculation-agent determination. */}
+          estimate, never an official calculation-agent determination.
+          R13.7B2.2.1 § 1 — NO inner vertical scroll: every display row renders
+          in full and the page scrolls. The card keeps only the card-level
+          HORIZONTAL scroll that every dense table has (minWidth), so a narrow
+          viewport never produces page-level horizontal overflow. */}
       <Reveal delayMs={130}>
         <div className="mb-3.5">
           <TableCard
@@ -642,7 +683,7 @@ export default function StructuredNoteDetailPage() {
             controls={
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5" role="list" aria-label={t.sn.schedule}>
                 {timeline.map((step) => (
-                  <span key={step.label} role="listitem" className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                  <span key={step.label} role="listitem" className={`inline-flex items-center gap-1.5 whitespace-nowrap${step.title ? ' cursor-help' : ''}`} title={step.title}>
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: step.dot }} aria-hidden="true" />
                     <span className="ui-micro-label text-muted-fg">{step.label}</span>
                     <span className={`ui-number text-xs ${step.strong ? 'text-foreground font-medium' : 'text-muted-fg'}`}>{step.value}</span>
@@ -651,7 +692,6 @@ export default function StructuredNoteDetailPage() {
               </div>
             }
             minWidth={680}
-            maxHeight={300}
           >
             <table className="w-full" style={{ fontSize: 'var(--fs-table-cell)' }}>
               <caption className="sr-only">{t.sn.schedule}</caption>
@@ -884,8 +924,20 @@ function RowStateChip({ state }: { state: ScheduleRow['state'] }) {
  */
 function OutcomeCell({ outcome }: { outcome: ScheduleOutcome }) {
   const { t } = useLang()
-  if (outcome === 'none') return <span className="text-muted-fg cursor-help" title={t.sn.obsOutcomeNoneHelp}>—</span>
   const label = t.sn.obsOutcome[outcome]
+  // R13.7B2.2.1 § 3 — a test that did not run (`none`) or can no longer run
+  // (`void`, after a call) shows a dash, not a third repetition of the row's
+  // status. The reason travels with it (tooltip + screen-reader text), so the
+  // dash is never unexplained and never colour- or hover-only.
+  if (outcome === 'none' || outcome === 'void') {
+    const help = outcome === 'none' ? t.sn.obsOutcomeNoneHelp : t.sn.obsOutcomeVoidHelp
+    return (
+      <span className="text-muted-fg cursor-help" title={help}>
+        <span aria-hidden="true">—</span>
+        <span className="sr-only">{label} — {help}</span>
+      </span>
+    )
+  }
   const cls =
     outcome === 'paid' || outcome === 'eligible' ? 'text-positive'
       : outcome === 'called' ? 'text-negative font-medium'
@@ -895,38 +947,65 @@ function OutcomeCell({ outcome }: { outcome: ScheduleOutcome }) {
 }
 
 /**
+ * R13.7B2.2.1 § 2 — the visible name of ONE merged gauge mark.
+ *
+ * Composed from the kinds that actually sit at that level, so the label states
+ * exactly what the tick is and nothing else:
+ *   · strike + autocall  → "Initial / call level"   (call level = 100% of initial)
+ *   · strike alone       → "Initial level"           (the call level is a separate mark)
+ *   · coupon + knockIn   → "Coupon / knock-in barrier"
+ *   · anything else      → each kind's own name, joined
+ * The normalized level follows in parentheses. The call level and the coupon
+ * barrier are never merged unless they truly share a level.
+ */
+function gaugeMarkLabel(t: ReturnType<typeof useLang>['t'], m: MergedGaugeMark): string {
+  const single: Record<MergedGaugeMark['kind'], string> = {
+    knockIn: t.sn.gaugeMarkKnockIn,
+    coupon: t.sn.gaugeMarkCoupon,
+    autocall: t.sn.gaugeMarkAutocall,
+    strike: t.sn.gaugeMarkStrikeOnly,
+    other: t.sn.gaugeMarkStrikeOnly,
+  }
+  const rest = new Set(m.kinds)
+  const parts: string[] = []
+  if (isInitialCallMark(m)) { parts.push(t.sn.gaugeMarkStrike); rest.delete('strike'); rest.delete('autocall') }
+  else if (rest.has('strike')) { parts.push(t.sn.gaugeMarkStrikeOnly); rest.delete('strike') }
+  if (isCouponKnockInMark(m)) { parts.push(t.sn.gaugeMarkCouponKnockIn); rest.delete('coupon'); rest.delete('knockIn') }
+  for (const k of rest) parts.push(single[k])
+  const level = Number.isInteger(m.level) ? String(m.level) : m.level.toFixed(2)
+  return `${parts.join(' · ')} (${level})`
+}
+
+/**
  * R13.7B2.2 § 8 — the gauge's legend, as VISIBLE text under the table.
  *
- * Every marker on the gauge is named here, so a reader never meets an
- * unexplained vertical line or an unexplained "101.94". The color swatches
- * repeat the gauge's own `KIND_COLOR` mapping, and each is accompanied by its
- * name — the legend is readable in monochrome.
+ * R13.7B2.2.1 § 2 — DATA-DRIVEN: it lists the marks THIS note's gauges
+ * actually draw (coinciding levels already merged), one entry per tick, in
+ * BarrierGauge's own colours (`BARRIER_KIND_COLOR`) so legend and gauge can
+ * never disagree. The old fixed four-entry list named "Call level" and
+ * "Initial / call level" as two things and "Coupon barrier" and "Knock-in
+ * barrier" as two things while the gauge drew one tick for each pair — which
+ * is precisely what made the owner ask whether the call level and the coupon
+ * barrier were the same. They are not (100 vs 65), and the legend now shows
+ * exactly two ticks with exactly those two names.
  */
-function GaugeLegend() {
+function GaugeLegend({ marks }: { marks: MergedGaugeMark[] }) {
   const { t } = useLang()
-  // Threshold marks are TICKS on the gauge and are drawn as ticks here, in
-  // BarrierGauge's own KIND_COLOR. The current level is a DOT whose fill is
-  // proximity-based (it changes with the reading), so its swatch is an outlined
-  // circle rather than a fixed colour that would misdescribe it — the label
-  // says so too.
-  const ticks: { color: string; label: string }[] = [
-    { color: 'var(--muted-fg)', label: t.sn.gaugeMarkStrike },
-    { color: 'var(--accent)', label: t.sn.gaugeMarkAutocall },
-    { color: 'var(--warning)', label: t.sn.gaugeMarkCoupon },
-    { color: 'var(--critical)', label: t.sn.gaugeMarkKnockIn },
-  ]
   return (
     <div className="ui-meta text-muted-fg">
       <p>{t.sn.gaugeLegend}</p>
       <ul className="flex flex-wrap gap-x-3 gap-y-1 mt-1" aria-label={t.sn.gaugeLegend}>
+        {/* The current level is a DOT whose fill is proximity-based (it changes
+            with the reading), so its swatch is an outlined circle rather than
+            a fixed colour that would misdescribe it — the label says so too. */}
         <li className="inline-flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full shrink-0" style={{ border: '1.5px solid var(--muted-fg)' }} aria-hidden="true" />
           <span>{t.sn.gaugeMarkCurrent}</span>
         </li>
-        {ticks.map((it) => (
-          <li key={it.label} className="inline-flex items-center gap-1.5">
-            <span className="shrink-0" style={{ display: 'inline-block', width: 2, height: 10, backgroundColor: it.color }} aria-hidden="true" />
-            <span>{it.label}</span>
+        {marks.map((m) => (
+          <li key={m.level} className="inline-flex items-center gap-1.5">
+            <span className="shrink-0" style={{ display: 'inline-block', width: 2, height: 10, backgroundColor: BARRIER_KIND_COLOR[m.kind] }} aria-hidden="true" />
+            <span>{gaugeMarkLabel(t, m)}</span>
           </li>
         ))}
       </ul>
@@ -948,7 +1027,11 @@ function TermGroup({ label, last = false, children }: { label: string; last?: bo
   return (
     <section className={last ? '' : 'mb-4'}>
       <h3 className="ui-micro-label text-muted-fg mb-2">{label}</h3>
-      <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2.5 text-sm">{children}</dl>
+      {/* R13.7B2.2.1 § 7 — the terms grid now spans the full card, so it opens
+          to six columns at lg: identity fills two rows, economics and dates one
+          row each, and the block reads as balanced rather than as a tall
+          column beside an empty one. */}
+      <dl className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-4 gap-y-2.5 text-sm">{children}</dl>
     </section>
   )
 }

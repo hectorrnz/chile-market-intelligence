@@ -97,7 +97,9 @@ jobs:
       # is distinguishable from a failure of the engine above. The percentage-unit
       # checks in particular guard a defect that renders a 65% barrier as 6500%.
       - name: Contract presentation and percentage units
-        run: node --test "tests/structuredNotesScheduleDisplay.test.ts"
+        run: |
+          node --test "tests/structuredNotesScheduleDisplay.test.ts"
+          node --test "tests/structuredNotesOwnerPolish.test.ts"
 
       # Every issuer parser must keep emitting autocall observations. This is
       # the defect's origin: a parser silently dropping them again would make

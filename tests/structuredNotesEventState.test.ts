@@ -773,12 +773,13 @@ describe('gauge reference lines share one unit system', () => {
   })
 
   it('coinciding thresholds collapse to one tick instead of stacking', () => {
-    const from = DETAIL.indexOf('const rawMarks')
-    const to = DETAIL.indexOf('const gaugeMarks')
-    const block = DETAIL.slice(from, to)
-    // One tick per DISTINCT normalized level, keyed on the rounded level.
-    assert.match(block, /Math\.round\(m\.level \* 100\) \/ 100/)
-    assert.match(block, /byLevel/)
+    // R13.7B2.2.1 § 2 — the merge moved out of the component into a PURE,
+    // unit-tested helper (src/lib/structuredNotes/gaugeMarks.ts). The page
+    // must call it, and the helper must key on the rounded normalized level.
+    assert.match(DETAIL, /const gaugeMarks: BarrierMark\[\] = mergeCoincidingMarks\(rawMarks\)/)
+    const HELPER = readFileSync('src/lib/structuredNotes/gaugeMarks.ts', 'utf8')
+    assert.match(HELPER, /Math\.round\(level \* 100\) \/ 100/)
+    assert.match(HELPER, /byLevel/)
   })
 
   it('the distance columns declare their sign convention', () => {
@@ -796,15 +797,20 @@ describe('gauge reference lines share one unit system', () => {
   })
 
   it('every gauge mark carries a name, and the legend repeats them visibly', () => {
-    const from = DETAIL.indexOf('const rawMarks')
-    const to = DETAIL.indexOf('const gaugeMarks')
+    // R13.7B2.2.1 § 2 — labels are composed from the merged mark's kinds by
+    // `gaugeMarkLabel`, and the legend is DATA-DRIVEN from the same merged
+    // marks, so gauge and legend can never name different things.
+    assert.match(DETAIL, /label: gaugeMarkLabel\(t, m\)/)
+    const from = DETAIL.indexOf('function gaugeMarkLabel(')
+    const to = DETAIL.indexOf('function GaugeLegend(')
+    assert.ok(from > 0 && to > from, 'the label composer must precede the legend')
     const block = DETAIL.slice(from, to)
-    for (const key of ['t.sn.gaugeMarkKnockIn', 't.sn.gaugeMarkCoupon', 't.sn.gaugeMarkAutocall', 't.sn.gaugeMarkStrike']) {
+    for (const key of ['t.sn.gaugeMarkKnockIn', 't.sn.gaugeMarkCoupon', 't.sn.gaugeMarkAutocall', 't.sn.gaugeMarkStrike', 't.sn.gaugeMarkCouponKnockIn']) {
       assert.ok(block.includes(key), 'unnamed gauge mark: ' + key)
     }
-    // Not hover-only: a visible legend component renders the same names.
-    assert.match(DETAIL, /function GaugeLegend\(\)/)
-    assert.match(DETAIL, /<GaugeLegend \/>/)
+    // Not hover-only: a visible legend component renders the same names from the same marks.
+    assert.match(DETAIL, /function GaugeLegend\(\{ marks \}: \{ marks: MergedGaugeMark\[\] \}\)/)
+    assert.match(DETAIL, /<GaugeLegend marks=\{legendMarks\} \/>/)
   })
 
   it('the raw market level stays visible alongside the normalized gauge', () => {

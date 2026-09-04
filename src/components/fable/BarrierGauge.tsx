@@ -25,6 +25,7 @@ interface BarrierGaugeProps {
   className?: string
 }
 
+/** Tick colour per barrier kind. Exported (as `BARRIER_KIND_COLOR`) so a legend can repeat the gauge's own colours and never drift from them. */
 const KIND_COLOR: Record<BarrierKind, string> = {
   knockIn: 'var(--critical)',
   coupon: 'var(--warning)',
@@ -32,6 +33,7 @@ const KIND_COLOR: Record<BarrierKind, string> = {
   strike: 'var(--muted-fg)',
   other: 'var(--muted-fg)',
 }
+export const BARRIER_KIND_COLOR: Readonly<Record<BarrierKind, string>> = KIND_COLOR
 
 /** Pure display calculation — proximity-based color, mirroring the Fable spec's own thresholds (≥25% positive, 15-25% warning, <15% critical). No structured-note eligibility logic here. */
 function proximityColor(current: number, marks: BarrierMark[]): string {
@@ -46,9 +48,22 @@ function proximityColor(current: number, marks: BarrierMark[]): string {
 /**
  * Reusable barrier/threshold gauge for structured notes and risk displays
  * (Fable "barrier gauge" — a 0–130 track with a barrier tick, a strike tick,
- * and a glowing current-level dot). Flat SVG, no 3D effects, no motion. The
- * accessible summary is always rendered as real visible text, not only an
- * aria-label, so the reading is never color-only.
+ * and a glowing current-level dot). Flat SVG, no 3D effects. The accessible
+ * summary is always rendered as real visible text, not only an aria-label, so
+ * the reading is never color-only.
+ *
+ * MOTION (R13.7B2.2.1 § 6). The current-level dot carries ONE piece of motion:
+ * its halo ring dilates gently and fades on a slow loop (`.nv-level-pulse`,
+ * globals.css). It is a locating device for the single data-bearing reading
+ * on a normalized scale — the owner review found the static dot easy to lose
+ * among the threshold ticks — and it is explicitly owner-approved as the one
+ * exception to design_principles § 12.2 ("no ambient loops"). Guardrails:
+ *   · the DOT itself is static — only the halo moves, so the position never
+ *     appears to shift and nothing flashes;
+ *   · the raw market level and the summary text beside the gauge stay static;
+ *   · `prefers-reduced-motion: reduce` removes the animation outright and
+ *     leaves the halo in its resting state (globals.css § 8) — the CSS class is
+ *     the whole implementation, so there is no JS timer to gate.
  */
 export function BarrierGauge({ current, marks, min = 0, max = 130, summary, width = 160, height = 28, className = '' }: BarrierGaugeProps) {
   const { t } = useLang()
@@ -87,7 +102,12 @@ export function BarrierGauge({ current, marks, min = 0, max = 130, summary, widt
             {m.label ? <title>{m.label}</title> : null}
           </line>
         ))}
-        <circle cx={toX(current)} cy={height / 2} r={4} fill={dotColor} stroke={dotColor} strokeOpacity={0.25} strokeWidth={5}>
+        {/* Halo — the one animated element (see the component note). Its rest
+            state is the same soft ring the gauge always had; under reduced
+            motion that rest state is all that renders. */}
+        <circle className="nv-level-pulse" cx={toX(current)} cy={height / 2} r={4} fill="none" stroke={dotColor} strokeWidth={5} aria-hidden="true" />
+        {/* The dot — static, so the reading's position never appears to move. */}
+        <circle cx={toX(current)} cy={height / 2} r={4} fill={dotColor}>
           <title>{accessibleText}</title>
         </circle>
       </svg>

@@ -289,7 +289,10 @@ describe('R13.7B2.2 § 3 — human-readable statuses, never storage enums', () =
 
 describe('R13.7B2.2 § 8/§ 9 — the gauge and the binding leg explain themselves', () => {
   it('M · the normalized reading is named and its basis stated', () => {
-    assert.match(DETAIL, /\$\{t\.sn\.gaugeNormalized\} \$\{gaugeLevel\.toFixed\(2\)\} — \$\{t\.sn\.gaugeBasis\}/)
+    assert.match(DETAIL, /\$\{t\.sn\.gaugeNormalized\} \$\{gaugeLevel\.toFixed\(2\)\} — \$\{basis\}/)
+    // R13.7B2.2.1 — the basis is honest per underlying: "initial / call level"
+    // only when the call level really is 100% of initial, else "initial level".
+    assert.match(DETAIL, /const basis = autocallPct != null && markLevelKey\(autocallPct \* 100\) === 100 \? t\.sn\.gaugeBasis : t\.sn\.gaugeBasisInitialOnly/)
   })
 
   it('the normalized value reproduces the golden cushions', () => {
@@ -310,8 +313,9 @@ describe('R13.7B2.2 § 8/§ 9 — the gauge and the binding leg explain themselv
   })
 
   it('O · a visible legend names every marker', () => {
-    assert.match(DETAIL, /function GaugeLegend\(\)/)
-    assert.match(DETAIL, /<GaugeLegend \/>/)
+    // R13.7B2.2.1 § 2 — the legend receives the note's own merged marks.
+    assert.match(DETAIL, /function GaugeLegend\(\{ marks \}/)
+    assert.match(DETAIL, /<GaugeLegend marks=\{legendMarks\} \/>/)
     for (const k of ['gaugeMarkCurrent', 'gaugeMarkStrike', 'gaugeMarkAutocall', 'gaugeMarkCoupon', 'gaugeMarkKnockIn']) {
       assert.ok(DETAIL.includes(`t.sn.${k}`), `legend entry ${k} missing`)
     }

@@ -123,7 +123,15 @@ function autocallOutcome(group: StructuredNoteObservation[], voided: boolean): S
   // A note can also be recorded as called on a non-autocall-typed row (legacy
   // data, or a coupon row carrying the terminal status). Honour that rather
   // than reporting `none` for a date that demonstrably ended the note.
-  if (!o) return group.some((x) => x.status === 'autocalled') ? 'called' : 'none'
+  if (!o) {
+    if (group.some((x) => x.status === 'autocalled')) return 'called'
+    // R13.7B2.2.1 § 3 — after a call, NOTHING on a later date is tested, and
+    // that is the accurate reason to show: a final-valuation date that carries
+    // no autocall row is void because the note was called, not merely because
+    // the test was never scheduled. Before a call, a missing autocall row stays
+    // `none` — the honest "never ran" state production is in today.
+    return voided ? 'void' : 'none'
+  }
   if (o.status === 'autocalled') return 'called'
   if (voided || o.status === 'cancelled') return 'void'
   if (o.autocallEligible === true) return 'eligible'

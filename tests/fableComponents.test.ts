@@ -735,11 +735,33 @@ describe('reduced motion is honored by every new interactive/animated component'
     assert.match(src, /Render-time previous-value pattern/)
   })
 
-  test('Sparkline and BarrierGauge are static SVG — nothing to reduce', () => {
+  test('Sparkline is static SVG — nothing to reduce', () => {
     const spark = read(`${FABLE_DIR}/Sparkline.tsx`)
-    const gauge = read(`${FABLE_DIR}/BarrierGauge.tsx`)
     assert.doesNotMatch(spark, /animation|@keyframes|requestAnimationFrame/)
-    assert.doesNotMatch(gauge, /animation|@keyframes|requestAnimationFrame/)
+  })
+
+  // R13.7B2.2.1 § 6 — INVERTED from "BarrierGauge is static". The gauge now
+  // carries exactly one owner-approved motion: the current-level HALO pulses
+  // via a CSS class. The reduced-motion contract is therefore asserted rather
+  // than the absence of motion: no JS timer, the class is the whole
+  // implementation, and globals.css removes it under prefers-reduced-motion.
+  test('BarrierGauge motion is CSS-class-only and removed under prefers-reduced-motion', () => {
+    const gauge = read(`${FABLE_DIR}/BarrierGauge.tsx`)
+    const css = read('src/app/globals.css')
+    // No JS-driven animation and no inline animation style — the class is it.
+    assert.doesNotMatch(gauge, /requestAnimationFrame|setInterval|animation\s*:/)
+    assert.match(gauge, /<circle className="nv-level-pulse"/)
+    // Only the halo moves; the dot that marks the reading is a separate, static circle.
+    assert.match(gauge, /<circle cx=\{toX\(current\)\} cy=\{height \/ 2\} r=\{4\} fill=\{dotColor\}>/)
+    // The utility consumes motion tokens, not literals.
+    const rule = css.match(/\.nv-level-pulse \{[^}]*\}/)
+    assert.ok(rule, '.nv-level-pulse utility must exist')
+    assert.match(rule![0], /var\(--dur-level-pulse\) var\(--ease-primary\) infinite/)
+    assert.match(css, /--dur-level-pulse:\s*\d+ms/)
+    assert.match(css, /@keyframes nvLevelPulse\b/)
+    // Reduced motion: the loop is removed outright inside the global block.
+    const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'))
+    assert.match(reduced, /\.nv-level-pulse \{\s*animation: none !important;\s*transform: none !important;/)
   })
 })
 

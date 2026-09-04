@@ -47,13 +47,17 @@ describe('R4.1 — Fable detail composition on /structured-notes/[id]', () => {
 
   it('renders the decision-first capsule strip (status, worst, distance, next obs, coupon, notional, maturity)', () => {
     assert.match(DETAIL, /repeat\(auto-fit, minmax\(150px, 1fr\)\)/)
-    for (const key of ['riskStatus', 'worstPerformer', 'distanceKnockIn', 'dashNextObs', 'colCoupon', 'colNotional', 'colMaturity']) {
+    for (const key of ['colStatus', 'worstPerformer', 'distanceKnockIn', 'dashNextObs', 'colCoupon', 'colNotional', 'colMaturity']) {
       assert.ok(DETAIL.includes(`t.sn.${key}`), `capsule ${key} must be present`)
     }
     // R13.7B2.2 § 6 — the status capsule now also carries the settlement
     // sub-line for a called note, so the assertion is on the bindings rather
     // than on one single-line JSX spelling.
-    assert.match(DETAIL, /label=\{t\.sn\.riskStatus\}/)
+    // R13.7B2.2.1 § 5 — the capsule is labelled "Status" (the shared
+    // `colStatus` key), no longer "Risk status": for a called note the value is
+    // a lifecycle state, not a risk reading.
+    assert.match(DETAIL, /label=\{t\.sn\.colStatus\}/)
+    assert.ok(!/label=\{t\.sn\.riskStatus\}/.test(DETAIL), 'the hero capsule must not be labelled "Risk status"')
     assert.match(DETAIL, /value=\{riskLabel\(data\.metrics\.riskStatus\)\}/)
     assert.match(DETAIL, /tone=\{RISK_TONE\[data\.metrics\.riskStatus\]\}/)
   })
@@ -227,12 +231,16 @@ describe('R4.4 — every real section remains represented', () => {
     assert.match(DETAIL, /<span className="sr-only">\{t\.sn\.dashNextObs\}: <\/span>/)
   })
 
-  it('the Fable lifecycle timeline (issued ✓ · observed · next ● · maturity ○) heads the schedule card', () => {
+  it('the Fable lifecycle timeline (issued ✓ · observed dates · next ● / called-on · maturity ○) heads the schedule card', () => {
     assert.match(DETAIL, /const timeline:/)
-    for (const key of ['colIssued', 'monitoring.observedAt', 'dashNextObs', 'colMaturity']) {
+    // R13.7B2.2.1 § 4 — the progress anchor is "Observed dates n / m" over
+    // DISPLAY rows, no longer `monitoring.observedAt` over canonical records.
+    for (const key of ['colIssued', 'obsProgress', 'dashNextObs', 'calledOnLabel', 'colMaturity']) {
       assert.ok(DETAIL.includes(`t.sn.${key}`), `timeline anchor ${key} must be present`)
     }
     assert.match(DETAIL, /observedCount/)
+    assert.match(DETAIL, /value: `\$\{observedCount\} \/ \$\{scheduleRows\.length\}`/)
+    assert.ok(!DETAIL.includes('${observedCount}/${deduped.length}'), 'the counter must not mix display rows with canonical records')
   })
 
   it('allocation: the entity grid workflow is preserved verbatim in behavior', () => {
@@ -463,10 +471,20 @@ describe('R4.8 — localization and accessibility', () => {
 })
 
 describe('R4.9 — responsive containment', () => {
-  it('all three dense tables scroll inside their card via the shared TableCard minWidth', () => {
-    assert.equal((DETAIL.match(/minWidth=\{/g) ?? []).length, 3)
-    assert.match(DETAIL, /minWidth=\{680\}/)
-    assert.match(DETAIL, /minWidth=\{560\}/)
+  it('all three dense tables scroll horizontally inside their card, never the page', () => {
+    // R13.7B2.2.1 § 7 — the underlyings table moved into the combined
+    // terms/underlyings block, so two tables use TableCard's minWidth and the
+    // third carries the same card-level overflow-x-auto + min-width contract
+    // inline (the exact anatomy TableCard implements).
+    assert.equal((DETAIL.match(/minWidth=\{680\}/g) ?? []).length, 2, 'monitoring + schedule TableCards')
+    assert.ok(!DETAIL.includes('<TableCard title={t.sn.underlyings}'), 'the underlyings table no longer sits in its own card')
+    assert.match(DETAIL, /<div className="overflow-x-auto">\s*<div style=\{\{ minWidth: 560 \}\}>/)
+  })
+
+  // R13.7B2.2.1 § 1 — the schedule renders in full; the page scrolls.
+  it('no table on the detail page has an inner vertical scroll region', () => {
+    assert.ok(!/maxHeight=/.test(DETAIL), 'no TableCard maxHeight — the Observation Schedule must not scroll internally')
+    assert.ok(!/overflowY|overflow-y-auto/.test(DETAIL_CODE), 'no inline vertical scroll container')
   })
 
   it('multi-column bands stack below lg; no page-level width rule', () => {

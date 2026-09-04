@@ -990,26 +990,45 @@ export const dict = {
         observed: 'Observed',
         scheduled: 'Scheduled',
       },
+      // R13.7B2.2.1 § 3 — the three schedule columns say three DIFFERENT
+      // things: Status is the lifecycle of the date, Coupon is the coupon-test
+      // result, Autocall is the call-test result. So the call test reads "Met",
+      // never a second "Called" beside the Called status chip; a future test
+      // reads "Pending", never a second "Scheduled".
       obsOutcome: {
         paid: 'Paid',
         missed: 'Missed',
-        called: 'Called',
+        called: 'Met',
         eligible: 'Eligible',
         not_eligible: 'Not eligible',
         observed: 'Observed',
-        scheduled: 'Scheduled',
+        scheduled: 'Pending',
         void: 'Void',
         none: 'Not tested',
       },
       obsOutcomeNoneHelp: 'No autocall observation is recorded for this date, so the call test was never run.',
+      obsOutcomeVoidHelp: 'Not tested — the note was called before this date.',
       obsFinalTag: 'Final valuation',
+      // § 4 — progress over DISPLAY rows (one per valuation date), never over
+      // canonical event records. Void-after-call dates are not observed dates.
+      obsProgress: 'Observed dates',
+      obsProgressHelp: 'Valuation dates already evaluated, out of all dates on the schedule. Dates void after a call are not counted as observed.',
       // R13.7B2.2 § 8 — the gauge is a normalized scale, not a raw index level.
       gaugeNormalized: 'Normalized level',
+      // The basis is stated per underlying: "initial / call level" only when the
+      // call level really is 100% of initial (true for the whole current book);
+      // otherwise the honest "initial level" alone.
       gaugeBasis: '100 = initial / call level',
-      gaugeLegend: 'Gauge: each underlying is indexed to 100 at its own initial level (which is also its call level). Marks:',
-      gaugeMarkStrike: 'Initial / call level (100)',
+      gaugeBasisInitialOnly: '100 = initial level',
+      gaugeLegend: 'Gauge: each underlying is indexed to 100 at its own initial level. Marks on this note:',
+      gaugeMarkStrike: 'Initial / call level',
+      gaugeMarkStrikeOnly: 'Initial level',
       gaugeMarkKnockIn: 'Knock-in barrier',
       gaugeMarkCoupon: 'Coupon barrier',
+      // R13.7B2.2.1 § 2 — the ONE genuine coincidence on the current book: the
+      // coupon barrier and the knock-in barrier are both 65% of initial. Named
+      // once, as one mark. The call level (100) is a separate mark.
+      gaugeMarkCouponKnockIn: 'Coupon / knock-in barrier',
       gaugeMarkAutocall: 'Call level',
       // The current-level dot is coloured by proximity to the knock-in barrier
       // (BarrierGauge's own thresholds), so the legend says so rather than
@@ -2708,22 +2727,28 @@ export const dict = {
       obsOutcome: {
         paid: 'Pagado',
         missed: 'No pagado',
-        called: 'Llamada',
+        called: 'Cumplido',
         eligible: 'Elegible',
         not_eligible: 'No elegible',
         observed: 'Observada',
-        scheduled: 'Programada',
+        scheduled: 'Pendiente',
         void: 'Anulada',
         none: 'Sin prueba',
       },
       obsOutcomeNoneHelp: 'No hay observación de autollamado registrada para esta fecha, por lo que la prueba de llamada nunca se ejecutó.',
+      obsOutcomeVoidHelp: 'Sin prueba — la nota fue llamada antes de esta fecha.',
       obsFinalTag: 'Valoración final',
+      obsProgress: 'Fechas observadas',
+      obsProgressHelp: 'Fechas de valoración ya evaluadas, sobre el total de fechas del calendario. Las fechas anuladas tras una llamada no se cuentan como observadas.',
       gaugeNormalized: 'Nivel normalizado',
       gaugeBasis: '100 = nivel inicial / de llamada',
-      gaugeLegend: 'Medidor: cada subyacente se indexa a 100 en su propio nivel inicial (que es también su nivel de llamada). Marcas:',
-      gaugeMarkStrike: 'Nivel inicial / de llamada (100)',
+      gaugeBasisInitialOnly: '100 = nivel inicial',
+      gaugeLegend: 'Medidor: cada subyacente se indexa a 100 en su propio nivel inicial. Marcas en esta nota:',
+      gaugeMarkStrike: 'Nivel inicial / de llamada',
+      gaugeMarkStrikeOnly: 'Nivel inicial',
       gaugeMarkKnockIn: 'Barrera de knock-in',
       gaugeMarkCoupon: 'Barrera de cupón',
+      gaugeMarkCouponKnockIn: 'Barrera de cupón / knock-in',
       gaugeMarkAutocall: 'Nivel de llamada',
       gaugeMarkCurrent: 'Nivel actual (punto — el color indica la cercanía al knock-in)',
       gaugeMarksCoincide: 'Las marcas que coinciden en el mismo nivel normalizado se dibujan una vez y se nombran juntas.',
