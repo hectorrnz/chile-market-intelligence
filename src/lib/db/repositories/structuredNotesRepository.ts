@@ -767,6 +767,27 @@ export interface MonitoringRunInput {
   runType: 'scheduled_snapshot' | 'manual_refresh' | 'observation_check' | 'backfill'
 }
 
+/**
+ * R13.7B3.2 — every `backfill` audit row carrying one reconciliation operation id.
+ *
+ * Returns an ARRAY rather than a single row on purpose. 20260819000000's unique
+ * index makes more than one impossible, but the caller must be able to STOP on
+ * an ambiguous answer rather than silently pick the first: which reconciliation
+ * a correction announces is not something to guess at.
+ */
+export async function getReconciliationAuditRuns(
+  client: Client,
+  operationId: string,
+): Promise<{ id: string; run_type: string; status: string; metadata: Record<string, unknown> }[]> {
+  const res = await q(client)
+    .from('structured_note_monitoring_runs')
+    .select('id, run_type, status, metadata')
+    .eq('run_type', 'backfill')
+    .eq('metadata->>operationId', operationId)
+  if (res.error) throw new Error(res.error.message.slice(0, 200))
+  return res.data ?? []
+}
+
 /** Creates a `running` monitoring-run row and returns its id. Always uses the admin client (called only from the cron route). */
 export async function createStructuredNoteMonitoringRun(client: Client, input: MonitoringRunInput): Promise<string | null> {
   const res = await q(client)

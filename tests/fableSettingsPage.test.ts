@@ -1268,8 +1268,25 @@ describe('R9.4 · preserved API, RLS and security contracts', () => {
     assert.equal((RECIPIENTS_ROUTE.match(/export async function (GET|POST|PATCH|DELETE)/g) ?? []).length, 2)
     assert.equal((RECIPIENT_ID_ROUTE.match(/export async function (GET|POST|PATCH|DELETE)/g) ?? []).length, 2)
     assert.equal(existsSync(join(ROOT, 'src/app/api/notification-recipients/[id]/[action]')), false)
+    // R13.7B3.2 — this was `filter(...).length === 1`, a FILENAME COUNT standing
+    // in for "no later migration rewrites the shared-trust recipient model".
+    // The proxy was always incomplete (20260815000000 hardened those very
+    // policies and never matched the pattern), and 20260820000000 now trips it
+    // while doing the opposite of what it guards: that migration adds an
+    // identity index on `notifications` and ASSERTS the administrator-only
+    // recipient posture is intact. Replaced with the invariant itself, which is
+    // strictly stronger — no migration other than the foundation may create or
+    // drop a notification_recipients policy.
     const migrations = readdirSync(join(ROOT, 'supabase/migrations'))
-    assert.equal(migrations.filter((f) => /recipient|notification/i.test(f)).length, 1, 'no new notifications migration')
+      .filter((f) => /recipient|notification/i.test(f))
+    assert.ok(migrations.includes('20260713000000_notifications_foundation.sql'), 'the foundation migration is still present')
+    for (const f of migrations.filter((f) => f !== '20260713000000_notifications_foundation.sql')) {
+      const sql = read(`supabase/migrations/${f}`)
+      assert.doesNotMatch(sql, /create policy[^\n]*on\s+(public\.)?notification_recipients/i,
+        `${f} must not redefine a notification_recipients policy`)
+      assert.doesNotMatch(sql, /drop policy[^\n]*on\s+(public\.)?notification_recipients/i,
+        `${f} must not drop a notification_recipients policy`)
+    }
     assert.doesNotMatch(CARD_CODE, /database\.types|supabase\/migrations/)
   })
 

@@ -429,6 +429,64 @@ export interface HistoricalCorrectionNotification {
 }
 
 /**
+ * The facts a historical-correction message is built from (R13.7B3.2).
+ *
+ * Extracted so the wording exists exactly ONCE. A correction can now be raised
+ * from two places — a live reconciliation result, and the durable audit record
+ * written when that reconciliation was applied — and two independently-worded
+ * messages describing the same event would be a defect, not a nuance.
+ */
+export interface HistoricalCorrectionFacts {
+  noteId: string
+  /** ISIN preferred; issuer or id only as a fallback. */
+  label: string
+  callDate: string | null
+  redemptionDate: string | null
+  settlement: SettlementStatus
+  previousStatus: StructuredNote['status']
+  correctedStatus: StructuredNote['status']
+}
+
+export function historicalCorrectionTitle(label: string): string {
+  return `Historical correction — ${label}`
+}
+
+/**
+ * Deliberately written so it cannot be misread as a live call: it names the
+ * ORIGINAL contractual date, says the correction date separately, and states
+ * outright that no new early redemption has occurred.
+ */
+export function historicalCorrectionBody(f: HistoricalCorrectionFacts, correctionDate: string): string {
+  const called = f.callDate ?? 'an earlier valuation date'
+  return (
+    `${f.label} was contractually called on ${called}. ` +
+    `NMI has corrected a previously missed autocall detection: the autocall observation was never ` +
+    `evaluated because the importing parser emitted no autocall test for this note. ` +
+    `Correction applied ${correctionDate}. ` +
+    `This is a historical reconciliation, not a new call event — no new early redemption has occurred. ` +
+    (f.settlement === 'settled'
+      ? `The position redeemed on ${f.redemptionDate ?? 'its contractual redemption date'} and is settled.`
+      : `Redemption is ${f.redemptionDate ?? 'not recorded'}; the notional remains outstanding until then.`)
+  )
+}
+
+export function historicalCorrectionMetadata(
+  f: HistoricalCorrectionFacts,
+  correctionDate: string,
+): Record<string, unknown> {
+  return {
+    reasonCode: RECONCILIATION_REASON_CODE,
+    historicalCorrection: true,
+    originalCallDate: f.callDate,
+    redemptionDate: f.redemptionDate,
+    correctionDate,
+    previousStatus: f.previousStatus,
+    correctedStatus: f.correctedStatus,
+    settlement: f.settlement,
+  }
+}
+
+/**
  * The one administrator-only notification for a corrected historical call.
  *
  * Returns null for anything not classified `confirmed_missed_autocall`: a note
@@ -439,32 +497,22 @@ export function buildHistoricalCorrectionNotification(
   correctionDate: string,
 ): HistoricalCorrectionNotification | null {
   if (r.classification !== 'confirmed_missed_autocall') return null
-  const label = r.isin ?? r.issuerDisplayName ?? r.noteId
-  const called = r.expectedCallDate ?? 'an earlier valuation date'
+  const facts: HistoricalCorrectionFacts = {
+    noteId: r.noteId,
+    label: r.isin ?? r.issuerDisplayName ?? r.noteId,
+    callDate: r.expectedCallDate,
+    redemptionDate: r.expectedRedemptionDate,
+    settlement: r.settlement,
+    previousStatus: r.storedStatus,
+    correctedStatus: r.expectedStatus,
+  }
   return {
     notificationType: HISTORICAL_CORRECTION_NOTIFICATION_TYPE,
-    title: `Historical correction — ${label}`,
-    body:
-      `${label} was contractually called on ${called}. ` +
-      `NMI has corrected a previously missed autocall detection: the autocall observation was never ` +
-      `evaluated because the importing parser emitted no autocall test for this note. ` +
-      `Correction applied ${correctionDate}. ` +
-      `This is a historical reconciliation, not a new call event — no new early redemption has occurred. ` +
-      (r.settlement === 'settled'
-        ? `The position redeemed on ${r.expectedRedemptionDate ?? 'its contractual redemption date'} and is settled.`
-        : `Redemption is ${r.expectedRedemptionDate ?? 'not recorded'}; the notional remains outstanding until then.`),
+    title: historicalCorrectionTitle(facts.label),
+    body: historicalCorrectionBody(facts, correctionDate),
     relatedEntityType: 'structured_note',
     relatedEntityId: r.noteId,
-    metadata: {
-      reasonCode: RECONCILIATION_REASON_CODE,
-      historicalCorrection: true,
-      originalCallDate: r.expectedCallDate,
-      redemptionDate: r.expectedRedemptionDate,
-      correctionDate,
-      previousStatus: r.storedStatus,
-      correctedStatus: r.expectedStatus,
-      settlement: r.settlement,
-    },
+    metadata: historicalCorrectionMetadata(facts, correctionDate),
     emailRecipients: [],
   }
 }

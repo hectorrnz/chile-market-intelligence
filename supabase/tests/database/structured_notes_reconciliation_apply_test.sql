@@ -38,18 +38,25 @@ insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
 values ('c1111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000000',
         'authenticated', 'authenticated', 'recon_owner@test.invalid', 'x', now(), now(), now()),
        ('c2222222-2222-2222-2222-222222222222', '00000000-0000-0000-0000-000000000000',
-        'authenticated', 'authenticated', 'recon_member@test.invalid', 'x', now(), now(), now());
+        'authenticated', 'authenticated', 'recon_member@test.invalid', 'x', now(), now(), now()),
+       ('c3333333-3333-3333-3333-333333333333', '00000000-0000-0000-0000-000000000000',
+        'authenticated', 'authenticated', 'recon_ungranted@test.invalid', 'x', now(), now(), now());
 
 insert into public.user_profiles (id, username, email, display_name, role, portfolio_principal) values
   ('c1111111-1111-1111-1111-111111111111', 'recon_admin',  'recon_owner@test.invalid',  'Recon Admin',  'administrator', null),
-  ('c2222222-2222-2222-2222-222222222222', 'recon_member', 'recon_member@test.invalid', 'Recon Member', 'user',          'jaime');
+  ('c2222222-2222-2222-2222-222222222222', 'recon_member', 'recon_member@test.invalid', 'Recon Member', 'user',          'jaime'),
+  ('c3333333-3333-3333-3333-333333333333', 'recon_nogrant','recon_ungranted@test.invalid','Recon NoGrant','user',        'andres');
 
 update public.user_profiles set activated_at = now()
- where id in ('c1111111-1111-1111-1111-111111111111', 'c2222222-2222-2222-2222-222222222222')
+ where id in ('c1111111-1111-1111-1111-111111111111', 'c2222222-2222-2222-2222-222222222222',
+              'c3333333-3333-3333-3333-333333333333')
    and activated_at is null;
 
-insert into public.user_module_grants (user_id, module_key)
-values ('c2222222-2222-2222-2222-222222222222', 'structured_notes');
+insert into public.user_module_grants (user_id, module_key) values
+  ('c2222222-2222-2222-2222-222222222222', 'structured_notes'),
+  -- Holds a DIFFERENT module, so a denial below proves the missing
+  -- structured_notes grant is the reason, not simply holding no grants at all.
+  ('c3333333-3333-3333-3333-333333333333', 'markets');
 
 -- NOTE A — will be corrected: called on its second observation date.
 insert into public.structured_notes (id, user_id, isin, product_name, structure_type, currency, status, autocall_barrier_pct)
@@ -492,6 +499,122 @@ select is((select count(*)::int from public.structured_note_monitoring_runs wher
 select pg_temp.as_anon();
 select throws_ok($$ select count(*) from public.structured_note_monitoring_runs $$,
   '42501', null, 'anon cannot read the reconciliation audit record at all');
+
+select pg_temp.as_super();
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 10 · R13.7B3.2 · HISTORICAL-CORRECTION NOTIFICATION IDENTITY AND AUDIENCE
+-- ═══════════════════════════════════════════════════════════════════════════
+-- The announcement step runs AFTER the atomic financial transaction, so it can
+-- be re-run — after a crash, after a partial success, or by two operators at
+-- once. These assertions are what make "run it again" safe, and what keep the
+-- announcement administrator-only.
+
+select is((select count(*)::int from pg_catalog.pg_indexes
+            where schemaname = 'public'
+              and indexname = 'notifications_historical_correction_identity_uidx'),
+          1, 'the historical-correction identity index exists');
+
+select is((select count(*)::int
+             from pg_catalog.pg_index i
+             join pg_catalog.pg_class c on c.oid = i.indexrelid
+            where c.relname = 'notifications_historical_correction_identity_uidx'
+              and i.indisunique and i.indpred is not null),
+          1, 'that index is UNIQUE and PARTIAL — it constrains only this one type');
+
+-- One correction for the note this suite just corrected, exactly as the
+-- orchestrator writes it: administrator-only, in-platform, no recipient.
+insert into public.notifications
+  (notification_type, title, body, link_url, related_entity_type, related_entity_id, metadata)
+values (
+  'structured_note_historical_correction',
+  'Historical correction — XS0000000AAA',
+  'XS0000000AAA was contractually called on 2026-04-06. This is a historical reconciliation, not a new call event.',
+  '/structured-notes/cccc0001-0000-0000-0000-000000000001',
+  'structured_note',
+  'cccc0001-0000-0000-0000-000000000001',
+  '{"correctionKey":"op-success:cccc0001-0000-0000-0000-000000000001","operationId":"op-success","historicalCorrection":true}'::jsonb
+);
+
+select is((select count(*)::int from public.notifications), 1, 'the correction was created');
+
+-- A real email recipient exists throughout, so every "member sees zero" below is
+-- a denial rather than an empty table. It is never used: a correction has no
+-- code path that could reach it.
+insert into public.notification_recipients (email, label, active)
+values ('recon-fixture-recipient@test.invalid', 'Fixture', true);
+
+-- G · A retry cannot duplicate it. This is the hard guarantee behind the
+--     writer's "23505 means already-created" path.
+select throws_ok(
+  $$ insert into public.notifications
+       (notification_type, title, related_entity_type, related_entity_id, metadata)
+     values ('structured_note_historical_correction', 'Retry with different words',
+             'structured_note', 'cccc0001-0000-0000-0000-000000000001',
+             '{"correctionKey":"op-success:cccc0001-0000-0000-0000-000000000001","operationId":"op-success"}'::jsonb) $$,
+  '23505', null, 'G: re-announcing the same operation+note is impossible, whatever the wording');
+
+-- The SAME note corrected by a LATER, different reconciliation is a real second
+-- announcement — the identity is per-operation, not per-note.
+select lives_ok(
+  $$ insert into public.notifications
+       (notification_type, title, related_entity_type, related_entity_id, metadata)
+     values ('structured_note_historical_correction', 'Historical correction — later operation',
+             'structured_note', 'cccc0001-0000-0000-0000-000000000001',
+             '{"correctionKey":"op-later:cccc0001-0000-0000-0000-000000000001","operationId":"op-later"}'::jsonb) $$,
+  'the same note under a DIFFERENT operation is a distinct, allowed correction');
+
+-- A live alert type is deliberately NOT constrained: a note warns on every
+-- observation, and the second warning is a real event, not a duplicate.
+select lives_ok(
+  $$ insert into public.notifications (notification_type, title, related_entity_type, related_entity_id, metadata)
+     values ('structured_note_potential_autocall', 'T-1 warning',
+             'structured_note', 'cccc0001-0000-0000-0000-000000000001', '{}'::jsonb) $$,
+  'a live warning may repeat');
+select lives_ok(
+  $$ insert into public.notifications (notification_type, title, related_entity_type, related_entity_id, metadata)
+     values ('structured_note_potential_autocall', 'T-1 warning again',
+             'structured_note', 'cccc0001-0000-0000-0000-000000000001', '{}'::jsonb) $$,
+  'and again — the identity index does not touch the live types');
+
+-- K–O · Who may read it.
+select pg_temp.as_user('c1111111-1111-1111-1111-111111111111');
+select is((select count(*)::int from public.notifications
+            where notification_type = 'structured_note_historical_correction'),
+          2, 'K: an administrator CAN read historical corrections');
+
+select pg_temp.as_user('c2222222-2222-2222-2222-222222222222');
+select is((select count(*)::int from public.notifications), 0,
+  'L: a structured_notes-GRANTED member cannot read the correction feed at all');
+select is((select count(*)::int from public.notifications
+            where notification_type = 'structured_note_historical_correction'),
+          0, 'O: and the badge/count query leaks nothing either — it reads the same RLS-filtered table');
+
+select pg_temp.as_user('c3333333-3333-3333-3333-333333333333');
+select is((select count(*)::int from public.notifications), 0,
+  'M: an ungranted member cannot read the correction feed');
+
+select pg_temp.as_anon();
+select throws_ok($$ select count(*) from public.notifications $$,
+  '42501', null, 'N: anon cannot read the correction feed at all');
+
+-- A member cannot write one either — there is no user-facing insert path.
+select pg_temp.as_user('c2222222-2222-2222-2222-222222222222');
+select throws_ok(
+  $$ insert into public.notifications (notification_type, title) values ('structured_note_historical_correction', 'forged') $$,
+  '42501', null, 'a member cannot forge a historical correction');
+
+-- Module grants are not an audience mechanism: the email recipient list stays
+-- administrator-only, so a correction cannot acquire a recipient by a grant.
+-- A real recipient row exists (inserted below as postgres), so "the member sees
+-- zero" is a denial rather than an empty table.
+select is((select count(*)::int from public.notification_recipients), 0,
+  'a granted member still cannot read the email recipient list');
+
+select pg_temp.as_user('c1111111-1111-1111-1111-111111111111');
+select is((select count(*)::int from public.notification_recipients), 1,
+  'an administrator CAN read it — so the member''s zero above is a denial, not an empty table');
 
 select pg_temp.as_super();
 

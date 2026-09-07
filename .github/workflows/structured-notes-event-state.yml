@@ -155,6 +155,14 @@ jobs:
       - name: Atomic reconciliation apply mechanism
         run: node --test "tests/structuredNotesReconciliationApply.test.ts"
 
+      # R13.7B3.2 — the announcement step that follows a reconciliation. Same
+      # split: the corrected-note derivation, deterministic identity, retry and
+      # partial-retry behaviour and the no-email guarantee are proven here; who
+      # may READ a correction is proven with real role sessions in the DB
+      # validation workflow.
+      - name: Historical correction notifications
+        run: node --test "tests/structuredNotesHistoricalCorrectionNotifications.test.ts"
+
       - name: Lint
         run: npm run lint
 

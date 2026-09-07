@@ -476,7 +476,7 @@ docs/                 — Project documentation
   (`observationSchedule.ts`): active → plain; autocalled → date struck + muted + "Void after call" chip
   (Called on is the terminal event); matured → strong, never struck. The persisted maturity is untouched.
 
-## Structured Notes Reconciliation Rule (R13.7B3.1)
+## Structured Notes Reconciliation Rule (R13.7B3.1 / B3.2)
 
 - **A historical correction to the notes book is applied by ONE database transaction and nothing
   else.** `public.nmi_apply_structured_note_reconciliation(jsonb)`
@@ -514,10 +514,33 @@ docs/                 — Project documentation
   RPC call and never falls back to sequential writes. Both run under plain `node` — **relative
   imports in this tooling's closure must carry an explicit `.ts` extension**, or Node's ESM resolver
   rejects them at runtime (a committed tool once could not be run at all for this reason).
+- **Announcing a correction is a SEPARATE, retryable step (R13.7B3.2)** — never a statement inside
+  the financial transaction, because a notification failure must not roll back a correct book.
+  `scripts/reconcile/applyHistoricalCorrectionNotifications.ts` takes ONE input, the reconciliation
+  `--operation-id`, and derives everything else from that reconciliation's durable `backfill` audit
+  record: which notes actually changed state (`correctedStatus !== expectedStatus`), each original
+  contractual call date, the applied-at date, each settlement classification. **Never ask an operator
+  to retype the ISINs** — that is the step at which a note gets missed. The parser refuses a record
+  that is not `backfill`, not `success`, whose `operationId` differs, or whose `counts.notesCorrected`
+  disagrees with its own notes array.
+- **Identity = `<operationId>:<noteId>`**, stored as `metadata.correctionKey` and enforced by a
+  partial unique index (`20260820000000`) scoped to `structured_note_historical_correction`. Never key
+  on message text — rewording a sentence must not make a delivered correction look new. Never key on
+  note alone — a later reconciliation correcting the same note is a real second announcement. The
+  live alert types stay unconstrained: a note warns on every observation. A retry therefore creates
+  only genuinely missing rows, and a `23505` is the success path for a duplicate, not a failure.
+- **Option B is structural: a correction can never email.** The row type's `emailRecipients` is
+  `readonly never[]`, and neither the builder nor the orchestrator references `emailProvider`,
+  `sendNotificationEmail`, `getActiveNotificationRecipientEmails` or `notification_recipients` —
+  asserted by test. Administrator-only in-platform, unchanged from `20260818000000`; a module grant
+  is not an audience mechanism. The orchestrator writes only `notifications` and cannot name a
+  financial table or call any RPC.
 - Tests: `tests/structuredNotesReconciliationApply.test.ts` (packet derivation, deterministic hash,
-  safety gate, migration posture) and
+  safety gate, migration posture), `tests/structuredNotesHistoricalCorrectionNotifications.test.ts`
+  (audit-sourced derivation, identity, retry/partial-retry, no-email) and
   `supabase/tests/database/structured_notes_reconciliation_apply_test.sql` (real PostgreSQL:
-  atomicity via a deliberately LATE failure, idempotency, staleness, authorization).
+  atomicity via a deliberately LATE failure, idempotency, staleness, authorization, the correction
+  identity index and the full administrator/member/anon read matrix).
 
 ## Number and Font Rules (Phase 2B)
 

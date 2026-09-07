@@ -108,6 +108,82 @@ export async function markAllNotificationsRead(client: Client, userId: string, n
   return !res.error
 }
 
+// ─── R13.7B3.2 · Historical-correction notifications ─────────────────────────
+//
+// A deliberately separate pair of functions from `createNotification` above, for
+// one reason: this path must be idempotent, and it must be visibly impossible
+// for it to email. Neither function below touches `notification_recipients` or
+// any mail transport, and the writer's input type carries no address field.
+
+/**
+ * The `correctionKey` values already recorded for one reconciliation operation.
+ *
+ * Read before writing so a retry can report what it is skipping and create only
+ * what is genuinely missing. The unique index added by 20260820000000 remains
+ * the hard guarantee — this read is the readable half, not the enforcement, and
+ * a row that appears between this read and the insert is caught there.
+ */
+export async function listHistoricalCorrectionKeys(client: Client, operationId: string): Promise<string[]> {
+  const res = await q(client)
+    .from('notifications')
+    .select('metadata')
+    .eq('notification_type', 'structured_note_historical_correction')
+    .eq('metadata->>operationId', operationId)
+  if (res.error) throw new Error(sanitize(res.error.message))
+  return (res.data ?? [])
+    .map((r: { metadata: Record<string, unknown> | null }) => r.metadata?.correctionKey)
+    .filter((k: unknown): k is string => typeof k === 'string')
+}
+
+export interface HistoricalCorrectionInsert {
+  notificationType: string
+  title: string
+  body: string
+  linkUrl: string
+  relatedEntityType: string
+  relatedEntityId: string
+  metadata: Record<string, unknown>
+}
+
+export type HistoricalCorrectionWriteResult =
+  | { ok: true; id: string; created: true }
+  /** The identity already existed — a retry, not a failure. */
+  | { ok: true; created: false }
+  | { ok: false; created: false; error: string }
+
+/**
+ * Creates one historical-correction notification, or reports it already exists.
+ *
+ * A unique-violation (23505) is the SUCCESS path for a retry: the index caught a
+ * duplicate that the pre-read could not see, which is precisely what makes two
+ * concurrent runs safe. Any other error is returned so the caller can report a
+ * partial result and be re-run.
+ */
+export async function createHistoricalCorrectionNotification(
+  client: Client,
+  input: HistoricalCorrectionInsert,
+): Promise<HistoricalCorrectionWriteResult> {
+  const res = await q(client)
+    .from('notifications')
+    .insert({
+      notification_type: input.notificationType,
+      title: input.title,
+      body: input.body,
+      link_url: input.linkUrl,
+      related_entity_type: input.relatedEntityType,
+      related_entity_id: input.relatedEntityId,
+      metadata: input.metadata,
+    })
+    .select('id')
+    .single()
+
+  if (res.error) {
+    if (res.error.code === '23505') return { ok: true, created: false }
+    return { ok: false, created: false, error: sanitize(res.error.message) }
+  }
+  return { ok: true, id: res.data?.id, created: true }
+}
+
 // ─── Recipients (email distribution list, editable at /settings/notifications) ─
 
 export async function listNotificationRecipients(client: Client): Promise<NotificationRecipient[]> {
