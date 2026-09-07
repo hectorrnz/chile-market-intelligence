@@ -216,8 +216,10 @@ be compared against an accepted one as if commensurable.
 ---
 
 ## E. Canonical import model
-> **Amended by §AE (WORKBOOK HISTORY LEADS, locked).** One upload may carry several unpublished
-> frozen weeks; all of them are imported, atomically, and none are ever invented.
+> **Superseded in part by §AE (WORKBOOK HISTORY LEADS, LOCKED).** One upload may carry several
+> unpublished frozen weeks. All of them import, atomically, and none are ever invented. An insertion
+> — `NEW` above the endpoint, `GAP_FILL` below it — needs no correction authorization; only an
+> overwrite of an existing identity does.
 
 
 The pipeline **already** normalizes fully before any write, and no calculation reaches back into
@@ -299,8 +301,10 @@ chart keeps the bad point.
 ---
 
 ## I. History-preservation rules
-> **Amended by §AE (WORKBOOK HISTORY LEADS, locked).** One upload may carry several unpublished
-> frozen weeks; all of them are imported, atomically, and none are ever invented.
+> **Superseded in part by §AE (WORKBOOK HISTORY LEADS, LOCKED).** One upload may carry several
+> unpublished frozen weeks. All of them import, atomically, and none are ever invented. An insertion
+> — `NEW` above the endpoint, `GAP_FILL` below it — needs no correction authorization; only an
+> overwrite of an existing identity does.
 
 
 **The strongest finding after G1/G2.** `upsertEvolutionObservations` is a plain
@@ -449,8 +453,10 @@ leaving the field blank.
 ---
 
 ## O. Preview-before-apply
-> **Amended by §AE (WORKBOOK HISTORY LEADS, locked).** One upload may carry several unpublished
-> frozen weeks; all of them are imported, atomically, and none are ever invented.
+> **Superseded in part by §AE (WORKBOOK HISTORY LEADS, LOCKED).** One upload may carry several
+> unpublished frozen weeks. All of them import, atomically, and none are ever invented. An insertion
+> — `NEW` above the endpoint, `GAP_FILL` below it — needs no correction authorization; only an
+> overwrite of an existing identity does.
 
 
 The stages all exist — `UPLOAD → PARSE → VALIDATE → PREVIEW → CONFIRM → ATOMIC APPLY → AUDIT` — and
@@ -479,8 +485,10 @@ The five missing items are the R13.8B preview work. They are additive to `DraftR
 ---
 
 ## P. Atomic transaction boundary
-> **Amended by §AE (WORKBOOK HISTORY LEADS, locked).** One upload may carry several unpublished
-> frozen weeks; all of them are imported, atomically, and none are ever invented.
+> **Superseded in part by §AE (WORKBOOK HISTORY LEADS, LOCKED).** One upload may carry several
+> unpublished frozen weeks. All of them import, atomically, and none are ever invented. An insertion
+> — `NEW` above the endpoint, `GAP_FILL` below it — needs no correction authorization; only an
+> overwrite of an existing identity does.
 
 
 **Already correct for the publication**, and it should not be redesigned: one plpgsql function,
@@ -644,6 +652,10 @@ descendant of it (`git merge-base --is-ancestor` verified).
 ---
 
 ## AA. Unresolved questions — owner decisions
+> **RESOLVED — see §AE.** AA.1 (which column publishes) is answered: the newest valid FROZEN
+> reporting date, never the live `=TODAY()` column. AA.2 (a changed historical observation) is
+> answered by §AE.4: only an overwrite of an existing identity is a correction.
+
 
 1. **Which column is the weekly publication column?** (§F) Live (`TODAY()`, Bloomberg-dependent) as
    today, or the newest unpublished historical column. **Recommendation: historical.** This changes
@@ -669,6 +681,9 @@ descendant of it (`git merge-base --is-ancestor` verified).
 3. Question **AA.1** gates the shape of R13.8B's parse step.
 
 ## AC. Recommended R13.8B scope
+> **Partly delivered — see §AE.7/§AE.9.** The import-operation identity, the before-image ledger,
+> both RPCs and the planner exist. The administrator upload control (G1) and the route wiring do not.
+
 
 **In, in order:**
 
@@ -700,140 +715,199 @@ end to end until a newer workbook exists.
 
 ---
 
-## AE. Amendment — WORKBOOK HISTORY LEADS (locked)
+## AE. WORKBOOK HISTORY LEADS — final catch-up and gap-fill semantics (LOCKED)
 
-This section is an amendment recorded after A–AD were delivered. It states a rule the owner has
-**locked**, and it supersedes the parts of §E, §I, §O and §P that quietly assumed one upload equals
-one reporting week.
+Recorded after A–AD were delivered, and **locked by the owner**. It supersedes every part of §§ E,
+G, H, I, O and P that assumed one upload equals one reporting week, and it closes two of the
+questions §AA left open:
+
+* **AA.1 — which column publishes — is answered.** The current publication carries *the newest valid
+  **frozen** reporting date*. It is never the live `=TODAY()` column. G2 is therefore resolved in
+  favour of the frozen historical column, and the Bloomberg dependency described in §C stops being a
+  publication-path concern.
+* **AA.2 — what happens when a historical observation's value changes — is answered** by AE.4 below.
 
 ### AE.1 The rule
 
 **Production history + all newer frozen workbook history = new Production history.**
 
-The uploaded workbook is the authoritative source for the weekly historical sequence. If Production
-ends at `2026-07-31` and the administrator misses two weeks, the next workbook carries frozen
-columns for `2026-08-07`, `2026-08-14` and `2026-08-21`, and the importer **must append all three**.
-Publishing only `2026-08-21` and discarding the two the operator missed is forbidden. The newest
-frozen column becomes the current publication snapshot, but every valid unpublished frozen column
-between Production's endpoint and that newest column is persisted in the **same import**.
+The uploaded workbook is authoritative for the weekly historical sequence. If Production ends at
+`2026-07-31` and the administrator misses two weeks, the next workbook carries frozen columns for
+`08-07`, `08-14` and `08-21`, and the importer **must append all three**. Publishing only `08-21` and
+discarding the weeks the operator missed is forbidden.
 
-### AE.2 The rule's other half — no synthetic gap filling
+### AE.2 And the workbook also bounds it — no synthetic gap filling
 
 A reporting week exists because the source froze a column for it, **never because calendar time
-passed**. If Production ends at `07-31` and the workbook carries `08-07` and `08-21` but no frozen
-`08-14`, the importer appends exactly two weeks. It does not invent `08-14`, does not forward-fill
-it, does not interpolate it, and does not copy either neighbour into it.
-
-The absence surfaces in Preview as an **informational cadence gap**. A missing calendar week is an
-observation about the source, not a `HISTORY_CONFLICT`.
+passed**. If the workbook carries `08-07` and `08-21` but no frozen `08-14`, exactly two weeks
+import. Nothing invents `08-14`, forward-fills it, interpolates it, or synthesises a zero or an
+`unavailable` point to make the cadence look weekly.
 
 | Situation | Required behaviour |
 |---|---|
-| Unpublished week **present** in the workbook | MUST be imported |
-| Calendar week **not present** in the workbook | MUST NOT be invented |
+| Missing in Production, **present** in the workbook | MUST be imported |
+| Missing in Production, **absent** from the workbook | MUST NOT be invented |
 
-### AE.3 Catch-up is not a correction
+A calendar cadence gap is **informational**. It is never a `HISTORY_CONFLICT`, and never permission
+to fabricate.
 
-The two classes must never be conflated, and **counting weeks is the wrong test** for telling them
-apart. The test is whether the reporting date **already exists in Production**.
+### AE.3 One import, one current publication, N history points
 
-* Reporting date **newer** than Production's endpoint → `NEW`. Appending three of these in one
-  upload is `MULTI_WEEK_APPEND` — ordinary recurring behaviour. **No historical-correction
-  authorization or reason is required**, however many weeks arrive at once.
-* Reporting date **already in Production** whose value the workbook now states differently →
-  `CHANGED`. That is a historical correction: it needs authorization and a recorded reason, because
-  it changes a figure somebody has already been shown.
-
-When both occur in one upload, the new weeks are still enumerated **separately** from the
-correction, so the administrator sees exactly which of the two is being asked of them.
-
-### AE.4 Atomicity and rollback
-
-A catch-up either lands whole or not at all. `08-07` committed while `08-21` failed would leave the
-chart showing a history no workbook ever stated. The latest snapshot and every newly discovered
-historical week belong to **one import/revision transaction**, and a rollback of that import must
-remove or restore **every** point it introduced or corrected — not merely the newest week.
-
-**The current code violates both halves, and §I understated why.** `upsertEvolutionObservations` is
-chunked at 250, runs *after* the publication commits, is explicitly documented as best-effort and
-safe to re-run partially, and `nmi_rollback_publication` does not touch the observation series at
-all. Worse for this rule specifically: `portfolio_evolution_observations` has **no publication or
-revision linkage** — only `source_upload_id` — and stores no prior value, so the table as it stands
-is physically incapable of rolling a three-week catch-up back. That is a schema change, not a code
-change, and it belongs in R13.8B.
-
-And rollback cannot simply be extended in place: `nmi_rollback_publication` derives its whole
-lifecycle from ONE publication id and confines every read and write to that id’s `(kind, as_of_date)`
-series. A catch-up creates one publication and N history points spanning N dates, so reversing it is
-not a wider version of the existing rollback — it needs the import identity of AE.7.1 to know what
-belonged to it.
-
-### AE.5 Preview requirement
-
-Preview must list every reporting date that will be added, so the administrator can see the workflow
-is filling unpublished workbook history rather than jumping to the latest week:
+A catch-up produces **one** import operation:
 
 ```
-Current Production endpoint:  2026-07-31
-Workbook latest frozen date:  2026-08-21
-New reporting dates detected: 2026-08-07, 2026-08-14, 2026-08-21
-Action:                       Append 3 weekly snapshots
+ONE workbook upload
+  → ONE import operation / revision
+  → N historical observations appended, gap-filled or corrected
+  → ONE current publication, at the newest valid frozen reporting date
 ```
 
-Corrections, backfills and cadence gaps are listed on their own lines, never folded into that count.
+No publication revision is minted for an intermediate week. `08-07` and `08-14` contribute history
+points; only `08-21` becomes current. The workbook was uploaded once, so the audit model says so
+once.
 
-### AE.6 What was built for this amendment
+Note that `is_current` is unique per `(upload_kind, as_of_date)`, not globally — each week stays
+current for itself, and the book's current snapshot is the newest `as_of_date` among current rows.
+So publishing `08-21` does not demote `07-31`; a rollback of that import simply demotes `08-21` and
+the newest current reverts to `07-31`.
 
-`src/lib/familyPortfolio/weeklyImportPlan.ts` — a pure module, no server import, exporting
-`planWeeklyImport`, `applyImportPlan`, `rollbackImport` and
-`WEEKLY_IMPORT_PLAN_VERSION = 'r13.8a.weekly_import_plan.1'`.
+### AE.4 Final point classification
 
-It classifies every `(scope, basis, week)` as `new` / `unchanged` / `changed` / `historical_backfill`,
-emits `newDates` / `changedDates` / `backfillDates` / `cadenceGaps` for Preview, and writes **only
-what actually changes** — an unchanged week is not rewritten, which closes G3's ~500-row silent
-rewrite as a side effect. `applyImportPlan` stages the whole plan and verifies it before committing
-anything, returning the caller's own store object unchanged on failure; `rollbackImport` is its
-exact inverse.
+Per canonical identity `(scope, basis, series identity, reporting date)`:
 
-`applyImportPlan`/`rollbackImport` are **reference semantics, not the write**. They exist so the
-all-or-nothing property is provable without a database and so R13.8B's RPC has a specification to be
-tested against rather than a paragraph of prose.
+| Class | Condition | Effect | Authorization |
+|---|---|---|---|
+| `UNCHANGED` | Production row exists, normalized state identical | nothing written | — |
+| `NEW` | Production row **absent**, date **newer** than the endpoint | insertion | none |
+| `GAP_FILL` | Production row **absent**, date **at or below** the endpoint | insertion | none |
+| `CHANGED` | Production row exists, workbook states a different value/status | overwrite | **required, with a non-empty reason** |
+| `INVALID` | the observation cannot be interpreted safely | blocks the import | — |
 
-`tests/portfolioWeeklyImportPlan.test.ts` — 32 tests covering the owner's cases A–G verbatim, plus
-the standing invariants: no planned date exists that the workbook did not state; an unchanged
-re-upload writes nothing; a malformed observation is refused rather than silently dropped; and no
-scenario assumes one upload equals one reporting week.
+**`GAP_FILL` is an insertion; `CHANGED` is an overwrite.** Only an overwrite needs authorization —
+nothing is being replaced by an insertion, so there is no honest correction reason to write. Neither
+the number of weeks arriving nor a date sitting below the endpoint is the test. **The test is whether
+the canonical Production identity already exists.**
 
-Non-vacuity was demonstrated on two independent axes. Leaking partially-staged rows out of a failed
-apply fails exactly the 2 atomicity tests. Classifying a multi-week append as a correction *by count*
-fails 8 tests across C, D, F, G and the invariants — the correct blast radius, because that single
-mistake blocks the entire catch-up path.
+`INVALID` is a classification, not a silent drop: dropping an uninterpretable observation would
+shorten the history the workbook actually states.
 
-### AE.7 What R13.8B must now add
+### AE.5 Explicit `unavailable` is not missing
 
-1. A `publication_id` (or import-revision) column on `portfolio_evolution_observations`, plus a
-   prior-value record, so a catch-up can be rolled back as a unit.
-2. A publish RPC that takes the whole plan — one publication plus N history points — inside the
-   existing advisory-locked transaction, replacing the post-commit best-effort upsert.
-3. `nmi_rollback_publication` extended to reverse that import's history points, closing §H's
-   asymmetry for the multi-week case as well as the single-week one.
-4. The Preview block of AE.5, wired to `planWeeklyImport`.
+A Production row whose status is `unavailable` is an **existing historical state**, not a hole. A
+workbook that now supplies a number for it is *overwriting* that state — `CHANGED`, with the
+authorization that implies — never `GAP_FILL`. `GAP_FILL` applies only when the canonical identity is
+**genuinely absent**.
 
-### AE.8 Two questions this amendment raises — owner decisions
+A contradiction (a `stated` row with no finite number, an `unavailable` row carrying one) is
+`INVALID`. Guessing which half the source meant is how a fabricated figure gets in.
 
-**AE.8a — do intermediate catch-up weeks also become publications?** The rule says the newest frozen
-column becomes the current publication snapshot and the intermediate weeks are "persisted". The
-architecture already splits these cleanly: publications carry row-level weeks, `portfolio_evolution_observations`
-carries the total-level series across every frozen column. I have implemented the natural reading —
-**one publication (the newest) plus N history points** — because R13.R1 established that only the
-most recent handful of columns produce a clean full-row parse anyway. If you want every clean
-intermediate week to become its own publication revision, say so; it is a larger transaction and a
-different Preview.
+**One caveat, and it is a real one.** `portfolio_evolution_observations.value` is `NOT NULL` by
+deliberate R13.R1 design — that table models a gap as an *absent row* and cannot store an explicit
+`unavailable`. So for the evolution series the AE.5 case cannot currently arise, and a week that was
+unreadable when first imported and is later repaired classifies as `GAP_FILL` (no authorization)
+rather than `CHANGED`. The planner implements the full semantics regardless, because snapshot rows
+*do* carry `unavailable` via `value_class`, and the RPC refuses `new_status = 'unavailable'` loudly
+rather than coercing it into a numeric column. Whether the evolution series should start carrying
+explicit `unavailable` states would reverse an explicit R13.R1 decision, so it is flagged here rather
+than decided.
 
-**AE.8b — a hole *below* Production's endpoint.** The locked rule names dates newer than the
-endpoint (`NEW`) and dates already present (`CHANGED`/`UNCHANGED`). It does not name a date at or
-below the endpoint that Production has **no row for** — Pablo's pre-join weeks are the benign case,
-but a genuine mid-history hole the workbook now fills is not benign. I classify it separately as
-`historical_backfill` and gate it behind the same authorization as a correction, on the reasoning
-that it inserts a point into a period an administrator has already reviewed. If you would rather it
-pass freely as a new week, that is a one-line change and a test flip.
+### AE.6 Preview
+
+The three groups are listed **separately**, never merged into one count:
+
+```
+Current Production endpoint:  2026-08-21
+Gap fills:                    2026-08-14
+New reporting dates:          2026-08-28
+Historical corrections:       none
+→ normal Confirm allowed
+```
+
+With an overwrite present, that block becomes `2026-08-07: before X → after Y`, and the correction
+reason and authorization are required **for that point only**. Cadence gaps and invalid points get
+their own lines.
+
+### AE.7 Atomic import identity — the schema change
+
+`20260821000000_portfolio_import_operations.sql`, forward-only and additive. The shipped schema
+could not express any of the above: `portfolio_evolution_observations` records only
+`source_upload_id`, keeps no before-image, and is written by a chunked best-effort upsert *after* the
+publication commits; `nmi_rollback_publication` never touches it and is scoped to one
+`(kind, as_of_date)` series.
+
+The smallest change that fixes it is two tables and one column:
+
+1. **`portfolio_import_operations`** — the durable identity of one import: the upload, the
+   publication it made current, the publication it displaced, the counts, and the correction
+   authorization and reason (a CHECK makes an authorized correction without a reason impossible).
+2. **`portfolio_import_observation_mutations`** — a per-identity **before-image**. An insertion
+   records no prior state (that *is* the record that it was an insertion); an overwrite records the
+   exact prior value, status, and the import that previously owned the row.
+3. **`portfolio_evolution_observations.import_operation_id`** — forward lineage. Not strictly needed
+   to reverse an import, but it is what lets a rollback **refuse** when a later import has already
+   moved a row on. Without it a stale rollback would silently clobber the newer import's work.
+
+`nmi_import_portfolio_workbook` does the whole thing in one transaction, under a single
+`nmi_lock_portfolio_import` advisory lock (the publication lock is per-date and an import spans many
+dates). It **delegates the publication verbatim** to `nmi_publish_portfolio` rather than
+reimplementing the insert-non-current → fill → demote → promote ordering, which took a production
+failure to get right. And it **asserts its own pre-state**, exactly as the structured-notes
+reconciliation RPC does: every mutation states what it believes Production holds, the function
+verifies it under lock, and the before-image it writes is the one it **read**, never the one the
+caller supplied. A plan built against state that has since moved is refused whole.
+
+Rollback never matches on a date, a filename or an upload id. Every reversal is driven by the
+canonical identity recorded against a specific import id.
+
+### AE.8 Rollback semantics
+
+| Class | Rollback |
+|---|---|
+| `NEW` | the inserted observation is removed |
+| `GAP_FILL` | the inserted observation is removed |
+| `CHANGED` | the exact prior value, status **and owning import** are restored |
+| `UNCHANGED` | nothing |
+| Current publication | demoted; the displaced publication is promoted, or none when there was none |
+
+All of it atomically. Restoring the prior *owning import* is what lets rollbacks chain: reverse
+import B, and import A can still be reversed afterwards.
+
+**One narrow deletion, deliberately.** R13's standing rule is that a publication is never deleted,
+and this migration keeps that — a rollback demotes and re-promotes. But the inverse of *inserting* a
+history point is *removing* it, so rolling back a `NEW` or `GAP_FILL` observation does delete that
+row. Nothing is lost from the audit trail: the mutation ledger retains the identity, the value and
+the import that wrote it, permanently.
+
+### AE.9 What was built
+
+* `src/lib/familyPortfolio/weeklyImportPlan.ts` — pure, no server import.
+  `planWeeklyImport` classifies every identity, enumerates the three Preview groups separately,
+  measures cadence over the **post-import** sequence (so a gap this import fills stops being
+  reported), and writes only what actually changes — which also closes G3's ~500-row silent rewrite.
+  `applyImportPlan`/`rollbackImport` are the **reference semantics**, not the write: they make the
+  all-or-nothing property provable without a database and give the RPC a specification to be tested
+  against.
+* `tests/portfolioWeeklyImportPlan.test.ts` — 45 tests covering the owner's cases A–H verbatim.
+* `supabase/tests/database/portfolio_import_operations_test.sql` — the executable half, with a
+  deliberately **late** failure (three observations, an operation row and a publication already
+  written before the fourth entry raises) and a chained-rollback case.
+* `tests/portfolioImportOperations.test.ts` — 33 structural guards on the migration's posture.
+
+### AE.10 What is proven, and what is not
+
+Proven now: the classification, the Preview grouping, the insertion/overwrite split, the
+publication-date choice, and the apply/rollback semantics at the model level — non-vacuously, by four
+independent deliberate breaks (treating a gap fill as a correction fails 21 tests; treating an
+explicit `unavailable` as absent fails 4; forgetting to restore status on rollback fails 1;
+publishing the newest *new* week instead of the newest *valid* week fails 3).
+
+**Not yet proven: the SQL.** This machine has no Docker, psql or local Supabase stack, so the
+migration and both RPCs have never been executed. They are validated by
+`.github/workflows/r13-family-portfolio-db-validation.yml`, which stands up an isolated stack,
+applies the full migration chain from clean and runs every pgTAP suite — and the branch trigger
+`feat/r13-8-**` was added so this branch reaches it. **Until that workflow has run and passed, the
+database half of R13.8B is unvalidated**, by this repo's own standard.
+
+Also not built, and deliberately out of scope here: the administrator upload control (G1) and the
+route wiring that would call `nmi_import_portfolio_workbook`. Both depend on this contract being
+settled first, which it now is.

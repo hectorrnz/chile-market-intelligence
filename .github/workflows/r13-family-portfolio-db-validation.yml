@@ -30,6 +30,11 @@ on:
       # isolated-database gate: the lifecycle columns are now an authorization
       # input, so they must clear pgTAP before they can reach a deployment.
       - 'feat/user-provisioning-r13-**'
+      # R13.8B — the Family Portfolio weekly import. It adds an import-operation
+      # identity, a before-image ledger and two RPCs whose whole claim is that a
+      # multi-week catch-up commits or rolls back as ONE transaction. That claim
+      # is about real PostgreSQL behaviour, so it must clear this gate.
+      - 'feat/r13-8-**'
   pull_request:
     paths:
       - 'supabase/migrations/**'
