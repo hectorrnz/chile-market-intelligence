@@ -51,11 +51,19 @@ function arg(name: string): string | null {
   return i >= 0 && i + 1 < process.argv.length ? process.argv[i + 1] : null
 }
 
+/**
+ * A refusal, carried to the top level rather than exiting on the spot.
+ *
+ * `process.exit()` here would terminate while the Supabase client still holds a
+ * socket that is closing, which aborts the process on Windows (libuv's
+ * UV_HANDLE_CLOSING assertion) and replaces the exit code with a crash code — so
+ * a wrapper script inspecting the status would read a crash where the tool had
+ * in fact refused cleanly and written nothing. Observed, not theoretical.
+ */
+class Stop extends Error {}
+
 function fail(message: string): never {
-  console.error('')
-  console.error(`STOP: ${message}`)
-  console.error('')
-  process.exit(1)
+  throw new Stop(message)
 }
 
 /** `https://<ref>.supabase.co` -> `<ref>`. Never guesses; null if unrecognizable. */
@@ -220,11 +228,18 @@ async function main(): Promise<void> {
     console.error('Some notifications were not created. The financial reconciliation is unaffected and')
     console.error('remains correct; re-run this command with the same --operation-id to create only the')
     console.error('missing rows. It cannot duplicate the ones that succeeded.')
-    process.exit(1)
+    process.exitCode = 1
   }
 }
 
 main().catch((e) => {
-  console.error('Historical correction notifications failed:', e instanceof Error ? e.message : e)
-  process.exit(1)
+  if (e instanceof Stop) {
+    console.error('')
+    console.error(`STOP: ${e.message}`)
+    console.error('')
+  } else {
+    console.error('Historical correction notifications failed:', e instanceof Error ? e.message : e)
+  }
+  // `exitCode` rather than `process.exit()` — see the Stop class above.
+  process.exitCode = 1
 })

@@ -468,6 +468,18 @@ describe('R13.7B3.2 F - the orchestrator cannot fire by accident or touch money'
     assert.doesNotMatch(c, /rollback|revert/i)
   })
 
+  it('refuses with a readable exit code rather than aborting the process', () => {
+    // Observed, not theoretical: process.exit() while the Supabase client still
+    // held a closing socket aborted node on Windows with a libuv
+    // UV_HANDLE_CLOSING assertion, replacing exit 1 with a crash code — so a
+    // wrapper script would read a crash where the tool had refused cleanly and
+    // written nothing.
+    assert.doesNotMatch(c, /process\.exit\(/, 'the failure path must not call process.exit()')
+    assert.match(c, /process\.exitCode = 1/)
+    assert.match(c, /class Stop extends Error/)
+    assert.match(c, /throw new Stop\(message\)/)
+  })
+
   it('runs under plain node - every relative import carries an extension', () => {
     const re = /from\s+['"](\.[^'"]*)['"]/g
     let m: RegExpExecArray | null
