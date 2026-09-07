@@ -877,17 +877,20 @@ describe('R9.4 · composition', () => {
     assert.equal((CLIENT_CODE.match(/<GlassSurface as="section"/g) ?? []).length, 4)
   })
 
-  test('5-9. the approved shared components are used — TableCard, ChipButton, Switch, DestructiveConfirm', () => {
+  test('5-9. the approved shared components are used — TableCard, ChipButton, Switch, DeleteButton', () => {
     assert.match(CARD, /import \{ TableCard \} from '@\/components\/fable\/TableCard'/)
     assert.match(CARD, /import \{ ChipButton \} from '@\/components\/fable\/Chip'/)
     assert.match(CARD, /import \{ Switch \} from '@\/components\/fable\/Switch'/)
-    assert.match(CARD, /import \{ DestructiveConfirm \} from '@\/components\/fable\/ModalShell'/)
+    // R13.7B2.2.2 — the Remove control is the platform's shared DeleteButton
+    // (inline confirmation), which replaced the DestructiveConfirm dialog here.
+    assert.match(CARD, /import \{ DeleteButton \} from '@\/components\/fable\/DeleteButton'/)
     assert.match(CARD_CODE, /<TableCard/)
     assert.match(CARD_CODE, /<Switch\b/)
-    assert.match(CARD_CODE, /<DestructiveConfirm/)
-    // ChipButton for both Add (submit) and Remove.
+    assert.match(CARD_CODE, /<DeleteButton/)
+    assert.doesNotMatch(CARD_CODE, /<DestructiveConfirm/)
+    // ChipButton for Add (submit); DeleteButton for Remove.
     assert.match(CARD_CODE, /<ChipButton type="submit"/)
-    assert.match(CARD_CODE, /<ChipButton\s*\n\s*onClick=\{\(\) => setConfirming\(r\)\}/)
+    assert.match(CARD_CODE, /<DeleteButton\s*\n\s*size="md"\s*\n\s*layout="overlay"\s*\n\s*label=\{`\$\{n\.removeFor\}: \$\{r\.email\}`\}/)
     // GlassSurface arrives through TableCard — the approved card material.
     assert.match(TABLE_CARD, /<GlassSurface variant="card"/)
     assert.match(TABLE_CARD, /<GlassSurface variant="dense">/)
@@ -1090,34 +1093,31 @@ describe('R9.4 · active toggle integrity and concurrency', () => {
 describe('R9.4 · confirmed delete', () => {
   const body = CARD_CODE.slice(CARD_CODE.indexOf('async function confirmRemove'))
 
-  test('54-57. the DELETE contract is unchanged, gated by the shared dialog naming the recipient', () => {
+  test('54-57. the DELETE contract is unchanged, gated by the shared control naming the recipient', () => {
     assert.match(body, /fetch\(`\$\{ENDPOINT\}\/\$\{target\.id\}`, \{ method: 'DELETE' \}\)/)
     assert.match(RECIPIENT_ID_ROUTE, /export async function DELETE\(_request: NextRequest, ctx: \{ params: Promise<\{ id: string \}> \}\)/)
-    assert.match(CARD_CODE, /<DestructiveConfirm\s*\n\s*open=\{confirming !== null\}/)
-    // The dialog description is built from THIS recipient's real fields only.
-    // R9.5 made the same two fields wrap (they were an unbreakable string that
-    // the clipping dialog could cut off at 320px) — same fields, same order.
-    const el = CARD_CODE.slice(CARD_CODE.indexOf('<DestructiveConfirm'))
-    const desc = el.slice(el.indexOf('description={'), el.indexOf('confirmLabel='))
-    assert.match(desc, /\{confirming\.email\}/)
-    assert.match(desc, /confirming\.label \? [\s\S]{0,90}\{confirming\.label\}/)
-    // Only the two human-readable fields — never an internal one.
-    assert.doesNotMatch(desc, /confirming\.(id|createdAt|active)/, 'names the recipient, nothing internal')
-    assert.match(CARD_CODE, /title=\{n\.confirmRemoveTitle\}/)
-    assert.match(CARD_CODE, /cancelLabel=\{n\.cancel\}/)
+    // R13.7B2.2.2 — the control's accessible name is built from THIS
+    // recipient's real email; the visible question states the action; the row
+    // (which wraps the address) is the visible identification of the target.
+    const el = CARD_CODE.slice(CARD_CODE.indexOf('<DeleteButton'), CARD_CODE.indexOf('</DeleteButton>'))
+    assert.match(el, /label=\{`\$\{n\.removeFor\}: \$\{r\.email\}`\}/)
+    assert.match(el, /confirmLabel=\{n\.confirmRemoveInline\}/)
+    // Only the human-readable field — never an internal one.
+    assert.doesNotMatch(el, /r\.(id|createdAt|active)\b/, 'names the recipient, nothing internal')
+    assert.match(el, /onConfirm=\{\(\) => confirmRemove\(r\)\}/)
   })
 
   test('56 + 58-59. no native dialog; cancel and Escape mutate nothing', () => {
     assert.doesNotMatch(CARD_CODE, /window\.(confirm|alert|prompt)/)
     assert.ok(!/[^.\w](confirm|alert|prompt)\(/.test(CARD_CODE.replace(/confirmRemove\(/g, 'x(')))
-    // Cancel only closes — it never calls the mutation.
-    assert.match(CARD_CODE, /onCancel=\{\(\) => setConfirming\(null\)\}/)
-    assert.match(CARD_CODE, /onConfirm=\{\(\) => void confirmRemove\(\)\}/)
-    // Escape and the scrim route through onCancel in the shared shell, and the
-    // shell fires onConfirm at most once per open.
-    assert.match(MODAL, /useEscape\(open && canDismiss, onClose\)/)
-    assert.match(MODAL, /if \(pending \|\| firedRef\.current\) return\s*\n\s*firedRef\.current = true\s*\n\s*onConfirm\(\)/)
-    assert.match(MODAL, /onClick=\{onCancel\} disabled=\{pending\}/)
+    // The card never wires a cancel to the mutation — the only path to
+    // `confirmRemove` is the shared control's confirm.
+    assert.equal((CARD_CODE.match(/confirmRemove\(/g) ?? []).length, 2, 'declaration + the one onConfirm')
+    // Cancel / Escape / a repeated confirm are refused by the shared control's
+    // pure reducer (proven in tests/deleteButton.test.ts); asserted at the source.
+    const reducer = read('src/components/fable/deleteButtonState.ts')
+    assert.match(reducer, /return !ctx\.disabled && state === 'armed' && event\.type === 'CONFIRM'/)
+    assert.match(reducer, /if \(event\.type === 'CANCEL' \|\| event\.type === 'ESCAPE'\) return 'idle'/)
   })
 
   test('60-65. the row survives until a confirmed success, and a failure preserves it', () => {
@@ -1129,14 +1129,15 @@ describe('R9.4 · confirmed delete', () => {
     assert.ok(removal > okCheck, 'the row is removed only AFTER the ok check')
     // Exactly one DELETE per confirmation, guarded against re-entry.
     assert.equal((body.match(/method: 'DELETE'/g) ?? []).length, 1)
-    assert.match(body, /if \(!target \|\| pendingIds\.includes\(target\.id\)\) return/)
+    assert.match(body, /if \(pendingIds\.includes\(target\.id\)\) return false/)
     // The catch surfaces a failure and never removes the row.
     const catchBlock = body.slice(body.indexOf('} catch {'), body.indexOf('} finally {'))
     assert.match(catchBlock, /message: n\.removeError/)
     assert.doesNotMatch(catchBlock, /setRecipients/)
     // Both the row's Switch and its Remove control are disabled while pending.
     assert.equal((CARD_CODE.match(/disabled=\{busy\}/g) ?? []).length, 2)
-    assert.match(CARD_CODE, /pending=\{confirming \? pendingIds\.includes\(confirming\.id\) : false\}/)
+    // A failed removal returns the control to a usable idle state (false), never a false success.
+    assert.match(body, /catch \{[\s\S]{0,160}return false/)
   })
 
   test('66. the trap, scroll-lock and restoration stay the shared shell\'s contract', () => {
@@ -1188,7 +1189,9 @@ describe('R9.4 · feedback and accessibility', () => {
     // Pending is also visible text, not only a disabled attribute.
     assert.match(CARD_CODE, /\{adding \? n\.adding : n\.add\}/)
     assert.match(CARD_CODE, /\{busy \? n\.removing : n\.remove\}/)
-    assert.match(CARD_CODE, /aria-label=\{`\$\{n\.removeFor\}: \$\{r\.email\}`\}/)
+    // R13.7B2.2.2 — the shared DeleteButton's `label` IS the trigger's aria-label.
+    assert.match(CARD_CODE, /label=\{`\$\{n\.removeFor\}: \$\{r\.email\}`\}/)
+    assert.match(read('src/components/fable/DeleteButton.tsx'), /aria-label=\{label\}/)
   })
 
   test('74-76. no colour-only meaning, no nested interactive control, no native dialog', () => {
@@ -1497,13 +1500,15 @@ describe('R9.5 · focus is never lost after a confirmed removal', () => {
 })
 
 describe('R9.5 · the destructive target survives a 320px viewport', () => {
-  test('the dialog still names the recipient, and the name can wrap', () => {
-    const desc = CARD_CODE.slice(CARD_CODE.indexOf('<DestructiveConfirm'))
-    // Both real fields still identify the target — no information was traded away.
-    assert.match(desc, /<span className="break-all">\{confirming\.email\}<\/span>/)
-    assert.match(desc, /confirming\.label \? <span className="break-words"> · \{confirming\.label\}<\/span> : null/)
+  test('the control still names the recipient; the visible identification is the row, whose address wraps', () => {
+    // R13.7B2.2.2 — the confirmation is inline in the row, so the target is
+    // identified by the row itself (email wraps with break-all, label with
+    // break-words) and by the control's accessible name. Nothing clips.
+    const el = CARD_CODE.slice(CARD_CODE.indexOf('<DeleteButton'), CARD_CODE.indexOf('</DeleteButton>'))
+    assert.match(el, /label=\{`\$\{n\.removeFor\}: \$\{r\.email\}`\}/)
+    assert.match(CARD_CODE, /<td className="py-3 px-3 text-muted-fg break-words">\{r\.label \?\? '—'\}<\/td>/)
     // Still honest: only fields the API actually returns.
-    assert.doesNotMatch(desc, /lastSent|owner|role|createdBy/i)
+    assert.doesNotMatch(el, /lastSent|owner|role|createdBy/i)
   })
 
   test('the same value wraps the same way in the table cell', () => {

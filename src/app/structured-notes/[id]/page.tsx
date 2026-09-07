@@ -23,37 +23,39 @@
 //                 dashboard so the two pages can never drift): risk status,
 //                 worst performer, worst distance to knock-in, next
 //                 observation, coupon p.a., current notional, maturity.
-//   Monitoring  — current levels & distance-to-barrier TableCard with the R3
-//                 BarrierGauge per underlying (level indexed to 100 at
-//                 strike — a pure display transform of the API's own
-//                 currentLevel; marks = per-underlying knock-in pct + strike),
+//   ROW 1       — R13.7B2.2.2 § 1: General Terms (LEFT, 3fr) beside
+//                 Allocation by Entity (RIGHT, 2fr), equal height, stacking
+//                 terms-first below lg.
+//     Terms     — the Fable terms grid, grouped into Identity · Coupon &
+//                 barriers · Key dates · Provenance (source type/file/
+//                 confidence — its former card made way for the allocation
+//                 card); boolean features render as chips only when true.
+//     Allocation— the account allocation grid (upsert API, custom entities,
+//                 thousands formatting) on Fable card glass, the R7.1B
+//                 CUSTODIAN field, Nevada's investment notional and the total
+//                 issuance size as two separate, separately-explained
+//                 quantities — and, in its header, the note's Delete control:
+//                 the shared DeleteButton (§ 11), same DELETE endpoint, same
+//                 administrator gate, same success-only redirect as the
+//                 DestructiveConfirm dialog it replaces. Never window.confirm.
+//   ROW 2       — § 2: Current levels & distance to barrier (LEFT, 3fr)
+//                 beside Underlyings (RIGHT, 2fr), equal height, stacking
+//                 current-levels-first below lg.
+//     Monitoring— the TableCard with the R3 BarrierGauge per underlying
+//                 (level indexed to 100 at strike — a pure display transform
+//                 of the API's own currentLevel; coinciding marks merged),
 //                 proximity-colored distances (shared distanceTone), the
 //                 worst-performer designation as VISIBLE text (never
-//                 color/hover-only), last-monitored + stale flags, and the
-//                 Yahoo footer + estimate disclaimer.
-//   Terms +     — ONE block (R13.7B2.2.1 § 7): the Fable terms grid, grouped
-//   Underlyings   into Identity · Coupon & barriers · Key dates (boolean
-//                 features render as chips only when true), then a horizontal
-//                 divider, then the contractual underlying-levels table
-//                 (order, name, symbol, initial, strike, knock-in, coupon,
-//                 autocall) on the dense surface. Two sections, one card — no
-//                 dead space under a short side-by-side table.
+//                 color/hover-only), last-monitored + stale flags, the visible
+//                 legend, and the Yahoo footer + estimate disclaimer.
+//     Underlyings — the contractual underlying-levels table (order, name,
+//                 symbol, initial, strike, knock-in, coupon, autocall) in its
+//                 own TableCard, scrolling inside the card at narrow widths.
 //   Schedule    — the Fable lifecycle timeline (issued ✓ · observed dates
 //                 n / m · next ● or called-on · maturity ○) as the card's
 //                 header strip, above the COMPLETE real observation table —
 //                 one row per valuation date, rendered in full with NO inner
 //                 scroll region (R13.7B2.2.1 § 1); the page scrolls.
-//   Allocation  — the account allocation grid (upsert API, custom entities,
-//                 thousands formatting) on Fable card glass. R7.1B adds the
-//                 per-account CUSTODIAN field and states Nevada's investment
-//                 notional and the total issuance size as two separate,
-//                 separately-explained quantities; the pre-R7.1B warning that
-//                 fired whenever they differed is gone (see below).
-//   Provenance  — source type/file/confidence + the delete workflow (same
-//                 confirmation text, DELETE endpoint and success-only
-//                 redirect, gated by the shared Fable DestructiveConfirm
-//                 dialog since R4.1 — never window.confirm) with explicit
-//                 destructive styling and honest in-progress/failure states.
 //
 // Fable elements with no authoritative NMI data are OMITTED, never faked:
 // the "View termsheet in Documents" panel action (no documents module — the
@@ -78,7 +80,7 @@ import { GlassSurface } from '@/components/fable/GlassSurface'
 import { TableCard } from '@/components/fable/TableCard'
 import { BarrierGauge, BARRIER_KIND_COLOR, type BarrierMark } from '@/components/fable/BarrierGauge'
 import { AsyncState } from '@/components/fable/AsyncState'
-import { DestructiveConfirm } from '@/components/fable/ModalShell'
+import { DeleteButton } from '@/components/fable/DeleteButton'
 import { usePrivacyMode } from '@/components/fable/usePrivacyMode'
 import { PrivacyValue } from '@/components/fable/PrivacyValue'
 import { Reveal } from '@/components/fable/motion'
@@ -136,7 +138,6 @@ export default function StructuredNoteDetailPage() {
   const [notAuthorized, setNotAuthorized] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteFailed, setDeleteFailed] = useState(false)
-  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [allocError, setAllocError] = useState<string | null>(null)
   const [knownCustodians, setKnownCustodians] = useState<string[]>([])
 
@@ -199,8 +200,10 @@ export default function StructuredNoteDetailPage() {
   }, [id])
 
   // Upsert the notional for one account (0 clears it). Custody is NOT part of
-  // an allocation — see `setCustodian`.
-  async function setEntityAllocation(entityName: string, notional: number) {
+  // an allocation — see `setCustodian`. Returns whether the server accepted
+  // the write — the custom-entity Remove control (a shared DeleteButton) uses
+  // it to show success only after the upsert-to-zero was confirmed.
+  async function setEntityAllocation(entityName: string, notional: number): Promise<boolean> {
     setAllocError(null)
     // R12: a thrown network failure surfaces the same localized error the
     // non-ok path already did (previously it was an unhandled rejection).
@@ -209,10 +212,12 @@ export default function StructuredNoteDetailPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ entityName, notionalAmount: notional }),
       })
-      if (!res.ok) { setAllocError(t.sn.saveError); return }
+      if (!res.ok) { setAllocError(t.sn.saveError); return false }
       await load()
+      return true
     } catch {
       setAllocError(t.sn.saveError)
+      return false
     }
   }
 
@@ -232,19 +237,22 @@ export default function StructuredNoteDetailPage() {
       setAllocError(t.sn.saveError)
     }
   }
-  // R4.1 — the confirmation gate is the shared Fable DestructiveConfirm
-  // dialog, never the browser-native window.confirm. The mutation itself is
-  // unchanged: same DELETE endpoint, same success-only redirect; a failure
-  // keeps the dialog open with the error inside it so the user can retry or
-  // cancel.
-  async function deleteNote() {
+  // R13.7B2.2.2 — the confirmation gate is the shared DeleteButton's inline
+  // panel (bin → "Delete this note permanently?" → check), never the
+  // browser-native window.confirm; it invokes this handler at most once per
+  // arming. The mutation itself is unchanged since R4.1: same DELETE endpoint,
+  // same success-only redirect; a failure returns the control to a usable
+  // state with the error stated beside it so the user can retry or leave.
+  async function deleteNote(): Promise<boolean> {
     setDeleting(true); setDeleteFailed(false)
     try {
       const res = await fetch(`/api/structured-notes/${id}`, { method: 'DELETE' })
-      if (!res.ok) { setDeleteFailed(true); return }
+      if (!res.ok) { setDeleteFailed(true); return false }
       router.push('/structured-notes')
+      return true
     } catch {
       setDeleteFailed(true)
+      return false
     } finally {
       setDeleting(false)
     }
@@ -459,11 +467,154 @@ export default function StructuredNoteDetailPage() {
         </div>
       </Reveal>
 
-      {/* Current levels & barrier monitoring — R3 gauge language per underlying */}
+      {/* ROW 1 — General Terms (LEFT, 3fr) · Allocation by Entity (RIGHT, 2fr).
+          R13.7B2.2.2 § 1 / § 3: the B2.2.1 terms-plus-underlyings block is
+          superseded. The two cards share one desktop row and stretch to the
+          same height (`lg:items-stretch` + `h-full`); below lg they stack,
+          General Terms first. The note-level Delete control lives in the
+          Allocation card's header (§ 11) as the shared DeleteButton — same
+          DELETE endpoint, same administrator gate (`canManage`), same
+          success-only redirect as the dialog it replaces. Provenance (source
+          type · file · confidence) is folded into the terms card as a fourth
+          group: its former card made way for the Allocation card, and no
+          field was dropped. 3fr/2fr rather than a literal 65/35 so that the
+          two rows share one column edge and the allocation notional inputs
+          are never compressed. */}
       <Reveal delayMs={70}>
-        <div className="mb-3.5">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-3.5 mb-3.5 lg:items-stretch">
+          <GlassSurface variant="card" as="section" className="px-5 py-4 h-full flex flex-col">
+            <h2 className="ui-label text-muted-fg mb-3">{t.sn.generalTerms}</h2>
+            {(n.memoryCoupon || n.principalProtection) && (
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {n.memoryCoupon && <FeatureChip label={t.sn.memoryCoupon} />}
+                {n.principalProtection && <FeatureChip label={t.sn.principalProtection} />}
+              </div>
+            )}
+            <TermGroup label={t.sn.termsIdentity}>
+              <TermField k={t.sn.colIsin} v={n.isin} mono />
+              <TermField k={t.sn.colIssuer} v={n.issuerDisplayName ?? n.issuerName} />
+              <TermField k={t.sn.guarantor} v={n.guarantorName} />
+              <TermField k={t.sn.colStructure} v={n.structureType} />
+              <TermField k={t.sn.payoffType} v={n.payoffType} />
+              <TermField k={t.sn.currencyLabel} v={n.currency} />
+              {/* R7.1B — named "Total issuance size" everywhere, so it can
+                  never be read as Nevada's position. */}
+              <TermField k={t.sn.totalIssuanceSize} v={n.issueSize !== null ? `${n.currency} ${fmtNum(n.issueSize)}` : null} />
+              <TermField k={t.sn.denomination} v={n.denomination !== null ? `${n.currency} ${fmtNum(n.denomination)}` : null} />
+              <TermField k={t.sn.issuePrice} v={n.issuePricePct !== null ? fmtPct(n.issuePricePct) : null} />
+            </TermGroup>
+            <TermGroup label={t.sn.termsEconomics}>
+              <TermField k={t.sn.colCoupon} v={`${fmtPct(n.couponRatePeriodic)} · ${fmtPct(n.couponRateAnnualized)} p.a.`} />
+              <TermField k={t.sn.couponFrequency} v={n.couponFrequency} />
+              <TermField k={t.sn.couponBarrier} v={fmtPct(n.couponBarrierPct)} />
+              <TermField k={t.sn.colKnockIn} v={fmtPct(n.knockInBarrierPct)} />
+              <TermField k={t.sn.autocallBarrier} v={fmtPct(n.autocallBarrierPct)} />
+            </TermGroup>
+            <TermGroup label={t.sn.termsDates}>
+              <TermField k={t.sn.colTrade} v={n.tradeDate} />
+              <TermField k={t.sn.colIssued} v={n.issueDate} />
+              <TermField k={t.sn.initialValuation} v={n.initialValuationDate} />
+              <TermField k={t.sn.finalValuation} v={n.finalValuationDate} />
+              <TermField k={t.sn.colMaturity} v={n.maturityDate} />
+              <TermField k={t.sn.redemption} v={n.redemptionDate} />
+            </TermGroup>
+            {/* Provenance — source type, file name and extraction confidence,
+                exactly the three facts the former provenance card showed. */}
+            <TermGroup label={t.sn.provenance} last>
+              <TermField
+                k={t.sn.source}
+                v={`${n.sourceType === 'pdf_extraction' ? t.sn.sourcePdf : t.sn.sourceManual}${n.sourceFileName ? ` · ${n.sourceFileName}` : ''}`}
+              />
+              <TermField k={t.sn.confidence} v={n.confidenceScore !== null ? `${Math.round(n.confidenceScore * 100)}%` : null} />
+            </TermGroup>
+          </GlassSurface>
+
+          {/* Allocation (internal) — with the note's Delete control in its header. */}
+          <GlassSurface variant="card" as="section" className="px-5 py-4 h-full flex flex-col">
+            <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 mb-3">
+              <div className="min-w-0">
+                <h2 className="ui-label text-muted-fg">{t.sn.allocations}</h2>
+                <p className="ui-meta text-muted-fg">{t.sn.allocationsNote}</p>
+              </div>
+              {/* § 11 — the shared DeleteButton: arm → inline "Delete this note
+                  permanently?" → check confirms ONCE / cross or Escape cancel.
+                  Rendered only for a caller the API said may manage; the
+                  route re-checks and RLS refuses regardless. `deleteNote` is
+                  the unchanged mutation (DELETE, success-only redirect). */}
+              {canManage && (
+                <DeleteButton
+                  size="md"
+                  layout="inline"
+                  className="ml-auto no-print"
+                  label={`${t.sn.delete}: ${n.productName || n.isin || ''}`}
+                  title={t.sn.delete}
+                  confirmLabel={t.sn.confirmDeleteInline}
+                  onConfirm={deleteNote}
+                >
+                  {t.sn.delete}
+                </DeleteButton>
+              )}
+            </div>
+            {deleteFailed && <p className="mb-2 text-xs text-negative" role="alert">{t.sn.deleteError}</p>}
+            {deleting && <p className="sr-only" role="status">{t.sn.deleting}</p>}
+            {/* R7.1B.1 — ONE custodian for the whole note: the accounts are
+                traded together, so custody is captured once here rather than
+                repeated on every allocation row. Suggestions come from the
+                custodians already recorded on other notes. */}
+            <CustodianField
+              value={n.custodian}
+              knownCustodians={knownCustodians}
+              onCommit={setCustodian}
+              readOnly={!canManage}
+            />
+            <EntityAllocationGrid
+              allocations={n.allocations}
+              currency={n.currency}
+              onSet={setEntityAllocation}
+              onAddCustom={(name) => setEntityAllocation(name, 0)}
+              masked={masked}
+              readOnly={!canManage}
+            />
+            {allocError && <p className="mt-2 text-xs text-negative" role="alert">{allocError}</p>}
+            {/* R7.1B — the two quantities are stated SEPARATELY, each with its
+                own help text, so neither can be read as the other. Issue size
+                is never used as exposure, an allocation, or a fallback. */}
+            <dl className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs">
+              <div>
+                <dt className="ui-micro-label text-muted-fg" title={t.sn.nevadaInvestmentHelp}>{t.sn.nevadaInvestment}</dt>
+                <dd className="ui-number text-foreground">
+                  {/* R12: this IS the note's Nevada notional — the same private
+                      amount the capsule above masks. Same boundary here. */}
+                  <PrivacyValue masked={masked}>{`${nevadaInvestmentCurrency(n.allocations) ?? n.currency} ${fmtNum(nevadaInvestment)}`}</PrivacyValue>
+                </dd>
+                <dd className="ui-meta text-muted-fg">{t.sn.nevadaInvestmentHelp}</dd>
+              </div>
+              <div>
+                <dt className="ui-micro-label text-muted-fg" title={t.sn.totalIssuanceSizeHelp}>{t.sn.totalIssuanceSize}</dt>
+                <dd className="ui-number text-foreground">{n.issueSize !== null ? `${n.currency} ${fmtNum(n.issueSize)}` : '—'}</dd>
+                <dd className="ui-meta text-muted-fg">{t.sn.totalIssuanceSizeHelp}</dd>
+              </div>
+            </dl>
+            {issueSizeComparison === 'review' && (
+              <p className="mt-2 text-xs text-warning" role="status">⚠ {t.sn.allocationMismatch}</p>
+            )}
+          </GlassSurface>
+        </div>
+      </Reveal>
+
+      {/* ROW 2 — Current levels & distance to barrier (LEFT, 3fr) · Underlyings
+          (RIGHT, 2fr). Owner-specified order (R13.7B2.2.2 § 2): the analytical
+          monitoring table is the dominant card and stays LEFT; the contractual
+          underlying-levels table sits RIGHT in its own TableCard again. Both
+          stretch to one height; below lg they stack, Current levels first.
+          Every column, the gauge legend, the raw level, the normalized level,
+          the merged marks, the halo, last-monitored and stale flags are the
+          B2.2/B2.2.1 ones, unchanged. */}
+      <Reveal delayMs={130}>
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-3.5 mb-3.5 lg:items-stretch">
           <TableCard
             title={t.sn.currentPrices}
+            className="h-full"
             minWidth={680}
             footer={
               <>
@@ -573,98 +724,48 @@ export default function StructuredNoteDetailPage() {
               </tbody>
             </table>
           </TableCard>
+
+          {/* Underlyings — the contractual levels (order, name, symbol, initial,
+              strike, knock-in, coupon, autocall), scrolling inside the card at
+              narrow widths exactly as every dense table does. The footer note
+              says what these levels ARE, and where the live ones are. */}
+          <TableCard
+            title={t.sn.underlyings}
+            className="h-full"
+            minWidth={560}
+            footer={<p className="ui-meta text-muted-fg">{t.sn.underlyingsNote}</p>}
+          >
+            <table className="w-full" style={{ fontSize: 'var(--fs-table-cell)' }}>
+              <caption className="sr-only">{t.sn.underlyings}</caption>
+              <thead>
+                <tr>
+                  <th scope="col" className={`${thBase} pl-4`}>#</th>
+                  <th scope="col" className={`${thBase} text-left`}>{t.sn.colUnderlyings}</th>
+                  <th scope="col" className={thBase}>{t.sn.symbolLabel}</th>
+                  <th scope="col" className={thBase}>{t.sn.initialLevel}</th>
+                  <th scope="col" className={thBase}>{t.sn.strikeLevel}</th>
+                  <th scope="col" className={thBase}>{t.sn.colKnockIn}</th>
+                  <th scope="col" className={thBase}>{t.sn.monitoring.coupon}</th>
+                  <th scope="col" className={`${thBase} pr-4`}>{t.sn.monitoring.autocall}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {n.underlyings.map((u) => (
+                  <tr key={u.underlyingOrder} className="border-b border-border last:border-0">
+                    <td className={`${cell} pl-4 ui-number`}>{u.underlyingOrder}</td>
+                    <td className={`${cell} text-left text-foreground`}>{u.underlyingName}</td>
+                    <td className={`${cell} font-mono text-xs`}>{u.yahooSymbol ?? '—'}</td>
+                    <td className={`${cell} ui-number`}>{fmtNum(u.initialLevel)}</td>
+                    <td className={`${cell} ui-number`}>{fmtNum(u.strikeLevel)}</td>
+                    <td className={`${cell} ui-number`}>{fmtNum(u.knockInBarrierLevel)}</td>
+                    <td className={`${cell} ui-number`}>{fmtNum(u.couponBarrierLevel)}</td>
+                    <td className={`${cell} pr-4 ui-number`}>{fmtNum(u.autocallBarrierLevel)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableCard>
         </div>
-      </Reveal>
-
-      {/* Terms + contractual underlying levels — ONE block (R13.7B2.2.1 § 7).
-          The two cards used to sit side by side, leaving dead space under the
-          short underlyings table. They are now one card: the terms grid on
-          top, a horizontal divider, then the underlyings table on the dense
-          surface (the same anatomy TableCard uses — glass on the card, a
-          near-opaque surface under the table, never glass under dense text).
-          Nothing was dropped: every term field, every underlying column. */}
-      <Reveal delayMs={130}>
-        <GlassSurface variant="card" as="section" className="mb-3.5 overflow-hidden flex flex-col">
-          <div className="px-5 pt-4 pb-4">
-            <h2 className="ui-label text-muted-fg mb-3">{t.sn.generalTerms}</h2>
-            {(n.memoryCoupon || n.principalProtection) && (
-              <div className="flex flex-wrap gap-1.5 mb-3">
-                {n.memoryCoupon && <FeatureChip label={t.sn.memoryCoupon} />}
-                {n.principalProtection && <FeatureChip label={t.sn.principalProtection} />}
-              </div>
-            )}
-            <TermGroup label={t.sn.termsIdentity}>
-              <TermField k={t.sn.colIsin} v={n.isin} mono />
-              <TermField k={t.sn.colIssuer} v={n.issuerDisplayName ?? n.issuerName} />
-              <TermField k={t.sn.guarantor} v={n.guarantorName} />
-              <TermField k={t.sn.colStructure} v={n.structureType} />
-              <TermField k={t.sn.payoffType} v={n.payoffType} />
-              <TermField k={t.sn.currencyLabel} v={n.currency} />
-              {/* R7.1B — named "Total issuance size" everywhere, so it can
-                  never be read as Nevada's position. */}
-              <TermField k={t.sn.totalIssuanceSize} v={n.issueSize !== null ? `${n.currency} ${fmtNum(n.issueSize)}` : null} />
-              <TermField k={t.sn.denomination} v={n.denomination !== null ? `${n.currency} ${fmtNum(n.denomination)}` : null} />
-              <TermField k={t.sn.issuePrice} v={n.issuePricePct !== null ? fmtPct(n.issuePricePct) : null} />
-            </TermGroup>
-            <TermGroup label={t.sn.termsEconomics}>
-              <TermField k={t.sn.colCoupon} v={`${fmtPct(n.couponRatePeriodic)} · ${fmtPct(n.couponRateAnnualized)} p.a.`} />
-              <TermField k={t.sn.couponFrequency} v={n.couponFrequency} />
-              <TermField k={t.sn.couponBarrier} v={fmtPct(n.couponBarrierPct)} />
-              <TermField k={t.sn.colKnockIn} v={fmtPct(n.knockInBarrierPct)} />
-              <TermField k={t.sn.autocallBarrier} v={fmtPct(n.autocallBarrierPct)} />
-            </TermGroup>
-            <TermGroup label={t.sn.termsDates} last>
-              <TermField k={t.sn.colTrade} v={n.tradeDate} />
-              <TermField k={t.sn.colIssued} v={n.issueDate} />
-              <TermField k={t.sn.initialValuation} v={n.initialValuationDate} />
-              <TermField k={t.sn.finalValuation} v={n.finalValuationDate} />
-              <TermField k={t.sn.colMaturity} v={n.maturityDate} />
-              <TermField k={t.sn.redemption} v={n.redemptionDate} />
-            </TermGroup>
-          </div>
-
-          {/* The divider: one block, two sections. */}
-          <div className="px-5 pt-3 pb-2 border-t border-border">
-            <h2 className="ui-label text-muted-fg">{t.sn.underlyings}</h2>
-          </div>
-          {/* Dense table on the near-opaque surface, scrolling inside the card
-              (never the page) exactly as TableCard does. */}
-          <GlassSurface variant="dense">
-            <div className="overflow-x-auto">
-              <div style={{ minWidth: 560 }}>
-                <table className="w-full" style={{ fontSize: 'var(--fs-table-cell)' }}>
-                  <caption className="sr-only">{t.sn.underlyings}</caption>
-                  <thead>
-                    <tr>
-                      <th scope="col" className={`${thBase} pl-4`}>#</th>
-                      <th scope="col" className={`${thBase} text-left`}>{t.sn.colUnderlyings}</th>
-                      <th scope="col" className={thBase}>{t.sn.symbolLabel}</th>
-                      <th scope="col" className={thBase}>{t.sn.initialLevel}</th>
-                      <th scope="col" className={thBase}>{t.sn.strikeLevel}</th>
-                      <th scope="col" className={thBase}>{t.sn.colKnockIn}</th>
-                      <th scope="col" className={thBase}>{t.sn.monitoring.coupon}</th>
-                      <th scope="col" className={`${thBase} pr-4`}>{t.sn.monitoring.autocall}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {n.underlyings.map((u) => (
-                      <tr key={u.underlyingOrder} className="border-b border-border last:border-0">
-                        <td className={`${cell} pl-4 ui-number`}>{u.underlyingOrder}</td>
-                        <td className={`${cell} text-left text-foreground`}>{u.underlyingName}</td>
-                        <td className={`${cell} font-mono text-xs`}>{u.yahooSymbol ?? '—'}</td>
-                        <td className={`${cell} ui-number`}>{fmtNum(u.initialLevel)}</td>
-                        <td className={`${cell} ui-number`}>{fmtNum(u.strikeLevel)}</td>
-                        <td className={`${cell} ui-number`}>{fmtNum(u.knockInBarrierLevel)}</td>
-                        <td className={`${cell} ui-number`}>{fmtNum(u.couponBarrierLevel)}</td>
-                        <td className={`${cell} pr-4 ui-number`}>{fmtNum(u.autocallBarrierLevel)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </GlassSurface>
-        </GlassSurface>
       </Reveal>
 
       {/* Observation schedule — Fable lifecycle timeline over the COMPLETE
@@ -676,7 +777,7 @@ export default function StructuredNoteDetailPage() {
           in full and the page scrolls. The card keeps only the card-level
           HORIZONTAL scroll that every dense table has (minWidth), so a narrow
           viewport never produces page-level horizontal overflow. */}
-      <Reveal delayMs={130}>
+      <Reveal delayMs={180}>
         <div className="mb-3.5">
           <TableCard
             title={t.sn.schedule}
@@ -759,106 +860,6 @@ export default function StructuredNoteDetailPage() {
         </div>
       </Reveal>
 
-      {/* Allocation (internal) + provenance/actions */}
-      <Reveal delayMs={180}>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 items-start">
-          <GlassSurface variant="card" as="section" className="px-5 py-4">
-            <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
-              <h2 className="ui-label text-muted-fg">{t.sn.allocations}</h2>
-              <span className="ui-meta text-muted-fg">{t.sn.allocationsNote}</span>
-            </div>
-            {/* R7.1B.1 — ONE custodian for the whole note: the accounts are
-                traded together, so custody is captured once here rather than
-                repeated on every allocation row. Suggestions come from the
-                custodians already recorded on other notes. */}
-            <CustodianField
-              value={n.custodian}
-              knownCustodians={knownCustodians}
-              onCommit={setCustodian}
-              readOnly={!canManage}
-            />
-            <EntityAllocationGrid
-              allocations={n.allocations}
-              currency={n.currency}
-              onSet={setEntityAllocation}
-              onAddCustom={(name) => setEntityAllocation(name, 0)}
-              masked={masked}
-              readOnly={!canManage}
-            />
-            {allocError && <p className="mt-2 text-xs text-negative" role="alert">{allocError}</p>}
-            {/* R7.1B — the two quantities are stated SEPARATELY, each with its
-                own help text, so neither can be read as the other. Issue size
-                is never used as exposure, an allocation, or a fallback. */}
-            <dl className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs">
-              <div>
-                <dt className="ui-micro-label text-muted-fg" title={t.sn.nevadaInvestmentHelp}>{t.sn.nevadaInvestment}</dt>
-                <dd className="ui-number text-foreground">
-                  {/* R12: this IS the note's Nevada notional — the same private
-                      amount the capsule above masks. Same boundary here. */}
-                  <PrivacyValue masked={masked}>{`${nevadaInvestmentCurrency(n.allocations) ?? n.currency} ${fmtNum(nevadaInvestment)}`}</PrivacyValue>
-                </dd>
-                <dd className="ui-meta text-muted-fg">{t.sn.nevadaInvestmentHelp}</dd>
-              </div>
-              <div>
-                <dt className="ui-micro-label text-muted-fg" title={t.sn.totalIssuanceSizeHelp}>{t.sn.totalIssuanceSize}</dt>
-                <dd className="ui-number text-foreground">{n.issueSize !== null ? `${n.currency} ${fmtNum(n.issueSize)}` : '—'}</dd>
-                <dd className="ui-meta text-muted-fg">{t.sn.totalIssuanceSizeHelp}</dd>
-              </div>
-            </dl>
-            {issueSizeComparison === 'review' && (
-              <p className="mt-2 text-xs text-warning" role="status">⚠ {t.sn.allocationMismatch}</p>
-            )}
-          </GlassSurface>
-
-          <GlassSurface variant="card" as="section" className="px-5 py-4">
-            <h2 className="ui-label text-muted-fg mb-3">{t.sn.provenance}</h2>
-            <div className="text-xs text-muted-fg space-y-1.5">
-              <div>{t.sn.source}: {n.sourceType === 'pdf_extraction' ? t.sn.sourcePdf : t.sn.sourceManual}{n.sourceFileName ? <> · <span className="text-foreground">{n.sourceFileName}</span></> : ''}</div>
-              {n.confidenceScore !== null && <div>{t.sn.confidence}: <span className="ui-number text-foreground">{Math.round(n.confidenceScore * 100)}%</span></div>}
-            </div>
-            {canManage && (
-            <div className="mt-4 pt-3 border-t border-border no-print">
-              <button
-                onClick={() => { setDeleteFailed(false); setConfirmingDelete(true) }}
-                disabled={deleting}
-                className="inline-flex items-center gap-1.5 h-8 px-4 rounded-full text-xs font-medium cursor-pointer nv-transition disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ color: 'var(--negative)', border: '1px solid var(--negative)', backgroundColor: 'color-mix(in oklab, var(--negative) 8%, var(--surface))' }}
-              >
-                {deleting ? t.sn.deleting : t.sn.delete}
-              </button>
-              {deleteFailed && !confirmingDelete && <p className="mt-2 text-xs text-negative" role="alert">{t.sn.deleteError}</p>}
-            </div>
-            )}
-          </GlassSurface>
-        </div>
-      </Reveal>
-
-      {/* R4.1 — shared Fable destructive-confirmation dialog (ModalShell
-          contract: role=alertdialog, focus trap, Escape-cancels unless the
-          mutation is pending, scroll lock, focus restored to the trigger,
-          at-most-once confirm). The description names the REAL record.
-          R12: the Nevada notional was REMOVED from the description — it is a
-          documented private amount and rendered raw regardless of Privacy
-          Mode; product/ISIN/issuer/allocation count identify the record. */}
-      <DestructiveConfirm
-        open={confirmingDelete}
-        title={t.sn.delete}
-        description={[
-          n.productName,
-          n.isin,
-          n.issuerDisplayName,
-          `${activeAllocations.length} ${t.sn.accountAllocations}`,
-        ].filter(Boolean).join(' · ')}
-        confirmLabel={deleting ? t.sn.deleting : t.sn.delete}
-        cancelLabel={t.sn.cancel}
-        pending={deleting}
-        onCancel={() => setConfirmingDelete(false)}
-        onConfirm={deleteNote}
-      >
-        <p className="text-sm text-foreground">{t.sn.confirmDelete}</p>
-        {deleting && <p className="sr-only" role="status">{t.sn.deleting}</p>}
-        {deleteFailed && <p className="mt-2 text-xs text-negative" role="alert">{t.sn.deleteError}</p>}
-      </DestructiveConfirm>
     </div>
   )
 }
@@ -1027,11 +1028,11 @@ function TermGroup({ label, last = false, children }: { label: string; last?: bo
   return (
     <section className={last ? '' : 'mb-4'}>
       <h3 className="ui-micro-label text-muted-fg mb-2">{label}</h3>
-      {/* R13.7B2.2.1 § 7 — the terms grid now spans the full card, so it opens
-          to six columns at lg: identity fills two rows, economics and dates one
-          row each, and the block reads as balanced rather than as a tall
-          column beside an empty one. */}
-      <dl className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-4 gap-y-2.5 text-sm">{children}</dl>
+      {/* R13.7B2.2.2 § 1 — the terms card is the 3fr half of a shared row, so
+          the grid opens to three columns at sm and four at xl: identity fills
+          three rows, economics and dates two, provenance one — scannable, with
+          no dead column beside it. */}
+      <dl className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-x-4 gap-y-2.5 text-sm">{children}</dl>
     </section>
   )
 }
@@ -1064,7 +1065,8 @@ function EntityAllocationGrid({
 }: {
   allocations: { entityName: string; notionalAmount: number }[]
   currency: string
-  onSet: (entity: string, notional: number) => void
+  /** Resolves whether the server accepted the upsert (the Remove control shows success only then). */
+  onSet: (entity: string, notional: number) => Promise<boolean> | void
   onAddCustom: (entity: string) => void
   masked: boolean
   readOnly?: boolean
@@ -1078,15 +1080,19 @@ function EntityAllocationGrid({
 
   return (
     <div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
+      {/* R13.7B2.2.2 § 1 — one column in the 2fr allocation card at lg/xl so the
+          notional inputs are never compressed; two columns only where the
+          card is genuinely wide (below lg stacked full-width, and at 2xl). */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2 gap-x-4 gap-y-1.5">
         {rows.map((name) => (
           <EntityRow key={name} name={name} currency={currency} value={byName.get(name) ?? 0} onCommit={(v) => onSet(name, v)} removable={extras.includes(name) && !readOnly} onRemove={() => onSet(name, 0)} masked={masked} readOnly={readOnly} />
         ))}
       </div>
       {!readOnly && (
       <form className="flex gap-2 mt-3 no-print" onSubmit={(e) => { e.preventDefault(); const n = custom.trim(); if (n) { onAddCustom(n); setCustom('') } }}>
-        <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder={t.sn.entity} aria-label={t.sn.entity} className="px-2.5 py-1 text-sm border border-border rounded-lg bg-surface" />
-        <button type="submit" className="px-3 py-1 text-sm rounded-full border border-border nv-transition cursor-pointer hover:border-accent">＋ {t.sn.addAllocation}</button>
+        {/* R13.7B2.2.2 — in the 2fr card the input yields and the button never wraps its label. */}
+        <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder={t.sn.entity} aria-label={t.sn.entity} className="flex-1 min-w-0 px-2.5 py-1 text-sm border border-border rounded-lg bg-surface" />
+        <button type="submit" className="shrink-0 whitespace-nowrap px-3 py-1 text-sm rounded-full border border-border nv-transition cursor-pointer hover:border-accent">＋ {t.sn.addAllocation}</button>
       </form>
       )}
     </div>
@@ -1151,7 +1157,7 @@ function CustodianField({ value, knownCustodians, onCommit, readOnly = false }: 
   )
 }
 
-function EntityRow({ name, currency, value, onCommit, removable, onRemove, masked, readOnly = false }: { name: string; currency: string; value: number; onCommit: (v: number) => void; removable: boolean; onRemove: () => void; masked: boolean; readOnly?: boolean }) {
+function EntityRow({ name, currency, value, onCommit, removable, onRemove, masked, readOnly = false }: { name: string; currency: string; value: number; onCommit: (v: number) => void; removable: boolean; onRemove: () => Promise<boolean> | void; masked: boolean; readOnly?: boolean }) {
   const { t } = useLang()
   const [draft, setDraft] = useState(value ? formatWithThousands(String(value)) : '')
   // Keep the input in sync when the persisted value changes (render-time prev pattern).
@@ -1194,7 +1200,22 @@ function EntityRow({ name, currency, value, onCommit, removable, onRemove, maske
           className="w-32 px-2.5 py-1 text-sm text-right border border-border rounded-lg bg-surface ui-number no-print"
         />
       )}
-      {removable && <button onClick={onRemove} className="text-xs text-negative no-print cursor-pointer" title={t.sn.removeEntity} aria-label={`${t.sn.removeEntity}: ${name}`}>✕</button>}
+      {/* R13.7B2.2.2 § 11 — a custom entity's Remove is the shared DeleteButton
+          (compact; the panel floats over the row so the dense name · currency
+          · notional line never shifts or overflows, even on a phone). Same
+          mutation as before: an upsert of this entity's notional to 0,
+          administrator-gated by the API — never a client-only removal. */}
+      {removable && (
+        <DeleteButton
+          size="sm"
+          layout="overlay"
+          className="no-print"
+          label={`${t.sn.removeEntity}: ${name}`}
+          title={t.sn.removeEntity}
+          confirmLabel={t.sn.removeEntityConfirm}
+          onConfirm={onRemove}
+        />
+      )}
     </div>
   )
 }

@@ -282,40 +282,47 @@ describe('R4.4 — every real section remains represented', () => {
 })
 
 describe('R4.5 — delete workflow preserved with explicit destructive treatment', () => {
-  it('R4.1: the confirmation gate is the shared Fable dialog — window.confirm is gone', () => {
+  // R13.7B2.2.2 — the confirmation gate is now the platform's shared
+  // DeleteButton (inline: bin → visible question → check / cross / Escape).
+  // The mutation, its endpoint, its capability gate and its success-only
+  // redirect are the same ones the R4.1 dialog guarded.
+  it('R13.7B2.2.2: the confirmation gate is the shared DeleteButton — window.confirm is gone, the dialog is gone', () => {
     assert.ok(!DETAIL_CODE.includes('window.confirm'), 'no browser-native confirm dialog')
-    assert.match(DETAIL, /import \{ DestructiveConfirm \} from '@\/components\/fable\/ModalShell'/)
-    assert.match(DETAIL, /<DestructiveConfirm/)
+    assert.match(DETAIL, /import \{ DeleteButton \} from '@\/components\/fable\/DeleteButton'/)
+    assert.match(DETAIL_CODE, /<DeleteButton/)
+    assert.ok(!DETAIL_CODE.includes('DestructiveConfirm'), 'no second confirmation surface for the same action')
   })
 
-  it('keeps the confirmation text, endpoint, and success-only redirect', () => {
-    assert.match(DETAIL, /t\.sn\.confirmDelete/)
+  it('keeps a confirmation stated in words, the endpoint, and the success-only redirect', () => {
+    assert.match(DETAIL, /confirmLabel=\{t\.sn\.confirmDeleteInline\}/)
     assert.match(DETAIL, /fetch\(`\/api\/structured-notes\/\$\{id\}`, \{ method: 'DELETE' \}\)/)
     assert.match(DETAIL, /router\.push\('\/structured-notes'\)/)
   })
 
-  it('the trigger only OPENS the dialog; the mutation fires only from the dialog confirm', () => {
-    assert.match(DETAIL, /onClick=\{\(\) => \{ setDeleteFailed\(false\); setConfirmingDelete\(true\) \}\}/)
+  it('the control invokes the mutation only from its confirm; nothing else on the page deletes', () => {
     assert.match(DETAIL, /onConfirm=\{deleteNote\}/)
-    assert.match(DETAIL, /onCancel=\{\(\) => setConfirmingDelete\(false\)\}/)
+    assert.ok(!DETAIL_CODE.includes('setConfirmingDelete'), 'no separate open/close plumbing remains')
     // exactly one DELETE call site on the page
     assert.equal((DETAIL_CODE.match(/method: 'DELETE'/g) ?? []).length, 1)
+    // the shared control's gate: at most one invocation per arming (proven in tests/deleteButton.test.ts)
+    assert.match(read('src/components/fable/DeleteButton.tsx'), /const fire = invokesHandler\(prev, event, ctx\)/)
   })
 
-  it('honest in-progress and failure states — no redirect on failure, error inside the dialog', () => {
+  it('honest in-progress and failure states — no redirect on failure, error beside the control', () => {
     assert.match(DETAIL, /setDeleting\(true\)/)
-    assert.match(DETAIL, /if \(!res\.ok\) \{ setDeleteFailed\(true\); return \}/)
-    // the error renders inside the dialog while it is open, and adjacent to
-    // the trigger once it is closed — never converted into a redirect
-    assert.match(DETAIL, /\{deleteFailed && <p className="mt-2 text-xs text-negative" role="alert">\{t\.sn\.deleteError\}<\/p>\}/)
-    assert.match(DETAIL, /\{deleteFailed && !confirmingDelete && <p className="mt-2 text-xs text-negative" role="alert">/)
+    assert.match(DETAIL, /if \(!res\.ok\) \{ setDeleteFailed\(true\); return false \}/)
+    // the error renders beside the control (the control itself returns to a
+    // usable idle state) — never converted into a redirect or a false success
+    assert.match(DETAIL, /\{deleteFailed && <p className="mb-2 text-xs text-negative" role="alert">\{t\.sn\.deleteError\}<\/p>\}/)
     assert.match(DETAIL, /\{deleting && <p className="sr-only" role="status">\{t\.sn\.deleting\}<\/p>\}/)
+    assert.match(DETAIL, /catch \{\s*setDeleteFailed\(true\)\s*return false/)
   })
 
-  it('the action is a labeled destructive button, never an ambiguous icon', () => {
-    assert.match(DETAIL, /\{deleting \? t\.sn\.deleting : t\.sn\.delete\}/)
-    assert.match(DETAIL, /border: '1px solid var\(--negative\)'/)
-    assert.match(DETAIL, /disabled=\{deleting\}/)
+  it('the action is a labeled destructive control, never an ambiguous icon', () => {
+    // visible text beside the bin, an accessible name that names the record, and the negative token on the trigger
+    assert.match(DETAIL, /<DeleteButton[\s\S]{0,400}>\s*\{t\.sn\.delete\}\s*<\/DeleteButton>/)
+    assert.match(DETAIL, /label=\{`\$\{t\.sn\.delete\}: \$\{n\.productName \|\| n\.isin \|\| ''\}`\}/)
+    assert.match(read('src/app/globals.css'), /\.nv-del-trigger \{[^}]*color: var\(--negative\);/)
   })
 })
 
@@ -336,9 +343,13 @@ describe('R4.5b — R4.1 shared-dialog contract (locked in the shared component,
     assert.match(MODAL, /dismissDisabled=\{pending\}/)
   })
 
-  it('duplicate submission is guarded at the dialog level and the caller level', () => {
+  it('duplicate submission is guarded at the control level and the caller level', () => {
     assert.match(MODAL, /if \(pending \|\| firedRef\.current\) return/)
-    assert.match(DETAIL, /pending=\{deleting\}/)
+    // R13.7B2.2.2 — the detail page's delete is the shared DeleteButton, whose
+    // pure reducer accepts CONFIRM from `armed` only (one invocation per arming);
+    // the caller still flips `deleting` around the request.
+    assert.match(read('src/components/fable/deleteButtonState.ts'), /return !ctx\.disabled && state === 'armed' && event\.type === 'CONFIRM'/)
+    assert.match(DETAIL, /setDeleting\(true\); setDeleteFailed\(false\)/)
   })
 
   it('cancel is a safe chip; the destructive action uses the critical fill tokens — never icon-only', () => {
@@ -347,27 +358,27 @@ describe('R4.5b — R4.1 shared-dialog contract (locked in the shared component,
     assert.match(MODAL, /aria-busy=\{pending \|\| undefined\}/)
   })
 
-  it('the dialog description names the REAL record from existing fields only', () => {
-    // R7.1B widened the description; R12 REMOVED the Nevada investment
-    // notional from it — it is one of the six documented private amounts and
-    // the dialog printed it raw regardless of Privacy Mode. Product, ISIN,
-    // issuer and allocation count identify the record unambiguously without
-    // disclosing an amount; every part is still read from fields already on
-    // the loaded payload — nothing estimated, nothing fabricated.
-    const desc = DETAIL.slice(DETAIL.indexOf('description={['), DETAIL.indexOf("].filter(Boolean).join(' · ')"))
-    for (const field of ['n.productName', 'n.isin', 'n.issuerDisplayName', 'activeAllocations.length']) {
-      assert.ok(desc.includes(field), `${field} must identify the record`)
-    }
-    assert.ok(!desc.includes('nevadaInvestment'), 'the private amount must not appear in the dialog (R12)')
-    assert.doesNotMatch(desc, /Math\.|estimate|approx/i, 'no derived or estimated value in the identification')
+  it('the delete control names the REAL record from existing fields only', () => {
+    // R13.7B2.2.2 — the record is identified by the page header (product,
+    // ISIN, issuer, status) and by the control's accessible name, built from
+    // fields already on the loaded payload. R12 still holds: the Nevada
+    // investment notional — a documented private amount — never reaches the
+    // control's name or its question, and nothing estimated is shown.
+    const control = DETAIL.slice(DETAIL.indexOf('<DeleteButton'), DETAIL.indexOf('</DeleteButton>'))
+    assert.match(control, /label=\{`\$\{t\.sn\.delete\}: \$\{n\.productName \|\| n\.isin \|\| ''\}`\}/)
+    assert.ok(!control.includes('nevadaInvestment'), 'the private amount must not appear in the control (R12)')
+    assert.doesNotMatch(control, /Math\.|estimate|approx/i, 'no derived or estimated value in the identification')
+    assert.ok(!DETAIL.includes('description={['), 'no dialog description remains')
   })
 
   it('EN and ES labels come from the existing dictionary — no new hardcoded copy', () => {
-    for (const key of ['t.sn.delete', 't.sn.cancel', 't.sn.confirmDelete', 't.sn.deleting', 't.sn.deleteError']) {
-      assert.ok(DETAIL.includes(key), `${key} must label the dialog`)
+    for (const key of ['t.sn.delete', 't.sn.confirmDeleteInline', 't.sn.deleting', 't.sn.deleteError']) {
+      assert.ok(DETAIL.includes(key), `${key} must label the control`)
     }
     assert.ok(I18N.includes("delete: 'Eliminar nota'"))
-    assert.ok(I18N.includes("cancel: 'Cancelar'"))
+    assert.ok(I18N.includes("confirmDeleteInline: '¿Eliminar esta nota definitivamente?'"))
+    // The panel's own action names come from the shared dictionary block.
+    assert.ok(I18N.includes("confirm: 'Confirmar eliminación'"))
   })
 
   it('no application-controlled native dialog remains anywhere in src', () => {
@@ -459,7 +470,10 @@ describe('R4.8 — localization and accessibility', () => {
     // R7.1B.1 — one labelled custodian field for the whole note.
     assert.match(DETAIL, /<label htmlFor="sn-custodian"/)
     assert.match(DETAIL, /aria-label=\{t\.sn\.custodian\}/)
-    assert.match(DETAIL, /aria-label=\{`\$\{t\.sn\.removeEntity\}: \$\{name\}`\}/)
+    // R13.7B2.2.2 — the per-entity Remove is the shared DeleteButton; its `label`
+    // prop IS the trigger's aria-label and names the entity.
+    assert.match(DETAIL, /label=\{`\$\{t\.sn\.removeEntity\}: \$\{name\}`\}/)
+    assert.match(read('src/components/fable/DeleteButton.tsx'), /aria-label=\{label\}/)
   })
 
   it('status meaning is never color- or hover-only', () => {
@@ -472,13 +486,11 @@ describe('R4.8 — localization and accessibility', () => {
 
 describe('R4.9 — responsive containment', () => {
   it('all three dense tables scroll horizontally inside their card, never the page', () => {
-    // R13.7B2.2.1 § 7 — the underlyings table moved into the combined
-    // terms/underlyings block, so two tables use TableCard's minWidth and the
-    // third carries the same card-level overflow-x-auto + min-width contract
-    // inline (the exact anatomy TableCard implements).
+    // R13.7B2.2.2 § 2 — the underlyings table is a TableCard again (right-hand
+    // card of row 2), so all three dense tables use TableCard's minWidth.
     assert.equal((DETAIL.match(/minWidth=\{680\}/g) ?? []).length, 2, 'monitoring + schedule TableCards')
-    assert.ok(!DETAIL.includes('<TableCard title={t.sn.underlyings}'), 'the underlyings table no longer sits in its own card')
-    assert.match(DETAIL, /<div className="overflow-x-auto">\s*<div style=\{\{ minWidth: 560 \}\}>/)
+    assert.match(DETAIL, /<TableCard\s+title=\{t\.sn\.underlyings\}\s+className="h-full"\s+minWidth=\{560\}/)
+    assert.ok(!DETAIL.includes('<GlassSurface variant="dense">'), 'no hand-rolled dense surface remains')
   })
 
   // R13.7B2.2.1 § 1 — the schedule renders in full; the page scrolls.
@@ -488,7 +500,8 @@ describe('R4.9 — responsive containment', () => {
   })
 
   it('multi-column bands stack below lg; no page-level width rule', () => {
-    assert.match(DETAIL, /grid-cols-1 lg:grid-cols-2/)
+    // R13.7B2.2.2 — both two-card rows share one mobile-first 3fr/2fr grid.
+    assert.equal((DETAIL.match(/grid grid-cols-1 lg:grid-cols-\[minmax\(0,3fr\)_minmax\(0,2fr\)\]/g) ?? []).length, 2)
     assert.ok(!DETAIL_CODE.includes('min-width: 1200px'))
     assert.ok(!DETAIL_CODE.includes('overflow-x-visible'))
   })

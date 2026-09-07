@@ -366,20 +366,25 @@ describe('R13.7B2.2.1 § 7 — General Terms and Underlyings are one block', () 
   const to = DETAIL.indexOf('{/* Observation schedule')
   const block = DETAIL.slice(from, to)
 
-  it('H · one card, two sections, a horizontal divider between them', () => {
-    assert.ok(!DETAIL.includes('<TableCard title={t.sn.underlyings}'), 'no separate underlyings card')
-    // The divider sits between the terms grid and the underlyings heading.
-    assert.match(block, /<div className="px-5 pt-3 pb-2 border-t border-border">\s*<h2 className="ui-label text-muted-fg">\{t\.sn\.underlyings\}<\/h2>/)
-    // Exactly one card surface wraps both; the table sits on the dense surface.
-    assert.equal((block.match(/<GlassSurface variant="card"/g) ?? []).length, 0, 'no second card opened inside the block')
-    assert.match(block, /<GlassSurface variant="dense">/)
-    // The old side-by-side two-card grid around this section is gone.
+  // R13.7B2.2.2 § 3 SUPERSEDES the B2.2.1 § 7 composition: the owner asked for
+  // General Terms beside Allocation by Entity (row 1) and Current levels beside
+  // Underlyings (row 2). The assertions below are the INVERSE of the ones this
+  // block used to carry — the divider composition must be gone, and the
+  // underlyings table is a TableCard again. tests/structuredNotesDetailLayout
+  // .test.ts owns the full row contract.
+  it('H (superseded) · the divider-headed one-card composition is gone; underlyings are a TableCard in row 2', () => {
+    assert.ok(!/border-t border-border">\s*<h2 className="ui-label text-muted-fg">\{t\.sn\.underlyings\}/.test(DETAIL), 'no divider-headed underlyings section inside the terms card')
+    assert.ok(!DETAIL.includes('<GlassSurface variant="dense">'), 'no hand-rolled dense surface — the underlyings table is a TableCard again')
+    assert.match(block, /<TableCard\s+title=\{t\.sn\.underlyings\}/)
+    assert.ok(block.indexOf('{t.sn.allocations}') < block.indexOf('title={t.sn.underlyings}'), 'row 1 (terms + allocation) precedes row 2 (levels + underlyings)')
+    // The two-column grid is the SHARED 3fr/2fr row, opening right before the terms card.
     const before = DETAIL.slice(DETAIL.lastIndexOf('<Reveal', from), from)
-    assert.ok(!/grid-cols-1 lg:grid-cols-2/.test(before), 'terms + underlyings are no longer a two-column grid')
+    assert.match(before, /lg:grid-cols-\[minmax\(0,3fr\)_minmax\(0,2fr\)\]/)
   })
 
-  it('H · the terms grid opens to six columns at lg to fill the full-width card', () => {
-    assert.match(DETAIL, /grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-4 gap-y-2\.5 text-sm/)
+  it('H (superseded) · the terms grid opens to three columns at sm and four at xl inside its 3fr card', () => {
+    assert.match(DETAIL, /grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-x-4 gap-y-2\.5 text-sm/)
+    assert.ok(!/lg:grid-cols-6/.test(DETAIL), 'the six-column full-width grid went with the full-width card')
   })
 
   it('H · nothing was dropped — every term field and every underlying column remains', () => {
@@ -393,7 +398,8 @@ describe('R13.7B2.2.1 § 7 — General Terms and Underlyings are one block', () 
   })
 
   it('H · the underlyings table keeps card-level horizontal containment', () => {
-    assert.match(block, /<div className="overflow-x-auto">\s*<div style=\{\{ minWidth: 560 \}\}>/)
+    // R13.7B2.2.2 — via TableCard's own minWidth contract (same anatomy, same 560px).
+    assert.match(block, /<TableCard\s+title=\{t\.sn\.underlyings\}\s+className="h-full"\s+minWidth=\{560\}/)
   })
 })
 

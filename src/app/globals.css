@@ -1147,6 +1147,186 @@
   .nv-spin {
     animation: nvSpin .7s linear infinite;
   }
+
+  /* ── Shared DeleteButton (R13.7B2.2.2 § 4-10) ─────────────────────────────
+     The platform's ONE destructive control (src/components/fable/DeleteButton
+     .tsx). Rare UI's "delete button" interaction on NMI materials: a compact
+     bin; arming lifts the LID (a transform on one SVG path — `--dur-state`)
+     and reveals an inline confirmation panel (`--dur-pop`); the check confirms
+     on `--critical-fill`, the cross cancels on the chip material; a confirmed
+     deletion draws a check where the bin was (stroke-dashoffset). Every
+     transition here is removed in the reduced-motion block (§ 8 below) — the
+     STATE still changes, only the motion goes. No new duration, no new
+     easing, no new colour: chip / critical-fill / negative tokens only.
+       Two layouts. `inline` grows in the flow (grid-template-columns 0fr→1fr,
+     so the width animates without JS measurement) for headers and wrapping
+     meta lines. `overlay` floats the panel beside the bin, opening toward the
+     row's content, so a dense table row never shifts when a control arms. */
+  .nv-del {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    vertical-align: middle;
+    max-width: 100%;
+  }
+  .nv-del-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .375rem;
+    border-radius: var(--radius-pill);
+    border: 1px solid transparent;
+    color: var(--negative);
+    background: transparent;
+    white-space: nowrap;
+  }
+  .nv-del-trigger:disabled { opacity: .5; cursor: not-allowed; }
+  .nv-del--md .nv-del-trigger {
+    height: 2rem;
+    min-width: 2rem;
+    padding: 0 .75rem;
+    font-size: .75rem;
+    font-weight: 500;
+    background: var(--nv-chip);
+    border-color: var(--nv-chipbd);
+  }
+  .nv-del--md .nv-del-trigger--icon { padding: 0; width: 2rem; }
+  .nv-del--sm .nv-del-trigger {
+    height: 1.5rem;
+    min-width: 1.5rem;
+    padding: 0 .25rem;
+    font-size: .75rem;
+  }
+  .nv-del-trigger:not(:disabled):hover,
+  .nv-del[data-state='armed'] .nv-del-trigger {
+    background: color-mix(in oklab, var(--negative) 10%, var(--surface));
+    border-color: color-mix(in oklab, var(--negative) 35%, var(--nv-chipbd));
+  }
+  .nv-del[data-state='success'] .nv-del-trigger { color: var(--positive); }
+  .nv-del-icon { width: 1rem; height: 1rem; flex: none; }
+  .nv-del--sm .nv-del-icon { width: .875rem; height: .875rem; }
+  /* The lid: hinged at its left end, lifts and tilts while armed. */
+  .nv-del-lid {
+    transform-box: fill-box;
+    transform-origin: 10% 100%;
+    transition: transform var(--dur-state) var(--ease-primary);
+  }
+  .nv-del[data-state='armed'] .nv-del-lid,
+  .nv-del[data-state='pending'] .nv-del-lid { transform: translate(-.5px, -2.5px) rotate(-20deg); }
+  /* The success check draws itself once, on the same state duration. */
+  .nv-del-check path {
+    stroke-dasharray: 24;
+    stroke-dashoffset: 24;
+    animation: nvDelCheck var(--dur-state) var(--ease-primary) forwards;
+  }
+
+  /* Confirmation panel — VISIBLE question + two 999px actions. Dense text on a
+     near-opaque surface, never on glass (§ 8). */
+  .nv-del-panel {
+    display: inline-flex;
+    align-items: center;
+    gap: .375rem;
+    padding: .25rem .25rem .25rem .625rem;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--nv-chipbd);
+    background: var(--nv-tbl);
+    color: var(--foreground);
+    white-space: nowrap;
+  }
+  .nv-del-question { font-size: .75rem; line-height: 1; padding-right: .125rem; }
+  .nv-del-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: var(--radius-pill);
+    border: 1px solid transparent;
+    flex: none;
+  }
+  .nv-del--sm .nv-del-action { width: 1.25rem; height: 1.25rem; }
+  .nv-del--sm .nv-del-action .nv-del-icon { width: .75rem; height: .75rem; }
+  .nv-del-action:disabled { opacity: .5; cursor: not-allowed; }
+  .nv-del-confirm { background: var(--critical-fill); color: var(--critical-fill-fg); }
+  .nv-del-cancel { background: var(--nv-chip); border-color: var(--nv-chipbd); color: var(--foreground); }
+  .nv-del-spinner {
+    width: .75rem;
+    height: .75rem;
+    border-radius: var(--radius-pill);
+    border: 2px solid color-mix(in oklab, var(--critical-fill-fg) 35%, transparent);
+    border-top-color: var(--critical-fill-fg);
+  }
+
+  /* INLINE: the panel takes its natural width the moment it arms and is
+     revealed by a left→right clip-path wipe with a short slide — so nothing
+     reflows mid-animation. When the row is narrower than bin + panel, the
+     PANEL shrinks and its question wraps onto two lines (never the card
+     overflowing, never a bin/panel stack). Closed, the wrapper is zero-width.
+       The md control never shrinks inside a header row — the wrapping header
+     moves it to its own line instead; the root's max-width then bounds it.
+     No percentage max-widths inside the content-sized root: they are cyclic
+     and defeat the sizing. */
+  .nv-del--md { flex-shrink: 0; }
+  .nv-del--inline .nv-del-panelwrap {
+    display: inline-flex;
+    min-width: 0;
+    width: 0;
+    overflow: hidden;
+  }
+  .nv-del--inline .nv-del-panel {
+    min-width: 0;
+    max-width: calc(100vw - 4rem);   /* only binds on the narrowest viewports: the question then wraps */
+    white-space: normal;
+    opacity: 0;
+    transform: translateX(-6px);
+    clip-path: inset(0 100% 0 0 round var(--radius-pill));
+    transition:
+      opacity var(--dur-pop) var(--ease-primary),
+      transform var(--dur-pop) var(--ease-primary),
+      clip-path var(--dur-pop) var(--ease-primary);
+  }
+  .nv-del--inline .nv-del-question { flex: 1 1 auto; min-width: 0; white-space: normal; overflow-wrap: break-word; line-height: 1.2; }
+  .nv-del--inline[data-state='armed'] .nv-del-panelwrap,
+  .nv-del--inline[data-state='pending'] .nv-del-panelwrap {
+    width: auto;
+    margin-left: .375rem;
+    overflow: visible;
+  }
+  .nv-del--inline[data-state='armed'] .nv-del-panel,
+  .nv-del--inline[data-state='pending'] .nv-del-panel {
+    opacity: 1;
+    transform: none;
+    clip-path: inset(0 0 0 0 round var(--radius-pill));
+  }
+
+  /* OVERLAY: anchored beside the bin, opening toward the row content (left),
+     above its row, no layout shift. */
+  .nv-del--overlay .nv-del-panelwrap { position: static; }
+  .nv-del--overlay .nv-del-panel {
+    position: absolute;
+    top: 50%;
+    right: calc(100% + .375rem);
+    z-index: 5;
+    transform-origin: right center;
+    transform: translateY(-50%) translateX(6px) scaleX(.9);
+    opacity: 0;
+    visibility: hidden;
+    box-shadow: var(--nv-sh);
+    transition:
+      opacity var(--dur-pop) var(--ease-primary),
+      transform var(--dur-pop) var(--ease-primary),
+      visibility 0s linear var(--dur-pop);
+  }
+  .nv-del--overlay[data-state='armed'] .nv-del-panel,
+  .nv-del--overlay[data-state='pending'] .nv-del-panel {
+    transform: translateY(-50%);
+    opacity: 1;
+    visibility: visible;
+    transition:
+      opacity var(--dur-pop) var(--ease-primary),
+      transform var(--dur-pop) var(--ease-primary),
+      visibility 0s;
+  }
   /* Ken-Burns drift. RETAINED as a foundation utility but NO LONGER APPLIED to
      the login photograph (R1 performance repair): continuously transforming a
      full-screen image underneath five backdrop-filter surfaces invalidates
@@ -1229,6 +1409,7 @@ table :is(.nv-glass-auth, .nv-glass-nav, .nv-glass-kpi, .nv-glass-card, .nv-glas
 @keyframes nvPulse { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
 @keyframes nvLevelPulse { 0% { transform: scale(1); opacity: .32 } 70%, 100% { transform: scale(1.9); opacity: 0 } }
 @keyframes nvSpin  { to { transform: rotate(360deg) } }
+@keyframes nvDelCheck { to { stroke-dashoffset: 0 } }
 @keyframes nvPop   { from { opacity: 0; transform: translateY(-6px) scale(.985) } to { opacity: 1; transform: none } }
 @keyframes nvSlide { from { opacity: 0; transform: translateX(26px) } to { opacity: 1; transform: none } }
 @keyframes nvIn    { from { opacity: 0; transform: translateY(22px); filter: blur(8px) } to { opacity: 1; transform: none; filter: blur(0) } }
@@ -1349,6 +1530,25 @@ body {
     animation: none !important;
     transform: none !important;
     opacity: .28 !important;
+  }
+  /* Shared DeleteButton (R13.7B2.2.2 § 9): the STATE transition is preserved —
+     the panel still opens and closes, the check still appears — but the lid
+     does not lift, the panel does not slide or grow, and the check does not
+     draw. Accessibility never depends on the animation. */
+  .nv-del-lid,
+  .nv-del-panel,
+  .nv-del-panelwrap {
+    transition: none !important;
+  }
+  .nv-del[data-state='armed'] .nv-del-lid,
+  .nv-del[data-state='pending'] .nv-del-lid {
+    transform: none !important;
+  }
+  .nv-del--overlay .nv-del-panel { transform: translateY(-50%) !important; }
+  .nv-del--inline .nv-del-panel { transform: none !important; clip-path: none !important; }
+  .nv-del-check path {
+    animation: none !important;
+    stroke-dashoffset: 0 !important;
   }
 
   /* Button hover microinteraction (R13.R2F2) — the lift itself is motion, so

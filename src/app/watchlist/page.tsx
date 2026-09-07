@@ -15,6 +15,7 @@ import { useLang } from '@/components/providers/LangProvider'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { TableCard } from '@/components/fable/TableCard'
+import { DeleteButton } from '@/components/fable/DeleteButton'
 import { Reveal } from '@/components/fable/motion'
 import type { AsyncStateKind } from '@/components/fable/AsyncState'
 import { getAllCompanies } from '@/lib/data/companies'
@@ -153,7 +154,11 @@ function WatchlistTable({
   const [removing, setRemoving] = useState<string | null>(null)
   const [removeMsg, setRemoveMsg] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
 
-  async function handleRemove(ticker: string) {
+  // R13.7B2.2.2 — invoked ONCE per confirmation by the shared DeleteButton
+  // (check pressed inside its inline panel). The request, the response check
+  // and every message are unchanged; the boolean result only tells the control
+  // whether to show its success state (true) or return to idle (false).
+  async function handleRemove(ticker: string): Promise<boolean> {
     setRemoving(ticker)
     setRemoveMsg(null)
     try {
@@ -166,13 +171,15 @@ function WatchlistTable({
       // result is: on failure the item stays, and the failure is stated.
       if (!res.ok) {
         setRemoveMsg({ type: 'err', msg: t.watchlist.removeError })
-        return
+        return false
       }
       onRemoved(ticker)
       setRemoveMsg({ type: 'ok', msg: t.watchlist.removed })
       setTimeout(() => setRemoveMsg(null), 2500)
+      return true
     } catch {
       setRemoveMsg({ type: 'err', msg: t.watchlist.networkError })
+      return false
     } finally {
       setRemoving(null)
     }
@@ -231,16 +238,20 @@ function WatchlistTable({
                   {s ? formatPct(s.ytdChangePct) : '—'}
                 </td>
                 <td className={`${CELL} text-right`}>
-                  <button
-                    type="button"
-                    onClick={() => handleRemove(item.ticker)}
-                    disabled={removing === item.ticker}
-                    className="inline-flex items-center justify-center w-6 h-6 rounded-full text-muted-fg hover:text-negative hover:bg-[var(--nv-chip)] nv-transition disabled:opacity-40"
-                    title={`${t.watchlist.removeTicker} ${item.ticker}`}
-                    aria-label={`${t.watchlist.removeTicker} ${item.ticker}`}
-                  >
-                    <span aria-hidden="true">{removing === item.ticker ? '…' : '×'}</span>
-                  </button>
+                  {/* R13.7B2.2.2 — the shared DeleteButton (bin → inline
+                      "Remove from watchlist?" → check / cross / Escape). The
+                      former single-click × had NO confirmation; this adds one
+                      in place and changes nothing about the request. One
+                      removal at a time: every other row's control is locked
+                      while one is in flight. */}
+                  <DeleteButton
+                    size="sm"
+                    layout="overlay"
+                    label={`${t.watchlist.removeTicker} ${item.ticker}`}
+                    confirmLabel={t.watchlist.confirmRemove}
+                    disabled={removing !== null}
+                    onConfirm={() => handleRemove(item.ticker)}
+                  />
                 </td>
               </tr>
             )

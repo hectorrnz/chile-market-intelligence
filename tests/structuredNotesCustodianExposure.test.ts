@@ -432,72 +432,80 @@ describe('R7.1B §38-60 — note deletion from both surfaces', () => {
     assert.ok(entries[entries.length - 1].startsWith('56,'), 'the actions column is last in the column system')
   })
 
-  it('39-40. each row has an accessible trash button that cannot navigate', () => {
-    const anchor = DASH.indexOf('aria-label={`${t.sn.delete}')
+  // R13.7B2.2.2 — the row's trash trigger and the shared dialog became ONE
+  // shared control, the DeleteButton (bin → inline question → check / cross /
+  // Escape). The assertions below follow the contract to where it lives now:
+  // the control itself is proven in tests/deleteButton.test.ts; here we assert
+  // that both surfaces adopt it and keep the same mutation.
+  it('39-40. each row has an accessible, record-naming delete control that cannot navigate', () => {
+    const anchor = DASH.indexOf('label={`${t.sn.delete}')
     const cell = DASH.slice(anchor - 500, anchor + 700)
-    assert.match(cell, /type="button"/)
+    assert.match(cell, /<DeleteButton/)
     assert.match(cell, /title=\{t\.sn\.delete\}/)
-    assert.match(cell, /aria-label=\{`\$\{t\.sn\.delete\}: \$\{n\.productName \|\| n\.isin \|\| ''\}`\}/)
-    assert.match(cell, /w-8 h-8/, 'touch target')
-    assert.match(cell, /aria-hidden="true"/, 'the icon itself is decorative')
-    // The row handler skips interactive elements, so the trash never routes.
+    assert.match(cell, /label=\{`\$\{t\.sn\.delete\}: \$\{n\.productName \|\| n\.isin \|\| ''\}`\}/)
+    assert.match(cell, /size="md"/, '32px touch target')
+    assert.match(cell, /layout="overlay"/, 'the panel floats — the row never shifts')
+    // The row handler skips interactive elements, so the control never routes —
+    // and the control stops its own clicks besides.
     assert.match(DASH, /if \(\(e\.target as HTMLElement\)\.closest\('a, button, input, label'\)\) return/)
-    // It opens the dialog; it does not delete.
-    assert.match(cell, /setPendingDelete\(n\)/)
+    assert.match(read('src/components/fable/DeleteButton.tsx'), /const stop = \(e: MouseEvent<HTMLSpanElement>\) => e\.stopPropagation\(\)/)
+    // It hands the mutation to the pre-existing handler; the cell itself never deletes.
+    assert.match(cell, /onConfirm=\{\(\) => confirmDeleteNote\(n\)\}/)
     assert.doesNotMatch(cell, /fetch\(|method: 'DELETE'/)
   })
 
-  it('41-42. both surfaces delete through the same shared destructive confirmation', () => {
+  it('41-42. both surfaces delete through the same shared control and the same endpoint', () => {
     for (const [name, src] of [['dashboard', DASH], ['detail', DETAIL]] as const) {
-      assert.match(src, /import \{ DestructiveConfirm \} from '@\/components\/fable\/ModalShell'/, `${name} uses the shared dialog`)
-      assert.match(src, /<DestructiveConfirm/, `${name} renders it`)
+      assert.match(src, /import \{ DeleteButton \} from '@\/components\/fable\/DeleteButton'/, `${name} uses the shared control`)
+      assert.match(src, /<DeleteButton/, `${name} renders it`)
+      assert.ok(!/<DestructiveConfirm/.test(src), `${name} no longer opens the dialog`)
       assert.match(src, /method: 'DELETE'/, `${name} calls the same contract`)
       assert.match(src, /\/api\/structured-notes\/\$\{[^}]+\}`, \{ method: 'DELETE' \}/, `${name} hits the same endpoint`)
-    }
-    // The confirmation identifies the real record on both surfaces. R12: the
-    // Nevada notional was removed from both descriptions — a documented
-    // private amount must not print raw in a dialog regardless of Privacy
-    // Mode; product/ISIN/issuer/allocation count identify the record.
-    for (const src of [DASH, DETAIL]) {
-      assert.ok(!/description=\{[^)]*t\.sn\.nevadaInvestment/s.test(src), 'no amount in the delete description (R12)')
-      assert.match(src, /\.filter\(Boolean\)\.join\(' · '\)/)
+      // R12 still holds: no amount reaches the control — its name carries product/ISIN only.
+      assert.ok(!/label=\{`[^`]*nevadaInvestment/.test(src), 'no amount in the delete control (R12)')
+      assert.match(src, /confirmLabel=\{t\.sn\.confirmDeleteInline\}/)
     }
   })
 
   it('43-46. cancel/Escape never mutate; confirm fires exactly once', () => {
-    const shell = read('src/components/fable/ModalShell.tsx')
-    assert.match(shell, /const firedRef = useRef\(false\)/)
-    assert.match(shell, /if \(pending \|\| firedRef\.current\) return/)
-    assert.match(shell, /firedRef\.current = true\s*\n\s*onConfirm\(\)/)
-    // Cancel/Escape route to onCancel, which only closes the dialog.
-    assert.match(shell, /useEscape\(open && canDismiss, onClose\)/)
-    assert.match(DASH, /onCancel=\{\(\) => setPendingDelete\(null\)\}/)
-    assert.match(DETAIL, /onCancel=\{\(\) => setConfirmingDelete\(false\)\}/)
-    // Pending locks the dialog and the confirm button.
-    assert.match(shell, /dismissDisabled=\{pending\}/)
-    assert.match(DASH, /pending=\{deleting\}/)
-    assert.match(DETAIL, /pending=\{deleting\}/)
+    // The gate is the shared control's PURE reducer (tests/deleteButton.test.ts
+    // proves every transition); asserted at the source here.
+    const reducer = read('src/components/fable/deleteButtonState.ts')
+    assert.match(reducer, /return !ctx\.disabled && state === 'armed' && event\.type === 'CONFIRM'/)
+    assert.match(reducer, /if \(event\.type === 'CANCEL' \|\| event\.type === 'ESCAPE'\) return 'idle'/)
+    assert.match(reducer, /case 'pending':\s*\n\s*if \(event\.type === 'RESOLVE'\) return event\.ok \? 'success' : 'idle'\s*\n\s*return 'pending'/)
+    const control = read('src/components/fable/DeleteButton.tsx')
+    assert.match(control, /if \(e\.key === 'Escape'\) cancel\('ESCAPE'\)/)
+    assert.equal((control.match(/await onConfirm\(\)/g) ?? []).length, 1, 'one invocation site')
+    // Both surfaces hand the mutation to the control; the dashboard also keeps
+    // a page-level lock so only one deletion is in flight at a time.
+    assert.match(DASH, /disabled=\{deleting\}/)
+    assert.match(DASH, /onConfirm=\{\(\) => confirmDeleteNote\(n\)\}/)
+    assert.match(DETAIL, /onConfirm=\{deleteNote\}/)
   })
 
   it('47-50. success removes the row / redirects, and both exposure aggregates recompute', () => {
-    // Dashboard: closes the dialog and reloads the book (server recomputes
-    // issuer AND custodian exposure in the same summary payload).
-    assert.match(DASH, /setPendingDelete\(null\)\s*\n\s*await load\(\)/)
+    // Dashboard: reloads the book on success (server recomputes issuer AND
+    // custodian exposure in the same summary payload).
+    const fn = DASH.slice(DASH.indexOf('async function confirmDeleteNote'), DASH.indexOf('async function handleFile'))
+    assert.match(fn, /if \(!res\.ok\) \{ setDeleteFailed\(true\); return false \}\s*\n\s*await load\(\)\s*\n\s*return true/)
     assert.match(read('src/lib/structuredNotes/dashboard.ts'), /issuerExposure: calculateIssuerExposure/)
     assert.match(read('src/lib/structuredNotes/dashboard.ts'), /custodianExposure: calculateCustodianExposure/)
     assert.match(DASH, /setSummary\(json\.summary \?\? null\)/)
     // Detail: redirects to the canonical dashboard route on success only.
-    assert.match(DETAIL, /if \(!res\.ok\) \{ setDeleteFailed\(true\); return \}\s*\n\s*router\.push\('\/structured-notes'\)/)
+    assert.match(DETAIL, /if \(!res\.ok\) \{ setDeleteFailed\(true\); return false \}\s*\n\s*router\.push\('\/structured-notes'\)/)
   })
 
   it('51. a failed deletion preserves the row and the page, and permits retry', () => {
     assert.match(DASH, /catch \{\s*\n\s*setDeleteFailed\(true\)/)
     assert.match(DETAIL, /catch \{\s*\n\s*setDeleteFailed\(true\)/)
-    // The dashboard keeps `pendingDelete` set on failure (dialog stays open,
-    // row untouched) — it is only cleared on success or cancel.
+    // The dashboard removes nothing before the response — the row survives a
+    // failure, the error is stated under the table, and the control returns to
+    // idle (returns false) so the user can retry.
     const fn = DASH.slice(DASH.indexOf('async function confirmDeleteNote'), DASH.indexOf('async function handleFile'))
-    assert.ok(!/setPendingDelete\(null\)/.test(fn.slice(0, fn.indexOf('if (!res.ok)'))), 'nothing is cleared before the response')
-    assert.match(fn, /if \(!res\.ok\) \{ setDeleteFailed\(true\); return \}/)
+    assert.ok(!/setNotes|setMetrics|load\(\)/.test(fn.slice(0, fn.indexOf('if (!res.ok)'))), 'nothing is reloaded or removed before the response')
+    assert.match(fn, /if \(!res\.ok\) \{ setDeleteFailed\(true\); return false \}/)
+    assert.match(DASH, /\{deleteFailed && <p className="mt-1 text-xs text-negative" role="alert">\{t\.sn\.deleteError\}<\/p>\}/)
     for (const src of [DASH, DETAIL]) assert.match(src, /\{t\.sn\.deleteError\}/)
   })
 
@@ -612,14 +620,16 @@ describe('R7.1B §61-68 — regression', () => {
 
   it('66. new UI is token-driven in both themes — no hardcoded colors', () => {
     const custodianCard = DASH.slice(DASH.indexOf('t.sn.exposureByCustodian') - 400, DASH.indexOf('t.sn.exposureByCustodian') + 800)
-    const trashCell = DASH.slice(DASH.indexOf('aria-label={`${t.sn.delete}') - 400, DASH.indexOf('aria-label={`${t.sn.delete}') + 800)
+    const trashCell = DASH.slice(DASH.indexOf('label={`${t.sn.delete}') - 400, DASH.indexOf('label={`${t.sn.delete}') + 800)
     const allocRow = DETAIL.slice(DETAIL.indexOf('function EntityRow'), DETAIL.indexOf('function EntityRow') + 3000)
     const custodianField = DETAIL.slice(DETAIL.indexOf('function CustodianField'), DETAIL.indexOf('function EntityRow'))
     for (const [name, block] of [['custodian card', custodianCard], ['trash cell', trashCell], ['allocation row', allocRow], ['custodian field', custodianField]] as const) {
       assert.doesNotMatch(block, /#[0-9a-fA-F]{6}\b/, `${name} must not hardcode a color`)
       assert.doesNotMatch(block, /\b(bg|text|border)-(gray|slate|zinc|emerald|red|blue)-\d{2,3}\b/, `${name} must not use a raw scale`)
     }
-    assert.match(trashCell, /color: 'var\(--negative\)'/)
+    // R13.7B2.2.2 — the trigger's destructive colour now comes from the shared
+    // control's own token rule, not from an inline style in the cell.
+    assert.match(read('src/app/globals.css'), /\.nv-del-trigger \{[^}]*color: var\(--negative\);/)
     // An unrecorded custodian is flagged with the warning token, not a hex.
     assert.match(custodianField, /var\(--warning\)/)
   })

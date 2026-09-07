@@ -164,9 +164,14 @@ describe('R12 · SN exposure cards route every amount through PrivacyValue', () 
     assert.match(DETAIL, /<PrivacyValue masked=\{masked\}>\{`\$\{nevadaInvestmentCurrency\(n\.allocations\) \?\? n\.currency\} \$\{fmtNum\(nevadaInvestment\)\}`\}<\/PrivacyValue>/)
   })
 
-  test('neither delete confirmation embeds the notional in its description', () => {
-    assert.ok(!/description=\{[^}]*nevadaInvestment/s.test(LIST.slice(LIST.indexOf('DestructiveConfirm'))), 'list delete dialog carries no amount')
-    assert.ok(!DETAIL.includes('`${t.sn.nevadaInvestment}: ${nevadaInvestmentCurrency'), 'detail delete dialog carries no amount')
+  test('neither delete control embeds the notional in its name or question', () => {
+    // R13.7B2.2.2 — both confirmations are the shared DeleteButton; its `label`
+    // and `confirmLabel` are the only text it can disclose.
+    for (const src of [LIST, DETAIL]) {
+      assert.ok(!/label=\{`[^`]*nevadaInvestment/.test(src), 'delete control carries no amount')
+      assert.ok(!/confirmLabel=\{[^}]*nevadaInvestment/.test(src), 'delete question carries no amount')
+    }
+    assert.ok(!DETAIL.includes('`${t.sn.nevadaInvestment}: ${nevadaInvestmentCurrency'), 'detail delete control carries no amount')
   })
 
   test('populated per-entity allocation inputs hide behind a reveal action while masked', () => {

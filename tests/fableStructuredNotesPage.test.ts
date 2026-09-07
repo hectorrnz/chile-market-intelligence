@@ -141,17 +141,18 @@ describe('R3.3 — canonical routing preserved', () => {
   })
 
   it('introduces no modal-only detail, duplicate route, or query-string replacement', () => {
-    // R7.1B — the page now imports the shared ModalShell module for its
-    // DestructiveConfirm delete gate. That is a confirmation dialog, not a
-    // note-detail surface, so the rule this test protects (a modal may never
-    // stand in for the canonical /structured-notes/[id] route) is unchanged
-    // and is asserted directly below instead of by the import's absence.
+    // R13.7B2.2.2 — the delete gate is the shared DeleteButton's INLINE panel,
+    // so the page renders no dialog at all. The rule this test protects (a
+    // modal may never stand in for the canonical /structured-notes/[id] route)
+    // is asserted directly.
     assert.ok(!/<ModalShell/.test(PAGE_CODE), 'no raw modal renders note detail')
+    assert.ok(!/ModalShell/.test(PAGE_CODE), 'the page no longer imports the modal module')
     assert.ok(!PAGE_CODE.includes('DetailPanel'), 'no panel replacing the canonical route')
     assert.ok(!/\?note=|noteId=/.test(PAGE_CODE), 'no query-string detail navigation')
     assert.match(PAGE_CODE, /router\.push\(`\/structured-notes\/\$\{n\.id\}`\)/, 'rows still route to the canonical page')
-    // The only dialog on this page is the destructive-confirmation gate.
-    assert.match(PAGE_CODE, /<DestructiveConfirm/)
+    // The only destructive control on this page is the shared inline one.
+    assert.match(PAGE_CODE, /<DeleteButton/)
+    assert.ok(!/<DestructiveConfirm/.test(PAGE_CODE))
   })
 })
 

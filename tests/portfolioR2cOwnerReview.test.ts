@@ -435,13 +435,17 @@ describe('R13.R2C §§ 10-12 — permissions and validation', () => {
     assert.match(NOTES_PANEL, /whitespace-pre-wrap/)
   })
 
-  test('§ 11 — deletion is confirmed in the app\'s own dialog, never window.confirm', () => {
+  test('§ 11 — deletion is confirmed in place by the shared DeleteButton, never window.confirm', () => {
     // `codeOf` — the component's own header explains the rule by naming the
     // thing it forbids, and a raw match would report that comment as a breach.
     assert.ok(!/window\.confirm/.test(codeOf(NOTES_PANEL)))
-    assert.match(NOTES_PANEL, /<ModalShell/)
-    assert.match(NOTES_PANEL, /role="alertdialog"/)
-    assert.match(NOTES_PANEL, /dismissDisabled=\{deleting\}/)
+    // R13.7B2.2.2 — the alert dialog became the platform's shared inline
+    // confirmation; the handler it invokes is the unchanged `onDelete`.
+    assert.match(NOTES_PANEL, /import \{ DeleteButton \} from '@\/components\/fable\/DeleteButton'/)
+    assert.match(codeOf(NOTES_PANEL), /<DeleteButton/)
+    assert.ok(!/<ModalShell/.test(codeOf(NOTES_PANEL)))
+    assert.match(codeOf(NOTES_PANEL), /onConfirm=\{\(\) => confirmDelete\(note\.id\)\}/)
+    assert.match(codeOf(NOTES_PANEL), /const outcome = await onDelete\(id\)/)
     for (const d of [en, es]) {
       for (const k of ['notesDelete', 'notesDeleteTitle', 'notesDeleteBody', 'notesDeleteConfirm', 'notesDeleteError'] as const) {
         assert.equal(typeof d[k], 'string', k)

@@ -39,6 +39,8 @@ const NEW_COMPONENTS = [
   'motion.tsx',
   // R9.1 — shared Fable switch primitive (Administration NOTIFICATIONS rows).
   'Switch.tsx',
+  // R13.7B2.2.2 — the platform's one shared destructive control.
+  'DeleteButton.tsx',
 ]
 
 const MODIFIED_COMPONENTS = [

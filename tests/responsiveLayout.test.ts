@@ -259,12 +259,15 @@ describe('the Settings recipient form stacks instead of overflowing', () => {
   // dialog, which CLIPS (`overflow-hidden`) rather than scrolls. An email is one
   // unbreakable token, so an unwrapped one could be cut off at 320px in the one
   // place that has to state exactly what is about to be deleted.
-  test('the confirmation dialog wraps the recipient it names', () => {
-    const el = src.slice(src.indexOf('<DestructiveConfirm'))
-    const desc = el.slice(el.indexOf('description={'), el.indexOf('confirmLabel='))
-    assert.match(desc, /<span className="break-all">\{confirming\.email\}<\/span>/)
-    assert.match(desc, /<span className="break-words"> · \{confirming\.label\}<\/span>/)
-    // The shell still keeps a viewport gutter and caps its own width.
+  test('the inline confirmation names the recipient through the row, which wraps it', () => {
+    // R13.7B2.2.2 — the dialog became the shared DeleteButton's inline panel,
+    // so there is no clipping surface any more: the row's own cells (asserted
+    // above) are the visible identification, and the control's accessible name
+    // carries the address.
+    const el = src.slice(src.indexOf('<DeleteButton'), src.indexOf('</DeleteButton>'))
+    assert.match(el, /label=\{`\$\{n\.removeFor\}: \$\{r\.email\}`\}/)
+    assert.match(el, /layout="overlay"/, 'the panel floats beside the control — the row never shifts')
+    // The shell still keeps a viewport gutter and caps its own width (it still serves non-deletion confirmations).
     const modal = read('src/components/fable/ModalShell.tsx')
     assert.match(modal, /fixed inset-0 z-\[90\] flex items-start justify-center pt-\[8vh\] px-4/)
     assert.match(modal, /sm: 'max-w-sm'/)

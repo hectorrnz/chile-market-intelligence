@@ -100,6 +100,8 @@ jobs:
         run: |
           node --test "tests/structuredNotesScheduleDisplay.test.ts"
           node --test "tests/structuredNotesOwnerPolish.test.ts"
+          node --test "tests/structuredNotesDetailLayout.test.ts"
+          node --test "tests/deleteButton.test.ts"
 
       # Every issuer parser must keep emitting autocall observations. This is
       # the defect's origin: a parser silently dropping them again would make

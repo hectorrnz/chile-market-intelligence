@@ -1124,6 +1124,13 @@ export const dict = {
       deleting: 'Deleting…',
       deleteError: 'Delete failed',
       removeEntity: 'Remove',
+      // R13.7B2.2.2 — the inline confirmation questions of the shared
+      // DeleteButton. The note question states permanence in words, as the
+      // former dialog did; the record itself is named by the page header /
+      // table row and by the trigger's accessible name.
+      confirmDeleteInline: 'Delete this note permanently?',
+      removeEntityConfirm: 'Remove this entity?',
+      underlyingsNote: 'Contractual levels fixed at the initial valuation — each barrier is its percentage of the initial level. Live market levels and distances are in the Current levels table.',
     },
     notifications: {
       bellLabel: 'Notifications',
@@ -1164,6 +1171,7 @@ export const dict = {
         cancel: 'Cancel',
         activeFor: 'Active recipient',
         removeFor: 'Remove recipient',
+        confirmRemoveInline: 'Remove this recipient?',
       },
     },
     settings: {
@@ -1720,6 +1728,7 @@ export const dict = {
       subtitle:     'Personal watchlist — tracked equities',
       addTicker:    'Add ticker',
       removeTicker: 'Remove',
+      confirmRemove: 'Remove from watchlist?',
       tickerLabel:  'Ticker',
       tickerPlaceholder: 'e.g. SQM-B',
       added:        'Added to watchlist',
@@ -1913,6 +1922,15 @@ export const dict = {
     fable: {
       kpi: {
         unavailable: 'Unavailable',
+      },
+      // R13.7B2.2.2 — the shared DeleteButton's own chrome. The trigger's name
+      // and the visible question always come from the CALLER (they must name
+      // the record); these are the two panel actions and the announced states.
+      deleteButton: {
+        confirm: 'Confirm deletion',
+        cancel: 'Cancel',
+        pending: 'Deleting…',
+        done: 'Deleted',
       },
       currentActions: {
         title: 'Current Actions',
@@ -2840,6 +2858,9 @@ export const dict = {
       deleting: 'Eliminando…',
       deleteError: 'Error al eliminar',
       removeEntity: 'Quitar',
+      confirmDeleteInline: '¿Eliminar esta nota definitivamente?',
+      removeEntityConfirm: '¿Quitar esta entidad?',
+      underlyingsNote: 'Niveles contractuales fijados en la valoración inicial — cada barrera es su porcentaje del nivel inicial. Los niveles de mercado y las distancias están en la tabla de Niveles actuales.',
     },
     notifications: {
       bellLabel: 'Notificaciones',
@@ -2877,6 +2898,7 @@ export const dict = {
         cancel: 'Cancelar',
         activeFor: 'Destinatario activo',
         removeFor: 'Eliminar destinatario',
+        confirmRemoveInline: '¿Eliminar este destinatario?',
       },
     },
     settings: {
@@ -3411,6 +3433,7 @@ export const dict = {
       subtitle:     'Lista personal de seguimiento',
       addTicker:    'Agregar ticker',
       removeTicker: 'Eliminar',
+      confirmRemove: '¿Eliminar de la watchlist?',
       tickerLabel:  'Ticker',
       tickerPlaceholder: 'ej. SQM-B',
       added:        'Agregado a watchlist',
@@ -3598,6 +3621,12 @@ export const dict = {
     fable: {
       kpi: {
         unavailable: 'No disponible',
+      },
+      deleteButton: {
+        confirm: 'Confirmar eliminación',
+        cancel: 'Cancelar',
+        pending: 'Eliminando…',
+        done: 'Eliminado',
       },
       currentActions: {
         title: 'Acciones Actuales',

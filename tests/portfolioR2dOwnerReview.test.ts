@@ -168,7 +168,10 @@ describe('R13.R2 pass 4 § 1 — Weekly Notes name the real blocker', () => {
     }
     // Multiple notes: a list keyed by each note's own id, not one textarea.
     assert.match(PANEL, /notes\.map\(\(note\) =>/)
-    assert.match(PANEL, /onDelete\(confirmId\)/)
+    // R13.7B2.2.2 — the delete is confirmed in place by the shared DeleteButton,
+    // which hands the note id to the same caller-owned `onDelete`.
+    assert.match(PANEL, /onDelete\(id\)/)
+    assert.match(PANEL, /onConfirm=\{\(\) => confirmDelete\(note\.id\)\}/)
   })
 
   test('the page carries the code through instead of collapsing it to "error"', () => {

@@ -79,7 +79,7 @@ import { TableCard } from '@/components/fable/TableCard'
 import { BarrierGauge, type BarrierMark } from '@/components/fable/BarrierGauge'
 import { SegmentedControl } from '@/components/fable/SegmentedControl'
 import { ChipButton, ChipSelect } from '@/components/fable/Chip'
-import { DestructiveConfirm } from '@/components/fable/ModalShell'
+import { DeleteButton } from '@/components/fable/DeleteButton'
 import { PrivacyValue } from '@/components/fable/PrivacyValue'
 import { usePrivacyMode } from '@/components/fable/usePrivacyMode'
 import { Reveal, Pop } from '@/components/fable/motion'
@@ -196,14 +196,15 @@ export default function StructuredNotesPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [monitoring, setMonitoring] = useState<MonitoringStatus | null>(null)
-  // R7.1B — dashboard row deletion. `pendingDelete` holds the note the trash
-  // trigger opened the shared confirmation for; nothing mutates until confirm.
+  // R7.1B / R13.7B2.2.2 — dashboard row deletion. Each row's shared
+  // DeleteButton gates the mutation with its inline confirmation; nothing
+  // mutates until its check is pressed, and `deleting` locks every row while
+  // one deletion is in flight.
   // POST-R13.6B.1 — the API reports whether THIS caller may mutate the book.
   // A module grant opens reading only; create/edit/delete are administrator-
   // only. This hides controls the API would refuse; it is presentation, never
   // protection — every mutation route re-checks, and RLS refuses regardless.
   const [canManage, setCanManage] = useState(false)
-  const [pendingDelete, setPendingDelete] = useState<StructuredNote | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [deleteFailed, setDeleteFailed] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -309,23 +310,25 @@ export default function StructuredNotesPage() {
   }
 
   /**
-   * R7.1B — deletes the note behind the open confirmation. Same contract as the
-   * detail page's action: one DELETE to /api/structured-notes/{id}, the shared
-   * destructive dialog as the only gate, and a reload on success so the table
-   * AND both exposure aggregates (issuer, custodian) recompute from the server.
-   * A failure keeps the row and the dialog so the user can retry or cancel.
+   * R7.1B / R13.7B2.2.2 — deletes one note. Invoked at most ONCE per arming by
+   * that row's shared DeleteButton (its inline check is the only gate). Same
+   * contract as the detail page's action: one DELETE to
+   * /api/structured-notes/{id}, and a reload on success so the table AND both
+   * exposure aggregates (issuer, custodian) recompute from the server. A
+   * failure keeps the row (returns false — the control goes back to idle) and
+   * states the error under the table so the user can retry.
    */
-  async function confirmDeleteNote() {
-    const note = pendingDelete
-    if (!note?.id) return
+  async function confirmDeleteNote(note: StructuredNote): Promise<boolean> {
+    if (!note.id) return false
     setDeleting(true); setDeleteFailed(false)
     try {
       const res = await fetch(`/api/structured-notes/${note.id}`, { method: 'DELETE' })
-      if (!res.ok) { setDeleteFailed(true); return }
-      setPendingDelete(null)
+      if (!res.ok) { setDeleteFailed(true); return false }
       await load()
+      return true
     } catch {
       setDeleteFailed(true)
+      return false
     } finally {
       setDeleting(false)
     }
@@ -706,7 +709,14 @@ export default function StructuredNotesPage() {
           controls={toolbar}
           state={tableState}
           stateMessage={tableState === 'empty' ? t.sn.empty : undefined}
-          footer={<TableSourceFooter source={t.sn.sourceMarket} asOf={summary?.pricesAsOf ?? null} />}
+          footer={
+            <>
+              <TableSourceFooter source={t.sn.sourceMarket} asOf={summary?.pricesAsOf ?? null} />
+              {/* R13.7B2.2.2 — a failed deletion is stated here (the row stays). */}
+              {deleteFailed && <p className="mt-1 text-xs text-negative" role="alert">{t.sn.deleteError}</p>}
+              {deleting && <p className="sr-only" role="status">{t.sn.deleting}</p>}
+            </>
+          }
         >
           <table className="w-full" style={{ fontSize: 'var(--fs-table-cell)', tableLayout: 'fixed' }}>
             <caption className="sr-only">{t.sn.tag}</caption>
@@ -833,27 +843,25 @@ export default function StructuredNotesPage() {
                     <td className={`${cellPad} text-center no-print`}>
                       <input type="checkbox" checked={isArchived(n)} disabled={calledBusy || !canManage} onChange={(e) => n.id && setCalled(n.id, e.target.checked)} title={t.sn.dashCalled} aria-label={`${t.sn.colCalled}: ${n.productName}`} />
                     </td>
-                    {/* R7.1B — icon-only delete trigger. It is a real <button>,
-                        so the row's own click handler skips it (interactive
-                        cells opt out) and it can never navigate; it only opens
-                        the shared confirmation. 32px touch target, localized
-                        accessible name naming the note, tooltip, and the
-                        global focus-visible ring. */}
+                    {/* R7.1B / R13.7B2.2.2 — the shared DeleteButton (icon-only
+                        bin, 32px touch target, localized accessible name naming
+                        the note). Its inline panel — "Delete this note
+                        permanently?" → check / cross / Escape — is the only
+                        gate; it floats beside the bin so the row never shifts.
+                        The control stops its own clicks, and the row handler
+                        skips interactive cells anyway, so it can never
+                        navigate. */}
                     <td className={`${cellPad} text-center no-print`}>
                       {canManage && (
-                      <button
-                        type="button"
-                        onClick={() => { setDeleteFailed(false); setPendingDelete(n) }}
-                        disabled={deleting}
+                      <DeleteButton
+                        size="md"
+                        layout="overlay"
+                        label={`${t.sn.delete}: ${n.productName || n.isin || ''}`}
                         title={t.sn.delete}
-                        aria-label={`${t.sn.delete}: ${n.productName || n.isin || ''}`}
-                        className="inline-flex items-center justify-center w-8 h-8 rounded-full cursor-pointer nv-transition hover:bg-surface-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                        style={{ color: 'var(--negative)' }}
-                      >
-                        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-4 h-4" aria-hidden="true">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h12M8.5 6V4.5h3V6M6 6l.7 9.2a1 1 0 0 0 1 .8h4.6a1 1 0 0 0 1-.8L14 6M8.7 9v4.3M11.3 9v4.3" />
-                        </svg>
-                      </button>
+                        confirmLabel={t.sn.confirmDeleteInline}
+                        disabled={deleting}
+                        onConfirm={() => confirmDeleteNote(n)}
+                      />
                       )}
                     </td>
                   </tr>
@@ -864,36 +872,12 @@ export default function StructuredNotesPage() {
         </TableCard>
       </Reveal>
 
-      {/* R7.1B — the SAME shared destructive-confirmation component the detail
-          page uses (ModalShell alertdialog: focus trap, Escape cancels unless
-          pending, scroll lock, focus restored to the trash trigger,
-          confirm-at-most-once). The description names the real record —
-          product, ISIN, issuer, allocation count — built only from values
-          already on this payload. R12: the Nevada notional was REMOVED from
-          the description — it is a documented private amount and the dialog
-          rendered it raw regardless of Privacy Mode; the remaining fields
-          identify the record unambiguously without disclosing an amount.
-          Deletion is permanent (hard delete), which is what the confirmation
-          says. */}
-      <DestructiveConfirm
-        open={pendingDelete !== null}
-        title={t.sn.delete}
-        description={pendingDelete ? [
-          pendingDelete.productName,
-          pendingDelete.isin,
-          pendingDelete.issuerDisplayName,
-          `${pendingDelete.allocations.filter((a) => a.active).length} ${t.sn.accountAllocations}`,
-        ].filter(Boolean).join(' · ') : undefined}
-        confirmLabel={deleting ? t.sn.deleting : t.sn.delete}
-        cancelLabel={t.sn.cancel}
-        pending={deleting}
-        onCancel={() => setPendingDelete(null)}
-        onConfirm={confirmDeleteNote}
-      >
-        <p className="text-sm text-foreground">{t.sn.confirmDelete}</p>
-        {deleting && <p className="sr-only" role="status">{t.sn.deleting}</p>}
-        {deleteFailed && <p className="mt-2 text-xs text-negative" role="alert">{t.sn.deleteError}</p>}
-      </DestructiveConfirm>
+      {/* R13.7B2.2.2 — the per-row confirmation is the shared DeleteButton's
+          inline panel (see the actions column above); the former dialog is
+          gone. The row itself names the real record — product, ISIN, issuer —
+          and the trigger's accessible name repeats it; no amount is ever
+          disclosed by the control (R12). Deletion is permanent (hard delete),
+          which is what the inline question says. */}
     </div>
   )
 }

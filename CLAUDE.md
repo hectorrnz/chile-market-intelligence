@@ -418,6 +418,33 @@ docs/                 — Project documentation
   a card-level sources footer is redundant with that. The deferred-source discovery record lives in
   `docs/data_source_status.md`, not the UI.
 
+## Delete Control Rule (R13.7B2.2.2)
+
+- **Every true deletion/removal control is the shared `DeleteButton`** (`src/components/fable/
+  DeleteButton.tsx`, state machine in `deleteButtonState.ts`): a compact bin; arming lifts the lid
+  and reveals an inline confirmation panel whose question is VISIBLE text; the check confirms (the
+  caller's handler fires at most once per arming), the cross / Escape / pressing the bin again /
+  leaving the control cancel; success shows only after the handler resolved. Interaction reference:
+  Rare UI "Delete button", rebuilt on NMI tokens with no animation library (do not add `motion` /
+  `framer-motion`).
+- **The component owns the gate, never the semantics.** `onConfirm` is the pre-existing handler
+  (same endpoint, same capability flag such as `canManage`/`canEdit`, same server-confirmed removal,
+  same refetch/redirect); it resolves `false` (or throws) on failure and the control returns to a
+  usable idle state while the caller's existing error treatment says why. Never convert a
+  server-backed deletion into a client-only state mutation, and never broaden who sees the control.
+- **Props:** `label` (REQUIRED — must name the record, e.g. `${t.sn.delete}: ${isin}`),
+  `confirmLabel` (REQUIRED visible question, e.g. "Delete this note permanently?"), `size` (`md` 32px
+  for table actions/card headers, `sm` 24px for dense rows), `layout` (`inline` grows in the flow;
+  `overlay` floats beside the bin so a table row never shifts), optional children as visible idle text.
+  Panel action names default to `t.fable.deleteButton.*`.
+- **Sites (all converted):** Structured Notes list rows and detail (note delete lives in the
+  Allocation-by-Entity card header), custom allocation-entity Remove, Watchlist ticker removal,
+  Settings notification-recipient Remove, Family Portfolio weekly-note Delete.
+- **Documented exceptions (unchanged):** the user-management "Remove access" (save with zero modules)
+  and "Disable account" confirmations are reversible lifecycle actions, not deletions — they keep
+  `DestructiveConfirm`. Compare "Clear security" / Charting "Remove metric" are selection changes.
+- Tests: `tests/deleteButton.test.ts` (pure reducer + every site) and `tests/structuredNotesDetailLayout.test.ts`.
+
 ## Number and Font Rules (Phase 2B)
 
 - **All prices, percentages, dates, macro values, multiples, and market caps use the body font — NOT `font-mono`.**

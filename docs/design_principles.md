@@ -284,6 +284,7 @@ Decorative or distracting motion remains prohibited.
 | Hover transition | 150–300ms |
 | Content pulse (currency/period/privacy change) | 430ms |
 | Barrier-gauge current-level halo (locating cue for the one data-bearing reading on a normalized track; the dot itself is static) | 2.8s loop, ring scale 1→1.9 + fade to 0, ~30% of the period fully faded — owner-approved R13.7B2.2.1 § 6 |
+| Delete control arm / disarm (state: the bin's lid lifts, the inline confirmation panel reveals; a confirmed deletion draws a check) — the shared `DeleteButton`, R13.7B2.2.2 § 4-10 | lid 260ms (`--dur-state`), panel 220ms (`--dur-pop`), check 260ms, primary easing; reduced motion keeps the state change and removes all three |
 | Login Ken-Burns (atmosphere, login only) | 60s alternate, scale 1→1.07 |
 | Login / app fade | .75s / .7s |
 
@@ -503,5 +504,13 @@ English and Spanish are both supported. All UI text comes from `src/lib/i18n.ts`
   requires an explicit product decision — the visual re-skin never justifies it on its own.
 - New shared components belong in the shared component layer with tokens, both themes, both
   languages, a reduced-motion path, and accessible semantics — before any page consumes them.
+- **Destructive controls (R13.7B2.2.2).** Every true deletion/removal action renders the shared
+  `DeleteButton` (`src/components/fable/DeleteButton.tsx`): bin → inline confirmation stating the
+  action in words → check confirms once / cross or Escape cancel; success only after the handler
+  resolved. The component owns the gate, never the semantics — endpoint, authorization, refetch
+  and navigation stay with the caller exactly as they were. Non-deletion confirmations with
+  material explanatory copy (removing platform access on save, disabling an account) keep the
+  `DestructiveConfirm` dialog. UI selection changes (clearing a Compare slot, deselecting a
+  Charting metric) are not deletions and use neither.
 - Reference material: `docs/fable-integration/01`–`06` (inventories, route/content mapping,
   implementation plan, risk register, acceptance checklist).

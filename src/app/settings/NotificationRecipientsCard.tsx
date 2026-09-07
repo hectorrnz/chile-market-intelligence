@@ -35,15 +35,17 @@
 // Two defects the R9.5 consolidation audit demonstrated, both repaired here
 // without touching a shared primitive:
 //
-//   · Focus after a confirmed removal — `ModalShell` restores focus to the
-//     control that opened the dialog, but on SUCCESS that control is the
-//     deleted row's Remove chip, which unmounts with its row. Focusing a
-//     detached node is a no-op, so focus fell to `<body>` and a keyboard user
-//     was dropped at the top of the document. Focus now lands on this section.
+//   · Focus after a confirmed removal — the Remove control returns focus to
+//     itself on cancel/failure, but on SUCCESS that control is the deleted
+//     row's, which unmounts with its row. Focusing a detached node is a no-op,
+//     so focus fell to `<body>` and a keyboard user was dropped at the top of
+//     the document. Focus now lands on this section.
 //   · Naming the destructive target at narrow widths — an email address is one
-//     unbreakable token, and the dialog clips (`overflow-hidden`) rather than
-//     scrolls, so a long address could be cut off at 320–390px in the one place
-//     that has to say exactly what is about to be deleted. It now wraps, the
+//     unbreakable token; the former dialog clipped (`overflow-hidden`) rather
+//     than scrolled, so a long address could be cut off at 320–390px in the one
+//     place that had to say exactly what was about to be deleted. R13.7B2.2.2
+//     replaced that dialog with the shared DeleteButton's INLINE confirmation,
+//     so the visible identification is the row itself, which wraps, the
 //     same way the table cell already did.
 
 import { useEffect, useId, useRef, useState } from 'react'
@@ -51,7 +53,7 @@ import { useLang } from '@/components/providers/LangProvider'
 import { TableCard } from '@/components/fable/TableCard'
 import { ChipButton } from '@/components/fable/Chip'
 import { Switch } from '@/components/fable/Switch'
-import { DestructiveConfirm } from '@/components/fable/ModalShell'
+import { DeleteButton } from '@/components/fable/DeleteButton'
 
 /** Exactly the shape `GET /api/notification-recipients` already returns. */
 interface Recipient {
@@ -111,12 +113,11 @@ export function NotificationRecipientsCard() {
   const [adding, setAdding] = useState(false)
   /** Keyed by recipient id — one row's in-flight request never disables another. */
   const [pendingIds, setPendingIds] = useState<string[]>([])
-  const [confirming, setConfirming] = useState<Recipient | null>(null)
   const [feedback, setFeedback] = useState<Feedback>(null)
   /**
    * R9.5 — bumped ONLY by a server-confirmed removal, so the focus repair below
    * can never fire for a cancelled or failed delete (where the Remove control
-   * still exists and `ModalShell`'s own restoration is correct).
+   * still exists and the DeleteButton's own focus return is correct).
    */
   const [removedSeq, setRemovedSeq] = useState(0)
 
@@ -152,12 +153,11 @@ export function NotificationRecipientsCard() {
   /**
    * R9.5 — park focus on this section after a confirmed removal.
    *
-   * `ModalShell` captures the invoking control and refocuses it on close, which
-   * is right for cancel, Escape and a failed delete. On SUCCESS the invoker was
-   * that row's Remove chip, which has just unmounted — `.focus()` on a detached
-   * node does nothing and focus falls to `<body>`. `ModalShell` is a CHILD, so
-   * its restoration effect runs before this one in the same commit and this
-   * lands last. `tabIndex={-1}` makes the section programmatically focusable
+   * Cancel, Escape and a failed delete leave focus on the row's Remove control
+   * (the shared DeleteButton returns it to its bin). On SUCCESS that control
+   * unmounts with its row — `.focus()` on a detached node does nothing and
+   * focus would fall to `<body>`, dropping a keyboard user at the top of the
+   * document. `tabIndex={-1}` makes the section programmatically focusable
    * without adding it to the tab order.
    */
   useEffect(() => {
@@ -240,9 +240,15 @@ export function NotificationRecipientsCard() {
     }
   }
 
-  async function confirmRemove() {
-    const target = confirming
-    if (!target || pendingIds.includes(target.id)) return
+  /**
+   * R13.7B2.2.2 — invoked at most ONCE per arming by the row's shared
+   * DeleteButton (its inline check). Same DELETE, same server-confirmed
+   * removal, same feedback, same per-row pending lock. The boolean result only
+   * tells the control whether to show its success state (true) or return to a
+   * usable idle state (false) — the error message itself is the feedback line.
+   */
+  async function confirmRemove(target: Recipient): Promise<boolean> {
+    if (pendingIds.includes(target.id)) return false
     setPendingIds((prev) => [...prev, target.id])
     setFeedback(null)
     try {
@@ -253,13 +259,12 @@ export function NotificationRecipientsCard() {
       setFeedback({ tone: 'success', message: n.removeSuccess, scope: 'row' })
       // Only on the confirmed-success path: the invoking control is now gone.
       setRemovedSeq((seq) => seq + 1)
+      return true
     } catch {
       setFeedback({ tone: 'error', message: n.removeError, scope: 'row' })
+      return false
     } finally {
       setPendingIds((prev) => prev.filter((id) => id !== target.id))
-      // Closed on either outcome: the feedback area sits behind the dialog, and
-      // closing is what returns focus to the Remove control that opened it.
-      setConfirming(null)
     }
   }
 
@@ -369,13 +374,21 @@ export function NotificationRecipientsCard() {
                     />
                   </td>
                   <td className="py-3 px-4 text-right">
-                    <ChipButton
-                      onClick={() => setConfirming(r)}
+                    {/* R13.7B2.2.2 — the shared DeleteButton: bin → inline
+                        "Remove this recipient?" → check confirms once / cross
+                        or Escape cancel. The accessible name carries the
+                        email, and the row itself (which wraps it) is the
+                        visible identification of the target. */}
+                    <DeleteButton
+                      size="md"
+                      layout="overlay"
+                      label={`${n.removeFor}: ${r.email}`}
+                      confirmLabel={n.confirmRemoveInline}
                       disabled={busy}
-                      aria-label={`${n.removeFor}: ${r.email}`}
+                      onConfirm={() => confirmRemove(r)}
                     >
                       {busy ? n.removing : n.remove}
-                    </ChipButton>
+                    </DeleteButton>
                   </td>
                 </tr>
               )
@@ -384,30 +397,6 @@ export function NotificationRecipientsCard() {
         </table>
       </TableCard>
 
-      {/* The shared destructive gate: confirm fires at most once per open, and
-          cancel / Escape / scrim / ✕ never mutate. Focus trap, scroll lock and
-          focus restoration stay the shared shell's contract. */}
-      <DestructiveConfirm
-        open={confirming !== null}
-        title={n.confirmRemoveTitle}
-        // R9.5 — the same value, wrapped the same way the table cell wraps it.
-        // An email is one unbreakable token and the dialog clips rather than
-        // scrolls, so at 320px an unwrapped address could be cut off in the one
-        // place that must state exactly what is about to be deleted.
-        description={
-          confirming ? (
-            <>
-              <span className="break-all">{confirming.email}</span>
-              {confirming.label ? <span className="break-words"> · {confirming.label}</span> : null}
-            </>
-          ) : undefined
-        }
-        confirmLabel={confirming && pendingIds.includes(confirming.id) ? n.removing : n.remove}
-        cancelLabel={n.cancel}
-        pending={confirming ? pendingIds.includes(confirming.id) : false}
-        onCancel={() => setConfirming(null)}
-        onConfirm={() => void confirmRemove()}
-      />
     </section>
   )
 }

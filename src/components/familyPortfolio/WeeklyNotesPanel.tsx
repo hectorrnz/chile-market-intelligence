@@ -18,9 +18,11 @@
 // Appending paragraphs into a single document would have looked the same and
 // been none of those things.
 //
-// DELETION IS A TOMBSTONE (§ 11), confirmed in the app's own alert dialog —
-// never `window.confirm`. The row is stamped and drops out of the RLS read
-// predicate; the record that a note existed and was withdrawn survives.
+// DELETION IS A TOMBSTONE (§ 11), confirmed in place by the platform's shared
+// DeleteButton (R13.7B2.2.2: bin → inline question → check / cross / Escape;
+// the handler fires at most once) — never `window.confirm`. The row is stamped
+// and drops out of the RLS read predicate; the record that a note existed and
+// was withdrawn survives.
 //
 // AUTHORIZATION IS THE SERVER'S (§ 12). `canEdit` decides only whether this
 // component draws controls; every mutation route re-derives
@@ -34,7 +36,7 @@
 // without giving them any other formatting power.
 
 import { useEffect, useRef, useState } from 'react'
-import { ModalShell } from '@/components/fable/ModalShell'
+import { DeleteButton } from '@/components/fable/DeleteButton'
 
 export interface WeeklyNoteItem {
   id: string
@@ -122,8 +124,6 @@ export function WeeklyNotesPanel({
   const [saving, setSaving] = useState(false)
   const [errorText, setErrorText] = useState<string | null>(null)
   const [savedId, setSavedId] = useState<string | null>(null)
-  const [confirmId, setConfirmId] = useState<string | null>(null)
-  const [deleting, setDeleting] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Focus the editor when it opens — a Save control with no cursor in the field
@@ -178,17 +178,18 @@ export function WeeklyNotesPanel({
     )
   }
 
-  async function confirmDelete() {
-    if (confirmId === null) return
-    setDeleting(true)
-    const outcome = await onDelete(confirmId)
-    setDeleting(false)
-    if (outcome === 'deleted') {
-      setConfirmId(null)
-      return
-    }
-    setConfirmId(null)
+  /**
+   * R13.7B2.2.2 — invoked at most ONCE per arming by the note's shared
+   * DeleteButton (its inline check). `onDelete` is the unchanged caller-owned
+   * mutation (the administrator DELETE route, server-confirmed); a failure is
+   * stated in the panel's existing error line and the control returns to idle.
+   */
+  async function confirmDelete(id: string): Promise<boolean> {
+    setErrorText(null)
+    const outcome = await onDelete(id)
+    if (outcome === 'deleted') return true
     setErrorText(labels.deleteError)
+    return false
   }
 
   const remaining = maxLength - draft.trim().length
@@ -337,13 +338,22 @@ export function WeeklyNotesPanel({
                       >
                         {labels.edit}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => setConfirmId(note.id)}
-                        className="text-muted-fg hover:text-negative nv-transition"
+                      {/* R13.7B2.2.2 — the shared DeleteButton, inline: the
+                          panel grows in this meta line (bin → "Delete note?" →
+                          check / cross / Escape); the fuller explanation the
+                          former dialog carried is the trigger's tooltip. */}
+                      <DeleteButton
+                        size="sm"
+                        layout="inline"
+                        label={labels.deleteTitle}
+                        title={labels.deleteBody}
+                        confirmLabel={labels.deleteTitle}
+                        confirmActionLabel={labels.deleteConfirm}
+                        cancelActionLabel={labels.cancel}
+                        onConfirm={() => confirmDelete(note.id)}
                       >
                         {labels.delete}
-                      </button>
+                      </DeleteButton>
                     </span>
                   )}
                 </p>
@@ -364,41 +374,6 @@ export function WeeklyNotesPanel({
         </p>
       )}
 
-      {/* Restrained confirmation in the app's OWN alert dialog (§ 11) — focus
-          trapped, Escape-dismissible, and undismissable while the request is in
-          flight. Never `window.confirm`. */}
-      <ModalShell
-        open={confirmId !== null}
-        onClose={() => setConfirmId(null)}
-        title={labels.deleteTitle}
-        description={labels.deleteBody}
-        size="sm"
-        role="alertdialog"
-        dismissDisabled={deleting}
-        footer={
-          <div className="flex items-center justify-end gap-3">
-            <button
-              type="button"
-              onClick={() => setConfirmId(null)}
-              disabled={deleting}
-              className="ui-meta text-muted-fg hover:text-foreground nv-transition"
-            >
-              {labels.cancel}
-            </button>
-            <button
-              type="button"
-              onClick={confirmDelete}
-              disabled={deleting}
-              className="inline-flex items-center h-8 px-4 rounded-full text-xs font-medium nv-transition disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ backgroundColor: 'var(--negative)', color: '#fff' }}
-            >
-              {labels.deleteConfirm}
-            </button>
-          </div>
-        }
-      >
-        <p className="text-sm text-foreground">{labels.deleteBody}</p>
-      </ModalShell>
     </section>
   )
 }

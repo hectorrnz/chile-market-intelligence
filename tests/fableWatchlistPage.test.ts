@@ -207,20 +207,32 @@ describe('Phase 5B — remove-item workflow preserved, failure no longer silent'
     assert.equal(count(src, 'aria-live="polite"'), 3, 'add feedback + remove feedback + item count')
   })
 
-  it('keeps the per-row busy state', () => {
-    assert.match(src, /disabled=\{removing === item\.ticker\}/)
-    assert.match(src, /removing === item\.ticker \? '…' : '×'/)
+  it('keeps a per-row busy state — one removal at a time, the in-flight row shows pending', () => {
+    // R13.7B2.2.2 — the shared DeleteButton renders the pending state itself
+    // (spinner + aria-busy, proven in tests/deleteButton.test.ts); the page
+    // locks every row's control while any removal is in flight.
+    assert.match(src, /const \[removing, setRemoving\] = useState<string \| null>\(null\)/)
+    assert.match(src, /disabled=\{removing !== null\}/)
+    assert.match(src, /setRemoving\(ticker\)/)
+    assert.match(src, /setRemoving\(null\)/)
   })
 
   it('keeps the remove control keyboard-operable and labelled, not a bare red glyph', () => {
-    assert.match(src, /type="button"/)
-    assert.match(src, /aria-label=\{`\$\{t\.watchlist\.removeTicker\} \$\{item\.ticker\}`\}/)
-    assert.match(src, /title=\{`\$\{t\.watchlist\.removeTicker\} \$\{item\.ticker\}`\}/)
-    assert.match(src, /aria-hidden="true">\{removing === item\.ticker \? '…' : '×'\}/)
+    // R13.7B2.2.2 — the control is the shared DeleteButton: real <button>s,
+    // the label names the ticker, the panel question is visible text.
+    assert.match(src, /import \{ DeleteButton \} from '@\/components\/fable\/DeleteButton'/)
+    assert.match(src, /label=\{`\$\{t\.watchlist\.removeTicker\} \$\{item\.ticker\}`\}/)
+    assert.match(src, /confirmLabel=\{t\.watchlist\.confirmRemove\}/)
+    assert.match(src, /onConfirm=\{\(\) => handleRemove\(item\.ticker\)\}/)
+    const component = read('src/components/fable/DeleteButton.tsx')
+    assert.match(component, /aria-label=\{label\}/)
+    assert.equal((component.match(/type="button"/g) ?? []).length, 3)
   })
 
-  it('adds no confirmation dialog where none existed', () => {
+  it('adds no modal dialog; the inline confirmation is the shared control, never window.confirm', () => {
     assert.ok(!src.includes('window.confirm'))
+    assert.ok(!src.includes('DestructiveConfirm'))
+    assert.ok(!src.includes('ModalShell'))
   })
 })
 
@@ -371,7 +383,10 @@ describe('Phase 5B — Fable visual language', () => {
   })
 
   it('uses Fable pill controls for the add workflow', () => {
-    assert.equal(count(src, 'rounded-full'), 3, 'ticker input + add button + remove control')
+    // R13.7B2.2.2 — the remove control is the shared DeleteButton, whose pill
+    // radius comes from its own CSS rule (`--radius-pill`), not a page class.
+    assert.equal(count(src, 'rounded-full'), 2, 'ticker input + add button')
+    assert.match(read('src/app/globals.css'), /\.nv-del-trigger \{[^}]*border-radius: var\(--radius-pill\);/)
     assert.match(src, /bg-\[var\(--nv-chip\)\]/)
     assert.match(src, /border-\[var\(--nv-chipbd\)\]/)
   })
