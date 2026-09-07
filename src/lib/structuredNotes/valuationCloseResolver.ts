@@ -12,8 +12,12 @@
 import type { StructuredNote, StructuredNoteUnderlying } from './types.ts'
 import { resolveValuationCloses, type DatedSnapshot, type DatedHistory, type ResolvedValuationClose } from './valuationClose.ts'
 import { DEFAULT_EXCHANGE_TIMEZONE, addIsoDays } from './marketDate.ts'
-import { getStructuredNotePriceSnapshotsForDates } from '../db/repositories/structuredNotesRepository'
-import { getYahooDailyCloses } from '../providers/market/yahooHistoryProvider'
+// Explicit `.ts` extensions (R13.7B3.1): Node's ESM resolver does not add one,
+// so an extensionless specifier here makes every reconciliation tool that
+// imports this module unrunnable under plain `node` — which is exactly how the
+// read-only runner failed in R13.7B3. Resolution only, no behaviour change.
+import { getStructuredNotePriceSnapshotsForDates } from '../db/repositories/structuredNotesRepository.ts'
+import { getYahooDailyCloses } from '../providers/market/yahooHistoryProvider.ts'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Client = any

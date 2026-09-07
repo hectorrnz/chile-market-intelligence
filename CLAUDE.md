@@ -476,6 +476,49 @@ docs/                 — Project documentation
   (`observationSchedule.ts`): active → plain; autocalled → date struck + muted + "Void after call" chip
   (Called on is the terminal event); matured → strong, never struck. The persisted maturity is untouched.
 
+## Structured Notes Reconciliation Rule (R13.7B3.1)
+
+- **A historical correction to the notes book is applied by ONE database transaction and nothing
+  else.** `public.nmi_apply_structured_note_reconciliation(jsonb)`
+  (`20260819000000_structured_notes_reconciliation_apply.sql`) inserts the missing autocall rows,
+  sets the call-date result, voids the post-call rows, corrects the note state and writes the audit
+  record — or raises and rolls every one of them back. Never write these tables one statement at a
+  time from application code: Supabase's JS client has no multi-statement transaction, and a
+  half-applied book is worse than an uncorrected one.
+- **SECURITY INVOKER, EXECUTE granted only to `service_role`, `search_path` pinned to `''`, and no
+  dynamic SQL anywhere.** `service_role` already holds every privilege the writes need and bypasses
+  RLS, so a DEFINER function would be standing privilege escalation bought for nothing. No packet
+  value ever becomes an identifier.
+- **The RPC is an APPLY mechanism, never a second decision engine.** It reads no price, evaluates no
+  barrier and decides no outcome. Every contractual conclusion is made once, by `reconciliation.ts`,
+  and shipped to it as a packet built by `reconciliationPacket.ts`. Two engines that could disagree
+  would be worse than one.
+- **The packet asserts its own pre-state.** Each note row is locked `for update`, then its status,
+  `archived_at`, every cancel target's status, every preserved row's status and the absence of each
+  row to insert are verified before anything mutates. A packet generated against state that has
+  since moved is refused whole — it never partially adapts.
+- **Identity and idempotency are database-enforced.** `(note_id, observation_type, valuation_date)`
+  is unique, so a contractual test cannot be written twice for one date; and one `operationId` maps
+  to exactly one `backfill` audit row in `structured_note_monitoring_runs`, so a retry returns
+  `already_applied` and two concurrent applies cannot both commit (a transaction-scoped advisory
+  lock serializes them; the unique index is the backstop). Reusing an id with different content is
+  refused, not treated as a retry.
+- **Settlement is never persisted** (no `settlement_status` column exists, and the RPC writes no
+  notional): it stays derived from call status + contractual redemption date + as-of date. The
+  packet carries it for audit only. **Historical-correction notifications stay OUTSIDE the
+  transaction** — a notification failure must never roll back a correct book.
+- **Tooling:** `scripts/reconcile/structuredNotesReconcile.ts` reports (read-only by construction);
+  `scripts/reconcile/applyStructuredNotesReconciliation.ts` applies. Validate-only is the default;
+  applying additionally requires `--apply`, `--operation-id`, `--actor`, `--expect-project-ref`
+  matching the configured project, and `--confirm APPLY-RECONCILIATION`. It performs exactly one
+  RPC call and never falls back to sequential writes. Both run under plain `node` — **relative
+  imports in this tooling's closure must carry an explicit `.ts` extension**, or Node's ESM resolver
+  rejects them at runtime (a committed tool once could not be run at all for this reason).
+- Tests: `tests/structuredNotesReconciliationApply.test.ts` (packet derivation, deterministic hash,
+  safety gate, migration posture) and
+  `supabase/tests/database/structured_notes_reconciliation_apply_test.sql` (real PostgreSQL:
+  atomicity via a deliberately LATE failure, idempotency, staleness, authorization).
+
 ## Number and Font Rules (Phase 2B)
 
 - **All prices, percentages, dates, macro values, multiples, and market caps use the body font — NOT `font-mono`.**

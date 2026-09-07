@@ -10,19 +10,23 @@
 // has read. Making the apply path merely "hard to reach" would still leave it
 // reachable by accident; making it absent does not.
 //
-// Usage:
-//   npx tsx scripts/reconcile/structuredNotesReconcile.ts
-//   npx tsx scripts/reconcile/structuredNotesReconcile.ts --isin XS3164820824
-//   npx tsx scripts/reconcile/structuredNotesReconcile.ts --json > report.json
-//   npx tsx scripts/reconcile/structuredNotesReconcile.ts --as-of 2026-09-02
+// Usage (plain `node` — Node 24 strips the types; no extra runner needed):
+//   node scripts/reconcile/structuredNotesReconcile.ts
+//   node scripts/reconcile/structuredNotesReconcile.ts --isin XS3164820824
+//   node scripts/reconcile/structuredNotesReconcile.ts --json > report.json
+//   node scripts/reconcile/structuredNotesReconcile.ts --as-of 2026-09-02
 
 // @next/env is CJS. Resolved at runtime and tolerant of both interop shapes so
 // the tool runs identically under `node --experimental-strip-types` and `tsx`.
 import * as nextEnvNs from '@next/env'
 import { createClient } from '@supabase/supabase-js'
-import { listStructuredNotes } from '../../src/lib/db/repositories/structuredNotesRepository'
-import { resolveNoteValuationCloses } from '../../src/lib/structuredNotes/valuationCloseResolver'
-import { reconcileNote, summarizeReconciliation, contractualAutocallSchedule, type NoteReconciliation } from '../../src/lib/structuredNotes/reconciliation'
+// Explicit `.ts` extensions (R13.7B3.1). This tool used to document a `tsx`
+// runner, which is not a dependency of this repository, and plain `node`
+// rejected these specifiers outright — so the runner could not actually be run
+// as committed. Resolution only: no financial logic in this file changed.
+import { listStructuredNotes } from '../../src/lib/db/repositories/structuredNotesRepository.ts'
+import { resolveNoteValuationCloses } from '../../src/lib/structuredNotes/valuationCloseResolver.ts'
+import { reconcileNote, summarizeReconciliation, contractualAutocallSchedule, type NoteReconciliation } from '../../src/lib/structuredNotes/reconciliation.ts'
 
 /** The six notes a prior forensic audit flagged. Listed FIRST for review convenience — never treated as evidence: each is independently re-proved below, and may come back `not_called`. */
 const REVIEW_SET = ['XS3288738696', 'XS3288776431', 'XS3165117832', 'XS3165032924', 'XS3164820824', 'XS3164749858']
