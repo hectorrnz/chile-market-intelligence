@@ -55,7 +55,9 @@ const LEVELS = ROW2.slice(ROW2.indexOf('title={t.sn.currentPrices}'), ROW2.index
 /** The shared DeleteButton CSS layer and its reduced-motion block. */
 const DEL_LAYER = CSS.slice(CSS.indexOf('Shared DeleteButton (R13.7B2.2.2'), CSS.indexOf('/* Fit table (R13.7B2.2.3'))
 const FIT_LAYER = CSS.slice(CSS.indexOf('/* Fit table (R13.7B2.2.3'), CSS.indexOf('/* Ken-Burns drift.'))
-const STACK_MEDIA = FIT_LAYER.slice(FIT_LAYER.indexOf('@media (max-width: 47.9375rem)'))
+// R13.7B2.2.4: the stacked mode is a CONTAINER query on `.nv-tbl-fit-host`
+// (the table stacks when ITS CARD is too narrow, not when the viewport is).
+const STACK_MEDIA = FIT_LAYER.slice(FIT_LAYER.indexOf('@container (max-width: 519px)'))
 const TIMELINE = DETAIL.slice(DETAIL.indexOf('const maturityMode ='), DETAIL.indexOf('const thBase ='))
 
 const px = (rem: string) => Number(rem.replace('rem', ''))
@@ -179,7 +181,7 @@ describe('R13.7B2.2.3 § 3-7 — Current levels & distance to barrier has no hor
   it('F · the card declares no horizontal-scroll contract: no minWidth, a fixed-layout fit table instead', () => {
     assert.ok(LEVELS.length > 0)
     assert.match(ROW2, /<TableCard\s+title=\{t\.sn\.currentPrices\}\s+className="h-full"\s+footer=/, 'no minWidth prop on the current-levels TableCard')
-    assert.doesNotMatch(LEVELS, /minWidth/)
+    assert.doesNotMatch(code(LEVELS), /minWidth/)
     assert.match(LEVELS, /<table className="nv-tbl-fit nv-tbl-fit--stack" style=\{\{ fontSize: 'var\(--fs-table-cell\)' \}\}>/)
     assert.match(FIT_LAYER, /\.nv-tbl-fit \{ table-layout: fixed; width: 100%; border-collapse: collapse; \}/)
   })
@@ -188,8 +190,11 @@ describe('R13.7B2.2.3 § 3-7 — Current levels & distance to barrier has no hor
     assert.doesNotMatch(LEVELS, /style=\{\{ minWidth: 190 \}\}/, 'the gauge header no longer forces 190px')
     assert.doesNotMatch(code(LEVELS), /overflow-x|w-full/)
     assert.equal((DETAIL.match(/minWidth=\{680\}/g) ?? []).length, 1, 'the schedule keeps its in-card scroll')
-    assert.match(ROW2, /<TableCard\s+title=\{t\.sn\.underlyings\}\s+className="h-full"\s+minWidth=\{560\}/, 'the underlyings table keeps its in-card scroll')
-    assert.equal((DETAIL.match(/nv-tbl-fit nv-tbl-fit--stack/g) ?? []).length, 1, 'exactly one fit table on the page')
+    // R13.7B2.2.4 (INVERTED from "the underlyings table keeps its in-card
+    // scroll"): the owner does not want that scrollbar either — Underlyings is
+    // the second fit table on the page, same layer, own column budget.
+    assert.match(ROW2, /<TableCard\s+title=\{t\.sn\.underlyings\}\s+className="h-full"\s+footer=/, 'no minWidth prop on the underlyings TableCard')
+    assert.equal((DETAIL.match(/nv-tbl-fit nv-tbl-fit--stack/g) ?? []).length, 2, 'exactly two fit tables on the page (current levels, underlyings)')
   })
 
   it('H · long headers wrap — no nowrap on the fit table\'s headers, balanced wrapping in CSS', () => {
@@ -276,8 +281,12 @@ describe('R13.7B2.2.3 § 3-7 — Current levels & distance to barrier has no hor
     // The label re-uses the section-label tokens, so it reads as a table header.
     assert.match(STACK_MEDIA, /font-size: var\(--fs-section-label\);/)
     assert.match(STACK_MEDIA, /letter-spacing: var\(--tracking-section-label\);/)
-    // Tailwind's md breakpoint (48rem) is the switch — so a 768px tablet still sees the table.
-    assert.match(FIT_LAYER, /@media \(max-width: 47\.9375rem\)/)
+    // R13.7B2.2.4: the switch is the HOST's width (a container query on
+    // .nv-tbl-fit-host, in px so the 17px root rem cannot shift it) — a 573px
+    // Current-levels card at 1024 stays a table, a 381px Underlyings card stacks.
+    assert.match(FIT_LAYER, /\.nv-tbl-fit-host \{ container-type: inline-size; \}/)
+    assert.match(FIT_LAYER, /@container \(max-width: 519px\)/)
+    assert.doesNotMatch(FIT_LAYER, /@media/, 'no viewport media query decides a fit table any more')
   })
 
   it('P · every gauge semantic from B2.2.1 survives the re-layout', () => {

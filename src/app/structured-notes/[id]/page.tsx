@@ -675,6 +675,7 @@ export default function StructuredNoteDetailPage() {
               </>
             }
           >
+            <div className="nv-tbl-fit-host">
             <table className="nv-tbl-fit nv-tbl-fit--stack" style={{ fontSize: 'var(--fs-table-cell)' }}>
               <caption className="sr-only">{t.sn.currentPrices}</caption>
               {/* Intentional column budget (sums to 100): identity 19 · gauge 17 ·
@@ -788,47 +789,71 @@ export default function StructuredNoteDetailPage() {
                 })}
               </tbody>
             </table>
+            </div>
           </TableCard>
 
           {/* Underlyings — the contractual levels (order, name, symbol, initial,
-              strike, knock-in, coupon, autocall), scrolling inside the card at
-              narrow widths exactly as every dense table does. The footer note
-              says what these levels ARE, and where the live ones are. */}
+              strike, knock-in, coupon, autocall). R13.7B2.2.4: a FIT table like
+              Current levels — no minWidth, no card-level horizontal scrollbar.
+              Eight columns of eight-character numerals cannot fit the 2fr card
+              at the 1024 two-column width (~381px) at a readable size, so the
+              fit host stacks this table into one block per underlying there
+              (every column shown under its own name) and lays it out as a table
+              from ~520px up (548px at 1440). The footer note says what these
+              levels ARE, and where the live ones are. */}
           <TableCard
             title={t.sn.underlyings}
             className="h-full"
-            minWidth={560}
             footer={<p className="ui-meta text-muted-fg">{t.sn.underlyingsNote}</p>}
           >
-            <table className="w-full" style={{ fontSize: 'var(--fs-table-cell)' }}>
+            <div className="nv-tbl-fit-host">
+            <table className="nv-tbl-fit nv-tbl-fit--stack" style={{ fontSize: 'var(--fs-table-cell)' }}>
               <caption className="sr-only">{t.sn.underlyings}</caption>
+              {/* Intentional column budget (sums to 100): order 4 · name 19 ·
+                  symbol 12 · initial 12 · strike 12 · knock-in 13 · coupon 12 ·
+                  autocall 16. Measured at the 548px 2fr width (1440) in EN and
+                  ES: every header word stays whole inside its own cell (two
+                  earlier budgets spilled "Autocall" by 9px and "Subyacentes"
+                  by 15px into a neighbour), every numeral stays on one line,
+                  and only the name cell may wrap. */}
+              <colgroup>
+                <col style={{ width: '4%' }} />
+                <col style={{ width: '19%' }} />
+                <col style={{ width: '12%' }} />
+                <col style={{ width: '12%' }} />
+                <col style={{ width: '12%' }} />
+                <col style={{ width: '13%' }} />
+                <col style={{ width: '12%' }} />
+                <col style={{ width: '16%' }} />
+              </colgroup>
               <thead>
                 <tr>
-                  <th scope="col" className={`${thBase} pl-4`}>#</th>
-                  <th scope="col" className={`${thBase} text-left`}>{t.sn.colUnderlyings}</th>
-                  <th scope="col" className={thBase}>{t.sn.symbolLabel}</th>
-                  <th scope="col" className={thBase}>{t.sn.initialLevel}</th>
-                  <th scope="col" className={thBase}>{t.sn.strikeLevel}</th>
-                  <th scope="col" className={thBase}>{t.sn.colKnockIn}</th>
-                  <th scope="col" className={thBase}>{t.sn.monitoring.coupon}</th>
-                  <th scope="col" className={`${thBase} pr-4`}>{t.sn.monitoring.autocall}</th>
+                  <th scope="col" className={thFit}>#</th>
+                  <th scope="col" className={`${thFit} nv-tbl-fit-name`}>{t.sn.colUnderlyings}</th>
+                  <th scope="col" className={thFit}>{t.sn.symbolLabel}</th>
+                  <th scope="col" className={thFit}>{t.sn.initialLevel}</th>
+                  <th scope="col" className={thFit}>{t.sn.strikeLevel}</th>
+                  <th scope="col" className={thFit}>{t.sn.colKnockIn}</th>
+                  <th scope="col" className={thFit}>{t.sn.monitoring.coupon}</th>
+                  <th scope="col" className={thFit}>{t.sn.monitoring.autocall}</th>
                 </tr>
               </thead>
               <tbody>
                 {n.underlyings.map((u) => (
                   <tr key={u.underlyingOrder} className="border-b border-border last:border-0">
-                    <td className={`${cell} pl-4 ui-number`}>{u.underlyingOrder}</td>
-                    <td className={`${cell} text-left text-foreground`}>{u.underlyingName}</td>
-                    <td className={`${cell} font-mono text-xs`}>{u.yahooSymbol ?? '—'}</td>
-                    <td className={`${cell} ui-number`}>{fmtNum(u.initialLevel)}</td>
-                    <td className={`${cell} ui-number`}>{fmtNum(u.strikeLevel)}</td>
-                    <td className={`${cell} ui-number`}>{fmtNum(u.knockInBarrierLevel)}</td>
-                    <td className={`${cell} ui-number`}>{fmtNum(u.couponBarrierLevel)}</td>
-                    <td className={`${cell} pr-4 ui-number`}>{fmtNum(u.autocallBarrierLevel)}</td>
+                    <td className="ui-number" data-label="#">{u.underlyingOrder}</td>
+                    <td className="nv-tbl-fit-name text-foreground" data-label={t.sn.colUnderlyings}>{u.underlyingName}</td>
+                    <td className="font-mono text-xs" data-label={t.sn.symbolLabel}>{u.yahooSymbol ?? '—'}</td>
+                    <td className="ui-number" data-label={t.sn.initialLevel}>{fmtNum(u.initialLevel)}</td>
+                    <td className="ui-number" data-label={t.sn.strikeLevel}>{fmtNum(u.strikeLevel)}</td>
+                    <td className="ui-number" data-label={t.sn.colKnockIn}>{fmtNum(u.knockInBarrierLevel)}</td>
+                    <td className="ui-number" data-label={t.sn.monitoring.coupon}>{fmtNum(u.couponBarrierLevel)}</td>
+                    <td className="ui-number" data-label={t.sn.monitoring.autocall}>{fmtNum(u.autocallBarrierLevel)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </div>
           </TableCard>
         </div>
       </Reveal>

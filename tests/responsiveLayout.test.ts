@@ -192,9 +192,10 @@ describe('dense tables scroll inside their card', () => {
     { file: 'src/app/macro/page.tsx', minCount: 2 },
     { file: 'src/app/earnings/page.tsx', minCount: 2 },
     { file: 'src/app/compare/page.tsx', minCount: 3 },
-    // R13.7B2.2.3: the current-levels table FITS its card (fixed layout, no
-    // minWidth — `.nv-tbl-fit`), so this page delegates two, not three.
-    { file: 'src/app/structured-notes/[id]/page.tsx', minCount: 2 },
+    // R13.7B2.2.3/4: the current-levels AND underlyings tables FIT their card
+    // (fixed layout, no minWidth — `.nv-tbl-fit`), so this page delegates one
+    // (the schedule), not three.
+    { file: 'src/app/structured-notes/[id]/page.tsx', minCount: 1 },
     { file: 'src/app/page.tsx', minCount: 1 },
   ]
   // Phase 5A (Fable /stocks re-skin): a page may now satisfy this either by

@@ -1350,11 +1350,15 @@
      `minWidth`, no card-level horizontal scroll: a deterministic fixed layout
      whose column widths are declared by the table's own <colgroup>, headers
      that WRAP (balanced) instead of forcing width, word-wrapping in the
-     identity column, numerals kept on one line. Below md the SAME DOM
+     identity column, numerals kept on one line. When the table's HOST is
+     narrower than the table can honestly be (R13.7B2.2.4: a container query
+     on `.nv-tbl-fit-host`, not a viewport media query — the same table sits
+     in a 3fr card on one page and a 2fr card on another), the SAME DOM
      re-composes as one stacked block per row: every cell keeps its value and
      shows its column name from `data-label`, so no metric is hidden and
-     nothing scrolls sideways at a phone width. Padding and alignment live
-     here rather than in utilities so the stacked mode can re-compose them. */
+     nothing scrolls sideways at any width. Padding and alignment live here
+     rather than in utilities so the stacked mode can re-compose them. */
+  .nv-tbl-fit-host { container-type: inline-size; }
   .nv-tbl-fit { table-layout: fixed; width: 100%; border-collapse: collapse; }
   /* Tight horizontal padding: at the 1024 two-column width the seven header
      words that cannot break ("Underlyings", "Normalizado", "knock-in",
@@ -1372,7 +1376,13 @@
   .nv-tbl-fit .nv-tbl-fit-name { text-align: left; }
   .nv-tbl-fit td.nv-tbl-fit-name { overflow-wrap: break-word; }
   .nv-tbl-fit .ui-number { white-space: nowrap; }
-  @media (max-width: 47.9375rem) {
+  /* Stack threshold (px, not rem — container-query rem would follow the 17px
+     root): the eight-column Underlyings table needs ~520px to keep every
+     header word whole and every numeral on one line (it has 548px in the 2fr
+     card at 1440, 381px at 1024 → stacked); the seven-column Current-levels
+     table has 573px at 1024 and stays a table. Below 768px viewport every
+     card is narrower than this, so the phone behaviour is unchanged. */
+  @container (max-width: 519px) {
     .nv-tbl-fit--stack,
     .nv-tbl-fit--stack tbody,
     .nv-tbl-fit--stack tr { display: block; }

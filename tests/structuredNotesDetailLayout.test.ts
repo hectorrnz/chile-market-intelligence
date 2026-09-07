@@ -207,13 +207,14 @@ describe('R13.7B2.2.2 § 1-2 — responsive behaviour and content preservation',
     assert.ok(SCHEDULE.includes('title={t.sn.schedule}'))
     assert.ok(!/maxHeight=/.test(DETAIL), 'no TableCard maxHeight anywhere')
     assert.ok(!/overflowY|overflow-y-auto/.test(DETAIL_CODE), 'no inline vertical scroll container')
-    // Card-level HORIZONTAL containment: the schedule and the underlyings tables
-    // scroll inside their card; the current-levels table FITS its card instead
-    // (R13.7B2.2.3 § 3-5 — no minWidth, fixed layout, wrapping headers).
+    // Card-level HORIZONTAL containment: the schedule scrolls inside its card;
+    // the current-levels table (R13.7B2.2.3) and the underlyings table
+    // (R13.7B2.2.4) FIT their card instead — no minWidth, fixed layout,
+    // wrapping headers, stacked below their host's width.
     assert.equal((DETAIL.match(/minWidth=\{680\}/g) ?? []).length, 1, 'schedule only')
     assert.match(ROW2, /<TableCard\s+title=\{t\.sn\.currentPrices\}\s+className="h-full"\s+footer=/)
     assert.match(ROW2, /<table className="nv-tbl-fit nv-tbl-fit--stack"/)
-    assert.match(ROW2, /<TableCard\s+title=\{t\.sn\.underlyings\}\s+className="h-full"\s+minWidth=\{560\}/)
+    assert.match(ROW2, /<TableCard\s+title=\{t\.sn\.underlyings\}\s+className="h-full"\s+footer=/)
     assert.ok(!DETAIL.includes('<GlassSurface variant="dense">'), 'no hand-rolled dense surface — the B2.2.1 divider composition is gone')
   })
 

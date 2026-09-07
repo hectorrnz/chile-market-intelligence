@@ -486,15 +486,15 @@ describe('R4.8 — localization and accessibility', () => {
 })
 
 describe('R4.9 — responsive containment', () => {
-  it('no dense table ever scrolls the page: two scroll inside their card, the current-levels table FITS its card', () => {
+  it('no dense table ever scrolls the page: the schedule scrolls inside its card, current levels and underlyings FIT their card', () => {
     // R13.7B2.2.3 § 3-5 (INVERTED from "all three use minWidth"): the owner does
-    // not want a horizontal scrollbar on Current levels & distance to barrier,
-    // so that table is a fixed-layout fit table with no minWidth; the schedule
-    // and the underlyings tables keep TableCard's in-card scroll.
+    // not want a horizontal scrollbar on Current levels & distance to barrier;
+    // R13.7B2.2.4 removed it from Underlyings too. Both are fixed-layout fit
+    // tables with no minWidth; only the schedule keeps TableCard's in-card scroll.
     assert.equal((DETAIL.match(/minWidth=\{680\}/g) ?? []).length, 1, 'schedule TableCard only')
     assert.match(DETAIL, /<TableCard\s+title=\{t\.sn\.currentPrices\}\s+className="h-full"\s+footer=/, 'current levels: no minWidth prop')
     assert.match(DETAIL, /<table className="nv-tbl-fit nv-tbl-fit--stack"/)
-    assert.match(DETAIL, /<TableCard\s+title=\{t\.sn\.underlyings\}\s+className="h-full"\s+minWidth=\{560\}/)
+    assert.match(DETAIL, /<TableCard\s+title=\{t\.sn\.underlyings\}\s+className="h-full"\s+footer=/, 'underlyings: no minWidth prop')
     assert.ok(!DETAIL.includes('<GlassSurface variant="dense">'), 'no hand-rolled dense surface remains')
   })
 

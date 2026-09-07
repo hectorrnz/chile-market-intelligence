@@ -455,16 +455,22 @@ docs/                 — Project documentation
 - Tests: `tests/deleteButton.test.ts` (pure reducer + every site), `tests/structuredNotesDetailLayout.test.ts`
   and `tests/structuredNotesOwnerCorrections.test.ts` (layout stability, fit table, maturity legend).
 
-## Fit Table Rule (R13.7B2.2.3)
+## Fit Table Rule (R13.7B2.2.3 / B2.2.4)
 
 - A dense table the owner wants WITHOUT a card-level horizontal scrollbar uses `.nv-tbl-fit`
   (`globals.css`): `table-layout: fixed`, widths declared by the table's own `<colgroup>` (summing to
   100%), headers that WRAP (`text-wrap: balance`, no `whitespace-nowrap`), word-wrapping only in the
-  identity column, numerals on one line. Padding/alignment live in the CSS class, not utilities. Add
-  `nv-tbl-fit--stack` and a `data-label` on every `<td>` so below `md` the same DOM re-composes as one
-  block per row with each value under its column name — never hide a metric to make a table fit, and
-  never reintroduce `minWidth` on such a table. First (and so far only) use: the Structured Notes
-  detail "Current levels & distance to barrier" table. The schedule and underlyings tables keep
+  identity column, numerals on one line. Padding/alignment live in the CSS class, not utilities. Wrap
+  the table in `<div className="nv-tbl-fit-host">` (`container-type: inline-size`) and add
+  `nv-tbl-fit--stack` plus a `data-label` on every `<td>`: when the HOST is narrower than 520px
+  (R13.7B2.2.4 — a container query in px, not a viewport media query, because the same table sits in a
+  3fr card on one row and a 2fr card on another) the same DOM re-composes as one block per row with each
+  value under its column name — never hide a metric to make a table fit, and never reintroduce
+  `minWidth` on such a table. Uses: the Structured Notes detail "Current levels & distance to barrier"
+  table (573px at 1024 → table) and its "Underlyings" table (548px at 1440 → table; 381px at 1024 →
+  stacked). Column budgets are MEASURED (a header word or numeral may spill only into its own padding
+  gutter) — `tests/structuredNotesUnderlyingsFit.test.ts` renders the fit layer in headless Chrome
+  when one is installed and asserts `scrollWidth === clientWidth`. Only the schedule keeps
   TableCard's in-card scroll.
 - The lifecycle timeline's maturity step is state-aware via `maturityPresentation(status)`
   (`observationSchedule.ts`): active → plain; autocalled → date struck + muted + "Void after call" chip

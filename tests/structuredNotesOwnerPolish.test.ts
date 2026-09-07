@@ -399,9 +399,11 @@ describe('R13.7B2.2.1 § 7 — General Terms and Underlyings are one block', () 
     assert.match(block, /<TermField k=\{t\.sn\.colMaturity\} v=\{n\.maturityDate\} \/>/, 'contractual maturity is never erased')
   })
 
-  it('H · the underlyings table keeps card-level horizontal containment', () => {
-    // R13.7B2.2.2 — via TableCard's own minWidth contract (same anatomy, same 560px).
-    assert.match(block, /<TableCard\s+title=\{t\.sn\.underlyings\}\s+className="h-full"\s+minWidth=\{560\}/)
+  it('H · the underlyings table FITS its card (R13.7B2.2.4 — inverted from "keeps in-card scroll")', () => {
+    // R13.7B2.2.2 gave it TableCard's minWidth scroll; the owner then asked for
+    // no internal horizontal scrollbar at all, so it is now a fit table.
+    assert.match(block, /<TableCard\s+title=\{t\.sn\.underlyings\}\s+className="h-full"\s+footer=/)
+    assert.doesNotMatch(block, /minWidth=\{560\}/)
   })
 })
 
