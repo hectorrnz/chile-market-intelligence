@@ -12,6 +12,15 @@
 // (unchanged), body-scroll lock, and focus restored to the bell button on
 // close — mirroring the pattern `MobileNavDrawer` established in Phase 2.
 // The fetch/polling/read APIs and auth gating below are unchanged.
+//
+// R13.7 UI follow-up (Rare UI "notification bell" reference, presentation
+// only): the bell swings ONCE when the unread count RISES between polls, the
+// badge pops in and its number rolls to the new value, and at zero the badge
+// shrinks away before it unmounts. No continuous loop. Every state change is
+// driven by the SAME unreadCount the badge always showed — no new notification
+// logic, and `prefers-reduced-motion` removes all of it (globals.css § 8; the
+// component also reads the preference so it never waits on an animation that
+// will not run).
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
@@ -29,6 +38,16 @@ interface Notification {
 }
 
 const POLL_MS = 60_000
+/** Fallback so the badge can never get stuck mounted if `animationend` does not fire. */
+const BADGE_LEAVE_FALLBACK_MS = 400
+
+function badgeLabel(n: number): string {
+  return n > 99 ? '99+' : String(n)
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+}
 const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])'
 
 export function NotificationBell() {
@@ -41,6 +60,16 @@ export function NotificationBell() {
   const triggerRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const wasOpenRef = useRef(open)
+  // Presentation-only state (see header). `ring` is true for exactly one swing;
+  // `badgeLeaving` keeps the badge mounted for its shrink-out after the count
+  // reached zero. Neither changes what the badge SAYS.
+  const [ring, setRing] = useState(false)
+  const [badgeLeaving, setBadgeLeaving] = useState(false)
+  const prevCountRef = useRef<number | null>(null)
+  // The last positive count, so a badge shrinking away still shows its number
+  // (render-time previous-value pattern, never a ref write during render).
+  const [shownCount, setShownCount] = useState(0)
+  if (unreadCount > 0 && shownCount !== unreadCount) setShownCount(unreadCount)
 
   // Inline fetch (not a memoized callback invoked as the effect's top-level
   // statement) — setState only runs from inside the .then() callback, the
@@ -54,7 +83,13 @@ export function NotificationBell() {
         .then((json) => {
           if (cancelled || !json) return
           setNotifications(Array.isArray(json.notifications) ? json.notifications : [])
-          setUnreadCount(typeof json.unreadCount === 'number' ? json.unreadCount : 0)
+          const next = typeof json.unreadCount === 'number' ? json.unreadCount : 0
+          // Swing only when a notification LANDED — the count rose since the
+          // previous poll. The first load (existing unread) does not swing.
+          const prev = prevCountRef.current
+          prevCountRef.current = next
+          if (prev !== null && next > prev && !prefersReducedMotion()) setRing(true)
+          setUnreadCount(next)
         })
         .catch(() => {
           // Leave prior state — a transient fetch failure shouldn't clear the badge.
@@ -66,6 +101,21 @@ export function NotificationBell() {
   }, [signedIn])
 
   useEscape(open, () => setOpen(false))
+
+  // Badge shrink-out: when the count reaches zero, keep the badge mounted just
+  // long enough to play nvBellBadgeOut, then unmount. Under reduced motion the
+  // animation does not exist, so the badge simply unmounts at once.
+  const badgeShown = unreadCount > 0 || badgeLeaving
+  const lastPositiveRef = useRef(unreadCount)
+  useEffect(() => {
+    if (unreadCount > 0) { lastPositiveRef.current = unreadCount; return }
+    if (lastPositiveRef.current > 0 && !prefersReducedMotion()) {
+      lastPositiveRef.current = 0
+      setBadgeLeaving(true)
+      const id = setTimeout(() => setBadgeLeaving(false), BADGE_LEAVE_FALLBACK_MS)
+      return () => clearTimeout(id)
+    }
+  }, [unreadCount])
 
   // Body-scroll lock while the drawer is open.
   useEffect(() => {
@@ -122,20 +172,34 @@ export function NotificationBell() {
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="dialog"
         aria-expanded={open}
-        className="relative flex items-center justify-center w-8 h-8 rounded-full text-muted-fg hover:text-foreground hover:bg-surface-2 nv-transition"
+        data-ring={ring ? 'true' : undefined}
+        data-unread={unreadCount > 0 ? 'true' : undefined}
+        className="nv-bell relative flex items-center justify-center w-8 h-8 rounded-full text-muted-fg hover:text-foreground hover:bg-surface-2 nv-transition"
         aria-label={t.notifications.bellLabel}
         title={t.notifications.bellLabel}
       >
-        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-5 h-5">
+        <svg
+          viewBox="0 0 20 20"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.5}
+          className="nv-bell-icon w-5 h-5"
+          onAnimationEnd={() => setRing(false)}
+          aria-hidden="true"
+        >
           <path strokeLinecap="round" strokeLinejoin="round" d="M5 8a5 5 0 0 1 10 0v3.5l1.3 2.2a.8.8 0 0 1-.7 1.2H4.4a.8.8 0 0 1-.7-1.2L5 11.5V8Z" />
           <path strokeLinecap="round" d="M8.3 15.5a1.8 1.8 0 0 0 3.4 0" />
         </svg>
-        {unreadCount > 0 && (
+        {badgeShown && (
           <span
-            className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full text-[10px] leading-4 font-medium text-center"
+            className="nv-bell-badge absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full text-[10px] leading-4 font-medium text-center overflow-hidden"
             style={{ backgroundColor: 'var(--critical-fill)', color: 'var(--critical-fill-fg)' }}
+            data-leaving={unreadCount > 0 ? undefined : 'true'}
+            onAnimationEnd={(e) => { if (e.animationName === 'nvBellBadgeOut') setBadgeLeaving(false) }}
           >
-            {unreadCount > 99 ? '99+' : unreadCount}
+            {/* Keyed by value so the number rolls in when it changes. While
+                shrinking away it keeps its last shown value. */}
+            <span key={shownCount} className="nv-bell-count">{badgeLabel(shownCount)}</span>
           </span>
         )}
       </button>

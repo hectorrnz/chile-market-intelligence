@@ -968,6 +968,30 @@
     transition-duration: var(--dur-state);
     transition-timing-function: var(--ease-primary);
   }
+  /* ── Notification bell (Rare UI reference, NMI tokens) ─────────────────
+     `data-ring` is set by the component for one swing when the unread count
+     RISES, then cleared on animationend — it is never a standing state, so the
+     bell cannot loop. The badge pops in, the number rolls, and at zero the
+     badge shrinks away before it unmounts. */
+  .nv-bell-icon {
+    transform-box: fill-box;
+    transform-origin: 50% 8%;
+  }
+  .nv-bell[data-ring='true'] .nv-bell-icon {
+    animation: nvBellSwing var(--dur-nav) var(--ease-out-cubic) 1;
+  }
+  .nv-bell-badge {
+    animation: nvBellBadgeIn var(--dur-state) var(--ease-out-cubic) 1;
+    transform-origin: 50% 50%;
+  }
+  .nv-bell-badge[data-leaving='true'] {
+    animation: nvBellBadgeOut var(--dur-hover) var(--ease-primary) 1 forwards;
+  }
+  .nv-bell-count {
+    display: inline-block;
+    animation: nvBellCountIn var(--dur-hover) var(--ease-out-cubic) 1;
+  }
+
   /* Sliding pill indicator (nav rail, segmented toggles) */
   .nv-indicator {
     transition-property: transform, width;
@@ -1506,6 +1530,22 @@ table :is(.nv-glass-auth, .nv-glass-nav, .nv-glass-kpi, .nv-glass-card, .nv-glas
 @keyframes nvAuthIn   { from { opacity: 0; transform: translate3d(0, 22px, 0) } to { opacity: 1; transform: none } }
 @keyframes nvAuthFade { from { opacity: 0 } to { opacity: 1 } }
 
+/* Notification bell (R13.7 UI follow-up, Rare UI reference) — the bell swings
+   ONCE when a notification lands, hinged at its crown; the badge pops in on
+   arrival, its count rolls to the new number, and it shrinks away at zero.
+   Nothing here loops. Transform/opacity only. */
+@keyframes nvBellSwing {
+  0%   { transform: rotate(0) }
+  15%  { transform: rotate(14deg) }
+  35%  { transform: rotate(-11deg) }
+  55%  { transform: rotate(7deg) }
+  75%  { transform: rotate(-4deg) }
+  100% { transform: rotate(0) }
+}
+@keyframes nvBellBadgeIn  { from { transform: scale(.4); opacity: 0 } 70% { transform: scale(1.12); opacity: 1 } to { transform: none; opacity: 1 } }
+@keyframes nvBellBadgeOut { from { transform: scale(1); opacity: 1 } to { transform: scale(.3); opacity: 0 } }
+@keyframes nvBellCountIn  { from { transform: translateY(-.55em); opacity: 0 } to { transform: none; opacity: 1 } }
+
 /* ─────────────────────────────────────────────────────────────────────────────
    6 · BASE STYLES
 ───────────────────────────────────────────────────────────────────────────── */
@@ -1635,6 +1675,15 @@ body {
   .nv-del-check path {
     animation: none !important;
     stroke-dashoffset: 0 !important;
+  }
+
+  /* Notification bell: the swing, badge pop/shrink and count roll are removed
+     outright. The badge still appears and disappears with the count — the
+     unread signal never depends on motion. */
+  .nv-bell-icon, .nv-bell-badge, .nv-bell-count {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1 !important;
   }
 
   /* Button hover microinteraction (R13.R2F2) — the lift itself is motion, so
