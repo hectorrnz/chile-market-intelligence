@@ -313,7 +313,8 @@ describe('R4.5 — delete workflow preserved with explicit destructive treatment
     assert.match(DETAIL, /if \(!res\.ok\) \{ setDeleteFailed\(true\); return false \}/)
     // the error renders beside the control (the control itself returns to a
     // usable idle state) — never converted into a redirect or a false success
-    assert.match(DETAIL, /\{deleteFailed && <p className="mb-2 text-xs text-negative" role="alert">\{t\.sn\.deleteError\}<\/p>\}/)
+    // R13.7B2.2.3 — the failure line lives in the Allocation header's meta-line slot (same height), never shifting the card body.
+    assert.match(DETAIL, /\{deleteFailed\s*\? <p className="ui-meta text-negative" role="alert">\{t\.sn\.deleteError\}<\/p>/)
     assert.match(DETAIL, /\{deleting && <p className="sr-only" role="status">\{t\.sn\.deleting\}<\/p>\}/)
     assert.match(DETAIL, /catch \{\s*setDeleteFailed\(true\)\s*return false/)
   })
@@ -485,10 +486,14 @@ describe('R4.8 — localization and accessibility', () => {
 })
 
 describe('R4.9 — responsive containment', () => {
-  it('all three dense tables scroll horizontally inside their card, never the page', () => {
-    // R13.7B2.2.2 § 2 — the underlyings table is a TableCard again (right-hand
-    // card of row 2), so all three dense tables use TableCard's minWidth.
-    assert.equal((DETAIL.match(/minWidth=\{680\}/g) ?? []).length, 2, 'monitoring + schedule TableCards')
+  it('no dense table ever scrolls the page: two scroll inside their card, the current-levels table FITS its card', () => {
+    // R13.7B2.2.3 § 3-5 (INVERTED from "all three use minWidth"): the owner does
+    // not want a horizontal scrollbar on Current levels & distance to barrier,
+    // so that table is a fixed-layout fit table with no minWidth; the schedule
+    // and the underlyings tables keep TableCard's in-card scroll.
+    assert.equal((DETAIL.match(/minWidth=\{680\}/g) ?? []).length, 1, 'schedule TableCard only')
+    assert.match(DETAIL, /<TableCard\s+title=\{t\.sn\.currentPrices\}\s+className="h-full"\s+footer=/, 'current levels: no minWidth prop')
+    assert.match(DETAIL, /<table className="nv-tbl-fit nv-tbl-fit--stack"/)
     assert.match(DETAIL, /<TableCard\s+title=\{t\.sn\.underlyings\}\s+className="h-full"\s+minWidth=\{560\}/)
     assert.ok(!DETAIL.includes('<GlassSurface variant="dense">'), 'no hand-rolled dense surface remains')
   })

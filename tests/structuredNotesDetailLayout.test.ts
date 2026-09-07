@@ -66,11 +66,15 @@ describe('R13.7B2.2.2 § 1 — General Terms and Allocation by Entity share one 
     const custodian = alloc.indexOf('<CustodianField')
     assert.ok(del > 0 && del < custodian, 'the DeleteButton sits in the header area, above the custodian field and the grid')
     // In the header flex row, aligned to its end, only for a caller who may manage.
-    assert.match(alloc, /\{canManage && \(\s*<DeleteButton\s+size="md"\s+layout="inline"\s+className="ml-auto no-print"/)
+    // R13.7B2.2.3 § 1-2 (INVERTED from `layout="inline"`): the overlay panel floats
+    // beside the bin over the header's own text, so the ~500px header of the 2fr
+    // card never wraps to a second line while armed and the card body never moves.
+    assert.match(alloc, /\{canManage && \(\s*<DeleteButton\s+size="md"\s+layout="overlay"\s+className="ml-auto no-print"/)
     assert.match(alloc, /onConfirm=\{deleteNote\}/)
     assert.match(alloc, /confirmLabel=\{t\.sn\.confirmDeleteInline\}/)
-    // The header still carries the section title and its explanatory note.
-    assert.match(alloc, /^\{t\.sn\.allocations\}<\/h2>\s*<p className="ui-meta text-muted-fg">\{t\.sn\.allocationsNote\}<\/p>/)
+    // The header still carries the section title and its explanatory note — the
+    // note's one-line slot doubles as the failure line, so an error never moves the body.
+    assert.match(alloc, /^\{t\.sn\.allocations\}<\/h2>[\s\S]*?\{deleteFailed\s*\? <p className="ui-meta text-negative" role="alert">\{t\.sn\.deleteError\}<\/p>\s*: <p className="ui-meta text-muted-fg">\{t\.sn\.allocationsNote\}<\/p>\}/)
     assert.match(ROW1, /<h2 className="ui-label text-muted-fg">\{t\.sn\.allocations\}<\/h2>/)
     // Not visually dominant: the shared trigger is a chip-material pill, not a filled red button.
     assert.match(CSS, /\.nv-del--md \.nv-del-trigger \{[^}]*background: var\(--nv-chip\);/)
@@ -203,8 +207,12 @@ describe('R13.7B2.2.2 § 1-2 — responsive behaviour and content preservation',
     assert.ok(SCHEDULE.includes('title={t.sn.schedule}'))
     assert.ok(!/maxHeight=/.test(DETAIL), 'no TableCard maxHeight anywhere')
     assert.ok(!/overflowY|overflow-y-auto/.test(DETAIL_CODE), 'no inline vertical scroll container')
-    // Card-level HORIZONTAL containment on all three dense tables.
-    assert.equal((DETAIL.match(/minWidth=\{680\}/g) ?? []).length, 2, 'monitoring + schedule')
+    // Card-level HORIZONTAL containment: the schedule and the underlyings tables
+    // scroll inside their card; the current-levels table FITS its card instead
+    // (R13.7B2.2.3 § 3-5 — no minWidth, fixed layout, wrapping headers).
+    assert.equal((DETAIL.match(/minWidth=\{680\}/g) ?? []).length, 1, 'schedule only')
+    assert.match(ROW2, /<TableCard\s+title=\{t\.sn\.currentPrices\}\s+className="h-full"\s+footer=/)
+    assert.match(ROW2, /<table className="nv-tbl-fit nv-tbl-fit--stack"/)
     assert.match(ROW2, /<TableCard\s+title=\{t\.sn\.underlyings\}\s+className="h-full"\s+minWidth=\{560\}/)
     assert.ok(!DETAIL.includes('<GlassSurface variant="dense">'), 'no hand-rolled dense surface — the B2.2.1 divider composition is gone')
   })
@@ -228,8 +236,8 @@ describe('R13.7B2.2.2 § 11 — the Allocation section\'s delete controls keep t
     assert.match(DETAIL_CODE, /if \(!res\.ok\) \{ setDeleteFailed\(true\); return false \}\s*router\.push\('\/structured-notes'\)\s*return true/)
     assert.match(DETAIL_CODE, /catch \{\s*setDeleteFailed\(true\)\s*return false/)
     assert.equal((DETAIL_CODE.match(/method: 'DELETE'/g) ?? []).length, 1)
-    // Failure is stated beside the control; nothing pretends the note is gone.
-    assert.match(DETAIL, /\{deleteFailed && <p className="mb-2 text-xs text-negative" role="alert">\{t\.sn\.deleteError\}<\/p>\}/)
+    // Failure is stated beside the control (in the header's meta-line slot, R13.7B2.2.3); nothing pretends the note is gone.
+    assert.match(DETAIL, /\{deleteFailed\s*\? <p className="ui-meta text-negative" role="alert">\{t\.sn\.deleteError\}<\/p>/)
     assert.match(DETAIL, /\{deleting && <p className="sr-only" role="status">\{t\.sn\.deleting\}<\/p>\}/)
   })
 

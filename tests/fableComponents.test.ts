@@ -346,7 +346,11 @@ describe('BarrierGauge', () => {
   })
 
   test('no hardcoded structured-note values (ISINs, specific barrier percentages)', () => {
-    assert.doesNotMatch(src, /XS\d{10}|65%|100%/)
+    // R13.7B2.2.3 § 4 — `maxWidth: '100%'` on the SVG is a CSS length (the gauge
+    // never exceeds its table cell), not a barrier level; a quoted CSS string is
+    // excluded, a bare "100%" in copy or logic is still forbidden.
+    assert.doesNotMatch(src, /XS\d{10}|\b65%|\b100%(?!')/)
+    assert.match(src, /style=\{\{ maxWidth: '100%', height: 'auto' \}\}/, 'the gauge scales into a narrower fixed-layout column')
   })
 
   test('no decorative 3D effects (gradient/filter/perspective)', () => {

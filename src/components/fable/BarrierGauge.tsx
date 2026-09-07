@@ -90,7 +90,10 @@ export function BarrierGauge({ current, marks, min = 0, max = 130, summary, widt
 
   return (
     <span className={`inline-flex flex-col gap-0.5 ${className}`}>
-      <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} role="img" aria-label={accessibleText}>
+      {/* R13.7B2.2.3 § 4 — the SVG never exceeds the cell that holds it: at its
+          design width where there is room, scaled down (aspect kept) inside a
+          narrower fixed-layout column. Same marks, same dot, same halo. */}
+      <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} style={{ maxWidth: '100%', height: 'auto' }} role="img" aria-label={accessibleText}>
         <line x1={0} y1={height / 2} x2={width} y2={height / 2} stroke="var(--border-strong)" strokeWidth={2.5} strokeLinecap="round" />
         {/* R13.7B2.2 § 8 — every mark names itself. An unlabelled vertical line
             on a normalized scale is unreadable: the owner review could not tell

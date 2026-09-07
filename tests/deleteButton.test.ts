@@ -244,8 +244,16 @@ describe('R13.7B2.2.2 § 9-10 — motion on tokens, removed under reduced motion
   it('U · the lid, the panel and the check animate on existing tokens only — no new duration, easing or colour', () => {
     assert.match(layer, /\.nv-del-lid \{[^}]*transition: transform var\(--dur-state\) var\(--ease-primary\)/)
     assert.match(layer, /clip-path var\(--dur-pop\) var\(--ease-primary\)/)
-    // On a narrow row the inline panel shrinks and its question wraps — the card never overflows.
-    assert.match(layer, /\.nv-del--inline \.nv-del-question \{ flex: 1 1 auto; min-width: 0; white-space: normal; overflow-wrap: break-word;/)
+    // R13.7B2.2.3 § 1-2 (INVERTED from "the question always wraps"): the question
+    // may wrap only while the panel is OPEN and has a real width to wrap in. A
+    // closed zero-width wrapper with a wrapping question wrapped one character
+    // per line — a hidden panel hundreds of pixels tall that sized the header of
+    // the card holding the idle control (the B2.2.2 Allocation defect).
+    assert.match(layer, /\.nv-del--inline \.nv-del-question \{ flex: 1 1 auto; min-width: 0; white-space: nowrap;/)
+    assert.match(layer, /\.nv-del--inline\[data-state='armed'\] \.nv-del-question,\s*\.nv-del--inline\[data-state='pending'\] \.nv-del-question \{ white-space: normal; overflow-wrap: break-word; \}/)
+    // Closed, the wrapper is a ZERO-BY-ZERO box; open, it takes its natural size.
+    assert.match(layer, /\.nv-del--inline \.nv-del-panelwrap \{\s*display: inline-flex;\s*min-width: 0;\s*width: 0;\s*height: 0;\s*overflow: hidden;\s*\}/)
+    assert.match(layer, /\.nv-del--inline\[data-state='armed'\] \.nv-del-panelwrap,\s*\.nv-del--inline\[data-state='pending'\] \.nv-del-panelwrap \{\s*width: auto;\s*height: auto;/)
     assert.match(layer, /\.nv-del--md \{ flex-shrink: 0; \}/)
     assert.match(layer, /animation: nvDelCheck var\(--dur-state\) var\(--ease-primary\) forwards/)
     // A `0s` visibility toggle is not a duration; every real duration is a token.

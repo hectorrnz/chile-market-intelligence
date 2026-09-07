@@ -347,7 +347,9 @@ describe('R13.7B2.2.1 § 6 — the current-level halo pulses, and stops under pr
   })
 
   it('G · the raw market level beside the gauge is static text', () => {
-    assert.match(DETAIL, /<td className=\{`\$\{cell\} ui-number`\}>\{d\.currentLevel !== null \? fmtNum\(d\.currentLevel\)/)
+    // R13.7B2.2.3 — the cell became a fit-table cell (its own column name in
+    // `data-label` for the stacked mode); the value is the same static text.
+    assert.match(DETAIL, /<td className="ui-number" data-label=\{t\.sn\.currentLevel\}>\{d\.currentLevel !== null \? fmtNum\(d\.currentLevel\)/)
   })
 
   it('G · the exception is recorded in the design principles, scoped to this one marker', () => {

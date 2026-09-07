@@ -70,7 +70,7 @@ import { useLang } from '@/components/providers/LangProvider'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { DEFAULT_ENTITIES } from '@/lib/structuredNotes/types'
 import { dedupeObservationsByDate } from '@/lib/structuredNotes/pdf/extractStructuredNoteTerms'
-import { buildScheduleRows, findCallDate, type ScheduleOutcome, type ScheduleRow } from '@/lib/structuredNotes/observationSchedule'
+import { buildScheduleRows, findCallDate, maturityPresentation, type ScheduleOutcome, type ScheduleRow } from '@/lib/structuredNotes/observationSchedule'
 import { mergeCoincidingMarks, markLevelKey, isCouponKnockInMark, isInitialCallMark, type GaugeMarkInput, type MergedGaugeMark } from '@/lib/structuredNotes/gaugeMarks'
 import { calculateNevadaInvestmentNotional, classifyIssueSizePlausibility, nevadaInvestmentCurrency } from '@/lib/structuredNotes/calculations'
 import type { StructuredNote, UnderlyingPrice, RiskStatus } from '@/lib/structuredNotes/types'
@@ -382,7 +382,18 @@ export default function StructuredNoteDetailPage() {
   // Fable §6 lifecycle timeline — issued ✓ · observed ✓ · next ● · maturity ○.
   // Row classification comes from the API's own data (status + the resolver's
   // nextObservation), never from client-side date math.
-  const timeline: { label: string; value: string; dot: string; strong?: boolean; title?: string }[] = [
+  // R13.7B2.2.3 § 8-11 — the maturity step is STATE-AWARE. ACTIVE: the
+  // scheduled maturity, plain. CALLED: the contractual date stays visible but
+  // is struck through, muted and labelled in words ("Void after call") — the
+  // note terminated through early redemption, so a future maturity must never
+  // look like an operative endpoint; "Called on" is the terminal event.
+  // MATURED: the maturity IS the terminal event — shown strong, never struck.
+  // Other terminal statuses (cancelled, defaulted) keep the plain display.
+  // Presentation only — the persisted maturity date is never touched.
+  const maturityMode = maturityPresentation(n.status)
+  const maturityVoid = maturityMode === 'void'
+  const maturityTerminal = maturityMode === 'terminal'
+  const timeline: { label: string; value: string; dot: string; strong?: boolean; title?: string; void?: boolean; note?: string }[] = [
     { label: t.sn.colIssued, value: n.issueDate ?? n.tradeDate ?? '—', dot: 'var(--positive)' },
     // § 4 — "Observed dates 1 / 8": evaluated valuation dates over ALL display
     // rows. The help text says what is and is not counted.
@@ -397,11 +408,23 @@ export default function StructuredNoteDetailPage() {
     isCalled
       ? { label: t.sn.calledOnLabel, value: calledOnDate ?? '—', dot: 'var(--negative)', strong: true, title: t.sn.legendCalled }
       : { label: t.sn.dashNextObs, value: nextObs ? `${nextObs.valuationDate}${nextDays !== null ? ` (${nextDays}d)` : ''}` : '—', dot: 'var(--warning)', strong: true },
-    { label: t.sn.colMaturity, value: n.maturityDate ?? '—', dot: 'var(--muted-fg)' },
+    {
+      label: t.sn.colMaturity,
+      value: n.maturityDate ?? '—',
+      dot: maturityTerminal ? 'var(--foreground)' : 'var(--muted-fg)',
+      strong: maturityTerminal,
+      void: maturityVoid,
+      note: maturityVoid ? t.sn.maturityVoidAfterCall : undefined,
+      title: maturityVoid ? t.sn.maturityVoidHelp : undefined,
+    },
   ]
 
   const thBase = 'py-2 px-2 border-b border-border ui-table-header text-muted-fg whitespace-nowrap text-center'
   const cell = 'py-2 px-2 text-center'
+  // R13.7B2.2.3 § 4 — headers of the FIT table (current levels): no
+  // `whitespace-nowrap`, no utility padding/alignment — `.nv-tbl-fit` owns
+  // those so the headers can wrap and the stacked mode can re-compose them.
+  const thFit = 'border-b border-border ui-table-header text-muted-fg'
 
   return (
     <div className="w-full">
@@ -531,20 +554,37 @@ export default function StructuredNoteDetailPage() {
 
           {/* Allocation (internal) — with the note's Delete control in its header. */}
           <GlassSurface variant="card" as="section" className="px-5 py-4 h-full flex flex-col">
+            {/* R13.7B2.2.3 § 1-2 — the header is ONE fixed-height row in every
+                DeleteButton state: title + one meta line on the left, the
+                control on the right. The card body below begins at the same
+                position whether the control is idle, armed, pending, failed or
+                reset — nothing in this header may grow when the control is used. */}
             <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 mb-3">
               <div className="min-w-0">
                 <h2 className="ui-label text-muted-fg">{t.sn.allocations}</h2>
-                <p className="ui-meta text-muted-fg">{t.sn.allocationsNote}</p>
+                {/* A failed deletion is stated in the meta line's OWN slot (one
+                    line, same height), beside the control that failed — so the
+                    message appears without moving the card body. Nothing
+                    pretends the note is gone. */}
+                {deleteFailed
+                  ? <p className="ui-meta text-negative" role="alert">{t.sn.deleteError}</p>
+                  : <p className="ui-meta text-muted-fg">{t.sn.allocationsNote}</p>}
               </div>
-              {/* § 11 — the shared DeleteButton: arm → inline "Delete this note
+              {/* § 11 — the shared DeleteButton: arm → "Delete this note
                   permanently?" → check confirms ONCE / cross or Escape cancel.
                   Rendered only for a caller the API said may manage; the
                   route re-checks and RLS refuses regardless. `deleteNote` is
-                  the unchanged mutation (DELETE, success-only redirect). */}
+                  the unchanged mutation (DELETE, success-only redirect).
+                    OVERLAY layout (R13.7B2.2.3): in the 2fr card this header is
+                  ~500px wide; the title block takes ~300px and an open inline
+                  panel plus the bin ~350px, so an inline panel could only open
+                  by wrapping the header to a second line — which moved the whole
+                  card body while armed. The overlay panel floats beside the bin
+                  over the header's own text instead, and the card never moves. */}
               {canManage && (
                 <DeleteButton
                   size="md"
-                  layout="inline"
+                  layout="overlay"
                   className="ml-auto no-print"
                   label={`${t.sn.delete}: ${n.productName || n.isin || ''}`}
                   title={t.sn.delete}
@@ -555,7 +595,6 @@ export default function StructuredNoteDetailPage() {
                 </DeleteButton>
               )}
             </div>
-            {deleteFailed && <p className="mb-2 text-xs text-negative" role="alert">{t.sn.deleteError}</p>}
             {deleting && <p className="sr-only" role="status">{t.sn.deleting}</p>}
             {/* R7.1B.1 — ONE custodian for the whole note: the accounts are
                 traded together, so custody is captured once here rather than
@@ -612,10 +651,16 @@ export default function StructuredNoteDetailPage() {
           B2.2/B2.2.1 ones, unchanged. */}
       <Reveal delayMs={130}>
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-3.5 mb-3.5 lg:items-stretch">
+          {/* R13.7B2.2.3 § 3-5 — this table FITS its card: no `minWidth`, so no
+              card-level horizontal scrollbar at 1440 or 1024. Fixed layout,
+              widths declared by the <colgroup>, long headers wrap ("Move to /
+              coupon barrier"), the gauge scales into its column, numerals stay
+              on one line. Below md the same DOM stacks one block per
+              underlying with each value under its own column name — every one
+              of the seven metrics stays visible; nothing scrolls sideways. */}
           <TableCard
             title={t.sn.currentPrices}
             className="h-full"
-            minWidth={680}
             footer={
               <>
                 {/* R13.7B2.2 § 8 — the marks are named in VISIBLE text, not only
@@ -630,17 +675,33 @@ export default function StructuredNoteDetailPage() {
               </>
             }
           >
-            <table className="w-full" style={{ fontSize: 'var(--fs-table-cell)' }}>
+            <table className="nv-tbl-fit nv-tbl-fit--stack" style={{ fontSize: 'var(--fs-table-cell)' }}>
               <caption className="sr-only">{t.sn.currentPrices}</caption>
+              {/* Intentional column budget (sums to 100): identity 19 · gauge 17 ·
+                  raw level 11 · coupon 12 · knock-in 12 · call 13 · last
+                  monitored 16. Derived from the MEASURED width of every header's
+                  longest word in EN and ES at the 1024 two-column case (~573px):
+                  each word stays whole inside its own cell box, a numeral never
+                  wraps, the stale flag has its own line, and the gauge scales
+                  into whatever is left (its full 150px from ~1200px up). */}
+              <colgroup>
+                <col style={{ width: '19%' }} />
+                <col style={{ width: '17%' }} />
+                <col style={{ width: '11%' }} />
+                <col style={{ width: '12%' }} />
+                <col style={{ width: '12%' }} />
+                <col style={{ width: '13%' }} />
+                <col style={{ width: '16%' }} />
+              </colgroup>
               <thead>
                 <tr>
-                  <th scope="col" className={`${thBase} text-left pl-4`}>{t.sn.colUnderlyings}</th>
-                  <th scope="col" className={thBase} style={{ minWidth: 190 }} title={t.sn.gaugeLegend}>{t.sn.gaugeNormalized}</th>
-                  <th scope="col" className={thBase}>{t.sn.currentLevel}</th>
-                  <th scope="col" className={thBase} title={t.sn.distanceConvention}>{t.sn.distanceCoupon}</th>
-                  <th scope="col" className={thBase} title={t.sn.distanceConvention}>{t.sn.distanceKnockIn}</th>
-                  <th scope="col" className={thBase} title={t.sn.distanceConvention}>{t.sn.distanceAutocall}</th>
-                  <th scope="col" className={`${thBase} pr-4`}>{t.sn.monitoring.lastMonitored}</th>
+                  <th scope="col" className={`${thFit} nv-tbl-fit-name`}>{t.sn.colUnderlyings}</th>
+                  <th scope="col" className={thFit} title={t.sn.gaugeLegend}>{t.sn.gaugeNormalized}</th>
+                  <th scope="col" className={thFit}>{t.sn.currentLevel}</th>
+                  <th scope="col" className={thFit} title={t.sn.distanceConvention}>{t.sn.distanceCoupon}</th>
+                  <th scope="col" className={thFit} title={t.sn.distanceConvention}>{t.sn.distanceKnockIn}</th>
+                  <th scope="col" className={thFit} title={t.sn.distanceConvention}>{t.sn.distanceAutocall}</th>
+                  <th scope="col" className={thFit}>{t.sn.monitoring.lastMonitored}</th>
                 </tr>
               </thead>
               <tbody>
@@ -665,7 +726,7 @@ export default function StructuredNoteDetailPage() {
                   const isWorst = worst !== null && d.underlyingName === worst.underlyingName
                   return (
                     <tr key={d.underlyingOrder} className="border-b border-border last:border-0">
-                      <td className={`${cell} text-left pl-4 whitespace-nowrap`}>
+                      <td className="nv-tbl-fit-name" data-label={t.sn.colUnderlyings}>
                         <span className="text-foreground" title={d.underlyingName}>{d.underlyingName}</span>
                         {/* R13.7B2.2 § 9 — "Worst" must never be read as "the
                             smaller index level". The explanation is carried by
@@ -681,7 +742,7 @@ export default function StructuredNoteDetailPage() {
                           </span>
                         )}
                       </td>
-                      <td className={cell}>
+                      <td data-label={t.sn.gaugeNormalized}>
                         {/* § 8 — the reading is NORMALIZED (100 = this
                             underlying's own initial, which is also its call
                             level), never a raw index level. The basis is stated
@@ -697,24 +758,28 @@ export default function StructuredNoteDetailPage() {
                       {/* The RAW market level always stays visible beside the
                           normalized gauge (§ 8) — they answer different
                           questions and neither replaces the other. */}
-                      <td className={`${cell} ui-number`}>{d.currentLevel !== null ? fmtNum(d.currentLevel) : <span className="text-muted-fg">{t.sn.unavailable}</span>}</td>
+                      <td className="ui-number" data-label={t.sn.currentLevel}>{d.currentLevel !== null ? fmtNum(d.currentLevel) : <span className="text-muted-fg">{t.sn.unavailable}</span>}</td>
                       {/* R13.7B2.2 § 10 — the LOCKED formula and sign are
                           unchanged (`threshold / current − 1`); each cell now
                           also carries the plain-language reading of its own
                           value, so a bare "−35.70%" is never the only thing on
                           screen. */}
-                      <td className={`${cell} ui-number font-medium`} title={moveText(t, d.distanceToCouponBarrier, t.sn.couponBarrier)} style={{ color: distanceTone(d.distanceToCouponBarrier) }}>{fmtPct(d.distanceToCouponBarrier)}</td>
-                      <td className={`${cell} ui-number font-medium`} title={moveText(t, d.distanceToKnockInBarrier, t.sn.colKnockIn)} style={{ color: distanceTone(d.distanceToKnockInBarrier) }}>{fmtPct(d.distanceToKnockInBarrier)}</td>
+                      <td className="ui-number font-medium" data-label={t.sn.distanceCoupon} title={moveText(t, d.distanceToCouponBarrier, t.sn.couponBarrier)} style={{ color: distanceTone(d.distanceToCouponBarrier) }}>{fmtPct(d.distanceToCouponBarrier)}</td>
+                      <td className="ui-number font-medium" data-label={t.sn.distanceKnockIn} title={moveText(t, d.distanceToKnockInBarrier, t.sn.colKnockIn)} style={{ color: distanceTone(d.distanceToKnockInBarrier) }}>{fmtPct(d.distanceToKnockInBarrier)}</td>
                       {/* R13.7 § 15 — the CALL level is the threshold that decides an
                           autocall, so it belongs beside the barriers rather than only
                           inside the event engine. Same metric and sign convention as
                           its neighbours; no proximity tone, because being close to a
                           call is not a risk signal the way a barrier is. */}
-                      <td className={`${cell} ui-number`} title={moveText(t, d.distanceToAutocallBarrier, t.sn.gaugeMarkAutocall)}>{fmtPct(d.distanceToAutocallBarrier)}</td>
-                      <td className={`${cell} pr-4 ui-number text-xs`}>
+                      <td className="ui-number" data-label={t.sn.distanceAutocall} title={moveText(t, d.distanceToAutocallBarrier, t.sn.gaugeMarkAutocall)}>{fmtPct(d.distanceToAutocallBarrier)}</td>
+                      <td className="text-xs" data-label={t.sn.monitoring.lastMonitored}>
                         {d.lastMonitoredDate ? (
                           <span className={d.lastMonitoredStale ? 'text-warning' : 'text-muted-fg'} title={d.lastMonitoredStale ? t.sn.monitoring.priceStale : undefined}>
-                            {d.lastMonitoredDate}{d.lastMonitoredStale ? ` ⚠ ${t.sn.monitoring.priceStale}` : ''}
+                            <span className="ui-number">{d.lastMonitoredDate}</span>
+                            {/* R13.7B2.2.3 § 4 — the stale flag sits on its own
+                                line under the date (same warning colour), so
+                                the cell never widens past its column. */}
+                            {d.lastMonitoredStale ? <span className="block break-words">⚠ {t.sn.monitoring.priceStale}</span> : null}
                           </span>
                         ) : <span className="text-muted-fg">{t.sn.monitoring.never}</span>}
                       </td>
@@ -787,7 +852,20 @@ export default function StructuredNoteDetailPage() {
                   <span key={step.label} role="listitem" className={`inline-flex items-center gap-1.5 whitespace-nowrap${step.title ? ' cursor-help' : ''}`} title={step.title}>
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: step.dot }} aria-hidden="true" />
                     <span className="ui-micro-label text-muted-fg">{step.label}</span>
-                    <span className={`ui-number text-xs ${step.strong ? 'text-foreground font-medium' : 'text-muted-fg'}`}>{step.value}</span>
+                    {/* § 9-11 — a voided step: the date struck AND muted AND
+                        named in words, so the meaning never rests on the
+                        strikethrough alone. Neutral chip material, not red —
+                        it must not compete with "Called on". */}
+                    {step.void ? (
+                      <s className="ui-number text-xs text-muted-fg line-through opacity-70">{step.value}</s>
+                    ) : (
+                      <span className={`ui-number text-xs ${step.strong ? 'text-foreground font-medium' : 'text-muted-fg'}`}>{step.value}</span>
+                    )}
+                    {step.note && (
+                      <span className="inline-flex items-center h-4 px-1.5 rounded-full ui-micro-label text-muted-fg" style={{ backgroundColor: 'var(--nv-chip)', border: '1px solid var(--nv-chipbd)' }}>
+                        {step.note}
+                      </span>
+                    )}
                   </span>
                 ))}
               </div>

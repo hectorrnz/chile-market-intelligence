@@ -438,12 +438,37 @@ docs/                 — Project documentation
   `overlay` floats beside the bin so a table row never shifts), optional children as visible idle text.
   Panel action names default to `t.fable.deleteButton.*`.
 - **Sites (all converted):** Structured Notes list rows and detail (note delete lives in the
-  Allocation-by-Entity card header), custom allocation-entity Remove, Watchlist ticker removal,
-  Settings notification-recipient Remove, Family Portfolio weekly-note Delete.
+  Allocation-by-Entity card header as `overlay` — at the 2fr width that header cannot hold its title
+  block AND an open inline panel without wrapping, which moved the card body; the failure line reuses
+  the header's one-line meta slot for the same reason), custom allocation-entity Remove, Watchlist
+  ticker removal, Settings notification-recipient Remove, Family Portfolio weekly-note Delete.
 - **Documented exceptions (unchanged):** the user-management "Remove access" (save with zero modules)
   and "Disable account" confirmations are reversible lifecycle actions, not deletions — they keep
   `DestructiveConfirm`. Compare "Clear security" / Charting "Remove metric" are selection changes.
-- Tests: `tests/deleteButton.test.ts` (pure reducer + every site) and `tests/structuredNotesDetailLayout.test.ts`.
+- **Layout stability (R13.7B2.2.3):** a resting control is exactly its trigger's size in every state.
+  The closed inline panel wrapper is a ZERO-BY-ZERO box (`width: 0; height: 0; overflow: hidden`) and
+  the closed question never wraps — a zero-width wrapper whose question could wrap produced a hidden
+  panel hundreds of pixels tall that sized the Allocation card's header until the control armed. The
+  open panel has no block padding and a `min-height` equal to its size class (2rem md / 1.5rem sm), so
+  arming never changes the control's height. Never let the confirmation panel's geometry decide where
+  a card's body begins.
+- Tests: `tests/deleteButton.test.ts` (pure reducer + every site), `tests/structuredNotesDetailLayout.test.ts`
+  and `tests/structuredNotesOwnerCorrections.test.ts` (layout stability, fit table, maturity legend).
+
+## Fit Table Rule (R13.7B2.2.3)
+
+- A dense table the owner wants WITHOUT a card-level horizontal scrollbar uses `.nv-tbl-fit`
+  (`globals.css`): `table-layout: fixed`, widths declared by the table's own `<colgroup>` (summing to
+  100%), headers that WRAP (`text-wrap: balance`, no `whitespace-nowrap`), word-wrapping only in the
+  identity column, numerals on one line. Padding/alignment live in the CSS class, not utilities. Add
+  `nv-tbl-fit--stack` and a `data-label` on every `<td>` so below `md` the same DOM re-composes as one
+  block per row with each value under its column name — never hide a metric to make a table fit, and
+  never reintroduce `minWidth` on such a table. First (and so far only) use: the Structured Notes
+  detail "Current levels & distance to barrier" table. The schedule and underlyings tables keep
+  TableCard's in-card scroll.
+- The lifecycle timeline's maturity step is state-aware via `maturityPresentation(status)`
+  (`observationSchedule.ts`): active → plain; autocalled → date struck + muted + "Void after call" chip
+  (Called on is the terminal event); matured → strong, never struck. The persisted maturity is untouched.
 
 ## Number and Font Rules (Phase 2B)
 

@@ -1226,13 +1226,18 @@
     display: inline-flex;
     align-items: center;
     gap: .375rem;
-    padding: .25rem .25rem .25rem .625rem;
+    /* R13.7B2.2.3 § 2 — no block padding: the panel's height is its size-class
+       height (below), exactly the trigger's, so arming never changes the
+       control's height and never re-sizes the row or header that holds it. */
+    padding: 0 .25rem 0 .625rem;
     border-radius: var(--radius-pill);
     border: 1px solid var(--nv-chipbd);
     background: var(--nv-tbl);
     color: var(--foreground);
     white-space: nowrap;
   }
+  .nv-del--md .nv-del-panel { min-height: 2rem; }
+  .nv-del--sm .nv-del-panel { min-height: 1.5rem; }
   .nv-del-question { font-size: .75rem; line-height: 1; padding-right: .125rem; }
   .nv-del-action {
     display: inline-flex;
@@ -1261,7 +1266,17 @@
      revealed by a left→right clip-path wipe with a short slide — so nothing
      reflows mid-animation. When the row is narrower than bin + panel, the
      PANEL shrinks and its question wraps onto two lines (never the card
-     overflowing, never a bin/panel stack). Closed, the wrapper is zero-width.
+     overflowing, never a bin/panel stack).
+       CLOSED, the wrapper is a ZERO-BY-ZERO box (R13.7B2.2.3 § 1-2). Width
+     alone was the B2.2.2 defect: a zero-WIDTH wrapper with an auto height
+     still took the height of the hidden panel inside it, and because the
+     question was allowed to wrap, in a zero-width box it wrapped one character
+     per line — a hidden panel hundreds of pixels tall that sized the header
+     of the card holding the idle control, and "corrected itself" the moment
+     the control armed. The closed wrapper now has no height, and the closed
+     question does not wrap (it may only wrap while the panel is open and has
+     a real width to wrap in), so a resting control is exactly its trigger's
+     size in every state and can never decide where a card's content begins.
        The md control never shrinks inside a header row — the wrapping header
      moves it to its own line instead; the root's max-width then bounds it.
      No percentage max-widths inside the content-sized root: they are cyclic
@@ -1271,6 +1286,7 @@
     display: inline-flex;
     min-width: 0;
     width: 0;
+    height: 0;
     overflow: hidden;
   }
   .nv-del--inline .nv-del-panel {
@@ -1285,10 +1301,13 @@
       transform var(--dur-pop) var(--ease-primary),
       clip-path var(--dur-pop) var(--ease-primary);
   }
-  .nv-del--inline .nv-del-question { flex: 1 1 auto; min-width: 0; white-space: normal; overflow-wrap: break-word; line-height: 1.2; }
+  .nv-del--inline .nv-del-question { flex: 1 1 auto; min-width: 0; white-space: nowrap; line-height: 1.2; }
+  .nv-del--inline[data-state='armed'] .nv-del-question,
+  .nv-del--inline[data-state='pending'] .nv-del-question { white-space: normal; overflow-wrap: break-word; }
   .nv-del--inline[data-state='armed'] .nv-del-panelwrap,
   .nv-del--inline[data-state='pending'] .nv-del-panelwrap {
     width: auto;
+    height: auto;
     margin-left: .375rem;
     overflow: visible;
   }
@@ -1327,6 +1346,63 @@
       transform var(--dur-pop) var(--ease-primary),
       visibility 0s;
   }
+  /* Fit table (R13.7B2.2.3 § 3-5). A dense table that must FIT its card — no
+     `minWidth`, no card-level horizontal scroll: a deterministic fixed layout
+     whose column widths are declared by the table's own <colgroup>, headers
+     that WRAP (balanced) instead of forcing width, word-wrapping in the
+     identity column, numerals kept on one line. Below md the SAME DOM
+     re-composes as one stacked block per row: every cell keeps its value and
+     shows its column name from `data-label`, so no metric is hidden and
+     nothing scrolls sideways at a phone width. Padding and alignment live
+     here rather than in utilities so the stacked mode can re-compose them. */
+  .nv-tbl-fit { table-layout: fixed; width: 100%; border-collapse: collapse; }
+  /* Tight horizontal padding: at the 1024 two-column width the seven header
+     words that cannot break ("Underlyings", "Normalizado", "knock-in",
+     "autocall", "monitored"…) need every pixel; measured in the R13.7B2.2.3
+     sweep, .25rem per side is what lets each one stay whole inside its own
+     cell box, and a header word NEVER breaks mid-word (`overflow-wrap:
+     normal`) — only the identity CELL may break a long underlying name. */
+  .nv-tbl-fit th,
+  .nv-tbl-fit td { padding: .5rem .25rem; text-align: center; }
+  .nv-tbl-fit th:first-child,
+  .nv-tbl-fit td:first-child { padding-left: .75rem; }
+  .nv-tbl-fit th:last-child,
+  .nv-tbl-fit td:last-child { padding-right: .75rem; }
+  .nv-tbl-fit th { white-space: normal; text-wrap: balance; overflow-wrap: normal; vertical-align: bottom; line-height: 1.25; }
+  .nv-tbl-fit .nv-tbl-fit-name { text-align: left; }
+  .nv-tbl-fit td.nv-tbl-fit-name { overflow-wrap: break-word; }
+  .nv-tbl-fit .ui-number { white-space: nowrap; }
+  @media (max-width: 47.9375rem) {
+    .nv-tbl-fit--stack,
+    .nv-tbl-fit--stack tbody,
+    .nv-tbl-fit--stack tr { display: block; }
+    .nv-tbl-fit--stack colgroup,
+    .nv-tbl-fit--stack thead { display: none; }
+    .nv-tbl-fit--stack tr { padding: .5rem 1rem .625rem; }
+    .nv-tbl-fit--stack td,
+    .nv-tbl-fit--stack td:first-child,
+    .nv-tbl-fit--stack td:last-child {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: .75rem;
+      padding: .1875rem 0;
+      text-align: right;
+    }
+    .nv-tbl-fit--stack td::before {
+      content: attr(data-label);
+      flex: none;
+      text-align: left;
+      font-family: var(--font-sans);
+      font-size: var(--fs-section-label);
+      font-weight: var(--fw-bold);
+      text-transform: uppercase;
+      letter-spacing: var(--tracking-section-label);
+      color: var(--muted-fg);
+    }
+    .nv-tbl-fit--stack .nv-tbl-fit-name { text-align: right; }
+  }
+
   /* Ken-Burns drift. RETAINED as a foundation utility but NO LONGER APPLIED to
      the login photograph (R1 performance repair): continuously transforming a
      full-screen image underneath five backdrop-filter surfaces invalidates

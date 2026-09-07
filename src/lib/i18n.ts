@@ -1131,6 +1131,10 @@ export const dict = {
       confirmDeleteInline: 'Delete this note permanently?',
       removeEntityConfirm: 'Remove this entity?',
       underlyingsNote: 'Contractual levels fixed at the initial valuation — each barrier is its percentage of the initial level. Live market levels and distances are in the Current levels table.',
+      // R13.7B2.2.3 § 8-11 — a called note's scheduled maturity is kept visible
+      // but marked as no longer operative; the "Called on" date is terminal.
+      maturityVoidAfterCall: 'Void after call',
+      maturityVoidHelp: 'The note was called before its scheduled maturity, so this date no longer applies and is kept for reference only. The operative terminal event is the Called on date.',
     },
     notifications: {
       bellLabel: 'Notifications',
@@ -2861,6 +2865,8 @@ export const dict = {
       confirmDeleteInline: '¿Eliminar esta nota definitivamente?',
       removeEntityConfirm: '¿Quitar esta entidad?',
       underlyingsNote: 'Niveles contractuales fijados en la valoración inicial — cada barrera es su porcentaje del nivel inicial. Los niveles de mercado y las distancias están en la tabla de Niveles actuales.',
+      maturityVoidAfterCall: 'Anulado tras la llamada',
+      maturityVoidHelp: 'La nota fue llamada antes de su vencimiento programado, por lo que esta fecha ya no aplica y se conserva solo como referencia. El evento terminal operativo es la fecha de llamada.',
     },
     notifications: {
       bellLabel: 'Notificaciones',

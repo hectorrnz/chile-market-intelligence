@@ -32,7 +32,32 @@
 // can be paid ON the date the note is called — the § 1 finding), while the
 // owner sees the schedule the way the term sheet states it.
 
-import type { StructuredNoteObservation, ObservationType } from './types.ts'
+import type { StructuredNoteObservation, ObservationType, NoteStatus } from './types.ts'
+
+/**
+ * R13.7B2.2.3 § 8-11 — how the lifecycle timeline presents the CONTRACTUAL
+ * maturity date for a note in a given status. Presentation tokens only; the
+ * persisted maturity date is never changed by anything here.
+ *
+ *   `plain`    — an active (or otherwise non-terminal-by-maturity) note: the
+ *                scheduled maturity, shown as any other future step.
+ *   `void`     — a CALLED note: the note terminated through early redemption,
+ *                so the maturity is no longer an operative endpoint. The date
+ *                stays visible (struck through, muted) and is labelled in words
+ *                ("Void after call"); "Called on" is the terminal event.
+ *   `terminal` — a MATURED note: maturity IS the terminal event, shown strong
+ *                and never struck.
+ *
+ * Cancelled / defaulted / draft notes keep the plain display: neither reading
+ * would be true of them, and inventing one would not be.
+ */
+export type MaturityPresentation = 'plain' | 'void' | 'terminal'
+
+export function maturityPresentation(status: NoteStatus): MaturityPresentation {
+  if (status === 'autocalled') return 'void'
+  if (status === 'matured') return 'terminal'
+  return 'plain'
+}
 
 /**
  * The outcome of ONE contractual test on ONE valuation date, as displayed.
