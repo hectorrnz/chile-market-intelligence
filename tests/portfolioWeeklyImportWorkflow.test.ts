@@ -676,7 +676,11 @@ describe('R13.8B — hygiene', () => {
     // Bumped by R13.8C.2 along with the plan: the preview carries new fields
     // (`publicationComparison`, the bounded difference sample) and its
     // fingerprint now covers the publication verdict.
-    assert.match(IMPORT_PREVIEW_VERSION, /^r13\.8c2\./)
+    //
+    // Bumped again by R13.8D.1: the preview reports a fifth category
+    // (historical publication restatements) and the fingerprint covers the
+    // publication id of every week it would re-publish.
+    assert.match(IMPORT_PREVIEW_VERSION, /^r13\.8d1\./)
   })
 
   test('no source file this stage touched contains a raw NUL byte', () => {

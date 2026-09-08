@@ -562,10 +562,20 @@ describe('R13.8C.2 · the import RPC refuses only a TRUE no-op', () => {
     // caller could simply lie about. The comparison reads the standing rows.
     assert.match(compareFn, /from public\.portfolio_snapshot_rows/)
     assert.match(compareFn, /from public\.portfolio_performance_rows/)
-    // And the RPC's signature is unchanged: nothing new is asked of the caller.
+    // R13.8C.2 left the RPC signature untouched. R13.8D.1 extends it by exactly
+    // ONE argument — the historical publications this import corrects — because
+    // that payload genuinely cannot be derived from anything already passed: it
+    // is a different week's rows. Every grant, revoke and `to_regprocedure`
+    // assertion in the migration must name the new signature, or the function
+    // the grants describe is not the function that exists.
     assert.match(
       migration,
-      /nmi_import_portfolio_workbook\(\s*uuid, date, uuid, text, text, jsonb, jsonb, jsonb, boolean, text, jsonb, text, jsonb\)/,
+      /nmi_import_portfolio_workbook\(\s*uuid, date, uuid, text, text, jsonb, jsonb, jsonb, boolean, text, jsonb, text, jsonb, jsonb\)/,
+    )
+    assert.doesNotMatch(
+      migration,
+      /nmi_import_portfolio_workbook\(uuid,date,uuid,text,text,jsonb,jsonb,jsonb,boolean,text,jsonb,text,jsonb\)/,
+      'no assertion may still name the pre-R13.8D.1 signature',
     )
   })
 
@@ -788,8 +798,14 @@ describe('R13.8C.2 · the pgTAP suite proves it against real PostgreSQL', () => 
 describe('R13.8C.2 · the publish route refuses only a TRUE no-op', () => {
   const code = codeOf(route)
 
-  test('it refuses on both halves, with a stable code', () => {
-    assert.match(code, /plan\.observationsToWrite\.length === 0 && !plan\.publicationChanged/)
+  test('it refuses on all three halves, with a stable code', () => {
+    // R13.8D.1 — the no-op test now has a third term. An import that appends no
+    // week and leaves this week's snapshot equivalent can still be correcting
+    // already-published weeks; refusing that as "nothing to append" would be the
+    // same class of false refusal R13.8C.2 removed, one step further back.
+    assert.match(code, /plan\.observationsToWrite\.length === 0/)
+    assert.match(code, /!plan\.publicationChanged/)
+    assert.match(code, /plan\.historicalPublicationRestatements\.length === 0/)
     assert.match(code, /fail\('nothing_to_append', 409/)
   })
 

@@ -153,6 +153,24 @@ export const dict = {
         'No week is added and no history value is overwritten, but {d} figure(s) in the current publication ({date}) differ from what is published. Applying replaces that snapshot with a new revision.',
       verdictPublicationMixedBody:
         '{c} published history value(s) would be overwritten, and {d} figure(s) in the current snapshot differ from what is published. Confirm only with a written reason.',
+      verdictRestatementTitle: 'Already-published weeks are restated',
+      verdictRestatementOnlyBody:
+        'No week is added, but {r} already-published week(s) carry {d} figure(s) that differ from what is published. Applying re-publishes those weeks at a new revision. Confirm only with a written reason.',
+      verdictRestatementAppendBody:
+        '{n} new week(s) would be appended, and {r} already-published week(s) carry {d} figure(s) that differ from what is published. Applying also re-publishes those weeks at a new revision. Confirm only with a written reason.',
+      verdictRestatementEvolutionBody:
+        '{c} published history value(s) would be overwritten, and {r} already-published week(s) carry {d} figure(s) that differ from what is published. Confirm only with a written reason.',
+      restatementTitle: 'Restated published weeks',
+      restatementNote:
+        'These weeks are already published. The workbook now states them differently — a portfolio level can be unchanged while the figures derived from it, such as net flows against weekly P&L, have moved. Only the fields that differ are listed.',
+      restatementWeek: 'Week',
+      restatementRevision: 'rev. {n}',
+      restatementProduction: 'Published',
+      restatementWorkbook: 'Workbook',
+      restatementDelta: 'Difference',
+      restatementMore: '{n} further field(s) not listed for this week.',
+      restatementFieldCount: '{n} field(s)',
+      restatementLevelUnchanged: 'Portfolio levels for these weeks are unchanged — no evolution value is overwritten.',
       publicationDiffTitle: 'Proposed changes to the current publication',
       publicationDiffNote:
         'Only the rows that differ are listed. Unchanged holdings are not shown.',
@@ -192,6 +210,12 @@ export const dict = {
         nothing_to_append:              'Nothing to apply — the workbook adds no week, corrects no published value, and its current snapshot matches what is already published. No publication was made.',
         import_refused_nothing_to_append: 'The database refused: an import that changes neither the history nor the published snapshot cannot make a publication.',
         publication_read_failed:        'The current publication could not be read, so this workbook could not be compared against it. Nothing was written — try again.',
+        historical_publication_read_failed: 'The already-published weeks could not be read, so this workbook could not be checked for restatements. Nothing was written — try again.',
+        import_refused_stale_historical_publication: 'The database refused: one of the already-published weeks gained a new revision after this preview was built. Re-preview and confirm again.',
+        import_refused_historical_publication_unchanged: 'The database refused: a week sent as restated is identical to what is already published.',
+        import_refused_historical_publication_absent: 'The database refused: a week sent as restated has no published revision to correct.',
+        import_refused_historical_publication_is_current_week: 'The database refused: the week being published cannot also be sent as a historical restatement.',
+        rollback_refused_historical_publication_superseded: 'This import cannot be reversed: a later import has already re-published one of the weeks it corrected.',
         historical_correction_required: 'This import overwrites published history. Authorize the correction and give a reason.',
         correction_reason_required:     'An authorized correction still needs a written reason.',
         invalid_observation:            'The workbook produced a value that could not be interpreted.',
@@ -2259,6 +2283,24 @@ export const dict = {
         'No se agrega ninguna semana ni se sobrescribe ningún valor histórico, pero {d} cifra(s) de la publicación vigente ({date}) difieren de lo publicado. Aplicar reemplaza esa foto con una nueva revisión.',
       verdictPublicationMixedBody:
         'Se sobrescribirían {c} valor(es) histórico(s) publicado(s), y {d} cifra(s) de la foto vigente difieren de lo publicado. Confirme solo con un motivo escrito.',
+      verdictRestatementTitle: 'Se reexpresan semanas ya publicadas',
+      verdictRestatementOnlyBody:
+        'No se agrega ninguna semana, pero {r} semana(s) ya publicada(s) tienen {d} cifra(s) que difieren de lo publicado. Aplicar vuelve a publicar esas semanas en una nueva revisión. Confirme solo con un motivo escrito.',
+      verdictRestatementAppendBody:
+        'Se agregarían {n} semana(s) nueva(s), y {r} semana(s) ya publicada(s) tienen {d} cifra(s) que difieren de lo publicado. Aplicar además vuelve a publicar esas semanas en una nueva revisión. Confirme solo con un motivo escrito.',
+      verdictRestatementEvolutionBody:
+        'Se sobrescribirían {c} valor(es) histórico(s) publicado(s), y {r} semana(s) ya publicada(s) tienen {d} cifra(s) que difieren de lo publicado. Confirme solo con un motivo escrito.',
+      restatementTitle: 'Semanas publicadas reexpresadas',
+      restatementNote:
+        'Estas semanas ya están publicadas. El libro ahora las expresa de otra forma — un nivel de portafolio puede no cambiar mientras sí se mueven las cifras derivadas de él, como los flujos netos frente al resultado semanal. Solo se listan los campos que difieren.',
+      restatementWeek: 'Semana',
+      restatementRevision: 'rev. {n}',
+      restatementProduction: 'Publicado',
+      restatementWorkbook: 'Libro',
+      restatementDelta: 'Diferencia',
+      restatementMore: '{n} campo(s) adicional(es) no listado(s) para esta semana.',
+      restatementFieldCount: '{n} campo(s)',
+      restatementLevelUnchanged: 'Los niveles de portafolio de estas semanas no cambian — ningún valor de evolución se sobrescribe.',
       publicationDiffTitle: 'Cambios propuestos a la publicación vigente',
       publicationDiffNote:
         'Solo se listan las filas que difieren. Las posiciones sin cambios no se muestran.',
@@ -2298,6 +2340,12 @@ export const dict = {
         nothing_to_append:              'Nada que aplicar: el libro no agrega ninguna semana, no corrige ningún valor publicado y su foto vigente coincide con lo ya publicado. No se realizó ninguna publicación.',
         import_refused_nothing_to_append: 'La base de datos rechazó: una importación que no cambia ni la historia ni la foto publicada no puede generar una publicación.',
         publication_read_failed:        'No se pudo leer la publicación vigente, por lo que este libro no pudo compararse con ella. No se escribió nada — inténtelo de nuevo.',
+        historical_publication_read_failed: 'No se pudieron leer las semanas ya publicadas, por lo que no se pudo verificar si este libro las reexpresa. No se escribió nada — inténtelo de nuevo.',
+        import_refused_stale_historical_publication: 'La base de datos rechazó: una de las semanas ya publicadas obtuvo una nueva revisión después de generarse esta vista previa. Genere la vista previa de nuevo y confirme otra vez.',
+        import_refused_historical_publication_unchanged: 'La base de datos rechazó: una semana enviada como reexpresada es idéntica a lo ya publicado.',
+        import_refused_historical_publication_absent: 'La base de datos rechazó: una semana enviada como reexpresada no tiene revisión publicada que corregir.',
+        import_refused_historical_publication_is_current_week: 'La base de datos rechazó: la semana que se publica no puede enviarse además como reexpresión histórica.',
+        rollback_refused_historical_publication_superseded: 'Esta importación no puede revertirse: una importación posterior ya volvió a publicar una de las semanas que corrigió.',
         historical_correction_required: 'Esta importación sobrescribe historia publicada. Autorice la corrección e indique un motivo.',
         correction_reason_required:     'Una corrección autorizada aún necesita un motivo escrito.',
         invalid_observation:            'El libro produjo un valor que no pudo interpretarse.',

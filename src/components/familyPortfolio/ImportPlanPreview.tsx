@@ -42,6 +42,7 @@ import {
   describeImportPlan,
   fill,
   nonCorrectionBlockCodes,
+  restatedFieldCount,
   type ImportPlan,
   type WorkflowStep,
 } from '@/lib/familyPortfolio/importPlanPresentation'
@@ -349,6 +350,110 @@ function PublicationChangesCard({ plan }: { plan: ImportPlan }) {
   )
 }
 
+// ── Attention: HISTORICAL PUBLICATION RESTATEMENTS (R13.8D.1) ────────────────
+//
+// Already-published weeks the workbook now states differently.
+//
+// WHY THIS IS ITS OWN CARD. The evolution card below shows overwritten PORTFOLIO
+// LEVELS. These weeks' levels may not have moved at all — a workbook can shift an
+// amount from net flows into weekly profit and leave every level identical while
+// the published figures change. Folding the two together would tell an
+// administrator a level was overwritten when none was, and the authorization they
+// give is only as good as the sentence they were shown.
+//
+// Bounded by construction: a week carries ~220 rows, so only the fields that
+// DIFFER are listed and the tail is a count.
+function RestatementCard({ plan }: { plan: ImportPlan }) {
+  const { t } = useLang()
+  const a = t.fpAdmin
+  const weeks = plan.historicalRestatements ?? []
+  if (weeks.length === 0) return null
+
+  const total = restatedFieldCount(plan)
+
+  return (
+    <section
+      className={`${CARD} space-y-3`}
+      data-group="historical-restatement"
+      style={{
+        borderColor: TONE.changed,
+        borderLeft: `3px solid ${TONE.changed}`,
+        background: `color-mix(in oklab, ${TONE.changed} 7%, var(--surface))`,
+      }}
+    >
+      <div>
+        <p className="ui-label" style={{ color: TONE.changed }}>
+          {a.restatementTitle} · <span className="ui-number">{weeks.length}</span>
+        </p>
+        <p className="mt-1 text-[11px] text-muted-fg">{a.restatementNote}</p>
+        {plan.corrections.length === 0 && (
+          <p className="mt-1 text-[11px] text-muted-fg">{a.restatementLevelUnchanged}</p>
+        )}
+      </div>
+
+      <div className="space-y-3">
+        {weeks.map((w) => {
+          const more = Math.max(0, w.differenceCount - w.fields.length)
+          return (
+            <div key={w.asOfDate} className="space-y-1">
+              <p className="flex flex-wrap items-baseline gap-x-2 text-xs">
+                <span className="ui-number font-medium text-foreground">{w.asOfDate}</span>
+                <ChipLabel>{fill(a.restatementRevision, { n: w.revision })}</ChipLabel>
+                <span className="text-[11px] text-muted-fg">
+                  {fill(a.restatementFieldCount, { n: w.differenceCount })}
+                </span>
+              </p>
+              <ul className="space-y-0.5">
+                {w.fields.map((f) => (
+                  <li
+                    key={`${f.area}|${f.identity}|${f.field ?? f.kind}`}
+                    className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs"
+                  >
+                    <span className="font-mono text-[11px] text-muted-fg">{f.scope}</span>
+                    <span className="text-foreground">
+                      {f.metric ?? f.label ?? f.rowKey ?? f.identity}
+                    </span>
+                    {f.basis !== null && (
+                      <span className="text-[11px] text-muted-fg">{basisLabel(t, f.basis)}</span>
+                    )}
+                    {f.kind !== 'changed' && (
+                      <ChipLabel>
+                        {f.kind === 'added' ? a.publicationDiffAdded : a.publicationDiffRemoved}
+                      </ChipLabel>
+                    )}
+                    {f.kind === 'changed' && f.field !== 'value' && (
+                      <span className="text-[11px] text-muted-fg">
+                        {a.publicationDiffField}: {f.field}
+                      </span>
+                    )}
+                    {f.kind === 'changed' && f.field === 'value' && (
+                      <span className="ui-number text-[11px] text-muted-fg">
+                        {f.productionValue === null ? '—' : formatUsd(f.productionValue, 0)}
+                        {' → '}
+                        <span className="text-foreground">
+                          {f.workbookValue === null ? '—' : formatUsd(f.workbookValue, 0)}
+                        </span>
+                        {f.delta !== null && <span className="ml-1">({signed(f.delta)})</span>}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              {more > 0 && (
+                <p className="text-[11px] text-muted-fg">{fill(a.restatementMore, { n: more })}</p>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      <p className="text-[11px] text-muted-fg">
+        {a.restatementProduction} → {a.restatementWorkbook} · {a.restatementDelta} ·{' '}
+        <span className="ui-number">{total}</span>
+      </p>
+    </section>
+  )
+}
+
 // ── Attention: HISTORICAL CHANGES — the only overwrite ───────────────────────
 
 export interface CorrectionControls {
@@ -394,9 +499,16 @@ function HistoricalChangesCard({ plan, controls }: { plan: ImportPlan; controls:
         <p className="mt-1 text-[11px] text-muted-fg">{a.correctionHint}</p>
       </div>
 
-      {/* The ONE place this console shows amounts. Fit table: stacks into one
+      {/* R13.8D.1 — the gate now has two causes, and only one of them fills this
+          table. An import that restates published WEEKS but overwrites no
+          evolution point reaches this card with zero corrections; rendering an
+          empty table under the heading "published history values" would state
+          something false about what is being authorized. The restatement card
+          above carries that half. */}
+      {plan.corrections.length > 0 && (
+      /* The ONE place this console shows amounts. Fit table: stacks into one
           block per identity when the card is narrower than 520px, so the
-          before/after stays readable on a phone without sideways scroll. */}
+          before/after stays readable on a phone without sideways scroll. */
       <div className="nv-tbl-fit-host rounded-[6px] border border-border" style={{ background: 'var(--surface-table)' }}>
         <table className="nv-tbl-fit nv-tbl-fit--stack text-xs">
           <caption className="sr-only">{a.planChanged}</caption>
@@ -451,6 +563,7 @@ function HistoricalChangesCard({ plan, controls }: { plan: ImportPlan; controls:
           <TableSourceFooter source={a.source} />
         </div>
       </div>
+      )}
 
       {/* Authorization and reason sit DIRECTLY under what they authorize. */}
       <label className="flex items-start gap-2 text-xs text-foreground">
@@ -743,6 +856,10 @@ export function ImportPlanPreview({
           )}
 
           <PublicationChangesCard plan={plan} />
+          {/* R13.8D.1 — the restated published weeks sit ABOVE the authorization
+              card, so what is being authorized is on screen before the checkbox
+              that authorizes it. */}
+          <RestatementCard plan={plan} />
           <HistoricalChangesCard plan={plan} controls={correction} />
         </>
       )}

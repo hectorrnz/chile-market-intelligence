@@ -63,11 +63,16 @@
 // see it. Nothing here writes to a log, a stream or a file.
 
 import { isCalendarDate } from './publication.ts'
-import type { PublicationComparison } from './publicationMaterialDiff.ts'
+import type { PublicationComparison, PublicationDifference } from './publicationMaterialDiff.ts'
 import { MAX_WEEK_GAP_DAYS } from './resumen/dateDetection.ts'
 
-/** Bumped when planning semantics change; recorded on every import. */
-export const WEEKLY_IMPORT_PLAN_VERSION = 'r13.8c2.weekly_import_plan.3'
+/**
+ * Bumped when planning semantics change; recorded on every import.
+ *
+ * R13.8D.1 adds HISTORICAL PUBLICATION RESTATEMENTS as a first-class outcome
+ * alongside the evolution dispositions — a real semantics change, not a refactor.
+ */
+export const WEEKLY_IMPORT_PLAN_VERSION = 'r13.8d1.weekly_import_plan.1'
 
 /**
  * Whether an observation carries a number or is an explicit absence of one.
@@ -186,6 +191,48 @@ export interface CadenceGap {
 }
 
 /**
+ * R13.8D.1 — ONE ALREADY-PUBLISHED WEEK THE WORKBOOK NOW STATES DIFFERENTLY.
+ *
+ * WHY THIS IS NOT AN EVOLUTION `changed`. The evolution series is
+ * `(scope, basis, date) → portfolio value`. A publication is far more than that:
+ * ~195 snapshot rows and ~25 performance rows per week, carrying weekly P&L, net
+ * flows, YTD, every holding and every sociedad total. A workbook can leave every
+ * evolution VALUE identical — so the planner correctly reports zero CHANGED —
+ * and still restate how that same value was ATTRIBUTED: move an amount from net
+ * flows into weekly profit and the level never moves while the published
+ * performance figures do.
+ *
+ * R13.8C.2 established that history equality is not publication equality for the
+ * week being published. This is the same asymmetry one step back: settling a
+ * past week does not make the workbook's current view of it irrelevant. Left
+ * undetected, the import appends new weeks and quietly leaves published weeks
+ * disagreeing with the authoritative source — the exact silent-staleness failure
+ * the no-op guard exists to prevent, only earlier in the series.
+ *
+ * These are deliberately NOT folded into `corrections`/`changedDates`. Merging
+ * them would mislabel a publication restatement as an evolution overwrite, and
+ * the two have different payloads, different write paths and different
+ * before-images. They share only the AUTHORIZATION GATE, because both overwrite
+ * settled financial history.
+ */
+export interface HistoricalPublicationRestatement {
+  /** The already-published reporting date being restated. */
+  asOfDate: string
+  /**
+   * The standing publication this restatement was computed against, and the row
+   * the write will supersede. Carried into the plan fingerprint: if a different
+   * revision becomes current between preview and confirm, the id moves and the
+   * confirmation is refused rather than applied to a book nobody reviewed.
+   */
+  publicationId: string
+  revision: number
+  /** The true total, even when `differences` was capped for display. */
+  differenceCount: number
+  /** A BOUNDED sample. A week has ~220 rows; a preview never dumps them all. */
+  differences: PublicationDifference[]
+}
+
+/**
  * What the import DOES, across both halves of the book.
  *
  * R13.8C.2 split the question in two. `nothing_to_append` used to mean "the
@@ -242,6 +289,16 @@ export interface WeeklyImportInput {
    * repeats the comparison against its own rows regardless of what arrives here.
    */
   publicationComparison?: PublicationComparison
+  /**
+   * R13.8D.1 — already-published weeks this workbook materially restates.
+   *
+   * OMITTING IT IS "none observed", never "none exist" — the same discipline as
+   * `publicationComparison`. A pure caller that never read Production's
+   * publications must not have restatements invented for it, and must keep its
+   * pre-R13.8D.1 classification exactly. The real path always supplies the set,
+   * and the DATABASE re-derives it from its own rows before writing anything.
+   */
+  historicalPublicationRestatements?: readonly HistoricalPublicationRestatement[]
 }
 
 export interface WeeklyImportPlan {
@@ -278,8 +335,26 @@ export interface WeeklyImportPlan {
   publicationComparison: PublicationComparison
   /** True when this week's standing snapshot is materially restated. */
   publicationChanged: boolean
-  /** True only when an existing identity is being OVERWRITTEN. */
+  /**
+   * R13.8D.1 — already-published weeks this workbook restates, ascending by
+   * date. Reported separately from `corrections`, which are evolution
+   * overwrites; a plan can carry either, both or neither.
+   */
+  historicalPublicationRestatements: HistoricalPublicationRestatement[]
+  historicalRestatementDates: string[]
+  /**
+   * True when an existing EVOLUTION identity is being overwritten OR an
+   * already-published week is being restated.
+   *
+   * Both overwrite settled financial history, so both pass through the one
+   * authorization gate. The plan still reports the two causes separately, so an
+   * administrator is never shown "historical correction required" without being
+   * told which kind — see `corrections` and `historicalPublicationRestatements`.
+   */
   requiresHistoricalCorrection: boolean
+  /** Which of the two causes triggered the gate. Either, both, or neither. */
+  requiresEvolutionCorrection: boolean
+  requiresPublicationRestatementCorrection: boolean
   correctionReason: string | null
   blocked: boolean
   blockCodes: PlanBlockCode[]
@@ -490,10 +565,27 @@ export function planWeeklyImport(input: WeeklyImportInput): WeeklyImportPlan {
     }
   }
 
-  // ── 6. Authorization. ONLY an overwrite triggers it. Neither the number of
-  //       weeks nor a date sitting below the endpoint does.
+  // ── 6. Authorization. ONLY AN OVERWRITE OF SETTLED HISTORY TRIGGERS IT.
+  //       Neither the number of weeks nor a date sitting below the endpoint does.
+  //
+  //       R13.8D.1 — settled history has TWO forms, and both are overwrites:
+  //       an evolution identity whose value moves, and an already-published
+  //       week whose publication payload the workbook now states differently.
+  //       The second used to pass through unauthorized and unreported, because
+  //       the gate only looked at the evolution series. They share this gate and
+  //       nothing else: the causes stay separately reported so an administrator
+  //       is told WHICH kind of history is being rewritten.
   const changed = planned.filter((p) => p.disposition === 'changed')
-  const requiresHistoricalCorrection = changed.length > 0
+  const restatements = [...(input.historicalPublicationRestatements ?? [])]
+    .filter((r) => isCalendarDate(r.asOfDate) && r.differenceCount > 0)
+    .sort((a, b) => (a.asOfDate < b.asOfDate ? -1 : a.asOfDate > b.asOfDate ? 1 : 0))
+  const historicalRestatementDates = [...new Set(restatements.map((r) => r.asOfDate))]
+
+  const requiresEvolutionCorrection = changed.length > 0
+  const requiresPublicationRestatementCorrection = restatements.length > 0
+  const requiresHistoricalCorrection =
+    requiresEvolutionCorrection || requiresPublicationRestatementCorrection
+
   const reason = typeof input.correctionReason === 'string' ? input.correctionReason.trim() : ''
   if (requiresHistoricalCorrection) {
     if (input.historicalCorrectionAuthorized !== true) {
@@ -569,7 +661,11 @@ export function planWeeklyImport(input: WeeklyImportInput): WeeklyImportPlan {
     action,
     publicationComparison,
     publicationChanged,
+    historicalPublicationRestatements: restatements,
+    historicalRestatementDates,
     requiresHistoricalCorrection,
+    requiresEvolutionCorrection,
+    requiresPublicationRestatementCorrection,
     correctionReason: reason.length > 0 ? reason : null,
     blocked: blockCodes.size > 0,
     blockCodes: [...blockCodes],
@@ -596,6 +692,29 @@ export interface PublicationState {
 export interface HistoryStore {
   observations: readonly CanonicalObservation[]
   currentPublication: PublicationState | null
+  /**
+   * R13.8D.1 — the standing publication of every already-published week, keyed
+   * by reporting date.
+   *
+   * `is_current` is unique per `(upload_kind, as_of_date)`, not globally: every
+   * past week keeps its own current row. Correcting one of those is a revision
+   * OF THAT WEEK and never touches which week is newest, so this map is what a
+   * historical restatement moves and `currentPublication` is not.
+   *
+   * Optional so every pre-R13.8D.1 caller and fixture keeps working unchanged.
+   */
+  publications?: Readonly<Record<string, PublicationState>>
+}
+
+/**
+ * R13.8D.1 — one already-published week this import re-published, with the exact
+ * revision it displaced so rollback can put that revision back.
+ */
+export interface PublicationCorrectionEntry {
+  asOfDate: string
+  /** Null only if the week somehow had no standing revision — never expected. */
+  priorPublication: PublicationState | null
+  newPublication: PublicationState
 }
 
 export interface ImportRecordEntry {
@@ -624,11 +743,19 @@ export interface ImportRecord {
   gapFilledDates: string[]
   /** Reporting dates this import overwrote, ascending. */
   correctedDates: string[]
+  /** R13.8D.1 — already-published weeks this import re-published, ascending. */
+  restatedDates: string[]
   correctionReason: string | null
   entries: ImportRecordEntry[]
   /** The publication this import made current, and the one it displaced. */
   publication: PublicationState
   previousPublication: PublicationState | null
+  /**
+   * R13.8D.1 — the before-image of every historical week this import
+   * re-published. Rollback restores each of these, so a mixed import reverses
+   * whole rather than leaving corrected historical revisions standing.
+   */
+  publicationCorrections: PublicationCorrectionEntry[]
 }
 
 export type ApplyFailureCode =
@@ -660,7 +787,15 @@ export function applyImportPlan(
   // HISTORY. An import that appends no week but materially restates this week's
   // standing snapshot writes a real publication revision, and refusing it here
   // would make this reference model contradict the RPC it specifies.
-  if (plan.observationsToWrite.length === 0 && !plan.publicationChanged) {
+  // R13.8D.1 — a restated historical week is a durable financial mutation too.
+  // An import that appends nothing and leaves this week's snapshot equivalent can
+  // still be correcting seven published weeks, and refusing it here would make
+  // this model contradict the RPC it specifies.
+  if (
+    plan.observationsToWrite.length === 0 &&
+    !plan.publicationChanged &&
+    plan.historicalPublicationRestatements.length === 0
+  ) {
     return { ok: false, code: 'nothing_to_write', store }
   }
   if (plan.publicationDate === null) return { ok: false, code: 'no_publication_date', store }
@@ -718,21 +853,48 @@ export function applyImportPlan(
     importId,
   }
 
+  // R13.8D.1 — the historical weeks, each getting the NEXT revision OF ITS OWN
+  // DATE. None of them becomes "the current publication": that stays the newest
+  // frozen week, exactly as the one-upload/one-current-publication rule requires.
+  const priorPublications = store.publications ?? {}
+  const nextPublications: Record<string, PublicationState> = { ...priorPublications }
+  const publicationCorrections: PublicationCorrectionEntry[] = []
+  for (const restatement of plan.historicalPublicationRestatements) {
+    const prior = priorPublications[restatement.asOfDate] ?? null
+    const corrected: PublicationState = {
+      asOfDate: restatement.asOfDate,
+      revision: (prior?.revision ?? 0) + 1,
+      importId,
+    }
+    nextPublications[restatement.asOfDate] = corrected
+    publicationCorrections.push({
+      asOfDate: restatement.asOfDate,
+      priorPublication: prior,
+      newPublication: corrected,
+    })
+  }
+
   const sorted = (s: Set<string>) => [...s].sort()
 
   return {
     ok: true,
-    store: { observations: next, currentPublication: publication },
+    store: {
+      observations: next,
+      currentPublication: publication,
+      publications: nextPublications,
+    },
     record: {
       importId,
       planVersion: plan.planVersion,
       appendedDates: sorted(appended),
       gapFilledDates: sorted(gapFilled),
       correctedDates: sorted(corrected),
+      restatedDates: publicationCorrections.map((c) => c.asOfDate),
       correctionReason: plan.correctionReason,
       entries,
       publication,
       previousPublication,
+      publicationCorrections,
     },
     written: entries.length,
   }
@@ -763,6 +925,18 @@ export function rollbackImport(store: HistoryStore, record: ImportRecord): Rollb
     return { ok: false, code: 'superseded_by_later_import', store }
   }
 
+  // R13.8D.1 — every historical week this import corrected must ALSO still
+  // belong to it. A later import that re-published one of those weeks owns that
+  // revision now, and demoting it back to this import's before-image would
+  // silently discard the later correction. Refuse whole rather than reverse part.
+  const priorPublications = store.publications ?? {}
+  for (const correction of record.publicationCorrections) {
+    const standing = priorPublications[correction.asOfDate] ?? null
+    if (standing === null || standing.importId !== record.importId) {
+      return { ok: false, code: 'superseded_by_later_import', store }
+    }
+  }
+
   const remove = new Set<string>()
   const restore = new Map<string, { value: number | null; status: ObservationStatus }>()
   for (const e of record.entries) {
@@ -778,5 +952,21 @@ export function rollbackImport(store: HistoryStore, record: ImportRecord): Rollb
       return prior === undefined ? { ...o } : { ...o, value: prior.value, status: prior.status }
     })
 
-  return { ok: true, store: { observations, currentPublication: record.previousPublication } }
+  // Put every corrected historical week back to the exact revision it displaced.
+  // A week whose before-image was null had no standing revision at all, so it is
+  // REMOVED from the map rather than left pointing at this import's work.
+  const publications: Record<string, PublicationState> = { ...priorPublications }
+  for (const correction of record.publicationCorrections) {
+    if (correction.priorPublication === null) delete publications[correction.asOfDate]
+    else publications[correction.asOfDate] = correction.priorPublication
+  }
+
+  return {
+    ok: true,
+    store: {
+      observations,
+      currentPublication: record.previousPublication,
+      publications,
+    },
+  }
 }

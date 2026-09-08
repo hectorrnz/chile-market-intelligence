@@ -233,11 +233,19 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
     // --- R13.8B § 7: only an OVERWRITE needs authorization. Any number of NEW
     // weeks and any number of GAP_FILLs never do.
+    // R13.8D.1 — the gate now has two causes, and the refusal names which. An
+    // administrator refused for a restatement they were never shown could not
+    // act on the refusal; the dates and counts are what make it actionable. No
+    // amount is added here that the preview does not already carry.
     if (plan.blocked) {
       return fail('import_refused', 422, {
         blockCodes: plan.blockCodes,
         requiresHistoricalCorrection: plan.requiresHistoricalCorrection,
+        requiresEvolutionCorrection: plan.requiresEvolutionCorrection,
+        requiresPublicationRestatementCorrection: plan.requiresPublicationRestatementCorrection,
         corrections: built.preview.corrections,
+        historicalRestatementDates: plan.historicalRestatementDates,
+        historicalRestatementCount: plan.historicalPublicationRestatements.length,
       })
     }
 
@@ -261,7 +269,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     // publication lock (`import_refused_nothing_to_append`) and remains the
     // authority; this is the same rule stated one layer earlier, so the
     // administrator gets the answer without a write path being entered at all.
-    if (plan.observationsToWrite.length === 0 && !plan.publicationChanged) {
+    // R13.8D.1 widens it once more: an import that appends nothing and leaves
+    // this week's snapshot equivalent can still be correcting already-published
+    // weeks, and that is a durable financial mutation, not a no-op.
+    if (
+      plan.observationsToWrite.length === 0 &&
+      !plan.publicationChanged &&
+      plan.historicalPublicationRestatements.length === 0
+    ) {
       return fail('nothing_to_append', 409, {
         action: plan.action,
         productionEndpoint: plan.productionEndpoint,
@@ -324,6 +339,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       rows,
       observations,
       performance,
+      // R13.8D.1 — the corrected payload for every already-published week this
+      // workbook restates, computed by the SAME `planImportForDraft` call above.
+      // They travel in the one RPC call so the five new weeks, the seven
+      // historical corrections and the new current publication commit together
+      // or not at all.
+      historicalPublications: built.historicalPublications,
       correctionAuthorized,
       correctionReason,
       counts: built.preview.counts,

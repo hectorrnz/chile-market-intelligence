@@ -325,17 +325,25 @@ function reviewFor(upload: FixtureUploadRow, frozen: FrozenColumnSelection | nul
  * the before/after reads clearly and can never be mistaken for a real holding.
  */
 function buildPublicationDifferences(n: number): PublicationDifference[] {
-  const SPEC: ReadonlyArray<{ identity: string; label: string; before: number; after: number }> = [
-    { identity: 'main|watermill-total', label: 'FIXTURE — TOTAL WATERMILL', before: 1_200_000, after: 1_235_000 },
-    { identity: 'main|dubai-cash', label: 'FIXTURE — Dubai / Caja', before: 90_000, after: 55_000 },
-    { identity: 'jaime|staten-total', label: 'FIXTURE — TOTAL STATEN', before: 410_000, after: 410_500 },
+  const SPEC: ReadonlyArray<{
+    scope: string
+    rowKey: string
+    label: string
+    before: number
+    after: number
+  }> = [
+    { scope: 'main', rowKey: 'watermill-total', label: 'FIXTURE — TOTAL WATERMILL', before: 1_200_000, after: 1_235_000 },
+    { scope: 'main', rowKey: 'dubai-cash', label: 'FIXTURE — Dubai / Caja', before: 90_000, after: 55_000 },
+    { scope: 'jaime', rowKey: 'staten-total', label: 'FIXTURE — TOTAL STATEN', before: 410_000, after: 410_500 },
   ]
   return SPEC.slice(0, n).map((d) => ({
     area: 'snapshot' as const,
-    identity: d.identity,
+    identity: `${d.scope}|${d.rowKey}`,
     kind: 'changed' as const,
     field: 'value',
     label: d.label,
+    scope: d.scope,
+    rowKey: d.rowKey,
     beforeValue: d.before,
     afterValue: d.after,
   }))

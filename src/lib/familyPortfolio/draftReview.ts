@@ -26,6 +26,7 @@ import { RESUMEN_PARSER_VERSION, type ResumenDraft } from './resumen/parseResume
 import {
   parseAtFrozenPublicationColumn,
   type FrozenColumnSelection,
+  type HistoricalColumnPayload,
 } from './weeklyImportPreview.ts'
 import { parseAlternatives, ALTERNATIVES_PARSER_VERSION, type AlternativesDraft } from './alternatives/parseAlternatives.ts'
 import {
@@ -141,6 +142,17 @@ export interface LoadedDraft {
    * survives here only as diagnostics.
    */
   frozen: FrozenColumnSelection | null
+  /**
+   * R13.8D.1 — the comparable publication payload of EVERY clean frozen column,
+   * keyed by reporting date. Portfolio only; empty for an alternatives workbook.
+   *
+   * This is what historical-publication-restatement detection compares against
+   * Production. It is captured from the column scan `parseAtFrozenPublicationColumn`
+   * already performs, so it costs no additional parse — and it is built by the
+   * SAME payload builders the publish route sends to the RPC, so a restatement is
+   * always measured against the rows that would actually be written.
+   */
+  historicalPayloads: Map<string, HistoricalColumnPayload>
 }
 
 /**
@@ -181,8 +193,8 @@ export async function loadDraft(uploadId: string): Promise<{ ok: true; draft: Lo
   // R13.8B § 5 — the canonical frozen-column selection, made ONCE and here.
   // Never a hard-coded letter, and never the live column.
   const picked = kind === 'portfolio'
-    ? parseAtFrozenPublicationColumn(downloaded.bytes)
-    : { selection: null, draft: null }
+    ? parseAtFrozenPublicationColumn(downloaded.bytes, { captureHistoricalPayloads: true })
+    : { selection: null, draft: null, historicalPayloads: new Map<string, HistoricalColumnPayload>() }
 
   return {
     ok: true,
@@ -192,6 +204,7 @@ export async function loadDraft(uploadId: string): Promise<{ ok: true; draft: Lo
       resumen: picked.draft,
       alternatives: kind === 'alternatives' ? parseAlternatives(downloaded.bytes) : null,
       frozen: picked.selection,
+      historicalPayloads: picked.historicalPayloads,
     },
   }
 }

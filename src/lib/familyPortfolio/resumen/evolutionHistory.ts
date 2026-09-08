@@ -315,6 +315,20 @@ export function extractEvolutionHistory(
 export function findPublishableHistoricalColumns(
   bytes: Buffer,
   limit = Number.POSITIVE_INFINITY,
+  /**
+   * R13.8D.1 — observe each CLEAN column's draft as it is produced.
+   *
+   * This scan already performs a full parse of every historical column and then
+   * throws every draft away. Detecting a historical publication restatement
+   * needs exactly those drafts, and re-parsing to get them would double the
+   * single most expensive step in the whole preview (~300 ms × ~100 columns) for
+   * work that has already been done. The visitor is the cheap way to keep one
+   * parse per column and still see the result.
+   *
+   * It is called ONLY for a column the real parser accepted, so a caller can
+   * never build a payload from a week that is not publishable.
+   */
+  visit?: (column: { date: string; letter: string }, draft: ResumenDraft) => void,
 ): Array<{ date: string; letter: string; rowCount: number; performanceCount: number }> {
   const read = readXlsx(bytes)
   if (!read.ok) return []
@@ -335,6 +349,7 @@ export function findPublishableHistoricalColumns(
     const column = detection.historical[i]
     const draft = parseResumen(bytes, { publicationColumnLetter: column.letter })
     if (!draft.ok) continue
+    if (visit) visit({ date: column.date as string, letter: column.letter }, draft)
     out.push({
       date: column.date as string,
       letter: column.letter,

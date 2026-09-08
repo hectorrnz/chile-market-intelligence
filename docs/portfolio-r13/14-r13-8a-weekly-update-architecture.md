@@ -1184,3 +1184,115 @@ provider reads `localStorage` only on the client). The publication comparison is
 import ledger either: a completed `publication_correction` is recorded as an import operation with
 zero observation counts, and the rows it changed are recoverable only by comparing the two
 publications.
+
+### AE.15 Historical publication restatement (R13.8D.1)
+
+R13.8C.2 established that **history equality is not publication equality** for the week being
+published. R13.8D.1 closes the same asymmetry one step back: settling a past week does not make the
+workbook's current view of it irrelevant.
+
+#### AE.15.1 The gap, found by the first real new-week workbook
+
+The first real catch-up workbook (frozen through 2026-09-04, against a Production endpoint of
+2026-07-31) planned exactly as designed: 5 NEW weeks, 0 GAP_FILL, 0 CHANGED. That last figure was
+correct â€” every evolution **level** in the workbook matched Production exactly.
+
+It was also incomplete. Comparing the workbook against all 102 already-published weeks found **seven
+consecutive weeks restated**, all on one series, all in performance rows only, with **zero snapshot
+row differences**: a recurring weekly amount had been reattributed from *net flows* into *weekly
+P&L*, carrying through YTD. Each week's P&L rose by exactly that week's removed flow, and the YTD
+deltas accumulated exactly. Portfolio values never moved.
+
+The evolution series is `(scope, basis, date) â†’ value`. It cannot see this, and it never could: the
+level is identical, only its attribution changed. So the correction gate â€” which read only the
+observation packet â€” let it through unauthorized, the preview did not mention it, and rollback had
+nothing to reverse. The import would have appended five weeks and left seven published weeks
+disagreeing with the authoritative source, silently.
+
+That is the same class of failure the no-op guard exists to prevent, one step earlier in the series.
+
+#### AE.15.2 A fifth category, deliberately not folded into CHANGED
+
+`HISTORICAL_PUBLICATION_RESTATEMENT` is its own outcome, reported beside NEW, GAP_FILL, evolution
+CHANGED and the current-publication change. It is never relabelled as an evolution `changed`:
+
+* they mutate different things â€” one a level, one a whole published week;
+* they carry different payloads and different before-images;
+* they take different write paths.
+
+They share exactly one thing, the **authorization gate**, because both overwrite settled financial
+history. `requiresHistoricalCorrection` is armed by either, and `requiresEvolutionCorrection` /
+`requiresPublicationRestatementCorrection` say which â€” an administrator is never told "historical
+correction required" without being told what kind.
+
+#### AE.15.3 One comparison, not two
+
+Detection reuses `comparePublicationPayload` â€” the R13.8C.2 material comparison â€” unchanged, and the
+database re-derives each restatement with the same `nmi_portfolio_publication_unchanged` it already
+uses for the current week. Material and operational fields are exactly as AE.14.2 defines them, so an
+operational-only edit (a moved source coordinate) is not a restatement, and a metadata **figure**
+(`previousValue`, `beginningOfYearValue`, `difference`) is.
+
+The workbook side is captured from the column scan the preview **already runs**:
+`findPublishableHistoricalColumns` parses every historical column and previously discarded each
+draft. It now takes an optional visitor, so restatement detection costs Production reads but **no
+additional parse** â€” re-parsing would have doubled the most expensive step in the preview
+(~300 ms Ã— ~100 columns) for work already done.
+
+#### AE.15.4 One import operation, still
+
+A catch-up carrying five new weeks and seven restatements commits as **one** operation:
+
+1. import lock, then the publication-series lock per week, ascending;
+2. stale pre-state verified â€” for observations *and* for each restated week's standing revision;
+3. the current publication for the newest frozen date;
+4. each restated week re-published at **the next revision of its own date**, through
+   `nmi_publish_portfolio` â€” the same demote-then-promote lifecycle R13.5 has always used;
+5. the appended history points;
+6. the audit records.
+
+Any failure rolls back all of it. **No new financial rule was invented**: `is_current` is unique per
+`(upload_kind, as_of_date)`, so correcting a past week never changes which week is newest. The
+locked one-upload / one-current-publication rule is untouched, and the RPC refuses a packet that
+names the week being published as a historical correction.
+
+#### AE.15.5 Rollback and the second ledger
+
+`portfolio_import_publication_corrections` records, per import and week, which revision replaced
+which. Nothing is duplicated â€” the displaced revision keeps its own rows â€” but rollback can now
+demote precisely what the import promoted and promote precisely what it displaced, rather than
+guessing from dates. It refuses when a later import has re-published any corrected week, for the same
+reason the observation path does: reversing to a stale before-image would discard the later
+correction.
+
+#### AE.15.6 Staleness
+
+The plan fingerprint now covers, per restated week, its `as_of_date`, the **publication id** it was
+compared against, its revision and its difference count. If any of those weeks gains a new revision
+between preview and confirm, the digest moves and the confirmation is refused with zero writes. The
+database repeats the check under the publication lock
+(`import_refused_stale_historical_publication`) and remains the authority.
+
+#### AE.15.7 What the preview shows
+
+Restated weeks appear in their own card, above the authorization control, listing per week only the
+fields that **differ** â€” scope, basis, metric, published value, workbook value, delta â€” with the tail
+as a count. A week carries ~220 rows and the console never dumps them. When no evolution point moved,
+the evolution table is suppressed rather than rendered empty, so the card cannot imply a level was
+overwritten when none was.
+
+#### AE.15.8 Proof
+
+`tests/portfolioHistoricalRestatement.test.ts` (46 tests) covers detection, the operational/material
+boundary, the gate, the fingerprint, the preview and the reference apply/rollback model. Â§ 8 of
+`portfolio_import_operations_test.sql` executes the path in real PostgreSQL: the unauthorized
+refusal, the operational-only refusal (the non-vacuity pair for the accepted case), staleness, the
+current-week collision, an absent week, a **deliberate late failure** proving the correction rolls
+back with the history write, the successful mixed import, the ledger contents, the endpoint invariant,
+full rollback to the exact prior revision row, and a restatement-only import that must not be refused
+as a no-op.
+
+Five migration postconditions make the defect unrepeatable: the migration itself fails to apply if
+the import ignores restatements, if the gate stops counting them, if the no-op guard swallows them,
+if the database stops re-deriving them, or if rollback stops reversing them.
+

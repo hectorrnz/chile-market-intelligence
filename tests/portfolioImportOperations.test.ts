@@ -60,11 +60,15 @@ describe('the migration is additive and idempotent', () => {
   })
 
   test('it can be applied twice', () => {
+    // R13.8B created two tables; R13.8D.1 added the publication-correction
+    // ledger, which rollback needs in order to reverse a corrected historical
+    // week. All three must be conditional so the migration stays re-runnable.
     assert.equal(
       (sql.match(/create table if not exists/g) ?? []).length,
-      2,
-      'both new tables are created conditionally',
+      3,
+      'all three tables are created conditionally',
     )
+    assert.match(sql, /create table if not exists public\.portfolio_import_publication_corrections/)
     assert.match(sql, /add column if not exists import_operation_id/)
     for (const fn of [
       'nmi_lock_portfolio_import',

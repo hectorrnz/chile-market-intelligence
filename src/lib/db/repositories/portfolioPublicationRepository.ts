@@ -664,36 +664,166 @@ export async function getStandingPublicationPayload(
     payload: {
       publicationId: standing.id,
       asOfDate: standing.asOfDate,
-      rows: (rowsResult.data ?? []).map((r) => ({
-        scope: String(r.scope),
-        row_key: String(r.row_key),
-        parent_row_key: r.parent_row_key === null ? null : String(r.parent_row_key),
-        depth: Number(r.depth),
-        display_order: Number(r.display_order),
-        row_type: String(r.row_type),
-        label_es: String(r.label_es),
-        label_en: r.label_en === null ? null : String(r.label_en),
-        currency: String(r.currency),
-        // NULL stays NULL: unavailable is never zero (doc 02 § 9), and coercing
-        // it here would make an unavailable leaf compare equal to a real 0.
-        value: r.value === null || r.value === undefined ? null : Number(r.value),
-        value_class: String(r.value_class),
-        source_sheet: String(r.source_sheet),
-        source_cell: String(r.source_cell),
-        metadata: (r.metadata ?? {}) as Record<string, unknown>,
-      })),
-      performance: (perfResult.data ?? []).map((r) => ({
-        scope: String(r.scope),
-        basis: String(r.basis),
-        metric: String(r.metric),
-        value: r.value === null || r.value === undefined ? null : Number(r.value),
-        value_class: String(r.value_class),
-        source_sheet: String(r.source_sheet),
-        source_cell: String(r.source_cell),
-        metadata: (r.metadata ?? {}) as Record<string, unknown>,
-      })),
+      rows: (rowsResult.data ?? []).map(mapSnapshotRow),
+      performance: (perfResult.data ?? []).map(mapPerformanceRow),
     },
   }
+}
+
+/**
+ * The ONE mapping from a stored snapshot row to its payload shape.
+ *
+ * Extracted at R13.8D.1 so the single-week read and the batched historical read
+ * cannot drift. A second copy that coerced a NULL differently would make one
+ * comparison see a restatement the other does not.
+ */
+function mapSnapshotRow(r: Record<string, unknown>): SnapshotRowPayload {
+  return {
+    scope: String(r.scope),
+    row_key: String(r.row_key),
+    parent_row_key: r.parent_row_key === null ? null : String(r.parent_row_key),
+    depth: Number(r.depth),
+    display_order: Number(r.display_order),
+    row_type: String(r.row_type),
+    label_es: String(r.label_es),
+    label_en: r.label_en === null ? null : String(r.label_en),
+    currency: String(r.currency),
+    // NULL stays NULL: unavailable is never zero (doc 02 § 9), and coercing
+    // it here would make an unavailable leaf compare equal to a real 0.
+    value: r.value === null || r.value === undefined ? null : Number(r.value),
+    value_class: String(r.value_class),
+    source_sheet: String(r.source_sheet),
+    source_cell: String(r.source_cell),
+    metadata: (r.metadata ?? {}) as Record<string, unknown>,
+  }
+}
+
+function mapPerformanceRow(r: Record<string, unknown>): PerformanceRowPayload {
+  return {
+    scope: String(r.scope),
+    basis: String(r.basis),
+    metric: String(r.metric),
+    value: r.value === null || r.value === undefined ? null : Number(r.value),
+    value_class: String(r.value_class),
+    source_sheet: String(r.source_sheet),
+    source_cell: String(r.source_cell),
+    metadata: (r.metadata ?? {}) as Record<string, unknown>,
+  }
+}
+
+/** R13.8D.1 — one already-published week, whole, for restatement detection. */
+export interface StandingPublicationIndexEntry {
+  publicationId: string
+  asOfDate: string
+  revision: number
+  rows: SnapshotRowPayload[]
+  performance: PerformanceRowPayload[]
+}
+
+interface PublicationBatchShape {
+  from: (t: string) => {
+    select: (c: string) => {
+      in: (
+        col: string,
+        v: readonly string[],
+      ) => Promise<{ data: Record<string, unknown>[] | null; error: { message?: string } | null }>
+    }
+  }
+}
+
+/**
+ * How many publications one batched read asks for.
+ *
+ * PostgREST caps a response at a server-configured row limit. A publication is
+ * ~195 snapshot rows, so a small chunk stays far below any plausible cap — and
+ * `TRUNCATION_GUARD` below turns a cap that DOES bite into a loud refusal rather
+ * than a silently short payload, which would otherwise read as a page full of
+ * "removed" rows and manufacture restatements that do not exist.
+ */
+const SNAPSHOT_CHUNK_PUBLICATIONS = 3
+const PERFORMANCE_CHUNK_PUBLICATIONS = 20
+const TRUNCATION_GUARD = 1000
+
+function chunk<T>(items: readonly T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
+  return out
+}
+
+/**
+ * Every CURRENT portfolio publication among `asOfDates`, with its full payload.
+ *
+ * This is the Production side of historical-publication-restatement detection
+ * (R13.8D.1 § 3). It reads the same two tables and the same columns as
+ * `getStandingPublicationPayload` through the same mappers, so the historical
+ * comparison and the current-week comparison are literally the same comparison
+ * applied to different weeks.
+ *
+ * Read through the ADMIN client for the same reason `listPersistedEvolutionObservations`
+ * is: this is a WHOLE-BOOK planning read made by an already-authorized
+ * administrator, spanning every scope, and it never reaches a member surface.
+ */
+export async function listStandingPublicationPayloads(
+  asOfDates: readonly string[],
+): Promise<{ ok: true; payloads: StandingPublicationIndexEntry[] } | Fail> {
+  const admin = getSupabaseAdminClient()
+  if (!admin) return { ok: false, code: 'not_configured' }
+  if (asOfDates.length === 0) return { ok: true, payloads: [] }
+
+  const wanted = new Set(asOfDates)
+  const publications = await listPublications()
+  const standing = publications.filter(
+    (p) => p.uploadKind === 'portfolio' && p.isCurrent && wanted.has(p.asOfDate),
+  )
+  if (standing.length === 0) return { ok: true, payloads: [] }
+
+  const client = admin as never as PublicationBatchShape
+  const byId = new Map<string, StandingPublicationIndexEntry>()
+  for (const p of standing) {
+    byId.set(p.id, {
+      publicationId: p.id,
+      asOfDate: p.asOfDate,
+      revision: p.revision,
+      rows: [],
+      performance: [],
+    })
+  }
+  const ids = [...byId.keys()]
+
+  for (const group of chunk(ids, SNAPSHOT_CHUNK_PUBLICATIONS)) {
+    const result = await client
+      .from('portfolio_snapshot_rows')
+      .select(
+        'publication_id, scope, row_key, parent_row_key, depth, display_order, row_type, ' +
+          'label_es, label_en, currency, value, value_class, source_sheet, source_cell, metadata',
+      )
+      .in('publication_id', group)
+    if (result.error) {
+      return { ok: false, code: 'rpc_failed', reason: result.error.message ?? 'snapshot_read_failed' }
+    }
+    const data = result.data ?? []
+    if (data.length >= TRUNCATION_GUARD) {
+      return { ok: false, code: 'rpc_failed', reason: 'publication_payload_truncated' }
+    }
+    for (const r of data) byId.get(String(r.publication_id))?.rows.push(mapSnapshotRow(r))
+  }
+
+  for (const group of chunk(ids, PERFORMANCE_CHUNK_PUBLICATIONS)) {
+    const result = await client
+      .from('portfolio_performance_rows')
+      .select('publication_id, scope, basis, metric, value, value_class, source_sheet, source_cell, metadata')
+      .in('publication_id', group)
+    if (result.error) {
+      return { ok: false, code: 'rpc_failed', reason: result.error.message ?? 'performance_read_failed' }
+    }
+    const data = result.data ?? []
+    if (data.length >= TRUNCATION_GUARD) {
+      return { ok: false, code: 'rpc_failed', reason: 'publication_payload_truncated' }
+    }
+    for (const r of data) byId.get(String(r.publication_id))?.performance.push(mapPerformanceRow(r))
+  }
+
+  return { ok: true, payloads: [...byId.values()] }
 }
 
 /** One history mutation, in the exact shape the RPC's `jsonb_to_recordset` reads. */
@@ -721,7 +851,32 @@ export interface ImportObservationPayload {
 }
 
 /**
- * ONE upload → ONE import operation → ONE current publication → N history points.
+ * R13.8D.1 — one already-published week this import re-publishes, in the exact
+ * shape the RPC's `jsonb_to_recordset` reads.
+ *
+ * `prior_publication_id` is the revision the plan was compared against. The RPC
+ * re-reads which revision is actually current under the publication lock and
+ * refuses the whole import if it has moved — the same stale-plan discipline the
+ * observation packet uses, applied to publications.
+ */
+export interface ImportHistoricalPublicationPayload {
+  as_of_date: string
+  prior_publication_id: string
+  /**
+   * Named `snapshot_rows`/`performance_rows`, not `rows`/`performance`: `ROWS`
+   * is a reserved word in PostgreSQL, and the RPC reads this array through
+   * `jsonb_to_recordset`, where a reserved column alias has to be quoted at
+   * every use. A key that never needs quoting cannot be mis-quoted once.
+   */
+  snapshot_rows: SnapshotRowPayload[]
+  performance_rows: PerformanceRowPayload[]
+  /** Audit only — the DB re-derives whether the week genuinely differs. */
+  difference_count: number
+}
+
+/**
+ * ONE upload → ONE import operation → ONE current publication → N history points
+ * → M corrected historical publications.
  *
  * The whole packet is the transaction. There is no fallback sequential apply and
  * no post-commit second write: if this call fails, nothing happened.
@@ -735,6 +890,7 @@ export async function importPortfolioWorkbook(params: {
   rows: SnapshotRowPayload[]
   observations: ImportObservationPayload[]
   performance: PerformanceRowPayload[]
+  historicalPublications?: ImportHistoricalPublicationPayload[]
   correctionAuthorized: boolean
   correctionReason: string | null
   counts: Record<string, unknown>
@@ -755,6 +911,7 @@ export async function importPortfolioWorkbook(params: {
     p_counts: params.counts,
     p_admin_note: params.adminNote,
     p_metadata: params.metadata,
+    p_historical_publications: params.historicalPublications ?? [],
   })
 }
 

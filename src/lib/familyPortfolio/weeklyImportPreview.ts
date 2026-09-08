@@ -39,14 +39,35 @@ import {
   type SeriesObservation,
   type WeeklyImportPlan,
   type PlannedObservation,
+  type HistoricalPublicationRestatement,
 } from './weeklyImportPlan.ts'
 import type {
   PublicationComparison,
   PublicationDifference,
 } from './publicationMaterialDiff.ts'
+import { buildSnapshotRowPayload, buildPerformanceRowPayload } from './publicationPayload.ts'
 
-/** Bumped whenever the preview's shape or selection rule changes. */
-export const IMPORT_PREVIEW_VERSION = 'r13.8c2.import_preview.2'
+/**
+ * R13.8D.1 — one frozen column's publication payload, in the EXACT shape the
+ * publication RPC receives.
+ *
+ * Typed off the builders rather than off the looser comparison interface, so a
+ * payload captured here can be shipped to the RPC without a cast — the rows the
+ * restatement was measured on are literally the rows that get written.
+ */
+export interface HistoricalColumnPayload {
+  rows: ReturnType<typeof buildSnapshotRowPayload>
+  performance: ReturnType<typeof buildPerformanceRowPayload>
+}
+
+/**
+ * Bumped whenever the preview's shape or selection rule changes.
+ *
+ * R13.8D.1 is a SEMANTICS change, not a refactor: the preview now reports a
+ * fifth category — historical publication restatements — and the stale-plan
+ * fingerprint covers it.
+ */
+export const IMPORT_PREVIEW_VERSION = 'r13.8d1.import_preview.1'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1 · Frozen column selection
@@ -83,7 +104,15 @@ export interface FrozenColumnSelection {
  * must not become one. The scan is newest-first and stops at the first clean
  * column, so the ordinary case costs one extra parse.
  */
-export function selectFrozenPublicationColumn(bytes: Buffer): FrozenColumnSelection {
+export function selectFrozenPublicationColumn(
+  bytes: Buffer,
+  /**
+   * R13.8D.1 — see `findPublishableHistoricalColumns`. Forwarded so the caller
+   * can capture every clean column's draft from the ONE scan that already runs
+   * here, instead of paying for a second full pass over the workbook.
+   */
+  visit?: (column: { date: string; letter: string }, draft: ResumenDraft) => void,
+): FrozenColumnSelection {
   const contract = classifyWorkbook(bytes, 'portfolio')
   const structure = contract.structure
 
@@ -101,7 +130,7 @@ export function selectFrozenPublicationColumn(bytes: Buffer): FrozenColumnSelect
 
   // Unbounded: the frozen inventory is part of the preview, and the evolution
   // extractor walks every column anyway.
-  const publishable = findPublishableHistoricalColumns(bytes)
+  const publishable = findPublishableHistoricalColumns(bytes, Number.POSITIVE_INFINITY, visit)
   const frozenDates = publishable.map((c) => c.date)
 
   if (publishable.length === 0) {
@@ -134,12 +163,42 @@ export function selectFrozenPublicationColumn(bytes: Buffer): FrozenColumnSelect
  */
 export function parseAtFrozenPublicationColumn(
   bytes: Buffer,
-): { selection: FrozenColumnSelection; draft: ResumenDraft | null } {
-  const selection = selectFrozenPublicationColumn(bytes)
-  if (selection.publicationColumnLetter === null) return { selection, draft: null }
+  options: {
+    /**
+     * R13.8D.1 — also return the comparable publication payload of EVERY clean
+     * frozen column, keyed by reporting date.
+     *
+     * That is what historical-publication-restatement detection compares against
+     * Production, and it is captured from the scan `selectFrozenPublicationColumn`
+     * already performs, so switching it on costs no additional parse. Off by
+     * default: the alternatives path and every pure test that only wants the
+     * publication column should not carry ~100 payloads it will never read.
+     */
+    captureHistoricalPayloads?: boolean
+  } = {},
+): {
+  selection: FrozenColumnSelection
+  draft: ResumenDraft | null
+  historicalPayloads: Map<string, HistoricalColumnPayload>
+} {
+  const historicalPayloads = new Map<string, HistoricalColumnPayload>()
+  const visit = options.captureHistoricalPayloads
+    ? (column: { date: string; letter: string }, draft: ResumenDraft) => {
+        historicalPayloads.set(column.date, {
+          rows: buildSnapshotRowPayload(draft),
+          performance: buildPerformanceRowPayload(draft),
+        })
+      }
+    : undefined
+
+  const selection = selectFrozenPublicationColumn(bytes, visit)
+  if (selection.publicationColumnLetter === null) {
+    return { selection, draft: null, historicalPayloads }
+  }
   return {
     selection,
     draft: parseResumen(bytes, { publicationColumnLetter: selection.publicationColumnLetter }),
+    historicalPayloads,
   }
 }
 
@@ -155,6 +214,41 @@ export interface PreviewCorrection {
   observationDate: string
   beforeValue: number | null
   afterValue: number | null
+}
+
+/**
+ * R13.8D.1 — one restated field of one already-published week, flattened for
+ * display: what Production holds, what the workbook says, and the difference.
+ *
+ * `delta` is computed here, once, rather than in the component: a number the
+ * screen shows must come from the same place the authorization decision was made
+ * on, and two subtractions are two chances to disagree.
+ */
+export interface PreviewRestatedField {
+  area: 'snapshot' | 'performance'
+  identity: string
+  kind: 'added' | 'removed' | 'changed'
+  scope: string
+  basis: string | null
+  metric: string | null
+  rowKey: string | null
+  label: string | null
+  field: string | null
+  productionValue: number | null
+  workbookValue: number | null
+  /** Null unless BOTH sides are numbers — a delta against absence is not zero. */
+  delta: number | null
+}
+
+/** One already-published week the workbook now states differently. */
+export interface PreviewHistoricalRestatement {
+  asOfDate: string
+  publicationId: string
+  revision: number
+  /** True total, even when `fields` was capped. */
+  differenceCount: number
+  /** BOUNDED. A week has ~220 rows; the unchanged ones are never listed. */
+  fields: PreviewRestatedField[]
 }
 
 export interface WeeklyImportPreview {
@@ -187,6 +281,21 @@ export interface WeeklyImportPreview {
 
   action: WeeklyImportPlan['action']
   requiresHistoricalCorrection: boolean
+  /** Which cause armed the gate (R13.8D.1). Either, both, or neither. */
+  requiresEvolutionCorrection: boolean
+  requiresPublicationRestatementCorrection: boolean
+
+  /**
+   * R13.8D.1 — ALREADY-PUBLISHED WEEKS THE WORKBOOK NOW STATES DIFFERENTLY.
+   *
+   * A fifth category, reported separately from `newDates`, `gapFillDates`,
+   * `corrections` (evolution overwrites) and the current-publication change.
+   * These weeks' portfolio LEVELS may be untouched while their published
+   * attribution — net flows against weekly profit, YTD — has moved.
+   */
+  historicalRestatements: PreviewHistoricalRestatement[]
+  historicalRestatementDates: string[]
+  historicalRestatementCount: number
 
   /**
    * R13.8C.2 — the publication half of the plan.
@@ -251,6 +360,17 @@ export function planFingerprint(plan: WeeklyImportPlan): string {
   // approved a PUBLICATION CORRECTION may now be confirming a no-op, or the
   // reverse. Covering the verdict makes that a refusal rather than a surprise.
   canonical.push(`snapshot|${plan.publicationComparison}`)
+  // R13.8D.1 — every already-published week this import would re-publish is an
+  // assertion about Production as well, and the sharpest one available: the
+  // PUBLICATION ID it was compared against. If any of those weeks gains a new
+  // revision between preview and confirm — another import, a rollback, a manual
+  // republication — the id moves, the digest moves, and the confirmation is
+  // refused with zero writes instead of superseding a revision nobody reviewed.
+  // The difference count rides along so a same-revision content change (which
+  // cannot happen today, and must not pass silently if it ever can) also moves it.
+  for (const r of plan.historicalPublicationRestatements) {
+    canonical.push(`restatement|${r.asOfDate}|${r.publicationId}|${r.revision}|${r.differenceCount}`)
+  }
   canonical.push(`plan|${plan.planVersion}`)
   return createHash('sha256').update(canonical.join('\n')).digest('hex')
 }
@@ -288,6 +408,12 @@ export interface PreviewInput {
     differences: readonly PublicationDifference[]
     differenceCount: number
   }
+  /**
+   * R13.8D.1 — already-published weeks this workbook materially restates, as
+   * computed by the caller against Production's own publications. Omitted by a
+   * caller that cannot read them, which is "none observed" — never "none exist".
+   */
+  historicalPublicationRestatements?: readonly HistoricalPublicationRestatement[]
 }
 
 /** The workbook's schema identity — everything in a preview that is not the plan. */
@@ -313,8 +439,43 @@ export interface PreviewIdentity {
  * There is no second presentation model: a synthetic state and a real upload
  * reach the screen through exactly this function.
  */
+/** Flattens one canonical difference into the row the preview shows. */
+function restatedField(d: PublicationDifference): PreviewRestatedField {
+  const before = d.beforeValue ?? null
+  const after = d.afterValue ?? null
+  return {
+    area: d.area,
+    identity: d.identity,
+    kind: d.kind,
+    scope: d.scope,
+    basis: d.basis ?? null,
+    metric: d.metric ?? null,
+    rowKey: d.rowKey ?? null,
+    label: d.label ?? null,
+    field: d.field ?? null,
+    productionValue: before,
+    workbookValue: after,
+    // A delta needs two numbers. Against an added or removed row there is no
+    // subtraction to make, and reporting the present side as the difference
+    // would overstate a movement that is really an appearance.
+    delta:
+      typeof before === 'number' && typeof after === 'number' && d.kind === 'changed'
+        ? after - before
+        : null,
+  }
+}
+
 export function previewFromPlan(plan: WeeklyImportPlan, identity: PreviewIdentity): WeeklyImportPreview {
   const counted = countDispositions(plan.observationsToWrite)
+
+  const historicalRestatements: PreviewHistoricalRestatement[] =
+    plan.historicalPublicationRestatements.map((r) => ({
+      asOfDate: r.asOfDate,
+      publicationId: r.publicationId,
+      revision: r.revision,
+      differenceCount: r.differenceCount,
+      fields: r.differences.map(restatedField),
+    }))
 
   return {
     previewVersion: IMPORT_PREVIEW_VERSION,
@@ -341,6 +502,11 @@ export function previewFromPlan(plan: WeeklyImportPlan, identity: PreviewIdentit
     cadenceGaps: plan.cadenceGaps.map((g) => ({ from: g.from, to: g.to, days: g.days })),
     action: plan.action,
     requiresHistoricalCorrection: plan.requiresHistoricalCorrection,
+    requiresEvolutionCorrection: plan.requiresEvolutionCorrection,
+    requiresPublicationRestatementCorrection: plan.requiresPublicationRestatementCorrection,
+    historicalRestatements,
+    historicalRestatementDates: plan.historicalRestatementDates,
+    historicalRestatementCount: plan.historicalPublicationRestatements.length,
     publicationComparison: plan.publicationComparison,
     publicationChanged: plan.publicationChanged,
     publicationDifferences: [...(identity.publicationDifferences ?? [])],
@@ -389,6 +555,7 @@ export function buildWeeklyImportPreview(
     historicalCorrectionAuthorized: input.historicalCorrectionAuthorized,
     correctionReason: input.correctionReason,
     publicationComparison: input.publicationDiff?.comparison,
+    historicalPublicationRestatements: input.historicalPublicationRestatements,
   })
 
   const preview = previewFromPlan(plan, {

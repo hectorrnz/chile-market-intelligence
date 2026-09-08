@@ -20,6 +20,38 @@ export interface PublicationDifference {
   beforeValue?: number | null
   afterValue?: number | null
   label?: string
+  scope?: string
+  basis?: string
+  metric?: string
+  rowKey?: string
+}
+
+/**
+ * R13.8D.1 — one restated field of one ALREADY-PUBLISHED week, as the console
+ * shows it: what Production holds, what the workbook says, and the difference.
+ */
+export interface RestatedField {
+  area: 'snapshot' | 'performance'
+  identity: string
+  kind: 'added' | 'removed' | 'changed'
+  scope: string
+  basis: string | null
+  metric: string | null
+  rowKey: string | null
+  label: string | null
+  field: string | null
+  productionValue: number | null
+  workbookValue: number | null
+  delta: number | null
+}
+
+/** One already-published week the workbook now states differently. */
+export interface HistoricalRestatement {
+  asOfDate: string
+  publicationId: string
+  revision: number
+  differenceCount: number
+  fields: RestatedField[]
 }
 
 export interface PreviewCorrection {
@@ -63,6 +95,16 @@ export interface ImportPlan {
   publicationChanged?: boolean
   publicationDifferences?: PublicationDifference[]
   publicationDifferenceCount?: number
+  /**
+   * R13.8D.1 — already-published weeks this workbook materially restates,
+   * decided on the server against Production's own publications. Optional so a
+   * pre-R13.8D.1 payload renders unchanged; absent means "none observed".
+   */
+  historicalRestatements?: HistoricalRestatement[]
+  historicalRestatementDates?: string[]
+  historicalRestatementCount?: number
+  requiresEvolutionCorrection?: boolean
+  requiresPublicationRestatementCorrection?: boolean
   blocked: boolean
   blockCodes: string[]
   counts: { new: number; gapFill: number; changed: number; unchanged: number; invalid: number }
@@ -110,8 +152,17 @@ export function nonCorrectionBlockCodes(plan: Pick<ImportPlan, 'blockCodes'>): s
  * assembled by hand, or one whose action a future edit forgets to downgrade,
  * cannot present a real publication correction as nothing to do.
  */
-export function isNoOp(plan: Pick<ImportPlan, 'action' | 'publicationChanged'>): boolean {
-  return plan.action === 'nothing_to_append' && plan.publicationChanged !== true
+export function isNoOp(
+  plan: Pick<ImportPlan, 'action' | 'publicationChanged' | 'historicalRestatementCount'>,
+): boolean {
+  return (
+    plan.action === 'nothing_to_append' &&
+    plan.publicationChanged !== true &&
+    // R13.8D.1 — an import that appends nothing and leaves this week equivalent
+    // may still be correcting already-published weeks. Calling that "nothing to
+    // apply" is exactly the false sentence this stage exists to remove.
+    (plan.historicalRestatementCount ?? 0) === 0
+  )
 }
 
 /** `after − before` when both are numbers; null when either side is unavailable. */
@@ -148,6 +199,16 @@ export interface VerdictStrings {
   verdictPublicationTitle: string
   verdictPublicationBody: string
   verdictPublicationMixedBody: string
+  /** R13.8D.1 — already-published weeks the workbook now states differently. */
+  verdictRestatementTitle: string
+  verdictRestatementOnlyBody: string
+  verdictRestatementAppendBody: string
+  verdictRestatementEvolutionBody: string
+}
+
+/** Total restated fields across every restated week. */
+export function restatedFieldCount(plan: Pick<ImportPlan, 'historicalRestatements'>): number {
+  return (plan.historicalRestatements ?? []).reduce((sum, r) => sum + r.differenceCount, 0)
 }
 
 /**
@@ -165,6 +226,30 @@ export function describeImportPlan(plan: ImportPlan, a: VerdictStrings): ImportV
 
   if (nonCorrectionBlockCodes(plan).length > 0 || plan.invalidDates.length > 0) {
     return { kind: 'blocked', tone: TONE.blocked, title: a.verdictBlockedTitle, body: a.verdictBlockedBody }
+  }
+
+  // R13.8D.1 — A RESTATEMENT OF ALREADY-PUBLISHED WEEKS OUTRANKS EVERY OTHER
+  // SENTENCE except a hard block.
+  //
+  // It has to. The pre-R13.8D.1 verdict for the real catch-up read "5 new weeks
+  // appended" and said nothing at all about seven published weeks being
+  // re-published — the administrator would authorize a correction whose subject
+  // was never named. Where evolution corrections are also present both are
+  // stated, because they are different rewrites of different things.
+  const r = plan.historicalRestatementCount ?? 0
+  if (r > 0) {
+    const d = restatedFieldCount(plan)
+    return {
+      kind: 'correction',
+      tone: TONE.changed,
+      title: a.verdictRestatementTitle,
+      body:
+        c > 0
+          ? fill(a.verdictRestatementEvolutionBody, { c, r, d })
+          : n + g === 0
+            ? fill(a.verdictRestatementOnlyBody, { r, d })
+            : fill(a.verdictRestatementAppendBody, { n, r, d }),
+    }
   }
 
   if (plan.requiresHistoricalCorrection) {

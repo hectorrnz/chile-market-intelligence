@@ -128,6 +128,21 @@ export interface PublicationDifference {
   afterValue?: number | null
   /** The row's own Spanish label, so a difference reads as a line of the book. */
   label?: string
+  /**
+   * R13.8D.1 — the identity, PARSED.
+   *
+   * `identity` stays the single joined key every comparison and fingerprint uses,
+   * so nothing downstream has to split a string to say WHICH series moved. A
+   * historical restatement is reported as "scope · basis · metric", and building
+   * that from a `|`-join at the presentation layer would put a second, weaker
+   * parser next to the canonical one.
+   */
+  scope: string
+  /** Performance rows only. */
+  basis?: string
+  metric?: string
+  /** Snapshot rows only. */
+  rowKey?: string
 }
 
 export interface PublicationDiffResult {
@@ -248,7 +263,14 @@ export function comparePublicationPayload(
     seenRows.add(identity)
     const before = storedRows.get(identity)
     if (!before) {
-      push({ area: 'snapshot', identity, kind: 'added', label: row.label_es })
+      push({
+        area: 'snapshot',
+        identity,
+        kind: 'added',
+        label: row.label_es,
+        scope: row.scope,
+        rowKey: row.row_key,
+      })
       continue
     }
     const field = firstDifferingField(
@@ -264,6 +286,8 @@ export function comparePublicationPayload(
         kind: 'changed',
         field,
         label: row.label_es,
+        scope: row.scope,
+        rowKey: row.row_key,
         ...(field === 'value' ? { beforeValue: before.value, afterValue: row.value } : {}),
       })
     }
@@ -271,7 +295,14 @@ export function comparePublicationPayload(
   for (const row of stored.rows) {
     const identity = snapshotIdentity(row)
     if (!seenRows.has(identity)) {
-      push({ area: 'snapshot', identity, kind: 'removed', label: row.label_es })
+      push({
+        area: 'snapshot',
+        identity,
+        kind: 'removed',
+        label: row.label_es,
+        scope: row.scope,
+        rowKey: row.row_key,
+      })
     }
   }
 
@@ -282,7 +313,14 @@ export function comparePublicationPayload(
     seenPerf.add(identity)
     const before = storedPerf.get(identity)
     if (!before) {
-      push({ area: 'performance', identity, kind: 'added' })
+      push({
+        area: 'performance',
+        identity,
+        kind: 'added',
+        scope: row.scope,
+        basis: row.basis,
+        metric: row.metric,
+      })
       continue
     }
     const field = firstDifferingField(
@@ -297,13 +335,25 @@ export function comparePublicationPayload(
         identity,
         kind: 'changed',
         field,
+        scope: row.scope,
+        basis: row.basis,
+        metric: row.metric,
         ...(field === 'value' ? { beforeValue: before.value, afterValue: row.value } : {}),
       })
     }
   }
   for (const row of stored.performance) {
     const identity = performanceIdentity(row)
-    if (!seenPerf.has(identity)) push({ area: 'performance', identity, kind: 'removed' })
+    if (!seenPerf.has(identity)) {
+      push({
+        area: 'performance',
+        identity,
+        kind: 'removed',
+        scope: row.scope,
+        basis: row.basis,
+        metric: row.metric,
+      })
+    }
   }
 
   return {

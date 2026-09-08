@@ -17,12 +17,15 @@ import type { LoadedDraft } from './draftReview.ts'
 import type {
   SnapshotRowPayload,
   PerformanceRowPayload,
+  ImportHistoricalPublicationPayload,
 } from '@/lib/db/repositories/portfolioPublicationRepository'
 import {
   listPersistedEvolutionObservations,
   listPublications,
   getStandingPublicationPayload,
+  listStandingPublicationPayloads,
 } from '@/lib/db/repositories/portfolioPublicationRepository'
+import type { HistoricalPublicationRestatement } from './weeklyImportPlan.ts'
 import { buildSnapshotRowPayload, buildPerformanceRowPayload } from './publicationPayload.ts'
 import { comparePublicationPayload } from './publicationMaterialDiff.ts'
 
@@ -31,6 +34,8 @@ export type ImportPreviewFailure =
   | { ok: false; code: 'evolution_read_failed' }
   | { ok: false; code: 'not_a_portfolio_draft' }
   | { ok: false; code: 'publication_read_failed' }
+  /** R13.8D.1 — the already-published weeks could not be read and compared. */
+  | { ok: false; code: 'historical_publication_read_failed' }
 
 export interface ImportPreviewSuccess {
   ok: true
@@ -44,6 +49,13 @@ export interface ImportPreviewSuccess {
    */
   rows: SnapshotRowPayload[]
   performance: PerformanceRowPayload[]
+  /**
+   * R13.8D.1 — for every already-published week this workbook restates, the
+   * payload that corrects it, in the same shape and from the same builders.
+   * The confirm route ships these to the RPC alongside the current publication,
+   * so the seven corrections and the five new weeks commit as one operation.
+   */
+  historicalPublications: ImportHistoricalPublicationPayload[]
 }
 
 /**
@@ -123,6 +135,64 @@ export async function planImportForDraft(
     }
   }
 
+  // ── R13.8D.1 — HISTORICAL PUBLICATION RESTATEMENTS.
+  //
+  // The evolution series answers "did this week's LEVEL move?". It cannot answer
+  // "did this week's published FIGURES move?" — a workbook can hold every level
+  // identical and still restate weekly P&L, net flows and YTD by reattributing an
+  // amount between them. R13.8C.2 closed that gap for the week being published;
+  // this closes it for the weeks already settled below it.
+  //
+  // Every workbook date that already carries a CURRENT publication is compared,
+  // through the SAME `comparePublicationPayload` used for the current week, so
+  // there is exactly one definition of "materially different" in the codebase.
+  // The workbook side comes from `loaded.historicalPayloads`, captured during the
+  // column scan the preview already runs, so this costs Production reads but no
+  // extra parse.
+  //
+  // The week being published is EXCLUDED: it is the current-publication axis
+  // above, and counting it twice would demand historical-correction authorization
+  // for an ordinary same-week republication that R13.5 has always allowed.
+  //
+  // A FAILED READ IS A FAILURE. Treating an unreadable book as "no restatements"
+  // would let a correction-requiring import through the gate unauthorized.
+  const candidateDates = [...loaded.historicalPayloads.keys()].filter((d) => d !== publicationDate)
+  const historicalRestatements: HistoricalPublicationRestatement[] = []
+  const historicalPublications: ImportHistoricalPublicationPayload[] = []
+  if (candidateDates.length > 0) {
+    const standingWeeks = await listStandingPublicationPayloads(candidateDates)
+    if (!standingWeeks.ok) {
+      return standingWeeks.code === 'not_configured'
+        ? { ok: false, code: 'not_configured' }
+        : { ok: false, code: 'historical_publication_read_failed' }
+    }
+    for (const week of standingWeeks.payloads) {
+      const workbookPayload = loaded.historicalPayloads.get(week.asOfDate)
+      if (!workbookPayload) continue
+      const diff = comparePublicationPayload(
+        { rows: week.rows, performance: week.performance },
+        workbookPayload,
+      )
+      if (diff.comparison !== 'changed') continue
+      historicalRestatements.push({
+        asOfDate: week.asOfDate,
+        publicationId: week.publicationId,
+        revision: week.revision,
+        differenceCount: diff.differenceCount,
+        differences: diff.differences,
+      })
+      historicalPublications.push({
+        as_of_date: week.asOfDate,
+        prior_publication_id: week.publicationId,
+        snapshot_rows: workbookPayload.rows,
+        performance_rows: workbookPayload.performance,
+        difference_count: diff.differenceCount,
+      })
+    }
+  }
+  historicalRestatements.sort((a, b) => (a.asOfDate < b.asOfDate ? -1 : 1))
+  historicalPublications.sort((a, b) => (a.as_of_date < b.as_of_date ? -1 : 1))
+
   const built = buildWeeklyImportPreview({
     bytes: loaded.bytes,
     selection: loaded.frozen,
@@ -132,6 +202,7 @@ export async function planImportForDraft(
     historicalCorrectionAuthorized: options.historicalCorrectionAuthorized,
     correctionReason: options.correctionReason,
     publicationDiff,
+    historicalPublicationRestatements: historicalRestatements,
   })
 
   return {
@@ -141,5 +212,6 @@ export async function planImportForDraft(
     extraction: built.extraction,
     rows,
     performance,
+    historicalPublications,
   }
 }
