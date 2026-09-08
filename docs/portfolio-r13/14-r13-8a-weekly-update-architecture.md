@@ -1195,7 +1195,7 @@ workbook's current view of it irrelevant.
 
 The first real catch-up workbook (frozen through 2026-09-04, against a Production endpoint of
 2026-07-31) planned exactly as designed: 5 NEW weeks, 0 GAP_FILL, 0 CHANGED. That last figure was
-correct â€” every evolution **level** in the workbook matched Production exactly.
+correct — every evolution **level** in the workbook matched Production exactly.
 
 It was also incomplete. Comparing the workbook against all 102 already-published weeks found **seven
 consecutive weeks restated**, all on one series, all in performance rows only, with **zero snapshot
@@ -1203,9 +1203,9 @@ row differences**: a recurring weekly amount had been reattributed from *net flo
 P&L*, carrying through YTD. Each week's P&L rose by exactly that week's removed flow, and the YTD
 deltas accumulated exactly. Portfolio values never moved.
 
-The evolution series is `(scope, basis, date) â†’ value`. It cannot see this, and it never could: the
-level is identical, only its attribution changed. So the correction gate â€” which read only the
-observation packet â€” let it through unauthorized, the preview did not mention it, and rollback had
+The evolution series is `(scope, basis, date) → value`. It cannot see this, and it never could: the
+level is identical, only its attribution changed. So the correction gate — which read only the
+observation packet — let it through unauthorized, the preview did not mention it, and rollback had
 nothing to reverse. The import would have appended five weeks and left seven published weeks
 disagreeing with the authoritative source, silently.
 
@@ -1216,18 +1216,18 @@ That is the same class of failure the no-op guard exists to prevent, one step ea
 `HISTORICAL_PUBLICATION_RESTATEMENT` is its own outcome, reported beside NEW, GAP_FILL, evolution
 CHANGED and the current-publication change. It is never relabelled as an evolution `changed`:
 
-* they mutate different things â€” one a level, one a whole published week;
+* they mutate different things — one a level, one a whole published week;
 * they carry different payloads and different before-images;
 * they take different write paths.
 
 They share exactly one thing, the **authorization gate**, because both overwrite settled financial
 history. `requiresHistoricalCorrection` is armed by either, and `requiresEvolutionCorrection` /
-`requiresPublicationRestatementCorrection` say which â€” an administrator is never told "historical
+`requiresPublicationRestatementCorrection` say which — an administrator is never told "historical
 correction required" without being told what kind.
 
 #### AE.15.3 One comparison, not two
 
-Detection reuses `comparePublicationPayload` â€” the R13.8C.2 material comparison â€” unchanged, and the
+Detection reuses `comparePublicationPayload` — the R13.8C.2 material comparison — unchanged, and the
 database re-derives each restatement with the same `nmi_portfolio_publication_unchanged` it already
 uses for the current week. Material and operational fields are exactly as AE.14.2 defines them, so an
 operational-only edit (a moved source coordinate) is not a restatement, and a metadata **figure**
@@ -1236,18 +1236,18 @@ operational-only edit (a moved source coordinate) is not a restatement, and a me
 The workbook side is captured from the column scan the preview **already runs**:
 `findPublishableHistoricalColumns` parses every historical column and previously discarded each
 draft. It now takes an optional visitor, so restatement detection costs Production reads but **no
-additional parse** â€” re-parsing would have doubled the most expensive step in the preview
-(~300 ms Ã— ~100 columns) for work already done.
+additional parse** — re-parsing would have doubled the most expensive step in the preview
+(~300 ms × ~100 columns) for work already done.
 
 #### AE.15.4 One import operation, still
 
 A catch-up carrying five new weeks and seven restatements commits as **one** operation:
 
 1. import lock, then the publication-series lock per week, ascending;
-2. stale pre-state verified â€” for observations *and* for each restated week's standing revision;
+2. stale pre-state verified — for observations *and* for each restated week's standing revision;
 3. the current publication for the newest frozen date;
 4. each restated week re-published at **the next revision of its own date**, through
-   `nmi_publish_portfolio` â€” the same demote-then-promote lifecycle R13.5 has always used;
+   `nmi_publish_portfolio` — the same demote-then-promote lifecycle R13.5 has always used;
 5. the appended history points;
 6. the audit records.
 
@@ -1259,7 +1259,7 @@ names the week being published as a historical correction.
 #### AE.15.5 Rollback and the second ledger
 
 `portfolio_import_publication_corrections` records, per import and week, which revision replaced
-which. Nothing is duplicated â€” the displaced revision keeps its own rows â€” but rollback can now
+which. Nothing is duplicated — the displaced revision keeps its own rows — but rollback can now
 demote precisely what the import promoted and promote precisely what it displaced, rather than
 guessing from dates. It refuses when a later import has re-published any corrected week, for the same
 reason the observation path does: reversing to a stale before-image would discard the later
@@ -1276,7 +1276,7 @@ database repeats the check under the publication lock
 #### AE.15.7 What the preview shows
 
 Restated weeks appear in their own card, above the authorization control, listing per week only the
-fields that **differ** â€” scope, basis, metric, published value, workbook value, delta â€” with the tail
+fields that **differ** — scope, basis, metric, published value, workbook value, delta — with the tail
 as a count. A week carries ~220 rows and the console never dumps them. When no evolution point moved,
 the evolution table is suppressed rather than rendered empty, so the card cannot imply a level was
 overwritten when none was.
@@ -1284,7 +1284,7 @@ overwritten when none was.
 #### AE.15.8 Proof
 
 `tests/portfolioHistoricalRestatement.test.ts` (46 tests) covers detection, the operational/material
-boundary, the gate, the fingerprint, the preview and the reference apply/rollback model. Â§ 8 of
+boundary, the gate, the fingerprint, the preview and the reference apply/rollback model. § 8 of
 `portfolio_import_operations_test.sql` executes the path in real PostgreSQL: the unauthorized
 refusal, the operational-only refusal (the non-vacuity pair for the accepted case), staleness, the
 current-week collision, an absent week, a **deliberate late failure** proving the correction rolls

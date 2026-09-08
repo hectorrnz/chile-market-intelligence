@@ -1,10 +1,10 @@
-﻿-- R13.8B â€” EXECUTABLE validation of the atomic catch-up import and its rollback.
+-- R13.8B — EXECUTABLE validation of the atomic catch-up import and its rollback.
 --
 -- WHY THIS FILE EXISTS. The claim is "one workbook upload produces one import
 -- operation, and either every history mutation AND the publication persist or
 -- none of them do". That is a statement about real PostgreSQL transaction
--- behaviour. A TypeScript test can prove the PLANNER classifies correctly â€” and
--- `tests/portfolioWeeklyImportPlan.test.ts` does â€” but only a database can show
+-- behaviour. A TypeScript test can prove the PLANNER classifies correctly — and
+-- `tests/portfolioWeeklyImportPlan.test.ts` does — but only a database can show
 -- that a failure on the fourth of four inserts leaves the book byte-identical.
 --
 -- HOW THE ATOMICITY PROOF IS MADE NON-VACUOUS. The failing packet is ordered so
@@ -16,7 +16,7 @@
 --
 -- `throws_ok` runs its query inside a plpgsql exception block, which is a real
 -- subtransaction: catching the error rolls back everything the function did,
--- exactly as a failed RPC call would. `lives_ok` is its counterpart â€” on success
+-- exactly as a failed RPC call would. `lives_ok` is its counterpart — on success
 -- nothing is rolled back, so the effects persist and later assertions can read
 -- them.
 --
@@ -34,9 +34,9 @@ create extension if not exists pgtap with schema extensions;
 
 select no_plan();
 
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- 0 Â· Fixtures â€” a Production book ending at 2026-07-31 with two holes
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 0 · Fixtures — a Production book ending at 2026-07-31 with two holes
+-- ═══════════════════════════════════════════════════════════════════════════
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
                         email_confirmed_at, created_at, updated_at)
@@ -91,10 +91,10 @@ as $$
     'source_sheet', 'RESUMEN', 'source_cell', 'DA10'));
 $$;
 
--- R13.8C.2 â€” the payload of the publication CURRENTLY STANDING for a week,
+-- R13.8C.2 — the payload of the publication CURRENTLY STANDING for a week,
 -- reconstructed exactly as the RPC receives one. A packet built from this is a
 -- true no-op by construction, whatever the fixtures above happen to have left
--- current â€” which is stronger than hard-coding a value that a later edit to an
+-- current — which is stronger than hard-coding a value that a later edit to an
 -- earlier section could silently make wrong.
 create or replace function pg_temp.standing_rows(p_date date)
 returns jsonb
@@ -112,7 +112,7 @@ as $$
    where p.upload_kind = 'portfolio' and p.as_of_date = p_date and p.is_current;
 $$;
 
--- The same payload with one JSON key overridden on every row â€” how a workbook
+-- The same payload with one JSON key overridden on every row — how a workbook
 -- edit that moves a figure, or one that only moves a source coordinate, is
 -- expressed without rebuilding the whole array by hand.
 create or replace function pg_temp.standing_rows_with(p_date date, p_key text, p_value jsonb)
@@ -180,9 +180,9 @@ values
   ('main','ex_chilean_equities','2026-07-31', 13, 'USD', 'dddd0001-0000-0000-0000-000000000001',
    'RESUMEN','CZ10','TOTAL','test.parser.1','test.extractor.1');
 
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- 1 Â· Schema and posture
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 1 · Schema and posture
+-- ═══════════════════════════════════════════════════════════════════════════
 
 select has_table('public', 'portfolio_import_operations', 'the import operation table exists');
 select has_table('public', 'portfolio_import_observation_mutations', 'the before-image ledger exists');
@@ -198,7 +198,7 @@ select is(
   (select count(*)::int from pg_catalog.pg_policies
     where schemaname = 'public'
       and tablename in ('portfolio_import_operations','portfolio_import_observation_mutations')),
-  0, 'neither new table has any RLS policy â€” both are service-role only');
+  0, 'neither new table has any RLS policy — both are service-role only');
 
 select ok(
   not has_table_privilege('authenticated', 'public.portfolio_import_observation_mutations', 'SELECT'),
@@ -209,9 +209,9 @@ select ok(
     'EXECUTE'),
   'authenticated cannot execute the import RPC');
 
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- 2 Â· The catch-up: three NEW and two GAP_FILL, one publication
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 2 · The catch-up: three NEW and two GAP_FILL, one publication
+-- ═══════════════════════════════════════════════════════════════════════════
 
 select lives_ok(
   $$select public.nmi_import_portfolio_workbook(
@@ -269,9 +269,9 @@ select is(
     where correction_authorized = false and correction_reason is null),
   1, 'a five-week catch-up needed no correction authorization and no reason');
 
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- 3 Â· Refusals â€” each proven to leave the book untouched
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 3 · Refusals — each proven to leave the book untouched
+-- ═══════════════════════════════════════════════════════════════════════════
 
 -- 3a. An overwrite without authorization.
 select throws_ok(
@@ -283,7 +283,7 @@ select throws_ok(
   'import_refused_historical_correction_required',
   'an overwrite without authorization is refused');
 
--- 3b. Authorized but with no reason â€” the CHECK and the RPC agree.
+-- 3b. Authorized but with no reason — the CHECK and the RPC agree.
 select throws_ok(
   $$select public.nmi_import_portfolio_workbook(
       'dddd0003-0000-0000-0000-000000000003'::uuid, '2026-08-28'::date,
@@ -331,7 +331,7 @@ select throws_ok(
   'import_refused_unavailable_not_representable',
   'an unavailable state is refused rather than coerced into a numeric column');
 
--- 3f. THE LATE FAILURE â€” the non-vacuous atomicity proof. Three observations
+-- 3f. THE LATE FAILURE — the non-vacuous atomicity proof. Three observations
 --     insert, the operation row and the publication are already written, and
 --     only then does the fourth entry raise.
 select throws_ok(
@@ -370,9 +370,9 @@ select is(
     where observation_date = '2026-07-10' and scope = 'main'),
   12::numeric, 'the value a refused correction targeted is unchanged');
 
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- 4 Â· Rollback of the catch-up
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 4 · Rollback of the catch-up
+-- ═══════════════════════════════════════════════════════════════════════════
 
 select lives_ok(
   $$select public.nmi_rollback_portfolio_import(
@@ -383,7 +383,7 @@ select lives_ok(
 
 select is(
   (select count(*)::int from public.portfolio_evolution_observations),
-  3, 'rollback removed all five insertions â€” the gap fills as well as the new weeks');
+  3, 'rollback removed all five insertions — the gap fills as well as the new weeks');
 
 select is(
   (select count(*)::int from public.portfolio_publications
@@ -402,7 +402,7 @@ select is(
 
 select is(
   (select count(*)::int from public.portfolio_import_observation_mutations),
-  5, 'the ledger is retained after rollback â€” the audit trail is permanent');
+  5, 'the ledger is retained after rollback — the audit trail is permanent');
 
 select isnt(
   (select rolled_back_at from public.portfolio_import_operations
@@ -416,9 +416,9 @@ select throws_ok(
   'rollback_refused_already_rolled_back',
   'a second rollback of the same import is refused');
 
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- 5 Â· Chained imports â€” a correction, its rollback, and lineage restoration
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 5 · Chained imports — a correction, its rollback, and lineage restoration
+-- ═══════════════════════════════════════════════════════════════════════════
 
 -- Import A inserts a week.
 select lives_ok(
@@ -495,26 +495,26 @@ select is(
     where upload_kind = 'portfolio' and is_current),
   '2026-07-31'::date, 'and back to its original current publication');
 
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- 6 Â· R13.8C.2 â€” a TRUE no-op import is refused by the DATABASE
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 6 · R13.8C.2 — a TRUE no-op import is refused by the DATABASE
 --
 -- The console already disables Apply for a NO_CHANGES preview. That is a
 -- convenience, not the invariant: a caller reaching the RPC directly would
 -- otherwise mint an import operation row and a publication revision recording
 -- no change at all. These cases prove the refusal is the database's, that it
--- writes nothing, that repeating it still writes nothing, and â€” the other half
--- of the proof â€” that each single valid disposition still imports.
+-- writes nothing, that repeating it still writes nothing, and — the other half
+-- of the proof — that each single valid disposition still imports.
 --
 -- R13.8C.2 CORRECTED WHAT "NO-OP" MEANS, and these packets say so. A no-op is
 -- the WHOLE import: no history mutation AND a current publication materially
 -- equivalent to the one already standing. So every packet below carries
--- `pg_temp.standing_rows(...)` â€” the exact payload already published â€” rather
+-- `pg_temp.standing_rows(...)` — the exact payload already published — rather
 -- than an arbitrary one. A packet whose snapshot differs is NOT a no-op and must
--- not be refused; Â§ 7 proves that half.
+-- not be refused; § 7 proves that half.
 --
 -- The book here is back to its original three weeks (07-03, 07-10, 07-31) with
 -- 07-31 current, and every earlier import has been rolled back.
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-- ═══════════════════════════════════════════════════════════════════════════
 
 insert into public.portfolio_source_uploads
   (id, upload_kind, storage_object_path, original_filename, file_sha256,
@@ -543,7 +543,7 @@ select is(
   (select count(*)::int from public.portfolio_import_observation_mutations),
   8, 'pre-state for the no-op cases: eight permanent ledger entries');
 
--- NON-VACUITY OF Â§ 6. Every packet below is a no-op only because it restates the
+-- NON-VACUITY OF § 6. Every packet below is a no-op only because it restates the
 -- STANDING publication. If that reconstruction were empty the packets would be
 -- refused for a different reason entirely (`publication_refused_nothing_to_publish`)
 -- and this section would prove nothing about the no-op guard.
@@ -551,7 +551,7 @@ select cmp_ok(
   jsonb_array_length(pg_temp.standing_rows('2026-07-31')), '>', 0,
   'the standing publication for 2026-07-31 has rows to restate');
 
--- 6a. An EMPTY packet â€” the NO_CHANGES preview, confirmed anyway.
+-- 6a. An EMPTY packet — the NO_CHANGES preview, confirmed anyway.
 select throws_ok(
   $$select public.nmi_import_portfolio_workbook(
       'dddd0005-0000-0000-0000-000000000005'::uuid, '2026-07-31'::date,
@@ -571,7 +571,7 @@ select throws_ok(
   'import_refused_nothing_to_append',
   'a packet carrying only unchanged weeks is the same no-op, however long');
 
--- 6c. Repeating it changes nothing either â€” a retry or a double-click cannot
+-- 6c. Repeating it changes nothing either — a retry or a double-click cannot
 --     accumulate into a state the single attempt was refused for.
 select throws_ok(
   $$select public.nmi_import_portfolio_workbook(
@@ -619,7 +619,7 @@ select is(
     where upload_kind = 'portfolio' and is_current),
   '2026-07-31'::date, 'and the current publication is the one that was current before');
 
--- 6d. NEW only â€” still imports.
+-- 6d. NEW only — still imports.
 select lives_ok(
   $$select public.nmi_import_portfolio_workbook(
       'dddd0006-0000-0000-0000-000000000006'::uuid, '2026-08-07'::date,
@@ -633,7 +633,7 @@ select is(
     where observation_date = '2026-08-07'),
   61::numeric, 'the new week landed');
 
--- 6e. GAP_FILL only â€” an insertion below the endpoint, no authorization needed.
+-- 6e. GAP_FILL only — an insertion below the endpoint, no authorization needed.
 select lives_ok(
   $$select public.nmi_import_portfolio_workbook(
       'dddd0007-0000-0000-0000-000000000007'::uuid, '2026-08-14'::date,
@@ -651,9 +651,9 @@ select is(
   (select count(*)::int from public.portfolio_import_operations
     where upload_id = 'dddd0007-0000-0000-0000-000000000007'
       and correction_authorized = false and correction_reason is null),
-  1, 'the gap fill needed no correction authorization â€” it is an insertion');
+  1, 'the gap fill needed no correction authorization — it is an insertion');
 
--- 6f. CHANGED only, authorized and with a reason â€” still imports.
+-- 6f. CHANGED only, authorized and with a reason — still imports.
 select lives_ok(
   $$select public.nmi_import_portfolio_workbook(
       'dddd0008-0000-0000-0000-000000000008'::uuid, '2026-08-21'::date,
@@ -677,26 +677,26 @@ select is(
   (select count(*)::int from public.portfolio_evolution_observations),
   5, 'exactly the three valid imports moved the book: 3 + 1 new + 1 gap fill');
 
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- 7 Â· R13.8C.2 â€” a SNAPSHOT-ONLY change is a real import, not a no-op
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 7 · R13.8C.2 — a SNAPSHOT-ONLY change is a real import, not a no-op
 --
 -- THE BUG THIS SECTION EXISTS FOR. R13.8C.1 decided "nothing to append" from the
 -- evolution packet alone. A workbook can leave every evolution point identical
 -- and still restate a holding, a flow, a sociedad total or a performance figure
 -- inside the CURRENT snapshot. Under that test the import was refused and the
--- stale published figure stayed standing â€” the console told an administrator
+-- stale published figure stayed standing — the console told an administrator
 -- there was nothing to do while the book was wrong.
 --
 -- These cases prove all four halves of the corrected rule, executably:
---   Â· a packet identical in BOTH halves is still refused, and writes nothing;
---   Â· a packet differing only in OPERATIONAL fields is still refused;
---   Â· a packet whose snapshot materially differs is APPLIED, through the
+--   · a packet identical in BOTH halves is still refused, and writes nothing;
+--   · a packet differing only in OPERATIONAL fields is still refused;
+--   · a packet whose snapshot materially differs is APPLIED, through the
 --     ordinary publication/revision lifecycle and nothing invented;
---   Â· a snapshot-only import fails whole and rolls back exactly.
+--   · a snapshot-only import fails whole and rolls back exactly.
 --
--- Â§ 6 left the book with 2026-08-21 current, carrying the payload upload
+-- § 6 left the book with 2026-08-21 current, carrying the payload upload
 -- `dddd0008` published (`rows_payload(900)`). Everything below works there.
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-- ═══════════════════════════════════════════════════════════════════════════
 
 insert into public.portfolio_source_uploads
   (id, upload_kind, storage_object_path, original_filename, file_sha256,
@@ -713,7 +713,7 @@ values
   ('dddd000d-0000-0000-0000-00000000000d', 'portfolio', 'private/ud.xlsx', 'ud.xlsx',
    repeat('7', 64), 1000, 'd1111111-1111-1111-1111-111111111111', 'test.parser.1', 'draft');
 
--- The pre-state Â§ 7 is measured against.
+-- The pre-state § 7 is measured against.
 select is(
   (select max(as_of_date) from public.portfolio_publications
     where upload_kind = 'portfolio' and is_current),
@@ -721,7 +721,7 @@ select is(
 select is(pg_temp.current_total('2026-08-21'), 900::numeric,
   'pre-state for the snapshot cases: the standing total is 900');
 
--- The standing publication ROW, captured so Â§ 7 can assert against the row that
+-- The standing publication ROW, captured so § 7 can assert against the row that
 -- actually stands rather than against an assumed revision number. Earlier
 -- sections publish at this date too, so its revision is not 1, and hard-coding
 -- one would make these assertions depend on edits made hundreds of lines above.
@@ -742,7 +742,7 @@ select is(
   (select count(*)::int from public.portfolio_evolution_observations), 5,
   'pre-state for the snapshot cases: five observations');
 
--- â”€â”€ The comparison function itself, at its two boundaries â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- ── The comparison function itself, at its two boundaries ───────────────────
 
 -- No publication standing for a week is NEVER "unchanged": there is plainly
 -- something to publish. Getting this backwards would refuse a first publication.
@@ -764,7 +764,7 @@ select is(
     pg_temp.standing_rows_with('2026-08-21', 'value', to_jsonb(901::numeric)), '[]'::jsonb),
   false, 'a single moved figure is a material difference');
 
--- 7a. TRUE no-op â€” history unchanged AND the snapshot identical. Still refused.
+-- 7a. TRUE no-op — history unchanged AND the snapshot identical. Still refused.
 --     (Brief case A, and case H: this is the RPC called directly.)
 select throws_ok(
   $$select public.nmi_import_portfolio_workbook(
@@ -775,7 +775,7 @@ select throws_ok(
   'import_refused_nothing_to_append',
   'an import that changes neither the history nor the standing snapshot is refused');
 
--- 7b. OPERATIONAL-ONLY difference â€” every source coordinate moved because a
+-- 7b. OPERATIONAL-ONLY difference — every source coordinate moved because a
 --     blank row was inserted above the section. No figure changed, so it is
 --     still a no-op and still refused. (Brief case C.)
 select throws_ok(
@@ -786,7 +786,7 @@ select throws_ok(
       pg_temp.standing_rows_with('2026-08-21', 'source_cell', '"ZZ99"'::jsonb),
       '[]'::jsonb)$$,
   'import_refused_nothing_to_append',
-  'a workbook whose rows only MOVED is still a no-op â€” a coordinate is not a figure');
+  'a workbook whose rows only MOVED is still a no-op — a coordinate is not a figure');
 
 -- And the same for the row-level provenance carried inside `metadata`.
 select throws_ok(
@@ -814,7 +814,7 @@ select is(pg_temp.current_total('2026-08-21'), 900::numeric,
   'and the standing snapshot is untouched');
 
 -- 7c. A MATERIAL holding change with NO history change. This is the import
---     R13.8C.1 refused. It must be applied â€” through the ordinary publication
+--     R13.8C.1 refused. It must be applied — through the ordinary publication
 --     lifecycle, which already mints a revision and supersedes its predecessor.
 --     (Brief case B.)
 select lives_ok(
@@ -830,12 +830,12 @@ select is(pg_temp.current_total('2026-08-21'), 901::numeric,
   'the corrected figure is what readers now see');
 select is(
   (select count(*)::int from public.portfolio_evolution_observations), 5,
-  'and it changed no history â€” the two halves really are independent');
+  'and it changed no history — the two halves really are independent');
 select is(
   (select revision from public.portfolio_publications
     where upload_kind = 'portfolio' and as_of_date = '2026-08-21' and is_current),
   (select rev_before + 1 from snapshot_prestate),
-  'it went through the existing revision lifecycle â€” no new financial rule');
+  'it went through the existing revision lifecycle — no new financial rule');
 select is(
   (select count(*)::int from public.portfolio_publications p
      join snapshot_prestate x on x.pub_before = p.id
@@ -843,7 +843,7 @@ select is(
   1, 'and the revision it replaced is demoted and points at its successor');
 
 -- No correction authorization was required, and none was invented. Same-date
--- replacement has never demanded a written reason (doc 05 Â§ 5.1); only an
+-- replacement has never demanded a written reason (doc 05 § 5.1); only an
 -- overwrite of settled HISTORY does, and this import overwrote none.
 select is(
   (select count(*)::int from public.portfolio_import_operations
@@ -856,7 +856,7 @@ select is(
   0, 'and wrote no before-image ledger entry, because it mutated no observation');
 
 -- 7d. ROLLBACK of a snapshot-only correction restores the EXACT previous
---     publication â€” not a re-derivation of it, the row itself. (Brief case J.)
+--     publication — not a re-derivation of it, the row itself. (Brief case J.)
 select lives_ok(
   $$select public.nmi_rollback_portfolio_import(
       pg_temp.op_id('dddd000a-0000-0000-0000-00000000000a'),
@@ -868,7 +868,7 @@ select is(
   (select id from public.portfolio_publications
     where upload_kind = 'portfolio' and as_of_date = '2026-08-21' and is_current),
   (select pub_before from snapshot_prestate),
-  'the exact previous publication is standing again, figure for figure â€” the same row, not a re-derivation');
+  'the exact previous publication is standing again, figure for figure — the same row, not a re-derivation');
 select is(pg_temp.current_total('2026-08-21'), 900::numeric,
   'and it carries the figures it carried before');
 select is(
@@ -878,7 +878,7 @@ select is(
   'at its original revision, not a third one minted to undo the second');
 select is(
   (select count(*)::int from public.portfolio_publications), 8,
-  'the reversed revision is retained, never deleted â€” it can be rolled forward');
+  'the reversed revision is retained, never deleted — it can be rolled forward');
 select is(
   (select count(*)::int from public.portfolio_evolution_observations), 5,
   'and the rollback touched no history, because the import had touched none');
@@ -959,12 +959,12 @@ select is(
 
 select is(
   (select count(*)::int from public.portfolio_evolution_observations), 5,
-  'the whole of Â§ 7 moved no history â€” every case here is publication-only');
+  'the whole of § 7 moved no history — every case here is publication-only');
 
--- â”€â”€ The publication half can never WEAKEN the history half â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- ── The publication half can never WEAKEN the history half ──────────────────
 --
 -- R13.8C.2 added a second axis. The one way that could have gone wrong is if it
--- became a second gate â€” letting a settled publication excuse a history
+-- became a second gate — letting a settled publication excuse a history
 -- mutation, or letting an unchanged publication suppress one. It does neither:
 -- a history mutation is an import on its own terms, and a correction still needs
 -- its authorization and its reason no matter how settled this week's snapshot is.
@@ -981,7 +981,7 @@ values
    repeat('0', 64), 1000, 'd1111111-1111-1111-1111-111111111111', 'test.parser.1', 'draft');
 
 -- 7h. ONE GAP FILL, publication otherwise IDENTICAL. A gap fill does not move
---     the endpoint, so this week's snapshot legitimately restates itself â€” and
+--     the endpoint, so this week's snapshot legitimately restates itself — and
 --     the import must still apply, because the history half is not empty.
 --     (Brief case E.)
 select is(
@@ -989,7 +989,7 @@ select is(
     (select id from public.portfolio_publications
       where upload_kind = 'portfolio' and as_of_date = '2026-08-21' and is_current),
     pg_temp.standing_rows('2026-08-21'), pg_temp.standing_perf('2026-08-21')),
-  true, 'the packet 7h sends is publication-identical â€” the gap fill is the only change');
+  true, 'the packet 7h sends is publication-identical — the gap fill is the only change');
 
 select lives_ok(
   $$select public.nmi_import_portfolio_workbook(
@@ -1042,17 +1042,17 @@ select is(
 
 select is(
   (select count(*)::int from public.portfolio_evolution_observations), 6,
-  'the book ends Â§ 7 with one more week than it began: the gap fill, and nothing else');
+  'the book ends § 7 with one more week than it began: the gap fill, and nothing else');
 
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
--- Â§ 8 Â· R13.8D.1 â€” HISTORICAL PUBLICATION RESTATEMENT
--- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-- ═══════════════════════════════════════════════════════════════════════════
+-- § 8 · R13.8D.1 — HISTORICAL PUBLICATION RESTATEMENT
+-- ═══════════════════════════════════════════════════════════════════════════
 --
 -- The gap this section closes: an import could append new weeks while leaving
 -- ALREADY-PUBLISHED weeks disagreeing with the authoritative workbook. The
--- evolution series cannot see it â€” a workbook can move an amount from net flows
+-- evolution series cannot see it — a workbook can move an amount from net flows
 -- into weekly profit and leave every portfolio LEVEL identical while the
--- published figures change â€” so before R13.8D.1 the correction gate, which read
+-- published figures change — so before R13.8D.1 the correction gate, which read
 -- only the observation packet, let it through unauthorized and unrecorded.
 --
 -- Every test below runs against real PostgreSQL, in real transactions, so the
@@ -1110,7 +1110,7 @@ create temporary table restatement_prestate as
          (select count(*)::int from public.portfolio_evolution_observations) as obs_before;
 
 select isnt((select pub_before from restatement_prestate), null::uuid,
-  '2026-07-31 still has its own current publication â€” each week stays current for itself');
+  '2026-07-31 still has its own current publication — each week stays current for itself');
 
 -- 8b. THE GATE. A restatement is an overwrite of settled history, so it needs
 --     authorization and a reason exactly as an evolution overwrite does. This is
@@ -1130,7 +1130,7 @@ select throws_ok(
   'import_refused_historical_correction_required',
   'a restatement of an already-published week cannot apply without authorization');
 
--- 8c. â€¦and the refusal wrote NOTHING: not the new week, not the correction.
+-- 8c. …and the refusal wrote NOTHING: not the new week, not the correction.
 select is((select count(*)::int from public.portfolio_evolution_observations),
   (select obs_before from restatement_prestate),
   'the refused mixed import appended no history');
@@ -1141,7 +1141,7 @@ select is((select count(*)::int from public.portfolio_import_publication_correct
 
 -- 8d. AUTHORIZATION IS NOT A LICENCE TO MINT AN EMPTY REVISION. The database
 --     re-derives whether the week actually differs, from its own rows.
---     An OPERATIONAL-only edit â€” a moved source coordinate â€” is not a
+--     An OPERATIONAL-only edit — a moved source coordinate — is not a
 --     restatement, and must be refused even when fully authorized. This is the
 --     non-vacuity pair for 8h: same call, same authorization, one key different.
 --     (Brief case K.)
@@ -1213,7 +1213,7 @@ select throws_ok(
 -- 8h. ATOMICITY, PROVED BY A DELIBERATE LATE FAILURE. (Brief cases G/H.)
 --     The packet carries a VALID historical correction and a history mutation
 --     that is stale. The history loop runs AFTER the corrections, so the
---     correction has already been written when the failure fires â€” and it must
+--     correction has already been written when the failure fires — and it must
 --     still be gone when the dust settles.
 select throws_ok(
   $$select public.nmi_import_portfolio_workbook(
@@ -1231,7 +1231,7 @@ select throws_ok(
   'a mixed import whose history half is stale is refused whole');
 
 select is(pg_temp.current_pub('2026-07-31'), (select pub_before from restatement_prestate),
-  'the historical correction rolled back with the failed history write â€” SAME revision still current');
+  'the historical correction rolled back with the failed history write — SAME revision still current');
 select is((select count(*)::int from public.portfolio_import_publication_corrections), 0,
   'and no correction survived the rollback');
 select is((select count(*)::int from public.portfolio_import_operations
@@ -1275,7 +1275,7 @@ select is(
   pg_temp.current_pub('2026-07-31'),
   'the displaced revision points at the one that replaced it');
 
--- 8j. The ledger records which revision displaced which â€” this is what makes
+-- 8j. The ledger records which revision displaced which — this is what makes
 --     rollback exact rather than a guess from dates.
 select is((select count(*)::int from public.portfolio_import_publication_corrections
             where import_operation_id = pg_temp.op_id('dddd0013-0000-0000-0000-000000000013')), 1,
@@ -1321,7 +1321,7 @@ select is(
   'no corrected revision from the reversed import is left standing');
 
 -- 8m. A RESTATEMENT-ONLY IMPORT IS NOT A NO-OP. No week is appended and this
---     week's snapshot is byte-identical, but seven â€” here one â€” already-published
+--     week's snapshot is byte-identical, but seven — here one — already-published
 --     weeks are being corrected, and that is a durable financial mutation.
 --     (Brief case C at the database.)
 select lives_ok(
