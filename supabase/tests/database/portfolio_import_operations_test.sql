@@ -1074,14 +1074,17 @@ insert into public.portfolio_source_uploads
   (id, upload_kind, storage_object_path, original_filename, file_sha256,
    file_size_bytes, uploaded_by, parser_version, status)
 values
+  -- Two-character patterns: every single hex character is already taken by an
+  -- earlier section, and `(upload_kind, file_sha256)` is unique — a collision
+  -- aborts the whole file rather than failing one assertion.
   ('dddd0011-0000-0000-0000-000000000011', 'portfolio', 'private/u11.xlsx', 'u11.xlsx',
-   repeat('1', 64), 1000, 'd1111111-1111-1111-1111-111111111111', 'test.parser.1', 'draft'),
+   repeat('a1', 32), 1000, 'd1111111-1111-1111-1111-111111111111', 'test.parser.1', 'draft'),
   ('dddd0012-0000-0000-0000-000000000012', 'portfolio', 'private/u12.xlsx', 'u12.xlsx',
-   repeat('2', 64), 1000, 'd1111111-1111-1111-1111-111111111111', 'test.parser.1', 'draft'),
+   repeat('a2', 32), 1000, 'd1111111-1111-1111-1111-111111111111', 'test.parser.1', 'draft'),
   ('dddd0013-0000-0000-0000-000000000013', 'portfolio', 'private/u13.xlsx', 'u13.xlsx',
-   repeat('3', 64), 1000, 'd1111111-1111-1111-1111-111111111111', 'test.parser.1', 'draft'),
+   repeat('a3', 32), 1000, 'd1111111-1111-1111-1111-111111111111', 'test.parser.1', 'draft'),
   ('dddd0014-0000-0000-0000-000000000014', 'portfolio', 'private/u14.xlsx', 'u14.xlsx',
-   repeat('4', 64), 1000, 'd1111111-1111-1111-1111-111111111111', 'test.parser.1', 'draft');
+   repeat('a4', 32), 1000, 'd1111111-1111-1111-1111-111111111111', 'test.parser.1', 'draft');
 
 create or replace function pg_temp.current_pub(p_date date)
 returns uuid
