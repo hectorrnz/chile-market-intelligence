@@ -542,6 +542,74 @@ docs/                 — Project documentation
   atomicity via a deliberately LATE failure, idempotency, staleness, authorization, the correction
   identity index and the full administrator/member/anon read matrix).
 
+## Family Portfolio Weekly Workbook Import Rule (R13.8 — locked operating rules)
+
+**The workbook leads on weekly history.** See [[workbook-leads-on-weekly-history]] (memory). These
+rules are owner-locked and govern every future weekly upload — do not relax or reinterpret them
+without an explicit new instruction:
+
+- **Publication comes from the newest valid FROZEN historical column.** The live `TODAY()`/
+  Bloomberg-linked column (`RESUMEN!DE` in the current template) is **never** a publication source —
+  it is `#NAME?` without the Bloomberg add-in and is read only as an intra-week diagnostic preview,
+  never applied.
+- **One upload may carry many unpublished frozen weeks.** Every workbook-supplied unpublished week is
+  imported; a week genuinely absent from the workbook is never fabricated or interpolated.
+- **Identity classification, per observation:**
+  - `NEW` — a scope/basis/date identity missing above the current published endpoint.
+  - `GAP_FILL` — a missing identity at or below the current published endpoint.
+  - `CHANGED` — an existing evolution identity whose value differs from what's already stored.
+  - **Historical publication restatement** — an already-published week's material publication
+    payload (performance rows) differs from the newly parsed workbook. This is a fifth category,
+    distinct from `CHANGED`, with its own write path
+    (`portfolio_import_publication_corrections`).
+- **Only overwriting existing historical state requires correction authorization + a written
+  reason.** New/gap-fill weeks and a genuinely new current publication never require authorization —
+  only a restatement of an already-published week does.
+- **One upload = one import operation = N evolution history points + exactly ONE new current
+  publication**, at the newest frozen reporting date in that upload. Intermediate catch-up weeks are
+  evolution history points only — they get no publication of their own and therefore do not appear
+  as individually selectable published weeks in Weekly Changes (see backlog item A below). This is
+  the documented design, not a defect.
+- **History, publication, and corrections apply atomically** — one operation, one transaction. A
+  publication's `is_current` flag is unique per `(upload_kind, as_of_date)`, so correcting a past
+  week never changes which week is newest.
+- **Rollback reverses the whole import**, never a partial slice of it.
+- **An identical full normalized import (re-uploading the same effective workbook) is a no-op**
+  (`action: nothing_to_append`) — never a duplicate import, never an error. A byte-level hash
+  mismatch alone (e.g. the owner re-saved the file in Excel) is not grounds to reject a re-upload or
+  treat it as new: verify by the recomputed **plan fingerprint** (`planFingerprint()`,
+  `src/lib/familyPortfolio/weeklyImportPreview.ts`), which covers every written observation value
+  and each restated week's publication id/revision/difference count — not by the raw file hash.
+- **Never write via service-role SQL as a substitute for the application upload.** The only
+  application-level write path is the administrator upload flow through
+  `nmi_import_portfolio_workbook` (14-arg RPC, `service_role`-only, `SECURITY INVOKER`).
+
+### Recurring weekly operating procedure
+
+This is now a standing operating procedure, not a development task:
+
+1. Refresh/save the workbook on the Bloomberg-enabled machine.
+2. Preserve every frozen historical column — do not delete or reorder them.
+3. Upload the workbook through `/portfolio/admin`.
+4. Review the preview: NEW weeks, GAP_FILL weeks, evolution CHANGED rows, historical publication
+   restatements, and the newest publication date.
+5. If a historical restatement is present, explicitly authorize it and enter a real, specific reason
+   (never a generic placeholder).
+6. Apply once.
+7. Never manually modify the database and never bypass the application importer for a routine weekly
+   update.
+
+### Non-blocking backlog (recorded, not fixed in this pass)
+
+- **A.** Intermediate catch-up dates are evolution history points and are not individually selectable
+  published weeks in Weekly Changes — by current design (see above), not a defect.
+- **B.** 324 pre-existing hierarchy (parent = Σchildren) non-reconciliations exist across 10 dates
+  from 2024-10-25 through 2025-08-01. None were introduced by R13.8; every week at or after
+  2026-06-19 reconciles cleanly.
+- **C.** Structured Note `XS3376583269` has a Nevada allocation of 1.05m against a recorded issue
+  size of 1.005m — an advisory issue-size plausibility review item. Portfolio exposure accounting is
+  unaffected.
+
 ## Number and Font Rules (Phase 2B)
 
 - **All prices, percentages, dates, macro values, multiples, and market caps use the body font — NOT `font-mono`.**
@@ -710,6 +778,54 @@ docs/                 — Project documentation
 - Build: `npm run build` passes 0 errors (12 routes); `npm test` 13/13 pass; `npm run lint` 0 problems. Runtime-verified (dev server): home/compare/charting render, persistence round-trips, command palette filters, **no console errors or hydration warnings**.
 
 ## Current Phase
+
+**R13 CLOSED (2026-09-08) — documentation/repository-hygiene closeout only; no code, migration, or
+Production change in this pass.** Production master `153c322253c81cb1c6a825a60cd6ad45c85100a3`. Both
+R13 workstreams are released and their final state is recorded here for future sessions.
+
+**Structured Notes (R13.7) — released and reconciled.** 8 historical missed autocalls corrected; 1
+note remained active at reconciliation time; historical-correction notifications are
+administrator-only in-platform (0 historical-correction emails were ever sent — see "Structured
+Notes Reconciliation Rule" above); settlement-aware notional semantics; T-1/T0 operational
+architecture live; owner-approved final UI/bell (see "Delete Control Rule" and "Fit Table Rule"
+above for the R13.7B2.2 layout work).
+
+**Family Portfolio (R13.8) — released; the first real recurring weekly import is verified in
+Production.** The recurring workbook workflow is now operational (see "Family Portfolio Weekly
+Workbook Import Rule" above for the locked rules and the recurring SOP). Production history is
+current through 2026-09-04:
+- First real weekly import added five new evolution weeks: 2026-08-07, 2026-08-14, 2026-08-21,
+  2026-08-28, 2026-09-04.
+- Seven authorized historical publication restatements: 2026-06-19, 2026-06-26, 2026-07-03,
+  2026-07-10, 2026-07-17, 2026-07-24, 2026-07-31 — portfolio levels unchanged by every one of them;
+  453,873.3021241707 was reattributed from Net Flows to Weekly P&L across those seven weeks.
+- Final evolution point counts: Main ex-Chilean-equities 107 · Main with-Chilean-equities 107 ·
+  Jaime 107 · Andrés 107 · Pablo 99.
+- Full read-only post-write verification record: [[workbook-leads-on-weekly-history]] (memory).
+
+**Roadmap status — next existing planned workstream: D0, user provisioning and granular access
+management** (`docs/portfolio-r13/09-open-decisions.md` § D0), recorded there as **REQUIRED NEXT**
+at the owner's own instruction on 2026-08-31. Non-negotiable invariant carried forward unchanged:
+Jaime/Andrés/Pablo can never see one another's personal portfolio scope; an account with no
+`portfolio_principal` has no personal scope; administrators retain full family access; backend
+authorization (route guard + PostgreSQL RLS + default-deny path policy) stays authoritative — a
+provisioning UI is a fourth layer above those three, never a replacement for any of them. **A
+started-but-diverged attempt at this exact work exists on branch `feat/user-provisioning-r13-6f`**
+(11 commits ahead of, and 52 behind, `master` as of this closeout — branched before R13.7/R13.8
+landed, so it predates the structured-notes reconciliation and family-portfolio import work
+entirely). It is unmerged, unreviewed, and not authorized for use as-is; the next session picking up
+D0 should treat it as reference material to consult, not a branch to fast-forward or merge, given how
+far it has drifted from `master`.
+
+**No stale-documentation corrections were required this pass.** Checked for: claims of a missing
+Family Portfolio importer, live-column-as-publication-source claims, a "post-commit history upsert"
+description, and an "old Supabase migration procedure" claim — none were found describing current
+behavior inaccurately. The historical "applied via Supabase SQL Editor" notes still present in
+several dated Current-Phase entries below (Phase 5B.1, 5D, 6A, 8C) are accurate historical records of
+what happened in those specific past phases, not current-procedure claims — the current procedure is
+`npx supabase db push --linked` (see the `supabase-cli-applies-production-migrations` memory).
+
+---
 
 **Most recent work (2026-08-31) — POST-R13.5: the R13 Family Portfolio becomes the canonical
 `/portfolio`, and the Phase 6C/6D positions tracker is retired.** Suite 6225 → **6027** (accounted
