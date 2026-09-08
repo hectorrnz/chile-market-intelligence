@@ -823,6 +823,24 @@ describe('R13.8D.1 · the database decides, gates and reverses', () => {
       assert.ok(dbTest.includes(marker), `pgTAP must cover: ${marker}`)
     }
   })
+
+  test('NOTHING still names the pre-R13.8D.1 signature', () => {
+    // Adding a parameter changes the function's identity. A `has_function_privilege`
+    // or `to_regprocedure` call left on the 13-argument form does not fail
+    // softly — it raises `function ... does not exist` and takes the whole pgTAP
+    // file down with it, which is exactly how CI caught this once.
+    const OLD = /nmi_import_portfolio_workbook\(\s*uuid,\s*date,\s*uuid,\s*text,\s*text,\s*jsonb,\s*jsonb,\s*jsonb,\s*boolean,\s*text,\s*jsonb,\s*text,\s*jsonb\s*\)/
+    for (const [name, src] of [
+      ['migration', migration],
+      ['pgTAP suite', dbTest],
+    ] as const) {
+      assert.doesNotMatch(src, OLD, `${name} still names the 13-argument signature`)
+    }
+  })
+
+  test('the new ledger is asserted service-role only in pgTAP too', () => {
+    assert.match(dbTest, /has_table_privilege\('authenticated', 'public\.portfolio_import_publication_corrections'/)
+  })
 })
 
 // ═══════════════════════════════════════════════════════════════════════════

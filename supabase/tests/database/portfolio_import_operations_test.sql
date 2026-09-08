@@ -205,9 +205,21 @@ select ok(
   'authenticated cannot read the before-image ledger, which carries portfolio values');
 select ok(
   not has_function_privilege('authenticated',
-    'public.nmi_import_portfolio_workbook(uuid,date,uuid,text,text,jsonb,jsonb,jsonb,boolean,text,jsonb,text,jsonb)',
+    'public.nmi_import_portfolio_workbook(uuid,date,uuid,text,text,jsonb,jsonb,jsonb,boolean,text,jsonb,text,jsonb,jsonb)',
     'EXECUTE'),
   'authenticated cannot execute the import RPC');
+
+-- R13.8D.1 — the correction ledger carries no amount, but it names which
+-- revision replaced which for a week an administrator may not be entitled to
+-- read. Service-role only, exactly like the other two.
+select ok(
+  not has_table_privilege('authenticated', 'public.portfolio_import_publication_corrections', 'SELECT'),
+  'authenticated cannot read the publication-correction ledger');
+select is(
+  (select count(*)::int from pg_catalog.pg_policies
+    where schemaname = 'public'
+      and tablename = 'portfolio_import_publication_corrections'),
+  0, 'the publication-correction ledger has no RLS policy either');
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 2 · The catch-up: three NEW and two GAP_FILL, one publication
