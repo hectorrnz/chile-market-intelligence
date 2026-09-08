@@ -176,6 +176,8 @@ export const dict = {
       fixtureNote:    'Synthetic presentation state — nothing here can be written.',
       refusalImport: {
         read_only_fixture:              'This is a review fixture. Nothing can be written from it.',
+        nothing_to_append:              'Nothing to apply — the workbook is already reflected in the portfolio history. No publication was made.',
+        import_refused_nothing_to_append: 'The database refused: an import that changes nothing cannot make a publication.',
         historical_correction_required: 'This import overwrites published history. Authorize the correction and give a reason.',
         correction_reason_required:     'An authorized correction still needs a written reason.',
         invalid_observation:            'The workbook produced a value that could not be interpreted.',
@@ -2266,6 +2268,8 @@ export const dict = {
       fixtureNote:    'Estado sintético de presentación — nada de esto puede escribirse.',
       refusalImport: {
         read_only_fixture:              'Este es un estado de revisión. No se puede escribir nada desde él.',
+        nothing_to_append:              'Nada que aplicar: el libro ya está reflejado en la historia del portafolio. No se realizó ninguna publicación.',
+        import_refused_nothing_to_append: 'La base de datos rechazó: una importación que no cambia nada no puede generar una publicación.',
         historical_correction_required: 'Esta importación sobrescribe historia publicada. Autorice la corrección e indique un motivo.',
         correction_reason_required:     'Una corrección autorizada aún necesita un motivo escrito.',
         invalid_observation:            'El libro produjo un valor que no pudo interpretarse.',

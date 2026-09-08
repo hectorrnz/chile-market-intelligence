@@ -438,6 +438,173 @@ select is(
     where upload_kind = 'portfolio' and is_current),
   '2026-07-31'::date, 'and back to its original current publication');
 
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 6 · R13.8C.1 — a no-op import is refused by the DATABASE
+--
+-- The console already disables Apply for a NO_CHANGES preview. That is a
+-- convenience, not the invariant: a caller reaching the RPC directly would
+-- otherwise mint an import operation row and a publication revision recording
+-- no change at all. These cases prove the refusal is the database's, that it
+-- writes nothing, that repeating it still writes nothing, and — the other half
+-- of the proof — that each single valid disposition still imports.
+--
+-- The book here is back to its original three weeks (07-03, 07-10, 07-31) with
+-- 07-31 current, and every earlier import has been rolled back.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+insert into public.portfolio_source_uploads
+  (id, upload_kind, storage_object_path, original_filename, file_sha256,
+   file_size_bytes, uploaded_by, parser_version, status)
+values
+  ('dddd0005-0000-0000-0000-000000000005', 'portfolio', 'private/u5.xlsx', 'u5.xlsx',
+   repeat('e', 64), 1000, 'd1111111-1111-1111-1111-111111111111', 'test.parser.1', 'draft'),
+  ('dddd0006-0000-0000-0000-000000000006', 'portfolio', 'private/u6.xlsx', 'u6.xlsx',
+   repeat('f', 64), 1000, 'd1111111-1111-1111-1111-111111111111', 'test.parser.1', 'draft'),
+  ('dddd0007-0000-0000-0000-000000000007', 'portfolio', 'private/u7.xlsx', 'u7.xlsx',
+   repeat('1', 64), 1000, 'd1111111-1111-1111-1111-111111111111', 'test.parser.1', 'draft'),
+  ('dddd0008-0000-0000-0000-000000000008', 'portfolio', 'private/u8.xlsx', 'u8.xlsx',
+   repeat('2', 64), 1000, 'd1111111-1111-1111-1111-111111111111', 'test.parser.1', 'draft');
+
+-- The exact pre-state every assertion below is measured against.
+select is(
+  (select count(*)::int from public.portfolio_evolution_observations),
+  3, 'pre-state for the no-op cases: three weeks of history');
+select is(
+  (select count(*)::int from public.portfolio_import_operations),
+  3, 'pre-state for the no-op cases: three import operations, all rolled back');
+select is(
+  (select count(*)::int from public.portfolio_publications),
+  4, 'pre-state for the no-op cases: four publication rows, three of them demoted');
+select is(
+  (select count(*)::int from public.portfolio_import_observation_mutations),
+  8, 'pre-state for the no-op cases: eight permanent ledger entries');
+
+-- 6a. An EMPTY packet — the NO_CHANGES preview, confirmed anyway.
+select throws_ok(
+  $$select public.nmi_import_portfolio_workbook(
+      'dddd0005-0000-0000-0000-000000000005'::uuid, '2026-07-31'::date,
+      'd1111111-1111-1111-1111-111111111111'::uuid, 'test.parser.1',
+      'r13.8b.weekly_import_plan.2', pg_temp.rows_payload(600),
+      '[]'::jsonb)$$,
+  'import_refused_nothing_to_append',
+  'an import with no new week, no gap fill and no correction is refused');
+
+-- 6b. A packet that is not empty but mutates nothing. Length is not the test.
+select throws_ok(
+  $$select public.nmi_import_portfolio_workbook(
+      'dddd0005-0000-0000-0000-000000000005'::uuid, '2026-07-31'::date,
+      'd1111111-1111-1111-1111-111111111111'::uuid, 'test.parser.1',
+      'r13.8b.weekly_import_plan.2', pg_temp.rows_payload(600),
+      jsonb_build_array(pg_temp.obs('2026-07-31', 'unchanged', 13, 13)))$$,
+  'import_refused_nothing_to_append',
+  'a packet carrying only unchanged weeks is the same no-op, however long');
+
+-- 6c. Repeating it changes nothing either — a retry or a double-click cannot
+--     accumulate into a state the single attempt was refused for.
+select throws_ok(
+  $$select public.nmi_import_portfolio_workbook(
+      'dddd0005-0000-0000-0000-000000000005'::uuid, '2026-07-31'::date,
+      'd1111111-1111-1111-1111-111111111111'::uuid, 'test.parser.1',
+      'r13.8b.weekly_import_plan.2', pg_temp.rows_payload(600),
+      '[]'::jsonb)$$,
+  'import_refused_nothing_to_append',
+  'a repeated no-op attempt is refused identically');
+
+-- Authorization and a reason do not buy a no-op through, either: the guard is
+-- about whether anything changes, never about who approved it.
+select throws_ok(
+  $$select public.nmi_import_portfolio_workbook(
+      'dddd0005-0000-0000-0000-000000000005'::uuid, '2026-07-31'::date,
+      'd1111111-1111-1111-1111-111111111111'::uuid, 'test.parser.1',
+      'r13.8b.weekly_import_plan.2', pg_temp.rows_payload(600),
+      '[]'::jsonb, '[]'::jsonb, true, 'Authorized, but there is nothing to apply.')$$,
+  'import_refused_nothing_to_append',
+  'an authorized no-op is still refused');
+
+-- ZERO WRITES, on every count the refusal is supposed to protect.
+select is(
+  (select count(*)::int from public.portfolio_evolution_observations),
+  3, 'the refused no-ops mutated no history');
+select is(
+  (select count(*)::int from public.portfolio_import_operations),
+  3, 'the refused no-ops minted no import operation row');
+select is(
+  (select count(*)::int from public.portfolio_import_operations
+    where upload_id = 'dddd0005-0000-0000-0000-000000000005'),
+  0, 'not even one for the upload that was confirmed four times');
+select is(
+  (select count(*)::int from public.portfolio_publications),
+  4, 'the refused no-ops minted no publication revision');
+select is(
+  (select count(*)::int from public.portfolio_publications
+    where upload_id = 'dddd0005-0000-0000-0000-000000000005'),
+  0, 'and no revision under the no-op upload');
+select is(
+  (select count(*)::int from public.portfolio_import_observation_mutations),
+  8, 'the refused no-ops wrote no before-image ledger entry');
+select is(
+  (select max(as_of_date) from public.portfolio_publications
+    where upload_kind = 'portfolio' and is_current),
+  '2026-07-31'::date, 'and the current publication is the one that was current before');
+
+-- 6d. NEW only — still imports.
+select lives_ok(
+  $$select public.nmi_import_portfolio_workbook(
+      'dddd0006-0000-0000-0000-000000000006'::uuid, '2026-08-07'::date,
+      'd1111111-1111-1111-1111-111111111111'::uuid, 'test.parser.1',
+      'r13.8b.weekly_import_plan.2', pg_temp.rows_payload(700),
+      jsonb_build_array(pg_temp.obs('2026-08-07', 'new', 61)))$$,
+  'a NEW-only import still applies');
+
+select is(
+  (select value from public.portfolio_evolution_observations
+    where observation_date = '2026-08-07'),
+  61::numeric, 'the new week landed');
+
+-- 6e. GAP_FILL only — an insertion below the endpoint, no authorization needed.
+select lives_ok(
+  $$select public.nmi_import_portfolio_workbook(
+      'dddd0007-0000-0000-0000-000000000007'::uuid, '2026-08-14'::date,
+      'd1111111-1111-1111-1111-111111111111'::uuid, 'test.parser.1',
+      'r13.8b.weekly_import_plan.2', pg_temp.rows_payload(800),
+      jsonb_build_array(pg_temp.obs('2026-07-17', 'gap_fill', 71)))$$,
+  'a GAP_FILL-only import still applies, with no authorization and no reason');
+
+select is(
+  (select value from public.portfolio_evolution_observations
+    where observation_date = '2026-07-17'),
+  71::numeric, 'the gap fill landed');
+
+select is(
+  (select count(*)::int from public.portfolio_import_operations
+    where upload_id = 'dddd0007-0000-0000-0000-000000000007'
+      and correction_authorized = false and correction_reason is null),
+  1, 'the gap fill needed no correction authorization — it is an insertion');
+
+-- 6f. CHANGED only, authorized and with a reason — still imports.
+select lives_ok(
+  $$select public.nmi_import_portfolio_workbook(
+      'dddd0008-0000-0000-0000-000000000008'::uuid, '2026-08-21'::date,
+      'd1111111-1111-1111-1111-111111111111'::uuid, 'test.parser.1',
+      'r13.8b.weekly_import_plan.2', pg_temp.rows_payload(900),
+      jsonb_build_array(pg_temp.obs('2026-07-17', 'changed', 72, 71)),
+      '[]'::jsonb, true, 'Custodian restated 07-17.')$$,
+  'an authorized CHANGED-only import still applies');
+
+select is(
+  (select value from public.portfolio_evolution_observations
+    where observation_date = '2026-07-17'),
+  72::numeric, 'the correction landed');
+
+select is(
+  (select count(*)::int from public.portfolio_import_observation_mutations
+    where prior_value = 71 and disposition = 'changed'),
+  1, 'and recorded its before-image, so it remains reversible');
+
+select is(
+  (select count(*)::int from public.portfolio_evolution_observations),
+  5, 'exactly the three valid imports moved the book: 3 + 1 new + 1 gap fill');
+
 select * from finish();
 
 rollback;

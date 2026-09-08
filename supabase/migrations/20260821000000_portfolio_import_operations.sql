@@ -267,6 +267,26 @@ begin
     raise exception 'import_refused_invalid_observations';
   end if;
 
+  -- R13.8C.1 — A NO-OP IMPORT IS REFUSED HERE, NOT MERELY DISABLED IN THE
+  -- CONSOLE. A packet with no NEW week, no GAP FILL and no CHANGED value has
+  -- nothing to append: applying it would mint an import operation row and a
+  -- publication revision that record no change to the book, and it would hand a
+  -- rollback handle to an import that never moved anything. The browser guard
+  -- keeps an administrator from asking for that; this one makes it impossible,
+  -- including for a caller that reaches the RPC directly.
+  --
+  -- The check runs BEFORE the operation row is inserted and before
+  -- `nmi_publish_portfolio` is called, so a refusal writes nothing at all. It
+  -- counts the three MUTATING dispositions rather than the array's length: a
+  -- packet that carries only unchanged weeks is the same no-op, whatever its
+  -- size. Insertions and authorized overwrites in any combination pass.
+  if not exists (
+    select 1 from jsonb_to_recordset(p_observations) as o(disposition text)
+     where o.disposition in ('new','gap_fill','changed')
+  ) then
+    raise exception 'import_refused_nothing_to_append';
+  end if;
+
   -- An overwrite anywhere in the packet requires authorization AND a reason.
   -- Insertions never do, however many of them there are.
   if exists (
@@ -659,6 +679,23 @@ begin
       raise exception '% does not take the import lock', sig;
     end if;
   end loop;
+
+  -- R13.8C.1 — the import must refuse a packet that mutates nothing, and it must
+  -- do so BEFORE it inserts its operation row. Asserting the order matters as
+  -- much as asserting the guard: a check placed after the insert would still
+  -- raise, but only after the row it was meant to prevent had been written and
+  -- a rollback of the whole transaction relied on to remove it.
+  select p.prosrc into src
+    from pg_catalog.pg_proc p
+   where p.oid = to_regprocedure(
+     'public.nmi_import_portfolio_workbook(uuid,date,uuid,text,text,jsonb,jsonb,jsonb,boolean,text,jsonb,text,jsonb)');
+  if src not like '%import_refused_nothing_to_append%' then
+    raise exception 'the import does not refuse a no-op packet';
+  end if;
+  if position('import_refused_nothing_to_append' in src)
+     > position('insert into public.portfolio_import_operations' in src) then
+    raise exception 'the no-op guard runs after the operation row is inserted';
+  end if;
 
   -- And rollback must be driven by the mutation ledger, never by a filename.
   select p.prosrc into src

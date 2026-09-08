@@ -278,6 +278,25 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       })
     }
 
+    // --- R13.8C.1: A NO-OP IMPORT IS REFUSED, not applied quietly. The console
+    // disables Apply for a NO_CHANGES preview, but a disabled button is not an
+    // invariant — this route can be called directly. An import that appends no
+    // week, fills no gap and corrects no value has nothing to publish: it would
+    // record a revision and an import operation that changed nothing, and hand a
+    // rollback handle to an import that moved nothing.
+    //
+    // The test is the packet that would be sent, not the action label, so the
+    // server refuses on exactly the condition the database refuses on. The
+    // database enforces it independently (`import_refused_nothing_to_append`);
+    // this is the same rule stated one layer earlier, so the administrator gets
+    // the answer without a write path being entered at all.
+    if (plan.observationsToWrite.length === 0) {
+      return fail('nothing_to_append', 409, {
+        action: plan.action,
+        productionEndpoint: plan.productionEndpoint,
+      })
+    }
+
     // The locked rule: the current publication carries the newest VALID FROZEN
     // reporting date. Detection now proposes exactly that, so an override to any
     // other date would publish a week under a date the workbook never froze.

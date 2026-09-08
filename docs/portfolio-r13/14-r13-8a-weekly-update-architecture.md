@@ -1012,10 +1012,53 @@ import's source workbook and shows its NEW / GAP_FILL / CHANGED counts in their 
 `describeImportPlan` (`src/lib/familyPortfolio/importPlanPresentation.ts`) is the pure verdict
 derivation, tested under Node in both languages.
 
-**Observed, not changed.** The server still accepts a confirmation for a `nothing_to_append` plan:
-`nmi_import_portfolio_workbook` has no zero-observation guard, so such a request would create a new
-revision of the same week with an empty history packet (the R13.5 re-publication semantic). The
-console never offers it. Whether the RPC should refuse it outright is an owner decision.
+**Observed at R13.8C, closed at R13.8C.1.** The server used to accept a confirmation for a
+`nothing_to_append` plan: `nmi_import_portfolio_workbook` had no zero-observation guard, so such a
+request would have created a new revision of the same week with an empty history packet (the R13.5
+re-publication semantic). The console never offered it, but a disabled button is not an invariant.
+See § AE.14.
+
+### AE.14 The no-op guard (R13.8C.1)
+
+**An import that appends nothing, fills nothing and corrects nothing is refused — by the database,
+not only by the browser.** `nmi_import_portfolio_workbook` now raises
+`import_refused_nothing_to_append` when the packet carries no observation whose disposition is `new`,
+`gap_fill` or `changed`. The check runs immediately after the packet's shape is validated and under
+the import lock, **before** the operation row is inserted and before `nmi_publish_portfolio` is
+called, so a refusal writes nothing at all: no import operation, no publication revision, no history
+mutation, no before-image ledger entry.
+
+Three details are deliberate.
+
+* **It counts the three MUTATING dispositions, not the array's length.** A packet of a hundred
+  unchanged weeks is the same no-op as an empty one, and a length test would have accepted it.
+* **Authorization does not buy it through.** The guard precedes the correction check, so an
+  authorized packet that changes nothing is refused on the no-op ground. The question is whether
+  anything moves, never who approved it.
+* **Nothing valid is narrowed.** NEW-only, GAP_FILL-only, an authorized CHANGED-only, and every
+  combination of the three still import exactly as before; § 6d–6f of the pgTAP suite proves each
+  single disposition still applies after the refusals.
+
+`POST .../publish` states the same rule one layer earlier — it refuses with `nothing_to_append`
+(409) when `plan.observationsToWrite` is empty, before any write path is entered — so an
+administrator gets the answer without a round trip. The database remains the authority; the route's
+refusal is an early answer, not a replacement for it.
+
+**One consequence, stated plainly.** A portfolio workbook whose evolution points are all identical to
+Production can no longer be re-published, even when some other part of the snapshot differs. The
+weekly evolution series is what an import exists to move; a revision that moves none of it is the
+no-op this guard refuses. R13.2 already made the same bytes unrepeatable for one kind, and
+`publication_refused_duplicate_submission` already refused the same upload at the same parser
+version, so the reachable case is narrow — but it is a real narrowing and not an accident.
+
+**Proof.** `supabase/tests/database/portfolio_import_operations_test.sql` § 6 runs against real
+PostgreSQL: an empty packet, a packet of only unchanged weeks, a repeat attempt and an authorized
+no-op are each refused, and the observation, operation, publication and ledger counts are then
+re-read and shown unchanged against an explicitly pinned pre-state. `tests/portfolioImportNoOpGuard.test.ts`
+proves the planner's own no-op condition, that all three layers agree on what a no-op is, and the
+ORDER of each guard — a check placed after the operation insert would still raise, but only after
+writing the row it exists to prevent. Both were demonstrated non-vacuous: renaming the raised code
+fails 4 of that file's tests, deleting the route guard fails 3.
 
 **Residual.** The ledger shows an import's as-of date, source workbook and counts, not the list of
 dates it touched — the before-image ledger is not exposed by any read route yet. Spanish rendering is
