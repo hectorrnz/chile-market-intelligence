@@ -1150,12 +1150,37 @@ suppress a history mutation.
 operational, that order is never compared as order, that a null value is not a zero — that all three
 layers agree, and the placement of each guard.
 
-**Non-vacuity, demonstrated rather than asserted.** Forcing the comparison to report "unchanged"
-always fails the snapshot-only case; forcing it to report "changed" always fails the true-no-op case;
-removing the database guard fails the direct-RPC case. The measured counts are recorded in
-§ AE.14.8.
+#### AE.14.8 Non-vacuity, measured
+
+Every break below was applied to a clean tree, measured, and reverted.
+
+Against `tests/portfolioImportNoOpGuard.test.ts` (66 tests):
+
+| Break | Effect |
+|---|---|
+| The material comparison always reports **unchanged** | **12 of 66 fail** — every case saying a moved figure, an added row, a removed row or a moved performance metric is a difference |
+| The material comparison always reports **changed** | **5 of 66 fail** — every case saying an identical payload, a moved source coordinate or a re-ordered array is *not* a difference |
+| The database guard reverted to the R13.8C.1 history-only test | **1 of 66 fails**, and the migration then **fails to apply at all**: its own § 9d postcondition raises `the no-op guard does not consider the current publication` |
+| The route guard reverted to the R13.8C.1 history-only test | **1 of 66 fails** |
+
+The two guard breaks are thin locally by construction — a source scan can show
+where a guard sits, never what it prevents. The load-bearing proof for those is
+executable. On a throwaway branch with `nmi_portfolio_publication_unchanged`
+neutered to return `true` whenever a publication stands — chosen because it keeps
+the migration applying and both structural assertions passing, isolating the
+runtime comparison and nothing else — the DB Validation workflow reported
+**`Looks like you failed 14 tests of 121`**, `Result: FAIL`, on
+`portfolio_import_operations_test.sql`. Every one of the 14 sits in § 7: the
+snapshot-only correction is refused instead of applied, its revision is never
+minted, it cannot be reversed, the late-failure case never raises, and the
+metadata-figure and performance-figure cases both stop being mutations. **§ 6
+passed unchanged**, which is the point: the break is confined to exactly the
+half R13.8C.2 added. The branch was then deleted locally and on origin.
 
 **Residual.** The ledger shows an import's as-of date, source workbook and counts, not the list of
 dates it touched — the before-image ledger is not exposed by any read route yet. Spanish rendering is
 covered by dictionary parity and the verdict tests, not by the headless-Chrome sweep (the language
-provider reads `localStorage` only on the client).
+provider reads `localStorage` only on the client). The publication comparison is not surfaced in the
+import ledger either: a completed `publication_correction` is recorded as an import operation with
+zero observation counts, and the rows it changed are recoverable only by comparing the two
+publications.
