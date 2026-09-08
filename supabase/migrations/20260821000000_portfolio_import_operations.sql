@@ -217,6 +217,120 @@ begin
     pg_catalog.hashtext(p_kind));
 end $$;
 
+-- ── 5b. The material publication comparison (R13.8C.2) ───────────────────────
+--
+-- IS THE CURRENT PUBLICATION THIS PACKET WOULD MINT MATERIALLY THE SAME AS THE
+-- ONE ALREADY STANDING FOR ITS WEEK?
+--
+-- The evolution series is NOT a proxy for this question. A workbook can leave
+-- every weekly evolution point identical and still restate a holding, a flow, a
+-- sociedad total or a performance figure inside the current snapshot — that is a
+-- real change to the published book, and inferring "nothing changed" from the
+-- history series alone would refuse it as a no-op and leave the stale snapshot
+-- standing. History and publication are therefore compared SEPARATELY, and only
+-- when BOTH are empty is an import a no-op (§ 6).
+--
+-- MATERIAL means workbook-derived financial and presentational content:
+--
+--   snapshot rows   scope, row_key, parent_row_key, depth, display_order,
+--                   row_type, label_es, label_en, currency, value, value_class,
+--                   and every metadata key except `sourceRow` — that metadata
+--                   carries `previousValue`, `beginningOfYearValue`,
+--                   `difference` and `differenceClass`, which ARE published
+--                   figures and must not be discarded along with the provenance.
+--   performance     scope, basis, metric, value, value_class, and every metadata
+--                   key except `sourceRow` and `boundSourceCell`.
+--
+-- OPERATIONAL, and therefore ignored: the publication's own id, upload id,
+-- revision, actor, timestamps, admin note and parser version; each row's id and
+-- `publication_id`; and the source coordinates `source_sheet`, `source_cell`,
+-- `metadata.sourceRow`, `metadata.boundSourceCell`. A row that moved from B12 to
+-- B13 because a blank line was inserted above it did not change the book. The
+-- exclusion list is deliberately SHORT: anything not provably a coordinate stays
+-- material, because classifying a real change as operational would refuse a
+-- legitimate publication, whereas the opposite error merely mints an honest
+-- revision that says the same thing twice.
+--
+-- Identity is `(scope, row_key)` for snapshot rows and `(scope, basis, metric)`
+-- for performance rows — both unique per publication by the R13.5 schema — and
+-- the comparison is a FULL OUTER JOIN on it, so an added row, a removed row and
+-- a changed row are all differences. Order is never compared AS order;
+-- `display_order` is compared as a value like any other.
+--
+-- A NULL publication id means no publication stands for that week at all, which
+-- is never "unchanged": there is something to publish.
+create or replace function public.nmi_portfolio_publication_unchanged(
+  p_publication_id uuid,
+  p_rows           jsonb,
+  p_performance    jsonb
+)
+returns boolean
+language sql
+stable
+set search_path = ''
+as $$
+  select p_publication_id is not null
+     and not exists (
+       select 1
+         from (
+           select r.scope, r.row_key, r.parent_row_key, r.depth, r.display_order,
+                  r.row_type, r.label_es, r.label_en, coalesce(r.currency, 'USD') as currency,
+                  r.value, r.value_class,
+                  coalesce(r.metadata, '{}'::jsonb) - 'sourceRow'::text as material_metadata
+             from jsonb_to_recordset(coalesce(p_rows, '[]'::jsonb)) as r(
+               scope text, row_key text, parent_row_key text, depth int, display_order int,
+               row_type text, label_es text, label_en text, currency text, value numeric,
+               value_class text, metadata jsonb)
+         ) incoming
+         full outer join (
+           select s.scope, s.row_key, s.parent_row_key, s.depth, s.display_order,
+                  s.row_type, s.label_es, s.label_en, s.currency, s.value, s.value_class,
+                  s.metadata - 'sourceRow'::text as material_metadata
+             from public.portfolio_snapshot_rows s
+            where s.publication_id = p_publication_id
+         ) stored
+           on stored.scope = incoming.scope
+          and stored.row_key = incoming.row_key
+        where incoming.row_key is null
+           or stored.row_key is null
+           or stored.parent_row_key    is distinct from incoming.parent_row_key
+           or stored.depth             is distinct from incoming.depth
+           or stored.display_order     is distinct from incoming.display_order
+           or stored.row_type          is distinct from incoming.row_type
+           or stored.label_es          is distinct from incoming.label_es
+           or stored.label_en          is distinct from incoming.label_en
+           or stored.currency          is distinct from incoming.currency
+           or stored.value             is distinct from incoming.value
+           or stored.value_class       is distinct from incoming.value_class
+           or stored.material_metadata is distinct from incoming.material_metadata
+     )
+     and not exists (
+       select 1
+         from (
+           select m.scope, m.basis, m.metric, m.value, m.value_class,
+                  (coalesce(m.metadata, '{}'::jsonb) - 'sourceRow'::text) - 'boundSourceCell'::text
+                    as material_metadata
+             from jsonb_to_recordset(coalesce(p_performance, '[]'::jsonb)) as m(
+               scope text, basis text, metric text, value numeric, value_class text,
+               metadata jsonb)
+         ) incoming
+         full outer join (
+           select s.scope, s.basis, s.metric, s.value, s.value_class,
+                  (s.metadata - 'sourceRow'::text) - 'boundSourceCell'::text as material_metadata
+             from public.portfolio_performance_rows s
+            where s.publication_id = p_publication_id
+         ) stored
+           on stored.scope = incoming.scope
+          and stored.basis = incoming.basis
+          and stored.metric = incoming.metric
+        where incoming.metric is null
+           or stored.metric is null
+           or stored.value             is distinct from incoming.value
+           or stored.value_class       is distinct from incoming.value_class
+           or stored.material_metadata is distinct from incoming.material_metadata
+     );
+$$;
+
 -- ── 6. The import transaction ────────────────────────────────────────────────
 --
 -- ONE operation: the publication (delegated verbatim to `nmi_publish_portfolio`
@@ -252,6 +366,8 @@ declare
   v_op_id     uuid := gen_random_uuid();
   v_pub_id    uuid;
   v_prev_pub  uuid;
+  v_history_mutations int;
+  v_publication_unchanged boolean;
   v_reason    text := nullif(btrim(coalesce(p_correction_reason, '')), '');
   m           record;
   v_cur_value numeric;
@@ -267,23 +383,52 @@ begin
     raise exception 'import_refused_invalid_observations';
   end if;
 
-  -- R13.8C.1 — A NO-OP IMPORT IS REFUSED HERE, NOT MERELY DISABLED IN THE
-  -- CONSOLE. A packet with no NEW week, no GAP FILL and no CHANGED value has
-  -- nothing to append: applying it would mint an import operation row and a
-  -- publication revision that record no change to the book, and it would hand a
-  -- rollback handle to an import that never moved anything. The browser guard
-  -- keeps an administrator from asking for that; this one makes it impossible,
-  -- including for a caller that reaches the RPC directly.
+  -- R13.8C.2 — A NO-OP IMPORT IS REFUSED HERE, NOT MERELY DISABLED IN THE
+  -- CONSOLE — AND A NO-OP IS THE WHOLE IMPORT, NOT ONLY ITS HISTORY.
   --
-  -- The check runs BEFORE the operation row is inserted and before
-  -- `nmi_publish_portfolio` is called, so a refusal writes nothing at all. It
-  -- counts the three MUTATING dispositions rather than the array's length: a
-  -- packet that carries only unchanged weeks is the same no-op, whatever its
-  -- size. Insertions and authorized overwrites in any combination pass.
-  if not exists (
-    select 1 from jsonb_to_recordset(p_observations) as o(disposition text)
-     where o.disposition in ('new','gap_fill','changed')
-  ) then
+  -- R13.8C.1 defined a no-op as a packet carrying no NEW week, no GAP FILL and
+  -- no CHANGED value. That was too narrow, and the way it was wrong mattered: a
+  -- workbook can leave every evolution point identical and still restate a
+  -- holding, a flow, a sociedad total or a performance figure inside the CURRENT
+  -- snapshot. Under the old test that import was refused as "nothing to
+  -- append", and the stale published snapshot stayed standing — a refusal that
+  -- silently preserved a figure the owner had corrected.
+  --
+  -- The corrected invariant: an import is a no-op only when the FULL normalized
+  -- import produces zero durable financial mutations — zero history mutations
+  -- AND a current publication materially equivalent to the one already standing
+  -- for that week (§ 5b defines material, and reads Production's own rows rather
+  -- than trusting anything the caller asserted about them).
+  --
+  -- The publication pre-state is read under `nmi_lock_publication_series`, the
+  -- same lock `nmi_publish_portfolio` takes further down, so the row compared
+  -- here is the row that will actually be displaced. The lock is re-entrant
+  -- within one transaction, and the order (import lock, then series lock) is the
+  -- only order any path takes.
+  --
+  -- Everything here runs BEFORE the operation row is inserted and before
+  -- `nmi_publish_portfolio` is called, so a refusal writes nothing at all. The
+  -- history half counts the three MUTATING dispositions rather than the array's
+  -- length: a packet carrying only unchanged weeks is no history change,
+  -- whatever its size.
+  select count(*) into v_history_mutations
+    from jsonb_to_recordset(p_observations) as o(disposition text)
+   where o.disposition in ('new','gap_fill','changed');
+
+  perform public.nmi_lock_publication_series('portfolio', p_as_of_date);
+
+  -- The publication this import will displace. Captured BEFORE publishing, since
+  -- `nmi_publish_portfolio` demotes it on the way through, and reused below as
+  -- the operation row's `previous_publication_id` so rollback can promote it
+  -- back — which is what makes a snapshot-only correction reversible.
+  select id into v_prev_pub
+    from public.portfolio_publications
+   where upload_kind = 'portfolio' and as_of_date = p_as_of_date and is_current;
+
+  v_publication_unchanged := coalesce(
+    public.nmi_portfolio_publication_unchanged(v_prev_pub, p_rows, p_performance), false);
+
+  if v_history_mutations = 0 and v_publication_unchanged then
     raise exception 'import_refused_nothing_to_append';
   end if;
 
@@ -307,12 +452,6 @@ begin
   ) then
     raise exception 'import_refused_unavailable_not_representable';
   end if;
-
-  -- Capture the publication this import will displace BEFORE publishing, since
-  -- `nmi_publish_portfolio` demotes it on the way through.
-  select id into v_prev_pub
-    from public.portfolio_publications
-   where upload_kind = 'portfolio' and as_of_date = p_as_of_date and is_current;
 
   insert into public.portfolio_import_operations
     (id, upload_id, upload_kind, plan_version, as_of_date, previous_publication_id,
@@ -554,12 +693,16 @@ revoke all on function public.nmi_import_portfolio_workbook(
   from public, anon, authenticated;
 revoke all on function public.nmi_rollback_portfolio_import(uuid, uuid, text)
   from public, anon, authenticated;
+revoke all on function public.nmi_portfolio_publication_unchanged(uuid, jsonb, jsonb)
+  from public, anon, authenticated;
 
 grant execute on function public.nmi_lock_portfolio_import(text) to service_role;
 grant execute on function public.nmi_import_portfolio_workbook(
   uuid, date, uuid, text, text, jsonb, jsonb, jsonb, boolean, text, jsonb, text, jsonb)
   to service_role;
 grant execute on function public.nmi_rollback_portfolio_import(uuid, uuid, text) to service_role;
+grant execute on function public.nmi_portfolio_publication_unchanged(uuid, jsonb, jsonb)
+  to service_role;
 
 -- ── 9. Postconditions ────────────────────────────────────────────────────────
 
@@ -680,17 +823,42 @@ begin
     end if;
   end loop;
 
-  -- R13.8C.1 — the import must refuse a packet that mutates nothing, and it must
-  -- do so BEFORE it inserts its operation row. Asserting the order matters as
-  -- much as asserting the guard: a check placed after the insert would still
-  -- raise, but only after the row it was meant to prevent had been written and
-  -- a rollback of the whole transaction relied on to remove it.
+  -- R13.8C.2 — the import must refuse a packet that mutates nothing, it must
+  -- weigh the WHOLE import rather than only its history, and it must do both
+  -- BEFORE it inserts its operation row.
+  --
+  -- Asserting the ORDER matters as much as asserting the guard: a check placed
+  -- after the insert would still raise, but only after the row it was meant to
+  -- prevent had been written and a transaction rollback relied on to remove it.
+  --
+  -- Asserting that the publication comparison PRECEDES the refusal is what stops
+  -- a future edit from quietly reverting to the R13.8C.1 test — counting
+  -- mutating dispositions alone, which refuses a legitimate snapshot-only
+  -- correction and leaves a stale published figure standing.
+  if to_regprocedure('public.nmi_portfolio_publication_unchanged(uuid,jsonb,jsonb)') is null then
+    raise exception 'the material publication comparison was not created';
+  end if;
+
+  select p.prosrc into src
+    from pg_catalog.pg_proc p
+   where p.oid = to_regprocedure('public.nmi_portfolio_publication_unchanged(uuid,jsonb,jsonb)');
+  if src not like '%portfolio_snapshot_rows%' or src not like '%portfolio_performance_rows%' then
+    raise exception 'the publication comparison does not read the full published payload';
+  end if;
+
   select p.prosrc into src
     from pg_catalog.pg_proc p
    where p.oid = to_regprocedure(
      'public.nmi_import_portfolio_workbook(uuid,date,uuid,text,text,jsonb,jsonb,jsonb,boolean,text,jsonb,text,jsonb)');
   if src not like '%import_refused_nothing_to_append%' then
     raise exception 'the import does not refuse a no-op packet';
+  end if;
+  if src not like '%nmi_portfolio_publication_unchanged%' then
+    raise exception 'the no-op guard does not consider the current publication — a snapshot-only correction would be refused as nothing to append';
+  end if;
+  if position('nmi_portfolio_publication_unchanged' in src)
+     > position('import_refused_nothing_to_append' in src) then
+    raise exception 'the no-op refusal is decided before the publication is compared';
   end if;
   if position('import_refused_nothing_to_append' in src)
      > position('insert into public.portfolio_import_operations' in src) then
@@ -711,7 +879,8 @@ begin
   foreach fn in array array[
     'public.nmi_import_portfolio_workbook(uuid,date,uuid,text,text,jsonb,jsonb,jsonb,boolean,text,jsonb,text,jsonb)',
     'public.nmi_rollback_portfolio_import(uuid,uuid,text)',
-    'public.nmi_lock_portfolio_import(text)'
+    'public.nmi_lock_portfolio_import(text)',
+    'public.nmi_portfolio_publication_unchanged(uuid,jsonb,jsonb)'
   ] loop
     if has_function_privilege('authenticated', fn, 'EXECUTE') then
       raise exception 'authenticated must not hold EXECUTE on %', fn;

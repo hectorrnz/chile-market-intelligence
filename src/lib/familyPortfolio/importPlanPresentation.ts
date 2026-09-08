@@ -11,6 +11,17 @@
 // never makes one. In particular the correction gate is `requiresHistoricalCorrection`
 // alone — never a week count, never the presence of a gap fill.
 
+/** One material difference between the standing snapshot and the proposed one. */
+export interface PublicationDifference {
+  area: 'snapshot' | 'performance'
+  identity: string
+  kind: 'added' | 'removed' | 'changed'
+  field?: string
+  beforeValue?: number | null
+  afterValue?: number | null
+  label?: string
+}
+
 export interface PreviewCorrection {
   scope: string
   basis: string
@@ -43,6 +54,15 @@ export interface ImportPlan {
   cadenceGaps: Array<{ from: string; to: string; days: number }>
   action: string
   requiresHistoricalCorrection: boolean
+  /**
+   * R13.8C.2 — whether this week's STANDING published snapshot is materially
+   * restated by this workbook, decided on the server against Production's own
+   * rows. `not_compared` means nobody looked, which is never treated as a change.
+   */
+  publicationComparison?: 'unchanged' | 'changed' | 'not_compared'
+  publicationChanged?: boolean
+  publicationDifferences?: PublicationDifference[]
+  publicationDifferenceCount?: number
   blocked: boolean
   blockCodes: string[]
   counts: { new: number; gapFill: number; changed: number; unchanged: number; invalid: number }
@@ -80,9 +100,18 @@ export function nonCorrectionBlockCodes(plan: Pick<ImportPlan, 'blockCodes'>): s
   )
 }
 
-/** A plan that writes nothing. The console never offers an enabled Apply for it. */
-export function isNoOp(plan: Pick<ImportPlan, 'action'>): boolean {
-  return plan.action === 'nothing_to_append'
+/**
+ * A plan that mutates nothing at all. The console never offers an enabled Apply.
+ *
+ * R13.8C.2 — THE TEST IS THE WHOLE IMPORT, NOT ONLY ITS HISTORY. `action` is
+ * already the full-import classification (`nothing_to_append` is emitted only
+ * when history is settled AND the standing snapshot is materially unchanged), so
+ * reading it is correct; `publicationChanged` is checked as well so a plan
+ * assembled by hand, or one whose action a future edit forgets to downgrade,
+ * cannot present a real publication correction as nothing to do.
+ */
+export function isNoOp(plan: Pick<ImportPlan, 'action' | 'publicationChanged'>): boolean {
+  return plan.action === 'nothing_to_append' && plan.publicationChanged !== true
 }
 
 /** `after − before` when both are numbers; null when either side is unavailable. */
@@ -91,7 +120,7 @@ export function correctionDelta(c: Pick<PreviewCorrection, 'beforeValue' | 'afte
   return c.afterValue - c.beforeValue
 }
 
-export type VerdictKind = 'nothing' | 'append' | 'correction' | 'blocked'
+export type VerdictKind = 'nothing' | 'append' | 'correction' | 'publication' | 'blocked'
 
 export interface ImportVerdict {
   kind: VerdictKind
@@ -116,6 +145,9 @@ export interface VerdictStrings {
   verdictCorrectionMixedBody: string
   verdictBlockedTitle: string
   verdictBlockedBody: string
+  verdictPublicationTitle: string
+  verdictPublicationBody: string
+  verdictPublicationMixedBody: string
 }
 
 /**
@@ -142,12 +174,28 @@ export function describeImportPlan(plan: ImportPlan, a: VerdictStrings): ImportV
       title: a.verdictCorrectionTitle,
       body:
         n + g === 0
-          ? fill(a.verdictCorrectionOnlyBody, { c })
+          ? // R13.8C.2 — a correction that ALSO restates the standing snapshot is
+            // both at once, and saying only "history" would understate it.
+            plan.publicationChanged === true
+            ? fill(a.verdictPublicationMixedBody, { c, d: plan.publicationDifferenceCount ?? 0 })
+            : fill(a.verdictCorrectionOnlyBody, { c })
           : fill(a.verdictCorrectionMixedBody, { n, g, c }),
     }
   }
 
   if (n + g === 0) {
+    // R13.8C.2 — THE CORRECTION THIS STAGE EXISTS FOR. History is settled, so the
+    // pre-R13.8C.2 console said "nothing to apply" and disabled Apply. If the
+    // standing snapshot is materially restated that sentence is false, and acting
+    // on it leaves a figure the owner corrected still published.
+    if (plan.publicationChanged === true) {
+      return {
+        kind: 'publication',
+        tone: TONE.changed,
+        title: a.verdictPublicationTitle,
+        body: fill(a.verdictPublicationBody, { date, d: plan.publicationDifferenceCount ?? 0 }),
+      }
+    }
     return { kind: 'nothing', tone: TONE.neutral, title: a.verdictNothingTitle, body: a.verdictNothingBody }
   }
 

@@ -63,10 +63,11 @@
 // see it. Nothing here writes to a log, a stream or a file.
 
 import { isCalendarDate } from './publication.ts'
+import type { PublicationComparison } from './publicationMaterialDiff.ts'
 import { MAX_WEEK_GAP_DAYS } from './resumen/dateDetection.ts'
 
 /** Bumped when planning semantics change; recorded on every import. */
-export const WEEKLY_IMPORT_PLAN_VERSION = 'r13.8b.weekly_import_plan.2'
+export const WEEKLY_IMPORT_PLAN_VERSION = 'r13.8c2.weekly_import_plan.3'
 
 /**
  * Whether an observation carries a number or is an explicit absence of one.
@@ -184,12 +185,27 @@ export interface CadenceGap {
   days: number
 }
 
+/**
+ * What the import DOES, across both halves of the book.
+ *
+ * R13.8C.2 split the question in two. `nothing_to_append` used to mean "the
+ * evolution series is unchanged"; it now means the FULL import mutates nothing —
+ * unchanged history AND a current publication materially equivalent to the one
+ * already standing. The two actions that name a publication change exist because
+ * the old vocabulary could not distinguish "there is nothing to do" from "the
+ * history is settled but this week's snapshot has been restated", and collapsing
+ * them refused the second as if it were the first.
+ */
 export type ImportAction =
   | 'nothing_to_append'
   | 'append_single_week'
   | 'multi_week_append'
   | 'historical_correction_only'
   | 'append_with_correction'
+  /** History settled; this week's published snapshot has materially changed. */
+  | 'publication_correction'
+  /** An overwrite of history AND a restatement of the standing snapshot. */
+  | 'mixed_correction'
 
 export type PlanBlockCode =
   | 'historical_correction_required'
@@ -213,6 +229,19 @@ export interface WeeklyImportInput {
   /** An administrator has authorized OVERWRITING already-published history. */
   historicalCorrectionAuthorized?: boolean
   correctionReason?: string | null
+  /**
+   * Whether the current publication this import would mint is materially the
+   * same as the one already standing for its week (R13.8C.2).
+   *
+   * OMITTING IT IS NOT "unchanged" AND NOT "changed" — it is `not_compared`, the
+   * absence of an observation, which this planner treats as no evidence of a
+   * publication change. That keeps every pure-planner call and every review
+   * fixture behaving exactly as it did before R13.8C.2, and it never invents a
+   * change nobody looked for. The real path always supplies it: the preview
+   * server reads the standing publication and compares it, and the DATABASE
+   * repeats the comparison against its own rows regardless of what arrives here.
+   */
+  publicationComparison?: PublicationComparison
 }
 
 export interface WeeklyImportPlan {
@@ -242,6 +271,13 @@ export interface WeeklyImportPlan {
   corrections: PlannedCorrection[]
   cadenceGaps: CadenceGap[]
   action: ImportAction
+  /**
+   * The publication half of the no-op question (R13.8C.2). `not_compared` when
+   * the caller supplied no comparison — see `WeeklyImportInput`.
+   */
+  publicationComparison: PublicationComparison
+  /** True when this week's standing snapshot is materially restated. */
+  publicationChanged: boolean
   /** True only when an existing identity is being OVERWRITTEN. */
   requiresHistoricalCorrection: boolean
   correctionReason: string | null
@@ -467,10 +503,32 @@ export function planWeeklyImport(input: WeeklyImportInput): WeeklyImportPlan {
     }
   }
 
+  // ── 7. THE FULL-IMPORT CLASSIFICATION (R13.8C.2).
+  //
+  // History and publication are two independent axes and are read as two. The
+  // publication axis only ever DOWNGRADES a would-be no-op into a real import —
+  // it can never gate, block or authorize anything, and it can never turn an
+  // append into something else. An append necessarily republishes, so naming
+  // that separately would add a category without adding a fact.
+  //
+  // `not_compared` behaves as "no publication change observed", which reproduces
+  // the pre-R13.8C.2 classification exactly for every caller that does not read
+  // the standing publication.
+  const publicationComparison: PublicationComparison = input.publicationComparison ?? 'not_compared'
+  const publicationChanged = publicationComparison === 'changed'
+
   const insertCount = inserted.length
   let action: ImportAction
   if (insertCount === 0) {
-    action = requiresHistoricalCorrection ? 'historical_correction_only' : 'nothing_to_append'
+    if (requiresHistoricalCorrection) {
+      // An overwrite of settled history that ALSO restates this week's standing
+      // snapshot is both corrections at once, and the preview must say so.
+      action = publicationChanged ? 'mixed_correction' : 'historical_correction_only'
+    } else {
+      // The R13.8C.2 correction. History is settled; if the snapshot moved, this
+      // is a real publication mutation and must not be refused as a no-op.
+      action = publicationChanged ? 'publication_correction' : 'nothing_to_append'
+    }
   } else if (requiresHistoricalCorrection) {
     action = 'append_with_correction'
   } else if (insertCount === 1) {
@@ -509,6 +567,8 @@ export function planWeeklyImport(input: WeeklyImportInput): WeeklyImportPlan {
     corrections,
     cadenceGaps,
     action,
+    publicationComparison,
+    publicationChanged,
     requiresHistoricalCorrection,
     correctionReason: reason.length > 0 ? reason : null,
     blocked: blockCodes.size > 0,
@@ -596,7 +656,13 @@ export function applyImportPlan(
   importId: string,
 ): ApplyResult {
   if (plan.blocked) return { ok: false, code: 'plan_blocked', store }
-  if (plan.observationsToWrite.length === 0) return { ok: false, code: 'nothing_to_write', store }
+  // R13.8C.2 — NOTHING TO WRITE IS A PROPERTY OF THE WHOLE IMPORT, NOT ONLY ITS
+  // HISTORY. An import that appends no week but materially restates this week's
+  // standing snapshot writes a real publication revision, and refusing it here
+  // would make this reference model contradict the RPC it specifies.
+  if (plan.observationsToWrite.length === 0 && !plan.publicationChanged) {
+    return { ok: false, code: 'nothing_to_write', store }
+  }
   if (plan.publicationDate === null) return { ok: false, code: 'no_publication_date', store }
 
   const index = new Map<string, number>()

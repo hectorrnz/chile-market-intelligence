@@ -51,8 +51,6 @@ import {
   importPortfolioWorkbook,
   type HoldingPayload,
   type EventPayload,
-  type SnapshotRowPayload,
-  type PerformanceRowPayload,
   type ImportObservationPayload,
 } from '@/lib/db/repositories/portfolioPublicationRepository'
 
@@ -183,53 +181,6 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     | { ok: false; code: string; reason?: string }
 
   if (loaded.draft.resumen) {
-    const rows: SnapshotRowPayload[] = loaded.draft.resumen.rows.map((r) => ({
-      scope: r.scope,
-      row_key: r.rowKey,
-      parent_row_key: r.parentRowKey,
-      depth: r.depth,
-      display_order: r.displayOrder,
-      row_type: r.rowType,
-      label_es: r.labelEs,
-      label_en: null,
-      currency: 'USD',
-      // NULL stays NULL. An unavailable value is not zero (doc 02 § 9), and a
-      // leaf with no beginning-of-year baseline keeps its comparison suppressed
-      // rather than computed off a fabricated 0.
-      value: r.value,
-      value_class: r.valueClass,
-      source_sheet: r.sourceSheet,
-      source_cell: r.sourceCell,
-      metadata: {
-        sourceRow: r.sourceRow,
-        previousValue: r.previousValue,
-        beginningOfYearValue: r.beginningOfYearValue,
-        // NMI-derived, never imported from the workbook's own `Diferencia`
-        // column, which measures the PREVIOUS week (doc 04 § 2).
-        difference: r.difference,
-        differenceClass: r.differenceClass,
-      },
-    }))
-
-    const performance: PerformanceRowPayload[] = loaded.draft.resumen.performance.map((p) => ({
-      scope: p.scope,
-      basis: p.basis,
-      metric: p.metric,
-      // The SOURCE's own stated figure is what is stored and displayed. NMI's
-      // recomputation rides in metadata as a cross-check and never replaces it
-      // (doc 04 § 7).
-      value: p.sourceValue,
-      value_class: p.valueClass,
-      source_sheet: p.sourceSheet,
-      source_cell: p.sourceCell,
-      metadata: {
-        sourceRow: p.sourceRow,
-        boundRowKey: p.boundRowKey,
-        boundSourceCell: p.boundSourceCell,
-        crossChecks: p.crossChecks,
-      },
-    }))
-
     // ── R13.8B § 8 — THE ATOMIC IMPORT.
     //
     // The plan is rebuilt HERE, from the same bytes and against Production's
@@ -255,6 +206,18 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }
     const plan = built.plan
 
+    // R13.8C.2 — THE ROWS THE PLAN WAS COMPARED AGAINST ARE THE ROWS PUBLISHED.
+    //
+    // `planImportForDraft` builds this payload from the same re-parsed draft and
+    // diffs it against the standing publication to decide `publicationChanged`.
+    // Rebuilding it here would let the no-op verdict describe one payload while
+    // the RPC wrote another, and that divergence would be silent — exactly the
+    // class of bug R13.8C.2 exists to close. Nothing the browser sent reaches it:
+    // the draft is re-parsed on this request and its bytes re-hashed by
+    // `loadDraft`.
+    const rows = built.rows
+    const performance = built.performance
+
     // --- R13.8B § 9: STALE PREVIEW. The fingerprint covers every assertion the
     // plan makes about Production's current state. If another import moved any
     // of them since the administrator looked, the plan they confirmed is not the
@@ -278,22 +241,31 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       })
     }
 
-    // --- R13.8C.1: A NO-OP IMPORT IS REFUSED, not applied quietly. The console
-    // disables Apply for a NO_CHANGES preview, but a disabled button is not an
-    // invariant — this route can be called directly. An import that appends no
-    // week, fills no gap and corrects no value has nothing to publish: it would
-    // record a revision and an import operation that changed nothing, and hand a
-    // rollback handle to an import that moved nothing.
+    // --- R13.8C.2: A NO-OP IMPORT IS REFUSED — AND A NO-OP IS THE WHOLE IMPORT.
     //
-    // The test is the packet that would be sent, not the action label, so the
-    // server refuses on exactly the condition the database refuses on. The
-    // database enforces it independently (`import_refused_nothing_to_append`);
-    // this is the same rule stated one layer earlier, so the administrator gets
-    // the answer without a write path being entered at all.
-    if (plan.observationsToWrite.length === 0) {
+    // The console disables Apply for a NO_CHANGES preview, but a disabled button
+    // is not an invariant: this route can be called directly. An import that
+    // mutates nothing would record a revision and an import operation that
+    // changed nothing, and hand a rollback handle to an import that moved
+    // nothing.
+    //
+    // R13.8C.1 tested only the history packet, and that was too narrow. A
+    // workbook can leave every evolution point identical and still restate a
+    // holding, a flow or a performance figure in the CURRENT snapshot; refusing
+    // that as "nothing to append" left the stale figure published and told the
+    // administrator there was nothing to do. So the test is BOTH halves: no
+    // history mutation AND a standing publication materially equivalent to the
+    // one this packet would mint.
+    //
+    // The database repeats the comparison against its own rows under the
+    // publication lock (`import_refused_nothing_to_append`) and remains the
+    // authority; this is the same rule stated one layer earlier, so the
+    // administrator gets the answer without a write path being entered at all.
+    if (plan.observationsToWrite.length === 0 && !plan.publicationChanged) {
       return fail('nothing_to_append', 409, {
         action: plan.action,
         productionEndpoint: plan.productionEndpoint,
+        publicationComparison: plan.publicationComparison,
       })
     }
 

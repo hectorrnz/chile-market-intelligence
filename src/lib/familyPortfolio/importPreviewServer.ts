@@ -14,21 +14,36 @@ import {
 import type { WeeklyImportPlan } from './weeklyImportPlan.ts'
 import type { EvolutionExtraction } from './resumen/evolutionHistory.ts'
 import type { LoadedDraft } from './draftReview.ts'
+import type {
+  SnapshotRowPayload,
+  PerformanceRowPayload,
+} from '@/lib/db/repositories/portfolioPublicationRepository'
 import {
   listPersistedEvolutionObservations,
   listPublications,
+  getStandingPublicationPayload,
 } from '@/lib/db/repositories/portfolioPublicationRepository'
+import { buildSnapshotRowPayload, buildPerformanceRowPayload } from './publicationPayload.ts'
+import { comparePublicationPayload } from './publicationMaterialDiff.ts'
 
 export type ImportPreviewFailure =
   | { ok: false; code: 'not_configured' }
   | { ok: false; code: 'evolution_read_failed' }
   | { ok: false; code: 'not_a_portfolio_draft' }
+  | { ok: false; code: 'publication_read_failed' }
 
 export interface ImportPreviewSuccess {
   ok: true
   preview: WeeklyImportPreview
   plan: WeeklyImportPlan
   extraction: EvolutionExtraction
+  /**
+   * The exact publication payload the plan was compared against and that the
+   * confirm route sends to the RPC. Returned rather than rebuilt so the diff and
+   * the write can never describe different rows.
+   */
+  rows: SnapshotRowPayload[]
+  performance: PerformanceRowPayload[]
 }
 
 /**
@@ -62,6 +77,52 @@ export async function planImportForDraft(
       .sort()
       .pop() ?? null
 
+  // ── R13.8C.2 — THE PUBLICATION HALF OF THE NO-OP QUESTION.
+  //
+  // The history series is not a proxy for the standing snapshot. A workbook can
+  // leave every evolution point identical and still restate a holding, a flow or
+  // a performance figure inside the current publication; classifying that as
+  // "nothing to append" refused a real correction and left the stale figure
+  // published.
+  //
+  // The comparison runs against the payload this import WOULD ACTUALLY SEND —
+  // `buildSnapshotRowPayload`/`buildPerformanceRowPayload` are the same functions
+  // the confirm route uses to build the RPC arguments, so the diff can never be
+  // computed against rows nobody publishes.
+  //
+  // The week compared is the one this import would publish: the newest valid
+  // frozen date. When the workbook proposes a NEWER week than anything standing,
+  // no publication exists at that date and the comparison is trivially
+  // "changed" — which is correct, an append always publishes.
+  //
+  // A FAILED READ IS A FAILURE, never a silent `not_compared`: guessing would
+  // either refuse a legitimate correction or offer an Apply the database will
+  // refuse. The database repeats this comparison against its own rows under the
+  // publication lock and remains the authority.
+  const rows = buildSnapshotRowPayload(loaded.resumen)
+  const performance = buildPerformanceRowPayload(loaded.resumen)
+
+  const publicationDate = loaded.frozen.publicationDate
+  let publicationDiff: NonNullable<Parameters<typeof buildWeeklyImportPreview>[0]['publicationDiff']>
+  if (publicationDate === null) {
+    // No publishable frozen column at all. There is no week to compare, and the
+    // plan is blocked on other grounds long before a no-op verdict matters.
+    publicationDiff = { comparison: 'not_compared', differences: [], differenceCount: 0 }
+  } else {
+    const standing = await getStandingPublicationPayload(publicationDate)
+    if (!standing.ok) {
+      return standing.code === 'not_configured'
+        ? { ok: false, code: 'not_configured' }
+        : { ok: false, code: 'publication_read_failed' }
+    }
+    const diff = comparePublicationPayload(standing.payload, { rows, performance })
+    publicationDiff = {
+      comparison: diff.comparison,
+      differences: diff.differences,
+      differenceCount: diff.differenceCount,
+    }
+  }
+
   const built = buildWeeklyImportPreview({
     bytes: loaded.bytes,
     selection: loaded.frozen,
@@ -70,7 +131,15 @@ export async function planImportForDraft(
     latestPublishedAsOf,
     historicalCorrectionAuthorized: options.historicalCorrectionAuthorized,
     correctionReason: options.correctionReason,
+    publicationDiff,
   })
 
-  return { ok: true, preview: built.preview, plan: built.plan, extraction: built.extraction }
+  return {
+    ok: true,
+    preview: built.preview,
+    plan: built.plan,
+    extraction: built.extraction,
+    rows,
+    performance,
+  }
 }

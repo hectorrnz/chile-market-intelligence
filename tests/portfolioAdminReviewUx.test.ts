@@ -472,8 +472,10 @@ describe('R13.8C § 10 — the rollback control names what it reverses', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('R13.8C § 12 — the review fixtures are real-planner output and cannot touch Production', () => {
-  test('seven fixed ids, one per required state, and nothing else resolves', () => {
-    assert.equal(IMPORT_FIXTURE_ID_LIST.length, 7)
+  test('eight fixed ids, one per required state, and nothing else resolves', () => {
+    // R13.8C.2 added H: history settled, standing snapshot restated — the one
+    // state real data can least produce and the one R13.8C.1 got wrong.
+    assert.equal(IMPORT_FIXTURE_ID_LIST.length, 8)
     const actions = Object.fromEntries(
       Object.entries(IMPORT_FIXTURE_IDS).map(([k, id]) => [k, buildImportFixture(id)!.importPlan?.action ?? null]),
     )
@@ -485,6 +487,7 @@ describe('R13.8C § 12 — the review fixtures are real-planner output and canno
       changedRequiresReason: 'historical_correction_only',
       mixed: 'append_with_correction',
       validationFailure: null,
+      publicationCorrection: 'publication_correction',
     })
     assert.equal(buildImportFixture('00000000-0000-4000-8000-0000000f1c99'), null)
     assert.equal(buildImportFixture('not-a-fixture'), null)

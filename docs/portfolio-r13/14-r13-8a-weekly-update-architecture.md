@@ -1012,53 +1012,148 @@ import's source workbook and shows its NEW / GAP_FILL / CHANGED counts in their 
 `describeImportPlan` (`src/lib/familyPortfolio/importPlanPresentation.ts`) is the pure verdict
 derivation, tested under Node in both languages.
 
-**Observed at R13.8C, closed at R13.8C.1.** The server used to accept a confirmation for a
-`nothing_to_append` plan: `nmi_import_portfolio_workbook` had no zero-observation guard, so such a
-request would have created a new revision of the same week with an empty history packet (the R13.5
-re-publication semantic). The console never offered it, but a disabled button is not an invariant.
-See § AE.14.
+**Observed at R13.8C, closed at R13.8C.1, corrected at R13.8C.2.** The server used to accept a
+confirmation for a `nothing_to_append` plan: `nmi_import_portfolio_workbook` had no zero-observation
+guard, so such a request would have created a new revision of the same week with an empty history
+packet (the R13.5 re-publication semantic). The console never offered it, but a disabled button is
+not an invariant. R13.8C.1 closed that. R13.8C.2 then corrected what R13.8C.1 had made the guard
+*mean* — see § AE.14.
 
-### AE.14 The no-op guard (R13.8C.1)
+### AE.14 The no-op guard (R13.8C.1, corrected at R13.8C.2)
 
-**An import that appends nothing, fills nothing and corrects nothing is refused — by the database,
-not only by the browser.** `nmi_import_portfolio_workbook` now raises
-`import_refused_nothing_to_append` when the packet carries no observation whose disposition is `new`,
-`gap_fill` or `changed`. The check runs immediately after the packet's shape is validated and under
-the import lock, **before** the operation row is inserted and before `nmi_publish_portfolio` is
-called, so a refusal writes nothing at all: no import operation, no publication revision, no history
-mutation, no before-image ledger entry.
+**An import is refused as a no-op only when the FULL normalized import produces zero durable
+financial mutations — no history mutation AND no material change to the publication already standing
+for that week.** The refusal is the database's: `nmi_import_portfolio_workbook` raises
+`import_refused_nothing_to_append` before the operation row is inserted and before
+`nmi_publish_portfolio` is called, so a refusal writes nothing at all — no import operation, no
+publication revision, no history mutation, no before-image ledger entry.
 
-Three details are deliberate.
+#### AE.14.1 Why the first definition was wrong
 
-* **It counts the three MUTATING dispositions, not the array's length.** A packet of a hundred
-  unchanged weeks is the same no-op as an empty one, and a length test would have accepted it.
-* **Authorization does not buy it through.** The guard precedes the correction check, so an
-  authorized packet that changes nothing is refused on the no-op ground. The question is whether
-  anything moves, never who approved it.
-* **Nothing valid is narrowed.** NEW-only, GAP_FILL-only, an authorized CHANGED-only, and every
-  combination of the three still import exactly as before; § 6d–6f of the pgTAP suite proves each
-  single disposition still applies after the refusals.
+R13.8C.1 defined a no-op as a packet carrying no `new`, no `gap_fill` and no `changed` observation.
+That reads the evolution series as a proxy for the whole import, and it is not one. **A workbook can
+leave every weekly evolution point identical and still restate a holding, a flow, a sociedad total or
+a performance figure inside the current snapshot.** Under the narrow test that import was refused as
+"nothing to append", the console said there was nothing to do, and the stale published figure stayed
+standing. A refusal that silently preserves a figure the owner has corrected is a worse failure than
+the redundant revision the guard was protecting against.
 
-`POST .../publish` states the same rule one layer earlier — it refuses with `nothing_to_append`
-(409) when `plan.observationsToWrite` is empty, before any write path is entered — so an
-administrator gets the answer without a round trip. The database remains the authority; the route's
-refusal is an early answer, not a replacement for it.
+The two halves are now measured separately and combined:
 
-**One consequence, stated plainly.** A portfolio workbook whose evolution points are all identical to
-Production can no longer be re-published, even when some other part of the snapshot differs. The
-weekly evolution series is what an import exists to move; a revision that moves none of it is the
-no-op this guard refuses. R13.2 already made the same bytes unrepeatable for one kind, and
-`publication_refused_duplicate_submission` already refused the same upload at the same parser
-version, so the reachable case is narrow — but it is a real narrowing and not an accident.
+| | history unchanged | history mutated |
+|---|---|---|
+| **publication unchanged** | `nothing_to_append` — refused | `historical_correction_only` / an append |
+| **publication changed** | `publication_correction` — **applied** | `mixed_correction` / an append |
 
-**Proof.** `supabase/tests/database/portfolio_import_operations_test.sql` § 6 runs against real
-PostgreSQL: an empty packet, a packet of only unchanged weeks, a repeat attempt and an authorized
-no-op are each refused, and the observation, operation, publication and ledger counts are then
-re-read and shown unchanged against an explicitly pinned pre-state. `tests/portfolioImportNoOpGuard.test.ts`
-proves the planner's own no-op condition, that all three layers agree on what a no-op is, and the
-ORDER of each guard — a check placed after the operation insert would still raise, but only after
-writing the row it exists to prevent. Both were demonstrated non-vacuous: renaming the raised code
-fails 4 of that file's tests, deleting the route guard fails 3.
+`publication_correction` and `mixed_correction` are the only new action names. An append necessarily
+republishes, so naming that case separately would add a category without adding a fact.
+
+#### AE.14.2 What "materially the same publication" means
+
+The comparison is defined once, in SQL, by `nmi_portfolio_publication_unchanged(publication_id, rows,
+performance)` (migration `20260821000000` § 5b), and mirrored for the console by the pure
+`publicationMaterialDiff.ts`. It reads Production's own rows rather than trusting anything the caller
+asserted about them.
+
+* **Identity** is `(scope, row_key)` for a snapshot row and `(scope, basis, metric)` for a
+  performance row — both unique per publication by the R13.5 schema. The comparison is a full outer
+  join on it, so an added row, a removed row and a changed row are all differences. Order is never
+  compared *as* order; `display_order` is compared as an ordinary value.
+* **MATERIAL** — `scope`, `row_key`, `parent_row_key`, `depth`, `display_order`, `row_type`,
+  `label_es`, `label_en`, `currency`, `value`, `value_class`, and **every metadata key except the
+  operational ones below**. The metadata column carries `previousValue`, `beginningOfYearValue`,
+  `difference` and `differenceClass`, which are *published figures*; excluding the whole column as
+  provenance would have made a real restatement invisible to the comparison.
+* **OPERATIONAL, and ignored** — the publication's own id, upload id, revision, actor, timestamps,
+  admin note and parser version; each row's id and `publication_id`; and the source coordinates
+  `source_sheet`, `source_cell`, `metadata.sourceRow`, `metadata.boundSourceCell`. A row that moved
+  from B12 to B13 because a blank line was inserted above it did not change the book.
+
+The exclusion list is deliberately short and enumerated rather than derived. Misclassifying a real
+figure as operational refuses a legitimate correction; the opposite error only mints an honest
+revision that says the same thing twice — so anything not provably a coordinate stays material.
+
+#### AE.14.3 Ordering, locking and authorization
+
+* **The guard runs before any durable write**, and the migration asserts that ordering against its
+  own `prosrc`: a check placed after the operation insert would still raise, but only after writing
+  the row it exists to prevent. It also asserts that the publication comparison *precedes* the
+  refusal, so a future edit cannot quietly revert to the R13.8C.1 test.
+* **The publication pre-state is read under `nmi_lock_publication_series`**, the same lock
+  `nmi_publish_portfolio` takes further down, so the row compared is the row that will actually be
+  displaced. The order is always import lock, then series lock — one order everywhere, so the two
+  cannot form a cycle.
+* **The history half counts the three MUTATING dispositions, not the array's length.** A packet of a
+  hundred unchanged weeks is the same no-op as an empty one.
+* **Authorization does not buy a no-op through.** The guard precedes the correction check.
+* **A same-date publication correction requires no written reason, and none was invented.** This is
+  the existing R13.5 semantic, reported rather than changed: `nmi_publish_portfolio` mints the next
+  revision and supersedes its predecessor, and refuses only a *duplicate submission* — the same
+  upload at the same parser version. A written reason is demanded for an overwrite of settled
+  HISTORY, which a snapshot-only correction performs none of. Requiring the owner to justify a
+  re-publication would be a stronger rule than this system has ever had, and inventing one silently
+  is precisely what must not happen here.
+* **Nothing valid is narrowed.** NEW-only, GAP_FILL-only, an authorized CHANGED-only, every
+  combination of the three, and a snapshot-only publication correction all import.
+
+#### AE.14.4 The three layers, and the rows they agree on
+
+`POST .../publish` states the same rule one layer earlier — `nothing_to_append` (409) when
+`plan.observationsToWrite` is empty **and** `plan.publicationChanged` is false — before any write
+path is entered. The console disables Apply on `isNoOp(plan)`, which is the same condition. The
+database remains the authority; the route's refusal is an early answer, not a replacement for it.
+
+The verdict is decided on **the payload that is actually sent**. `buildSnapshotRowPayload` /
+`buildPerformanceRowPayload` (`publicationPayload.ts`) were extracted out of the publish route for
+exactly this reason: `planImportForDraft` builds the payload, diffs it against the standing
+publication, and hands the *same arrays* back for the RPC call. A second copy would let the verdict
+describe rows nobody publishes, and the divergence would be silent. A failed read of the standing
+publication is a failure (`publication_read_failed`), never a guessed verdict.
+
+The stale-preview fingerprint now covers the publication verdict too: if another publication lands
+between preview and confirm, an administrator who approved a publication correction may now be
+confirming a no-op, or the reverse. That is a refusal, not a surprise.
+
+#### AE.14.5 What the preview shows
+
+When history is settled but the snapshot moved, the console no longer says "Nothing to apply". It
+shows a **proposed change to the current publication** with a before/after per differing row — and
+only the differing rows. A publication carries ~500 rows; the unchanged ones are represented by their
+absence, and a long tail is reported as a count rather than a scroll
+(`MAX_REPORTED_DIFFERENCES`). Owner-review fixture **H** (`publicationCorrection`) renders exactly
+this state through the real planner and the real preview mapper, because no real workbook can
+currently produce it.
+
+#### AE.14.6 Rollback
+
+A snapshot-only import is reversible by the mechanism that already existed and needed no change:
+`nmi_rollback_portfolio_import` demotes the publication the import made current and promotes
+`previous_publication_id` back. With no observation mutations the before-image loop simply does not
+execute, and **the exact previous publication stands again — the row itself, not a re-derivation of
+it**, at its original revision number. Nothing is deleted, so it can be rolled forward again.
+
+#### AE.14.7 Proof
+
+`supabase/tests/database/portfolio_import_operations_test.sql` runs against real PostgreSQL.
+§ 6 refuses an empty packet, a packet of only unchanged weeks, a repeat attempt and an authorized
+no-op — each now built from the STANDING publication's own rows, so the packet is a true no-op by
+construction — and then re-reads the observation, operation, publication and ledger counts against an
+explicitly pinned pre-state. § 7 proves the corrected half: an operational-only difference is still a
+no-op; a moved figure is applied and goes through the ordinary revision lifecycle with no
+authorization invented; a late failure inside a snapshot-only import leaves neither the operation row
+nor the publication row behind; rolling one back restores the exact previous publication; a
+performance-only change is a publication mutation; and a gap fill or an authorized correction still
+applies with the snapshot deliberately held identical, so the publication axis is proven unable to
+suppress a history mutation.
+
+`tests/portfolioImportNoOpGuard.test.ts` proves the pure definitions — what is material, what is
+operational, that order is never compared as order, that a null value is not a zero — that all three
+layers agree, and the placement of each guard.
+
+**Non-vacuity, demonstrated rather than asserted.** Forcing the comparison to report "unchanged"
+always fails the snapshot-only case; forcing it to report "changed" always fails the true-no-op case;
+removing the database guard fails the direct-RPC case. The measured counts are recorded in
+§ AE.14.8.
 
 **Residual.** The ledger shows an import's as-of date, source workbook and counts, not the list of
 dates it touched — the before-image ledger is not exposed by any read route yet. Spanish rendering is

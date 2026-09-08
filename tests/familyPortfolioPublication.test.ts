@@ -937,16 +937,31 @@ describe('R13.5 · routes', () => {
     assert.match(src, /refusals: review\.refusals/)
   })
 
-  test('the publish route stores the SOURCE performance figure, cross-checks in metadata', () => {
-    const src = read(PUBLISH_ROUTE)
+  // R13.8C.2 moved this mapping OUT of the route and into
+  // `publicationPayload.ts`, so the preview can diff the standing publication
+  // against the very payload the confirm sends. The properties are unchanged and
+  // are asserted where the mapping now lives; the route is asserted to use it
+  // rather than to carry a second copy.
+  test('the publication payload stores the SOURCE performance figure, cross-checks in metadata', () => {
+    const src = read('src/lib/familyPortfolio/publicationPayload.ts')
     assert.match(src, /value: p\.sourceValue/)
     assert.match(src, /crossChecks: p\.crossChecks/)
   })
 
-  test('the publish route preserves a null value rather than zeroing it', () => {
-    const src = codeOf(read(PUBLISH_ROUTE))
+  test('the publication payload preserves a null value rather than zeroing it', () => {
+    const src = codeOf(read('src/lib/familyPortfolio/publicationPayload.ts'))
     assert.match(src, /value: r\.value/)
     assert.ok(!/value: r\.value \?\? 0/.test(src))
+  })
+
+  test('the publish route uses that one builder and never a second copy', () => {
+    const src = codeOf(read(PUBLISH_ROUTE))
+    assert.match(src, /const rows = built\.rows/)
+    assert.match(src, /const performance = built\.performance/)
+    assert.ok(!/loaded\.draft\.resumen\.rows\.map/.test(src))
+    const server = codeOf(read('src/lib/familyPortfolio/importPreviewServer.ts'))
+    assert.match(server, /buildSnapshotRowPayload/)
+    assert.match(server, /buildPerformanceRowPayload/)
   })
 
   test('an event is attached to exactly one holding, or the publish fails closed', () => {

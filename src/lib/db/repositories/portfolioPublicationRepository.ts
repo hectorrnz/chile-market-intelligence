@@ -588,6 +588,114 @@ export async function listPersistedEvolutionObservations(): Promise<
   }
 }
 
+/**
+ * The MATERIAL payload of the publication currently standing for one week.
+ *
+ * R13.8C.2 needs this to answer "would this workbook restate the standing
+ * snapshot?" during PREVIEW — before any write path is entered — so the console
+ * can show a proposed publication change instead of the false "nothing to apply"
+ * that the history-only test produced.
+ *
+ * It reads through the ADMIN client for the same reason
+ * `listPersistedEvolutionObservations` does: planning an import is a whole-book
+ * operation an administrator has already been authorized for, and it must see
+ * every scope, not only the ones the caller's own session may read.
+ *
+ * Returns null when no publication stands for that date — which the comparison
+ * treats as "changed", because there is plainly something to publish.
+ *
+ * NOT THE ENFORCEMENT POINT. `nmi_import_portfolio_workbook` repeats this
+ * comparison in SQL against its own rows under the publication lock, so a stale
+ * or failed read here can never let a no-op through.
+ */
+export interface StandingPublicationPayload {
+  publicationId: string
+  asOfDate: string
+  rows: SnapshotRowPayload[]
+  performance: PerformanceRowPayload[]
+}
+
+interface PublicationPayloadShape {
+  from: (t: string) => {
+    select: (c: string) => {
+      eq: (
+        col: string,
+        v: string,
+      ) => Promise<{ data: Record<string, unknown>[] | null; error: { message?: string } | null }>
+    }
+  }
+}
+
+export async function getStandingPublicationPayload(
+  asOfDate: string,
+): Promise<{ ok: true; payload: StandingPublicationPayload | null } | Fail> {
+  const admin = getSupabaseAdminClient()
+  if (!admin) return { ok: false, code: 'not_configured' }
+
+  const publications = await listPublications()
+  const standing = publications.find(
+    (p) => p.uploadKind === 'portfolio' && p.isCurrent && p.asOfDate === asOfDate,
+  )
+  if (!standing) return { ok: true, payload: null }
+
+  const client = admin as never as PublicationPayloadShape
+
+  const rowsResult = await client
+    .from('portfolio_snapshot_rows')
+    .select(
+      'scope, row_key, parent_row_key, depth, display_order, row_type, label_es, label_en, ' +
+        'currency, value, value_class, source_sheet, source_cell, metadata',
+    )
+    .eq('publication_id', standing.id)
+  if (rowsResult.error) {
+    return { ok: false, code: 'rpc_failed', reason: rowsResult.error.message ?? 'snapshot_read_failed' }
+  }
+
+  const perfResult = await client
+    .from('portfolio_performance_rows')
+    .select('scope, basis, metric, value, value_class, source_sheet, source_cell, metadata')
+    .eq('publication_id', standing.id)
+  if (perfResult.error) {
+    return { ok: false, code: 'rpc_failed', reason: perfResult.error.message ?? 'performance_read_failed' }
+  }
+
+  return {
+    ok: true,
+    payload: {
+      publicationId: standing.id,
+      asOfDate: standing.asOfDate,
+      rows: (rowsResult.data ?? []).map((r) => ({
+        scope: String(r.scope),
+        row_key: String(r.row_key),
+        parent_row_key: r.parent_row_key === null ? null : String(r.parent_row_key),
+        depth: Number(r.depth),
+        display_order: Number(r.display_order),
+        row_type: String(r.row_type),
+        label_es: String(r.label_es),
+        label_en: r.label_en === null ? null : String(r.label_en),
+        currency: String(r.currency),
+        // NULL stays NULL: unavailable is never zero (doc 02 § 9), and coercing
+        // it here would make an unavailable leaf compare equal to a real 0.
+        value: r.value === null || r.value === undefined ? null : Number(r.value),
+        value_class: String(r.value_class),
+        source_sheet: String(r.source_sheet),
+        source_cell: String(r.source_cell),
+        metadata: (r.metadata ?? {}) as Record<string, unknown>,
+      })),
+      performance: (perfResult.data ?? []).map((r) => ({
+        scope: String(r.scope),
+        basis: String(r.basis),
+        metric: String(r.metric),
+        value: r.value === null || r.value === undefined ? null : Number(r.value),
+        value_class: String(r.value_class),
+        source_sheet: String(r.source_sheet),
+        source_cell: String(r.source_cell),
+        metadata: (r.metadata ?? {}) as Record<string, unknown>,
+      })),
+    },
+  }
+}
+
 /** One history mutation, in the exact shape the RPC's `jsonb_to_recordset` reads. */
 export interface ImportObservationPayload {
   scope: string

@@ -40,9 +40,13 @@ import {
   type WeeklyImportPlan,
   type PlannedObservation,
 } from './weeklyImportPlan.ts'
+import type {
+  PublicationComparison,
+  PublicationDifference,
+} from './publicationMaterialDiff.ts'
 
 /** Bumped whenever the preview's shape or selection rule changes. */
-export const IMPORT_PREVIEW_VERSION = 'r13.8b.import_preview.1'
+export const IMPORT_PREVIEW_VERSION = 'r13.8c2.import_preview.2'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1 · Frozen column selection
@@ -183,6 +187,21 @@ export interface WeeklyImportPreview {
 
   action: WeeklyImportPlan['action']
   requiresHistoricalCorrection: boolean
+
+  /**
+   * R13.8C.2 — the publication half of the plan.
+   *
+   * `publicationComparison` says whether this week's STANDING snapshot would be
+   * materially restated. `publicationDifferences` is a BOUNDED sample, never a
+   * dump: a portfolio publication carries ~500 rows and listing the unchanged
+   * ones would bury the handful that moved. `publicationDifferenceCount` is the
+   * true total even when the sample was capped.
+   */
+  publicationComparison: PublicationComparison
+  publicationChanged: boolean
+  publicationDifferences: PublicationDifference[]
+  publicationDifferenceCount: number
+
   blocked: boolean
   blockCodes: WeeklyImportPlan['blockCodes']
 
@@ -227,6 +246,11 @@ export function planFingerprint(plan: WeeklyImportPlan): string {
     .sort()
   canonical.push(`endpoint|${plan.productionEndpoint ?? 'none'}`)
   canonical.push(`publication|${plan.publicationDate ?? 'none'}`)
+  // R13.8C.2 — the standing snapshot is an assertion about Production too. If
+  // another publication landed between preview and confirm, an administrator who
+  // approved a PUBLICATION CORRECTION may now be confirming a no-op, or the
+  // reverse. Covering the verdict makes that a refusal rather than a surprise.
+  canonical.push(`snapshot|${plan.publicationComparison}`)
   canonical.push(`plan|${plan.planVersion}`)
   return createHash('sha256').update(canonical.join('\n')).digest('hex')
 }
@@ -254,10 +278,27 @@ export interface PreviewInput {
   latestPublishedAsOf: string | null
   historicalCorrectionAuthorized?: boolean
   correctionReason?: string | null
+  /**
+   * R13.8C.2 — the standing publication for this week, already compared against
+   * the payload this import would send. Omitted by a caller that cannot read it,
+   * which is `not_compared` and reproduces the pre-R13.8C.2 behaviour exactly.
+   */
+  publicationDiff?: {
+    comparison: PublicationComparison
+    differences: readonly PublicationDifference[]
+    differenceCount: number
+  }
 }
 
 /** The workbook's schema identity — everything in a preview that is not the plan. */
 export interface PreviewIdentity {
+  /**
+   * The bounded sample of material publication differences, when the caller read
+   * the standing publication. Absent for a pure planner call or a review fixture,
+   * which is `not_compared` and shows no publication block at all.
+   */
+  publicationDifferences?: readonly PublicationDifference[]
+  publicationDifferenceCount?: number
   contractVersion: string
   contractVerdict: WorkbookContractReport['verdict']
   sheetNames: string[]
@@ -300,6 +341,11 @@ export function previewFromPlan(plan: WeeklyImportPlan, identity: PreviewIdentit
     cadenceGaps: plan.cadenceGaps.map((g) => ({ from: g.from, to: g.to, days: g.days })),
     action: plan.action,
     requiresHistoricalCorrection: plan.requiresHistoricalCorrection,
+    publicationComparison: plan.publicationComparison,
+    publicationChanged: plan.publicationChanged,
+    publicationDifferences: [...(identity.publicationDifferences ?? [])],
+    publicationDifferenceCount:
+      identity.publicationDifferenceCount ?? (identity.publicationDifferences ?? []).length,
     blocked: plan.blocked,
     blockCodes: plan.blockCodes,
     counts: {
@@ -342,6 +388,7 @@ export function buildWeeklyImportPreview(
     latestPublishedAsOf: input.latestPublishedAsOf,
     historicalCorrectionAuthorized: input.historicalCorrectionAuthorized,
     correctionReason: input.correctionReason,
+    publicationComparison: input.publicationDiff?.comparison,
   })
 
   const preview = previewFromPlan(plan, {
@@ -349,6 +396,8 @@ export function buildWeeklyImportPreview(
     contractVerdict: contract.verdict,
     sheetNames: contract.structure?.sheetNames ?? [],
     frozen: input.selection,
+    publicationDifferences: input.publicationDiff?.differences,
+    publicationDifferenceCount: input.publicationDiff?.differenceCount,
   })
 
   return { preview, plan, extraction }

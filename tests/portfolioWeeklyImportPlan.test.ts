@@ -830,7 +830,10 @@ describe('standing invariants', () => {
   })
 
   test('the plan is versioned', () => {
-    assert.match(WEEKLY_IMPORT_PLAN_VERSION, /^r13\.8b\./)
+    // R13.8C.2 bumped it: the plan gained a second classification axis (the
+    // publication half of the no-op question), which is a semantics change and
+    // not a refactor. A recorded plan version must say which semantics ran.
+    assert.match(WEEKLY_IMPORT_PLAN_VERSION, /^r13\.8c2\./)
     const p = planWeeklyImport({ workbookObservations: [], publishedObservations: [] })
     assert.equal(p.planVersion, WEEKLY_IMPORT_PLAN_VERSION)
     assert.equal(p.publicationDate, null)

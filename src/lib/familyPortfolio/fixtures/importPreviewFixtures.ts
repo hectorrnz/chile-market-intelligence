@@ -8,7 +8,7 @@
 // or a mixed plan on any real data — and creating such states in Production to
 // look at them is expressly forbidden, and would be wrong regardless.
 //
-// This module is the alternative: seven deterministic synthetic states, each
+// This module is the alternative: eight deterministic synthetic states, each
 // PLANNED BY THE REAL PLANNER (`planWeeklyImport`) and MAPPED BY THE REAL PREVIEW
 // (`previewFromPlan`), served through the real admin routes and rendered by the
 // real admin page. Nothing here is a mock-up of the UI and nothing here is a
@@ -21,7 +21,7 @@
 //   · NOT A PRODUCTION SURFACE. Every route that serves a fixture consults
 //     `reviewFixturesEnabled()` first; on the production deployment these ids
 //     are simply unknown uploads and 404.
-//   · NO QUERY-CONTROLLED STATE. The only input is one of seven fixed ids. A
+//   · NO QUERY-CONTROLLED STATE. The only input is one of eight fixed ids. A
 //     caller cannot ask for an arbitrary date, value or disposition.
 //   · NO AUTHORIZATION BYPASS. A fixture is served AFTER the same session and
 //     administrator guard as a real upload.
@@ -43,6 +43,7 @@ import {
   type WeeklyImportPreview,
 } from '../weeklyImportPreview.ts'
 import type { DraftReview, ReviewFinding } from '../draftReview.ts'
+import type { PublicationDifference } from '../publicationMaterialDiff.ts'
 import type { UploadKind } from '../publication.ts'
 
 // ── Identities ───────────────────────────────────────────────────────────────
@@ -65,6 +66,16 @@ export const IMPORT_FIXTURE_IDS = {
   mixed: `${PREFIX}0f`,
   /** G — the workbook did not parse at any frozen week. */
   validationFailure: `${PREFIX}10`,
+  /**
+   * H (R13.8C.2) — history settled, STANDING SNAPSHOT RESTATED.
+   *
+   * The state R13.8C.1 got wrong and the one real data can least produce: every
+   * evolution point matches Production, so the old console said "nothing to
+   * apply" and disabled Apply, while the current week's published figures had
+   * genuinely moved. The owner needs to SEE that this now reads as a proposed
+   * publication change with an enabled Apply.
+   */
+  publicationCorrection: `${PREFIX}11`,
 } as const
 
 export type ImportFixtureKey = keyof typeof IMPORT_FIXTURE_IDS
@@ -238,6 +249,15 @@ interface StateSpec {
   corrected: boolean
   /** A non-blocking finding so the warnings section can be reviewed. */
   warning: boolean
+  /**
+   * R13.8C.2 — how many rows of the CURRENT publication this workbook restates.
+   *
+   * Supplied rather than diffed because a fixture has no stored publication to
+   * diff against. The verdict it produces still runs through the real planner
+   * and the real preview mapper; only the observation is injected, exactly as
+   * the workbook observations are.
+   */
+  publicationDifferences?: number
 }
 
 const STATES: readonly StateSpec[] = [
@@ -247,6 +267,7 @@ const STATES: readonly StateSpec[] = [
   { key: 'gapFillAndNew', filename: 'D-gap-fill-and-new', workbookWeeks: PRODUCTION_WEEKS + 1, productionSkips: [9], corrected: false, warning: false },
   { key: 'changedRequiresReason', filename: 'E-historical-change', workbookWeeks: PRODUCTION_WEEKS, productionSkips: [], corrected: true, warning: false },
   { key: 'mixed', filename: 'F-mixed-new-gap-fill-change', workbookWeeks: PRODUCTION_WEEKS + 2, productionSkips: [6], corrected: true, warning: true },
+  { key: 'publicationCorrection', filename: 'H-publication-correction', workbookWeeks: PRODUCTION_WEEKS, productionSkips: [], corrected: false, warning: false, publicationDifferences: 3 },
 ]
 
 const ROW_COUNTS: ReadonlyArray<{ scope: string; rowCount: number }> = [
@@ -299,6 +320,27 @@ function reviewFor(upload: FixtureUploadRow, frozen: FrozenColumnSelection | nul
   }
 }
 
+/**
+ * Synthetic material differences for fixture H. Small round integers, chosen so
+ * the before/after reads clearly and can never be mistaken for a real holding.
+ */
+function buildPublicationDifferences(n: number): PublicationDifference[] {
+  const SPEC: ReadonlyArray<{ identity: string; label: string; before: number; after: number }> = [
+    { identity: 'main|watermill-total', label: 'FIXTURE — TOTAL WATERMILL', before: 1_200_000, after: 1_235_000 },
+    { identity: 'main|dubai-cash', label: 'FIXTURE — Dubai / Caja', before: 90_000, after: 55_000 },
+    { identity: 'jaime|staten-total', label: 'FIXTURE — TOTAL STATEN', before: 410_000, after: 410_500 },
+  ]
+  return SPEC.slice(0, n).map((d) => ({
+    area: 'snapshot' as const,
+    identity: d.identity,
+    kind: 'changed' as const,
+    field: 'value',
+    label: d.label,
+    beforeValue: d.before,
+    afterValue: d.after,
+  }))
+}
+
 export interface ImportFixture {
   key: ImportFixtureKey
   upload: FixtureUploadRow
@@ -319,10 +361,15 @@ function buildState(spec: StateSpec): ImportFixture {
   // THE REAL PLANNER, with no authorization — the "what would happen" view the
   // draft route computes, so a corrected state comes back blocked exactly as a
   // real one would.
+  // R13.8C.2 — the publication half. `not_compared` for every state that does
+  // not exercise it, which is what every pre-R13.8C.2 fixture asserted anyway.
+  const publicationDiffs = buildPublicationDifferences(spec.publicationDifferences ?? 0)
+
   const plan = planWeeklyImport({
     workbookObservations: workbook,
     publishedObservations: published,
     latestPublishedAsOf: fixtureWeekIso(PRODUCTION_WEEKS - 1),
+    publicationComparison: publicationDiffs.length > 0 ? 'changed' : 'not_compared',
   })
 
   const findings: ReviewFinding[] = spec.warning
@@ -345,6 +392,8 @@ function buildState(spec: StateSpec): ImportFixture {
       contractVerdict: 'supported',
       sheetNames: SHEETS,
       frozen,
+      publicationDifferences: publicationDiffs,
+      publicationDifferenceCount: publicationDiffs.length,
     }),
   }
 }

@@ -673,7 +673,10 @@ describe('R13.8B — hygiene', () => {
   })
 
   test('the preview is versioned', () => {
-    assert.match(IMPORT_PREVIEW_VERSION, /^r13\.8b\./)
+    // Bumped by R13.8C.2 along with the plan: the preview carries new fields
+    // (`publicationComparison`, the bounded difference sample) and its
+    // fingerprint now covers the publication verdict.
+    assert.match(IMPORT_PREVIEW_VERSION, /^r13\.8c2\./)
   })
 
   test('no source file this stage touched contains a raw NUL byte', () => {

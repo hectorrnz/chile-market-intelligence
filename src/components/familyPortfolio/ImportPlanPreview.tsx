@@ -40,6 +40,7 @@ import {
   TONE,
   correctionDelta,
   describeImportPlan,
+  fill,
   nonCorrectionBlockCodes,
   type ImportPlan,
   type WorkflowStep,
@@ -265,6 +266,85 @@ function GapFillsCard({ plan, className = '' }: { plan: ImportPlan; className?: 
       </p>
       <DateChips dates={plan.gapFillDates} tone={TONE.gapFill} />
       <p className="text-[11px] text-muted-fg">{a.planGapFillHint}</p>
+    </section>
+  )
+}
+
+// ── Attention: THE STANDING SNAPSHOT (R13.8C.2) ───────────────────────
+//
+// History unchanged does not mean nothing changed. When the workbook restates a
+// figure inside THIS WEEK'S published snapshot, the pre-R13.8C.2 console said
+// "nothing to apply" and disabled Apply — a false sentence that left the stale
+// figure standing. This card is what it says instead.
+//
+// IT LISTS ONLY WHAT DIFFERS. A publication carries ~500 rows; the ones that did
+// not move are represented by their absence, never by a row apiece. The server
+// caps the sample and reports the true count, so a long tail reads as a count
+// rather than a scroll.
+//
+// It is presentation, not a gate: this card authorizes nothing and blocks
+// nothing. A same-date republication has never required a written reason
+// (`nmi_publish_portfolio` mints a new revision and supersedes the old one), and
+// R13.8C.2 deliberately did not invent one — only an overwrite of settled
+// HISTORY does, which is the card below.
+function PublicationChangesCard({ plan }: { plan: ImportPlan }) {
+  const { t } = useLang()
+  const a = t.fpAdmin
+  if (plan.publicationChanged !== true) return null
+  const shown = plan.publicationDifferences ?? []
+  const total = plan.publicationDifferenceCount ?? shown.length
+  const more = Math.max(0, total - shown.length)
+
+  return (
+    <section
+      className={`${CARD} space-y-2`}
+      data-group="publication-change"
+      style={{
+        borderColor: TONE.changed,
+        borderLeft: `3px solid ${TONE.changed}`,
+        background: `color-mix(in oklab, ${TONE.changed} 6%, var(--surface))`,
+      }}
+    >
+      <p className="ui-label" style={{ color: TONE.changed }}>
+        {a.publicationDiffTitle} · <span className="ui-number">{total}</span>
+      </p>
+      {shown.length > 0 && (
+        <ul className="space-y-1">
+          {shown.map((d) => (
+            <li
+              key={`${d.area}|${d.identity}|${d.field ?? d.kind}`}
+              className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs"
+            >
+              <span className="text-foreground">{d.label ?? d.identity}</span>
+              {d.kind !== 'changed' && (
+                <ChipLabel>
+                  {d.kind === 'added' ? a.publicationDiffAdded : a.publicationDiffRemoved}
+                </ChipLabel>
+              )}
+              {d.kind === 'changed' && d.field !== 'value' && (
+                <span className="text-[11px] text-muted-fg">
+                  {a.publicationDiffField}: {d.field}
+                </span>
+              )}
+              {d.kind === 'changed' && d.field === 'value' && (
+                <span className="ui-number text-[11px] text-muted-fg">
+                  {d.beforeValue === null || d.beforeValue === undefined ? '—' : formatUsd(d.beforeValue, 0)}
+                  {' → '}
+                  <span className="text-foreground">
+                    {d.afterValue === null || d.afterValue === undefined ? '—' : formatUsd(d.afterValue, 0)}
+                  </span>
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {more > 0 && (
+        <p className="text-[11px] text-muted-fg">
+          {fill(a.publicationDiffMore, { n: more })}
+        </p>
+      )}
+      <p className="text-[11px] text-muted-fg">{a.publicationDiffNote}</p>
     </section>
   )
 }
@@ -662,6 +742,7 @@ export function ImportPlanPreview({
             </div>
           )}
 
+          <PublicationChangesCard plan={plan} />
           <HistoricalChangesCard plan={plan} controls={correction} />
         </>
       )}
