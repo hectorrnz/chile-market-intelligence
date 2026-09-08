@@ -39,21 +39,20 @@ import {
   type EventClassificationDecision,
 } from '@/lib/familyPortfolio/publication'
 import { RESUMEN_PARSER_VERSION } from '@/lib/familyPortfolio/resumen/parseResumen'
-import { extractEvolutionHistory } from '@/lib/familyPortfolio/resumen/evolutionHistory'
 import { ALTERNATIVES_PARSER_VERSION } from '@/lib/familyPortfolio/alternatives/parseAlternatives'
+import { planImportForDraft } from '@/lib/familyPortfolio/importPreviewServer'
 import {
   getUploadFindings,
   getPublication,
   recordConfirmedDate,
-  publishPortfolio,
   publishAlternatives,
   upsertCommentary,
-  upsertEvolutionObservations,
+  importPortfolioWorkbook,
   type HoldingPayload,
   type EventPayload,
   type SnapshotRowPayload,
   type PerformanceRowPayload,
-  type EvolutionObservationPayload,
+  type ImportObservationPayload,
 } from '@/lib/db/repositories/portfolioPublicationRepository'
 
 export const runtime = 'nodejs'
@@ -173,7 +172,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     administratorClassifiedEvents: decisions.length,
   }
 
-  let published: { ok: true; id: string } | { ok: false; code: string; reason?: string }
+  let published:
+    | { ok: true; id: string; importOperationId?: string; inserted?: number; updated?: number }
+    | { ok: false; code: string; reason?: string }
 
   if (loaded.draft.resumen) {
     const rows: SnapshotRowPayload[] = loaded.draft.resumen.rows.map((r) => ({
@@ -223,13 +224,112 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       },
     }))
 
-    published = await publishPortfolio({
+    // ── R13.8B § 8 — THE ATOMIC IMPORT.
+    //
+    // The plan is rebuilt HERE, from the same bytes and against Production's
+    // CURRENT state — never carried over from the preview the browser saw. The
+    // browser may send a fingerprint of the plan it displayed and an
+    // authorization decision; it may not send a classification, a date, a prior
+    // value or a row.
+    const correctionAuthorized = body.historicalCorrectionAuthorized === true
+    const correctionReason =
+      typeof body.correctionReason === 'string' && body.correctionReason.trim().length > 0
+        ? body.correctionReason.trim()
+        : null
+
+    // The SAME function the preview route calls, one request later. Preview and
+    // confirm cannot disagree about what Production currently holds because
+    // neither of them decides it independently.
+    const built = await planImportForDraft(loaded.draft, {
+      historicalCorrectionAuthorized: correctionAuthorized,
+      correctionReason,
+    })
+    if (!built.ok) {
+      return fail(built.code, built.code === 'not_configured' ? 503 : 500)
+    }
+    const plan = built.plan
+
+    // --- R13.8B § 9: STALE PREVIEW. The fingerprint covers every assertion the
+    // plan makes about Production's current state. If another import moved any
+    // of them since the administrator looked, the plan they confirmed is not the
+    // plan about to run — refuse and make them re-preview. Nothing is written,
+    // and no materially different plan is applied behind a confirmation.
+    const expected = body.expectedPlanFingerprint
+    if (typeof expected === 'string' && expected.length > 0 && expected !== built.preview.planFingerprint) {
+      return fail('plan_stale', 409, {
+        expected,
+        actual: built.preview.planFingerprint,
+      })
+    }
+
+    // --- R13.8B § 7: only an OVERWRITE needs authorization. Any number of NEW
+    // weeks and any number of GAP_FILLs never do.
+    if (plan.blocked) {
+      return fail('import_refused', 422, {
+        blockCodes: plan.blockCodes,
+        requiresHistoricalCorrection: plan.requiresHistoricalCorrection,
+        corrections: built.preview.corrections,
+      })
+    }
+
+    // The locked rule: the current publication carries the newest VALID FROZEN
+    // reporting date. Detection now proposes exactly that, so an override to any
+    // other date would publish a week under a date the workbook never froze.
+    if (plan.publicationDate !== null && dateResult.date !== plan.publicationDate) {
+      return fail('publication_date_not_newest_frozen', 422, {
+        newestValidFrozenDate: plan.publicationDate,
+        confirmed: dateResult.date,
+      })
+    }
+
+    // Source provenance per observation, joined back from the extraction that
+    // produced the values. Keyed on the canonical identity, never on order.
+    const sourceOf = new Map(
+      built.extraction.observations.map((o) => [
+        `${o.scope}|${o.basis}|${o.observationDate}`,
+        o,
+      ]),
+    )
+
+    const observations: ImportObservationPayload[] = plan.observationsToWrite.map((o) => {
+      const src = sourceOf.get(`${o.scope}|${o.basis}|${o.observationDate}`)
+      return {
+        scope: o.scope,
+        basis: o.basis,
+        series_identity: o.seriesIdentity,
+        observation_date: o.observationDate,
+        disposition: o.disposition as ImportObservationPayload['disposition'],
+        new_value: o.value,
+        new_status: o.status,
+        // The pre-state the plan asserts. The database re-reads it under lock and
+        // refuses the whole import if it has moved.
+        prior_value: o.priorValue,
+        prior_status: o.priorStatus,
+        source_sheet: src?.sourceSheet ?? 'RESUMEN',
+        source_cell: src?.sourceCell ?? '',
+        source_row_label: src?.sourceRowLabel ?? '',
+        currency: 'USD',
+        parser_version: built.extraction.parserVersion,
+        extractor_version: built.extraction.extractorVersion,
+      }
+    })
+
+    // ONE call. The publication, every history mutation and the audit record
+    // commit together or not at all. There is no post-commit second write and no
+    // sequential fallback — a partially-applied catch-up is exactly what R13.8B
+    // exists to make impossible.
+    const imported = await importPortfolioWorkbook({
       uploadId: id,
       asOfDate: dateResult.date,
       publishedBy: entitlement.userId,
       parserVersion: RESUMEN_PARSER_VERSION,
+      planVersion: plan.planVersion,
       rows,
+      observations,
       performance,
+      correctionAuthorized,
+      correctionReason,
+      counts: built.preview.counts,
       adminNote,
       // R13.6 — the workbook's OWN previous-week and beginning-of-year column
       // dates ride on the publication. The read path heads the four-column view
@@ -242,8 +342,27 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         ...metadata,
         previousWeekDate: review.previousWeekDate,
         beginningOfYearDate: review.beginningOfYearDate,
+        importPreviewVersion: built.preview.previewVersion,
+        planFingerprint: built.preview.planFingerprint,
+        frozenPublicationColumn: loaded.draft.frozen?.publicationColumnLetter ?? null,
+        // Recorded so the audit shows the live column was SEEN and not selected,
+        // rather than leaving it ambiguous whether it was considered at all.
+        liveColumnLetter: loaded.draft.frozen?.liveColumnLetter ?? null,
+        liveColumnDate: loaded.draft.frozen?.liveColumnDate ?? null,
       },
     })
+
+    // The RPC reports counts alongside its identifiers; the route reduces that to
+    // the common publication shape and keeps the import id for the response.
+    published = imported.ok
+      ? {
+          ok: true,
+          id: String(imported.result.publicationId ?? ''),
+          importOperationId: String(imported.result.importOperationId ?? ''),
+          inserted: Number(imported.result.inserted ?? 0),
+          updated: Number(imported.result.updated ?? 0),
+        }
+      : imported
   } else if (loaded.draft.alternatives) {
     const draft = loaded.draft.alternatives
     const applied = applyEventClassifications(draft.events, decisions)
@@ -364,7 +483,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
   if (!published.ok) {
     const reason = published.code === 'rpc_failed' ? (published.reason ?? 'publication_failed') : published.code
-    const status = published.code === 'not_configured' ? 503 : reason.startsWith('publication_refused') ? 409 : 500
+    // R13.8B — an `import_refused_*` is the same class of answer as a
+    // `publication_refused_*`: the database looked and declined, which is a
+    // conflict, not a server fault.
+    const refused = reason.startsWith('publication_refused') || reason.startsWith('import_refused')
+    const status = published.code === 'not_configured' ? 503 : refused ? 409 : 500
     // `publication_refused_duplicate_submission` lands here as a 409: the
     // database recognised a double-click or transport retry of the publication
     // that is already current, at the same parser version. An intentional
@@ -373,44 +496,21 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return fail(reason, status)
   }
 
-  // --- R13.R1 § 9: the weekly evolution history, refreshed from the SAME
-  // validated bytes this publication was parsed from.
+  // --- R13.8B § 8 — THE POST-COMMIT HISTORY WRITE IS GONE.
   //
-  // Deliberately AFTER the publication has committed and deliberately
-  // best-effort: the series is supplementary to the week that was just
-  // published, so a failure here must never invalidate it. The outcome is
-  // reported honestly rather than assumed.
+  // R13.R1 § 9 wrote the weekly evolution series HERE: after the publication had
+  // already committed, chunked, and best-effort, on the reasoning that the series
+  // was supplementary and a failure must never invalidate a valid week.
   //
-  // The bases are bound from `loaded.draft.resumen` — the very draft that was
-  // just published — so the chart's SUBTOTAL/TOTAL series can never disagree
-  // with the publication about which rows they measure. Values still come from
-  // the historical column grid, so weeks that cannot produce a full publication
-  // still contribute a point.
-  let evolutionObservations: number | null = null
-  if (loaded.draft.resumen) {
-    const extraction = extractEvolutionHistory(loaded.draft.bytes, {
-      bindingDraft: loaded.draft.resumen,
-    })
-    if (extraction.ok) {
-      const rows: EvolutionObservationPayload[] = extraction.observations.map((o) => ({
-        scope: o.scope,
-        basis: o.basis,
-        observation_date: o.observationDate,
-        value: o.value,
-        currency: 'USD',
-        source_upload_id: id,
-        source_sheet: o.sourceSheet,
-        source_cell: o.sourceCell,
-        source_row_label: o.sourceRowLabel,
-        parser_version: extraction.parserVersion,
-        extractor_version: extraction.extractorVersion,
-        ingested_by: entitlement.userId,
-        metadata: {},
-      }))
-      const written = await upsertEvolutionObservations(rows)
-      evolutionObservations = written.ok ? written.count : null
-    }
-  }
+  // That reasoning does not survive the locked catch-up rule. When one upload
+  // carries three unpublished frozen weeks, the history IS the import — and a
+  // chunked best-effort upsert can leave two weeks written and one missing, with
+  // a publication already committed on top and no way to reverse any of it. The
+  // history mutations now travel inside `nmi_import_portfolio_workbook` with the
+  // publication, so `published.ok` already means every one of them landed.
+  const evolutionObservations = published.ok
+    ? (published.inserted ?? 0) + (published.updated ?? 0)
+    : null
 
   // Optional commentary, written after the publication it annotates exists.
   // A failure here never invalidates a valid publication, but it is reported
@@ -460,8 +560,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       warningCount: review.warningCount,
       administratorClassifiedEvents: decisions.length,
       commentaryPersisted,
-      // Null = the evolution refresh did not run or did not persist. A count is
-      // the number of weekly observations now on record for Main.
+      // R13.8B — the import that owns this publication and every history point it
+      // wrote. It is the handle a rollback names; without it a reversal would be
+      // back to guessing from a date or a filename.
+      importOperationId: published.importOperationId ?? null,
+      observationsInserted: published.inserted ?? null,
+      observationsUpdated: published.updated ?? null,
+      // Now the number of history mutations that committed IN THE SAME
+      // transaction as this publication, not a best-effort count taken after it.
       evolutionObservations,
     },
     { status: 201, headers: NO_STORE },

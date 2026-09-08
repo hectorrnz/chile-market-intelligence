@@ -968,6 +968,15 @@ describe('existing behaviour is unchanged', () => {
     assert.deepEqual(routes.sort(), [
       '/[scope]/snapshot/route.ts',
       '/[scope]/weeks/route.ts',
+      // R13.8B § 10 — reversing one IMPORT, as opposed to one publication. It
+      // adds no entitlement surface: it sits in the same administrator-only
+      // `/admin/` namespace, re-derives `entitlement.isAdministrator` before it
+      // reads the body, and the tables it reverses have no write policy for
+      // `authenticated` at all. It is a separate route from the publication
+      // rollback because it is a different operation — a catch-up writes history
+      // across several weeks, and moving one `is_current` pointer reverses none
+      // of it.
+      '/admin/imports/[id]/rollback/route.ts',
       '/admin/publications/[id]/commentary/route.ts',
       // R13.R2C §§ 8-12 — the Weekly Notes mutations. Both sit INSIDE the
       // already-administrator-only `/admin/publications/[id]/` namespace beside

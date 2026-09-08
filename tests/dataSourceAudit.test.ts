@@ -103,7 +103,27 @@ describe('Phase 8A — no stale phase/future-source promises in i18n', () => {
   })
 
   it('does not attribute static sample data to a fabricated vendor (Bloomberg — never integrated)', () => {
-    assert.ok(!/Bloomberg/i.test(src))
+    // R13.8B — the only permitted mention is the OPPOSITE of an attribution.
+    // The Family Portfolio workbook's live `=TODAY()` column is a grid of
+    // Bloomberg add-in formulas, and the administrator preview says so in order
+    // to explain why that column is NEVER published. Naming the dependency is
+    // what makes the refusal legible; a blanket ban would push the copy toward
+    // something vaguer and less true.
+    //
+    // Same false-positive class CLAUDE.md records for the `/official/` regex:
+    // narrow the guard to the dishonest usage, then assert the honest one is
+    // genuinely present so the exemption cannot quietly become a loophole.
+    const mentions = src.match(/[^\n]*Bloomberg[^\n]*/gi) ?? []
+    for (const line of mentions) {
+      assert.match(
+        line,
+        /never publishable|nunca es publicable|not published|no se publica/i,
+        `a Bloomberg mention must state the column is never published: ${line.trim()}`,
+      )
+    }
+    // EN and ES both carry it, so the exemption is exercised in both dictionaries
+    // rather than silently covering an unused key.
+    assert.equal(mentions.length, 2, 'exactly the two live-column diagnostics may name Bloomberg')
   })
 
   it('does not couple a phase number with promise language ("Phase N will…", "planned for Phase N")', () => {

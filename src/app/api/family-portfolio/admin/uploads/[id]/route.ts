@@ -25,6 +25,7 @@ import { guardPrivateApi } from '@/lib/auth/apiGuard'
 import { getFamilyPortfolioEntitlement } from '@/lib/portfolioAccess/getEntitlement'
 import { createUploadSignedUrl, SIGNED_URL_TTL_SECONDS } from '@/lib/db/repositories/portfolioUploadRepository'
 import { buildDraftReview } from '@/lib/familyPortfolio/draftReview'
+import { planImportForDraft } from '@/lib/familyPortfolio/importPreviewServer'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -59,6 +60,20 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   const wantDraft = new URL(request.url).searchParams.get('draft') !== '0'
   const reviewed = wantDraft ? await buildDraftReview(id) : null
 
+  // R13.8B § 6 — the IMPORT PLAN, for a portfolio draft that parsed.
+  //
+  // The preview an administrator confirms must be the plan the confirm route
+  // will rebuild, so it comes from the same `planImportForDraft`. It is computed
+  // WITHOUT correction authorization: this is the "what would happen" view, and
+  // an authorization the administrator has not given yet must not be assumed. A
+  // plan carrying an overwrite therefore comes back `blocked` with
+  // `historical_correction_required`, which is exactly what the confirmation UI
+  // keys its correction mode on.
+  const planned =
+    reviewed && reviewed.ok && reviewed.loaded.resumen && reviewed.loaded.frozen
+      ? await planImportForDraft(reviewed.loaded)
+      : null
+
   return NextResponse.json(
     {
       uploadId: result.upload.id,
@@ -75,6 +90,11 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       // as "nothing wrong with this workbook".
       draft: reviewed && reviewed.ok ? reviewed.review : null,
       draftError: reviewed && !reviewed.ok ? reviewed.code : null,
+      // Null for an alternatives workbook (no week columns) and when the plan
+      // could not be read. Honestly absent rather than an empty plan, which
+      // would read as "this upload changes nothing".
+      importPlan: planned && planned.ok ? planned.preview : null,
+      importPlanError: planned && !planned.ok ? planned.code : null,
     },
     { headers: NO_STORE },
   )

@@ -925,8 +925,15 @@ describe('R13.5 · routes', () => {
   test('the publish route refuses before it writes, and reports every reason', () => {
     const src = read(PUBLISH_ROUTE)
     const refuse = src.indexOf('publication_refused')
-    const write = src.indexOf('publishPortfolio(')
+    // R13.8B — the portfolio write is now `importPortfolioWorkbook`, which
+    // carries the publication AND every history mutation in one transaction.
+    // The property is unchanged: every refusal is decided BEFORE any write is
+    // attempted. `publishAlternatives` is checked too so the alternatives half
+    // of the route is not silently dropped from the guard.
+    const write = src.indexOf('importPortfolioWorkbook(')
+    const writeAlt = src.indexOf('publishAlternatives(')
     assert.ok(refuse > 0 && write > 0 && refuse < write)
+    assert.ok(writeAlt > 0 && refuse < writeAlt)
     assert.match(src, /refusals: review\.refusals/)
   })
 
@@ -974,7 +981,26 @@ describe('R13.5 · routes', () => {
       'no request may choose which parser runs')
     // uploadKind comes from the row and decides the parser.
     assert.match(review, /const kind = found\.upload\.uploadKind/)
-    assert.match(review, /kind === 'portfolio' \? parseResumen/)
+
+    // R13.8B § 5 — INVERTED, not deleted.
+    //
+    // This assertion used to read `kind === 'portfolio' ? parseResumen`, and
+    // that WAS the defect: `parseResumen(bytes)` with no options selects
+    // `detection.live` — the `=TODAY()` Bloomberg column — so the shipped
+    // application path was implicitly publishing off the live column, which the
+    // locked rule forbids outright.
+    //
+    // It now asserts the opposite property: this path goes through the canonical
+    // frozen-column selector, and never calls the bare parser.
+    assert.match(review, /kind === 'portfolio'\s*\?\s*parseAtFrozenPublicationColumn/)
+    // Comments are stripped first: the module's own prose explains that the old
+    // code called `parseResumen(bytes)`, and a raw scan would match that
+    // explanation — the same false-positive class CLAUDE.md records for the
+    // `/official/` regex. The assertion is about the CODE.
+    assert.ok(
+      !/\bparseResumen\s*\(/.test(codeOf(review)),
+      'loadDraft must not call parseResumen directly — that default selects the live column',
+    )
   })
 
   test('the re-downloaded object is verified against the recorded digest', () => {
@@ -1066,7 +1092,12 @@ describe('R13.5 · administrator page', () => {
 
   test('each table ends with exactly one TableSourceFooter', () => {
     const footers = page.match(/<TableSourceFooter/g) ?? []
-    assert.equal(footers.length, 2)
+    // R13.8B adds a third table: the import ledger. The invariant this guards is
+    // one footer PER TABLE, so the expected count tracks the table count rather
+    // than being loosened to a lower bound.
+    const cards = page.match(/<TableCard/g) ?? []
+    assert.equal(cards.length, 3, 'uploads, publications and the import ledger')
+    assert.equal(footers.length, cards.length)
   })
 
   test('the override note is surfaced exactly when the date diverges', () => {
@@ -1163,7 +1194,12 @@ describe('R13.5 · service-role boundary', () => {
     }
     // The repository reduces any driver text to a known code before returning.
     const repo = read('src/lib/db/repositories/portfolioPublicationRepository.ts')
-    assert.match(repo, /const known = \/\(publication_refused_/)
+    // R13.8B — the pattern gained `import_refused_*` and moved onto its own
+    // line. The property under test is unchanged: refusals are matched against a
+    // CLOSED list of known prefixes, and anything else collapses to the generic
+    // code rather than echoing driver text.
+    assert.match(repo, /const known =\s*[\r\n]?\s*\/\(publication_refused_/)
+    assert.match(repo, /import_refused_\[a-z_\]\+/, 'the import refusals must be recognised too')
     assert.match(repo, /return known \? known\[1\] : 'publication_failed'/)
   })
 

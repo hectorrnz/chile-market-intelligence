@@ -25,7 +25,11 @@ import {
   MAX_REQUEST_BYTES,
 } from '@/lib/familyPortfolio/uploadValidation'
 import { persistUpload, findUploadByDigest } from '@/lib/db/repositories/portfolioUploadRepository'
-import { listUploads, listPublications } from '@/lib/db/repositories/portfolioPublicationRepository'
+import {
+  listUploads,
+  listPublications,
+  listImportOperations,
+} from '@/lib/db/repositories/portfolioPublicationRepository'
 
 // `node:zlib` and `node:crypto` are unavailable on Edge.
 export const runtime = 'nodejs'
@@ -55,8 +59,16 @@ export async function GET() {
     return fail('not_authorized', 403, 'administrative capability is required')
   }
 
-  const [uploads, publications] = await Promise.all([listUploads(), listPublications()])
-  return NextResponse.json({ uploads, publications }, { headers: NO_STORE })
+  // R13.8B — the import ledger joins the console payload for the same reason the
+  // other two lists are here: it is one console view, and doc 05 § 7.4 fixes the
+  // route architecture. It carries identifiers, dates, counts and a correction
+  // reason — no amount. It is what the rollback control names.
+  const [uploads, publications, importOperations] = await Promise.all([
+    listUploads(),
+    listPublications(),
+    listImportOperations(),
+  ])
+  return NextResponse.json({ uploads, publications, importOperations }, { headers: NO_STORE })
 }
 
 export async function POST(request: Request) {

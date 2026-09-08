@@ -107,7 +107,11 @@ function admin(): AdminShape | null {
  */
 export function refusalCodeOf(message: string | undefined): string {
   const m = (message ?? '').trim()
-  const known = /(publication_refused_[a-z_]+|rollback_refused_[a-z_]+|commentary_refused_[a-z_]+)/.exec(m)
+  // R13.8B adds `import_refused_*`. It is listed alongside the others rather
+  // than folded into a looser pattern so an unrecognised driver message still
+  // collapses to the generic code instead of being echoed to a client.
+  const known =
+    /(publication_refused_[a-z_]+|rollback_refused_[a-z_]+|commentary_refused_[a-z_]+|import_refused_[a-z_]+)/.exec(m)
   return known ? known[1] : 'publication_failed'
 }
 
@@ -285,6 +289,28 @@ async function callRpc(fn: string, args: Record<string, unknown>): Promise<{ ok:
     return { ok: false, code: 'rpc_failed', reason: 'publication_failed' }
   }
   return { ok: true, id: data }
+}
+
+/**
+ * The same call for a function that returns a jsonb OBJECT rather than a uuid.
+ *
+ * `nmi_import_portfolio_workbook` and `nmi_rollback_portfolio_import` report
+ * counts alongside their identifiers, so they cannot use `callRpc` — and bending
+ * `callRpc` to accept either shape would weaken the check that catches a
+ * publication RPC returning nothing.
+ */
+async function callJsonRpc(
+  fn: string,
+  args: Record<string, unknown>,
+): Promise<{ ok: true; result: Record<string, unknown> } | Fail> {
+  const client = admin()
+  if (!client) return { ok: false, code: 'not_configured' }
+  const { data, error } = await client.rpc(fn, args)
+  if (error) return { ok: false, code: 'rpc_failed', reason: refusalCodeOf(error.message) }
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    return { ok: false, code: 'rpc_failed', reason: 'publication_failed' }
+  }
+  return { ok: true, result: data as Record<string, unknown> }
 }
 
 export interface SnapshotRowPayload {
@@ -493,4 +519,209 @@ export async function upsertEvolutionObservations(
     written += slice.length
   }
   return { ok: true, count: written }
+}
+
+// ---------------------------------------------------------------------------
+// R13.8B § 7/§ 8 — the atomic weekly import
+// ---------------------------------------------------------------------------
+//
+// `upsertEvolutionObservations` above stays exported because the standalone
+// historical-backfill tool still uses it. THE PUBLISH PATH NO LONGER DOES: a
+// weekly import writes its publication and every history mutation inside
+// `nmi_import_portfolio_workbook`, which is one transaction. A chunked,
+// post-commit, best-effort upsert cannot express "all of these weeks or none".
+
+/** What Production currently holds, as the planner's `publishedObservations`. */
+export interface PersistedObservationRead {
+  scope: string
+  basis: string
+  observationDate: string
+  value: number
+}
+
+interface EvolutionReadShape {
+  from: (t: string) => {
+    select: (c: string) => {
+      order: (
+        col: string,
+        o: { ascending: boolean },
+      ) => Promise<{ data: Record<string, unknown>[] | null; error: { message?: string } | null }>
+    }
+  }
+}
+
+/**
+ * Every persisted evolution observation, across every scope.
+ *
+ * This is the ADMINISTRATOR planning read, deliberately separate from
+ * `familyPortfolioReadRepository.getEvolutionObservations`, which runs through
+ * the caller's own session so `nmi_can_access_scope` re-derives entitlement per
+ * scope. Planning an import is a whole-book operation an administrator has
+ * already been authorized for, and it must see Jaime's, Andrés's and Pablo's
+ * series as well as Main's — otherwise a personal scope's existing week would
+ * look ABSENT and a correction would be misclassified as a gap fill.
+ *
+ * A row's presence IS its status: the evolution table models a gap as an absent
+ * row and its `value` column is NOT NULL by R13.R1 design, so everything read
+ * here is `stated`.
+ */
+export async function listPersistedEvolutionObservations(): Promise<
+  { ok: true; observations: PersistedObservationRead[] } | Fail
+> {
+  const client = getSupabaseAdminClient() as never as EvolutionReadShape | null
+  if (!client) return { ok: false, code: 'not_configured' }
+
+  const { data, error } = await client
+    .from('portfolio_evolution_observations')
+    .select('scope, basis, observation_date, value')
+    .order('observation_date', { ascending: true })
+
+  if (error) return { ok: false, code: 'rpc_failed', reason: error.message ?? 'evolution_read_failed' }
+  return {
+    ok: true,
+    observations: (data ?? []).map((o) => ({
+      scope: String(o.scope),
+      basis: String(o.basis),
+      observationDate: String(o.observation_date),
+      value: Number(o.value),
+    })),
+  }
+}
+
+/** One history mutation, in the exact shape the RPC's `jsonb_to_recordset` reads. */
+export interface ImportObservationPayload {
+  scope: string
+  basis: string
+  series_identity: string
+  observation_date: string
+  disposition: 'new' | 'gap_fill' | 'changed'
+  new_value: number | null
+  new_status: 'stated' | 'unavailable'
+  /**
+   * The pre-state the plan asserts. The RPC verifies it under lock and refuses
+   * the whole import if it has moved — and writes the before-image it READ, not
+   * this one. Sending it is how a stale plan is caught in the database.
+   */
+  prior_value: number | null
+  prior_status: 'stated' | 'unavailable' | null
+  source_sheet: string
+  source_cell: string
+  source_row_label: string
+  currency: string
+  parser_version: string
+  extractor_version: string
+}
+
+/**
+ * ONE upload → ONE import operation → ONE current publication → N history points.
+ *
+ * The whole packet is the transaction. There is no fallback sequential apply and
+ * no post-commit second write: if this call fails, nothing happened.
+ */
+export async function importPortfolioWorkbook(params: {
+  uploadId: string
+  asOfDate: string
+  publishedBy: string
+  parserVersion: string
+  planVersion: string
+  rows: SnapshotRowPayload[]
+  observations: ImportObservationPayload[]
+  performance: PerformanceRowPayload[]
+  correctionAuthorized: boolean
+  correctionReason: string | null
+  counts: Record<string, unknown>
+  adminNote: string | null
+  metadata: Record<string, unknown>
+}) {
+  return callJsonRpc('nmi_import_portfolio_workbook', {
+    p_upload_id: params.uploadId,
+    p_as_of_date: params.asOfDate,
+    p_published_by: params.publishedBy,
+    p_parser_version: params.parserVersion,
+    p_plan_version: params.planVersion,
+    p_rows: params.rows,
+    p_observations: params.observations,
+    p_performance: params.performance,
+    p_correction_authorized: params.correctionAuthorized,
+    p_correction_reason: params.correctionReason,
+    p_counts: params.counts,
+    p_admin_note: params.adminNote,
+    p_metadata: params.metadata,
+  })
+}
+
+/**
+ * Reverses one import: insertions removed, overwrites restored to their recorded
+ * before-image and prior lineage, the displaced publication promoted back.
+ *
+ * Refuses rather than clobbers when a later import already moved one of these
+ * rows on — the forward `import_operation_id` makes that check exact.
+ */
+export async function rollbackPortfolioImport(params: {
+  importId: string
+  actorId: string
+  note: string | null
+}) {
+  return callJsonRpc('nmi_rollback_portfolio_import', {
+    p_import_id: params.importId,
+    p_actor_id: params.actorId,
+    p_note: params.note,
+  })
+}
+
+/** One import operation, as the administrator console lists it. */
+export interface ImportOperationRecord {
+  id: string
+  uploadId: string
+  asOfDate: string
+  publicationId: string | null
+  previousPublicationId: string | null
+  planVersion: string
+  counts: Record<string, unknown>
+  correctionAuthorized: boolean
+  correctionReason: string | null
+  createdAt: string
+  rolledBackAt: string | null
+  rollbackNote: string | null
+}
+
+interface ImportOperationsShape {
+  from: (t: string) => {
+    select: (c: string) => {
+      order: (
+        col: string,
+        o: { ascending: boolean },
+      ) => Promise<{ data: Record<string, unknown>[] | null; error: { message?: string } | null }>
+    }
+  }
+}
+
+/** The import ledger, newest first. Identifiers, dates and counts — no amounts. */
+export async function listImportOperations(): Promise<ImportOperationRecord[]> {
+  const client = getSupabaseAdminClient() as never as ImportOperationsShape | null
+  if (!client) return []
+
+  const { data, error } = await client
+    .from('portfolio_import_operations')
+    .select(
+      'id, upload_id, as_of_date, publication_id, previous_publication_id, plan_version, ' +
+        'counts, correction_authorized, correction_reason, created_at, rolled_back_at, rollback_note',
+    )
+    .order('created_at', { ascending: false })
+
+  if (error) return []
+  return (data ?? []).map((r) => ({
+    id: String(r.id),
+    uploadId: String(r.upload_id),
+    asOfDate: String(r.as_of_date),
+    publicationId: r.publication_id == null ? null : String(r.publication_id),
+    previousPublicationId: r.previous_publication_id == null ? null : String(r.previous_publication_id),
+    planVersion: String(r.plan_version),
+    counts: (r.counts ?? {}) as Record<string, unknown>,
+    correctionAuthorized: r.correction_authorized === true,
+    correctionReason: r.correction_reason == null ? null : String(r.correction_reason),
+    createdAt: String(r.created_at),
+    rolledBackAt: r.rolled_back_at == null ? null : String(r.rolled_back_at),
+    rollbackNote: r.rollback_note == null ? null : String(r.rollback_note),
+  }))
 }

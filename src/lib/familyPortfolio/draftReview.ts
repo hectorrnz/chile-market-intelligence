@@ -22,7 +22,11 @@
 
 import { createHash } from 'node:crypto'
 
-import { parseResumen, RESUMEN_PARSER_VERSION, type ResumenDraft } from './resumen/parseResumen.ts'
+import { RESUMEN_PARSER_VERSION, type ResumenDraft } from './resumen/parseResumen.ts'
+import {
+  parseAtFrozenPublicationColumn,
+  type FrozenColumnSelection,
+} from './weeklyImportPreview.ts'
 import { parseAlternatives, ALTERNATIVES_PARSER_VERSION, type AlternativesDraft } from './alternatives/parseAlternatives.ts'
 import {
   applyEventClassifications,
@@ -83,6 +87,12 @@ export interface DraftReview {
   parserVersion: string
   parsed: boolean
 
+  /**
+   * R13.8B § 5 — the frozen column this draft was parsed at, plus the live
+   * column as diagnostics. Portfolio only.
+   */
+  frozen: FrozenColumnSelection | null
+
   /** Portfolio only. Proposed, never asserted (doc 04 § 6). */
   detectedAsOfDate: string | null
   previousWeekDate: string | null
@@ -119,6 +129,18 @@ export interface LoadedDraft {
   bytes: Buffer
   resumen: ResumenDraft | null
   alternatives: AlternativesDraft | null
+  /**
+   * R13.8B § 5 — WHICH COLUMN THIS DRAFT WAS PARSED AT, and what the live column
+   * was. Portfolio uploads only; null for an alternatives workbook, which has no
+   * week columns.
+   *
+   * Before R13.8B this path called `parseResumen(bytes)` with no options, and
+   * that default selects `detection.live` — the `=TODAY()` Bloomberg column. So
+   * the shipped application path was implicitly publishing off the live column.
+   * It now parses at the newest VALID FROZEN column instead, and the live column
+   * survives here only as diagnostics.
+   */
+  frozen: FrozenColumnSelection | null
 }
 
 /**
@@ -155,13 +177,21 @@ export async function loadDraft(uploadId: string): Promise<{ ok: true; draft: Lo
   }
 
   const kind = found.upload.uploadKind
+
+  // R13.8B § 5 — the canonical frozen-column selection, made ONCE and here.
+  // Never a hard-coded letter, and never the live column.
+  const picked = kind === 'portfolio'
+    ? parseAtFrozenPublicationColumn(downloaded.bytes)
+    : { selection: null, draft: null }
+
   return {
     ok: true,
     draft: {
       upload: found.upload,
       bytes: downloaded.bytes,
-      resumen: kind === 'portfolio' ? parseResumen(downloaded.bytes) : null,
+      resumen: picked.draft,
       alternatives: kind === 'alternatives' ? parseAlternatives(downloaded.bytes) : null,
+      frozen: picked.selection,
     },
   }
 }
@@ -195,10 +225,27 @@ export function summarizeDraft(
     ...(alternatives?.findings ?? []),
   ].map((f) => ({ ...f }))
 
+  // R13.8B § 5 — a portfolio workbook with no clean frozen week is refused with
+  // a NAMED reason. Without this the draft would simply be `parsed: false` with
+  // nothing saying why, and the obvious "fix" would be to fall back to the live
+  // column — which is exactly what the locked rule forbids.
+  const frozenRefusal: ReviewFinding[] =
+    loaded.frozen?.refusal == null
+      ? []
+      : [{
+          severity: 'blocking',
+          code: loaded.frozen.refusal,
+          detail:
+            loaded.frozen.refusal === 'no_publishable_frozen_column'
+              ? 'no frozen historical week parsed cleanly; the live column is never publishable'
+              : 'the workbook has no RESUMEN structure to read a frozen week from',
+        }]
+
   // A blocking finding recorded at UPLOAD time still blocks now. It described
   // the file, and the file has not changed.
   const combined: ReviewFinding[] = [
     ...findings,
+    ...frozenRefusal,
     ...storedFindings.map((f) => ({
       severity: f.severity,
       code: f.code,
@@ -275,6 +322,7 @@ export function summarizeDraft(
     uploadedAt: upload.uploadedAt,
     parserVersion: resumen ? RESUMEN_PARSER_VERSION : ALTERNATIVES_PARSER_VERSION,
     parsed,
+    frozen: loaded.frozen,
     detectedAsOfDate: resumen?.detectedAsOfDate ?? null,
     previousWeekDate: resumen?.previousWeekDate ?? null,
     beginningOfYearDate: resumen?.beginningOfYearDate ?? null,

@@ -901,13 +901,59 @@ independent deliberate breaks (treating a gap fill as a correction fails 21 test
 explicit `unavailable` as absent fails 4; forgetting to restore status on rollback fails 1;
 publishing the newest *new* week instead of the newest *valid* week fails 3).
 
-**Not yet proven: the SQL.** This machine has no Docker, psql or local Supabase stack, so the
-migration and both RPCs have never been executed. They are validated by
-`.github/workflows/r13-family-portfolio-db-validation.yml`, which stands up an isolated stack,
-applies the full migration chain from clean and runs every pgTAP suite — and the branch trigger
-`feat/r13-8-**` was added so this branch reaches it. **Until that workflow has run and passed, the
-database half of R13.8B is unvalidated**, by this repo's own standard.
+**The SQL is now proven.** The isolated-stack workflow ran on the exact commit, applied the full
+migration chain from a clean database and executed every pgTAP suite: `Files=10, Tests=791,
+Result: PASS`, with `20260821000000_portfolio_import_operations.sql` applied and
+`portfolio_import_operations_test.sql` reported `ok`. Non-vacuity was established on a throwaway
+branch carrying two deliberate breaks — turning the insertion-over-existing-identity refusal into a
+`continue`, and neutralising the forward-lineage check in rollback. **14 of that suite's 49 tests
+failed**, including *"a packet whose LAST entry fails still raises"*, *"the three observations written
+BEFORE the failure did not persist"*, *"no import operation row survived the failed packet"*, *"a
+stale rollback is refused, not attempted"* and the three chained-rollback assertions. The probe
+branch was deleted; its run remains in Actions as the evidence.
 
-Also not built, and deliberately out of scope here: the administrator upload control (G1) and the
-route wiring that would call `nmi_import_portfolio_workbook`. Both depend on this contract being
-settled first, which it now is.
+### AE.11 The administrator workflow (G1), delivered
+
+* **The front door posts to the EXISTING route.** `POST /api/family-portfolio/admin/uploads` already
+  runs the whole validation ladder — capability before a byte of the body, a Content-Length screen
+  before `formData()` materialises the workbook, the authoritative `file.size` bound, the digest, the
+  content checks and duplicate detection. A parallel endpoint would have had to reimplement all of
+  it, so none was created.
+* **Frozen-column selection moved into the application path.** This is the defect R13.8A could only
+  describe: `loadDraft` called `parseResumen(bytes)`, and that default selects `detection.live` — the
+  `=TODAY()` Bloomberg column. The shipped path was therefore implicitly publishing off the live
+  column. It now calls `parseAtFrozenPublicationColumn`, which picks the newest frozen column whose
+  FULL parse is clean. **No letter is hard-coded**: against the real reference workbook the selector
+  derives `CZ` / 2026-07-31 on its own, while reporting the live column `DE` / 2026-08-11 as a
+  diagnostic that is never published.
+* **One preview function, two requests.** `planImportForDraft` is called by the preview route and
+  again by the confirm route, so the two cannot disagree about what Production currently holds.
+* **The confirmation carries a decision and a fingerprint, nothing else.** No row, value, date,
+  classification or before-image travels from the browser. `planFingerprint` digests every assertion
+  the plan makes about Production; if any of them has moved, confirm is refused as `plan_stale` — and
+  the RPC's own under-lock pre-state check is the second, independent layer.
+* **Confirm applies through `nmi_import_portfolio_workbook` and nothing else.** The R13.R1
+  post-commit, chunked, best-effort evolution upsert is **gone from the publish path**. It remains
+  exported for the standalone historical backfill, which runs outside any publication.
+* **Rollback gained its own route**, `POST /api/family-portfolio/admin/imports/[id]/rollback`, beside
+  the publication rollback rather than replacing it: the publication rollback is still correct for an
+  alternatives publication and for any portfolio publication no import owns, and moving one
+  `is_current` pointer reverses none of a five-point catch-up.
+
+### AE.12 What is still NOT proven
+
+**No real workbook newer than 2026-07-31 exists.** Against Production the reference workbook
+classifies `nothing_to_append` — 102 unchanged weeks, zero new, zero gap fills, zero corrections —
+which is the correct answer, and is also why the catch-up path has never run on real data. Every
+catch-up case is proven on synthetic workbooks and in pgTAP, not on a genuine newer week.
+
+That same run is the strongest available evidence for the frozen-column rule: had the live column
+been selected, its cached `2026-08-11` header would have been proposed as a NEW week — a week the
+source never froze. The planner proposes nothing.
+
+**The migration has not been applied to Production.** A read-only probe confirms
+`portfolio_import_operations` is absent there (PGRST205). Nothing in R13.8B has touched Production.
+
+R13.8B is therefore **IMPLEMENTATION COMPLETE — AWAITING REAL NEW-WEEK E2E**. The first genuinely
+newer workbook must be run through upload → preview → classification → expected packet before any
+Production release is authorized.

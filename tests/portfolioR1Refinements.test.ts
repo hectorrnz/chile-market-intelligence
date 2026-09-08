@@ -536,13 +536,57 @@ describe('R13.R1 §§ 7-9 — historical evolution', () => {
   })
 
   test('the publish route refreshes the series from the SAME validated bytes', () => {
+    // R13.8B § 8 — INVERTED, not deleted.
+    //
+    // R13.R1 wrote the series AFTER the publication had committed, chunked and
+    // best-effort, so a failure could never invalidate a valid week. That was
+    // right when one upload meant one week. It does not survive the locked
+    // catch-up rule: when an upload carries three unpublished frozen weeks the
+    // history IS the import, and a best-effort upsert can leave two weeks
+    // written and one missing under an already-committed publication, with
+    // nothing able to reverse any of it.
+    //
+    // The same two properties are still asserted — the series comes from the
+    // SAME validated bytes, bound to the draft being published — but the
+    // ordering assertion is now its opposite: the history must travel INSIDE
+    // the publication transaction, and nothing may write it afterwards.
     const src = read(PUBLISH_ROUTE)
-    assert.ok(src.includes('extractEvolutionHistory'))
-    assert.ok(src.includes('bindingDraft: loaded.draft.resumen'), 'bound to the draft being published')
-    assert.ok(src.includes('loaded.draft.bytes'), 'no browser-supplied values')
-    // Strictly after the publication commits, so it cannot invalidate one.
-    // `lastIndexOf` skips the import at the top of the file.
-    assert.ok(src.lastIndexOf('extractEvolutionHistory') > src.indexOf('if (!published.ok)'))
+    const preview = read('src/lib/familyPortfolio/weeklyImportPreview.ts')
+    const server = read('src/lib/familyPortfolio/importPreviewServer.ts')
+
+    // Same bytes, bound to the draft being published.
+    assert.ok(preview.includes('extractEvolutionHistory'), 'the extractor still supplies the values')
+    assert.ok(preview.includes('bindingDraft: input.draft'), 'bound to the draft being published')
+    assert.ok(server.includes('bytes: loaded.bytes'), 'no browser-supplied values')
+
+    // The history is part of the transaction.
+    assert.ok(src.includes('importPortfolioWorkbook'), 'one atomic call carries publication + history')
+    assert.ok(src.includes('observations,'), 'the mutations travel with the publication')
+
+    // And nothing writes history after the commit any more.
+    assert.ok(
+      !src.includes('upsertEvolutionObservations'),
+      'the post-commit best-effort history write must be gone',
+    )
+    assert.ok(
+      !src.includes('extractEvolutionHistory'),
+      'the publish route must not re-extract history outside the transaction',
+    )
+  })
+
+  test('the atomic import replaced the chunked best-effort upsert on the publish path', () => {
+    // The chunked upsert itself is RETAINED and still exported: the standalone
+    // historical backfill legitimately uses it outside any publication. What
+    // must never come back is the PUBLISH PATH calling it.
+    const repo = read('src/lib/db/repositories/portfolioPublicationRepository.ts')
+    assert.ok(
+      repo.includes('export async function upsertEvolutionObservations'),
+      'the backfill path still needs it',
+    )
+    assert.ok(
+      repo.includes('export async function importPortfolioWorkbook'),
+      'the publish path uses the transactional one',
+    )
   })
 
   test('the Overview prefers persisted history and never blends provenances', () => {

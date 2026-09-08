@@ -75,10 +75,89 @@ interface DraftReview {
   warningCount: number
 }
 
+// ─── R13.8B — the import plan ────────────────────────────────────────────────
+
+interface PreviewCorrection {
+  scope: string
+  basis: string
+  observationDate: string
+  beforeValue: number | null
+  afterValue: number | null
+}
+
+interface ImportPlan {
+  contractVersion: string
+  contractVerdict: string
+  sheetNames: string[]
+  frozen: {
+    publicationColumnLetter: string | null
+    publicationDate: string | null
+    historicalColumnCount: number
+    liveColumnLetter: string | null
+    liveColumnDate: string | null
+    refusal: string | null
+  }
+  productionEndpoint: string | null
+  workbookLatest: string | null
+  publicationDate: string | null
+  newDates: string[]
+  gapFillDates: string[]
+  corrections: PreviewCorrection[]
+  unchangedCount: number
+  invalidDates: string[]
+  cadenceGaps: Array<{ from: string; to: string; days: number }>
+  action: string
+  requiresHistoricalCorrection: boolean
+  blocked: boolean
+  blockCodes: string[]
+  counts: { new: number; gapFill: number; changed: number; unchanged: number; invalid: number }
+  planFingerprint: string
+}
+
+interface ImportOperationRow {
+  id: string
+  uploadId: string
+  asOfDate: string
+  planVersion: string
+  counts: Record<string, unknown>
+  correctionAuthorized: boolean
+  correctionReason: string | null
+  createdAt: string
+  rolledBackAt: string | null
+}
+
 function severityColor(severity: ReviewFinding['severity']): string {
   if (severity === 'blocking') return 'var(--negative)'
   if (severity === 'warning') return 'var(--warning)'
   return 'var(--muted-fg)'
+}
+
+/**
+ * A list of reporting dates.
+ *
+ * Dates, never values: NEW and GAP_FILL points are insertions, and an
+ * administrator confirming them is agreeing to a set of WEEKS. Only an overwrite
+ * shows amounts, and it shows them in its own block below.
+ */
+function DateList({ label, dates, tone }: { label: string; dates: string[]; tone: string }) {
+  if (dates.length === 0) return null
+  return (
+    <section>
+      <p className="ui-label mb-2" style={{ color: tone }}>
+        {label} · <span className="ui-number">{dates.length}</span>
+      </p>
+      <ul className="flex flex-wrap gap-1.5">
+        {dates.map((d) => (
+          <li
+            key={d}
+            className="rounded-full border border-border px-2.5 py-0.5 ui-number text-[11px] text-foreground"
+          >
+            {d}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
 }
 
 // ─── Draft review panel ───────────────────────────────────────────────────────
@@ -96,12 +175,18 @@ function ReviewPanel({
   const a = t.fpAdmin
 
   const [review, setReview] = useState<DraftReview | null>(null)
+  const [plan, setPlan] = useState<ImportPlan | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [confirmDate, setConfirmDate] = useState('')
   const [overrideNote, setOverrideNote] = useState('')
   const [adminNote, setAdminNote] = useState('')
   const [busy, setBusy] = useState(false)
+  // R13.8B § 7 — correction mode. Off by default and never inferred: authorizing
+  // an overwrite is an explicit act, so a plan carrying one stays un-confirmable
+  // until the administrator turns this on AND writes a reason.
+  const [correctionAuthorized, setCorrectionAuthorized] = useState(false)
+  const [correctionReason, setCorrectionReason] = useState('')
 
   // All state changes happen inside the async callback, never synchronously in
   // the effect body — the React Compiler rule this codebase already follows
@@ -117,9 +202,14 @@ function ReviewPanel({
           setLoading(false)
           return
         }
-        const data: { draft: DraftReview | null; draftError: string | null } = await res.json()
+        const data: {
+          draft: DraftReview | null
+          draftError: string | null
+          importPlan: ImportPlan | null
+        } = await res.json()
         if (cancelled) return
         setReview(data.draft)
+        setPlan(data.importPlan)
         if (!data.draft) setError(data.draftError ?? a.error)
         else setConfirmDate(data.draft.detectedAsOfDate ?? '')
         setLoading(false)
@@ -153,16 +243,31 @@ function ReviewPanel({
           confirmedAsOfDate: confirmDate || null,
           overrideNote: overrideNote.trim() || null,
           adminNote: adminNote.trim() || null,
+          // R13.8B § 7 — the authorization decision, and only the decision. No
+          // classification, date, prior value or row travels from the browser:
+          // the server rebuilds the plan from the stored bytes.
+          historicalCorrectionAuthorized: correctionAuthorized,
+          correctionReason: correctionReason.trim() || null,
+          // R13.8B § 9 — the plan this screen actually displayed. If Production
+          // moved since, the server refuses rather than applying a different
+          // plan behind this confirmation.
+          expectedPlanFingerprint: plan?.planFingerprint ?? null,
         }),
       })
-      const data: { error?: string; refusals?: string[] } = await res.json().catch(() => ({}))
+      const data: { error?: string; refusals?: string[]; blockCodes?: string[] } =
+        await res.json().catch(() => ({}))
       if (!res.ok) {
         // Database refusals arrive prefixed (`publication_refused_…`); the
         // dictionary is keyed on the bare reason so one label serves both the
         // server-side gate and the database's own independent refusal.
-        const raw = data.refusals?.[0] ?? data.error ?? 'error'
+        const raw = data.blockCodes?.[0] ?? data.refusals?.[0] ?? data.error ?? 'error'
         const code = raw.replace(/^publication_refused_/, '')
-        setError((a.refusal as Record<string, string>)[code] ?? code)
+        setError(
+          (a.refusalImport as Record<string, string>)[raw] ??
+            (a.refusalImport as Record<string, string>)[code] ??
+            (a.refusal as Record<string, string>)[code] ??
+            code,
+        )
         return
       }
       onPublished()
@@ -171,7 +276,17 @@ function ReviewPanel({
     } finally {
       setBusy(false)
     }
-  }, [upload.id, confirmDate, overrideNote, adminNote, a, onPublished])
+  }, [upload.id, confirmDate, overrideNote, adminNote, correctionAuthorized, correctionReason, plan, a, onPublished])
+
+  // R13.8B § 7 — the confirmation gate.
+  //
+  // A plan of NEW + GAP_FILL + UNCHANGED confirms normally, however many weeks
+  // it carries: multi-week append is ordinary recurring behaviour, and a gap
+  // fill below the endpoint is an insertion, not a correction. ONLY an overwrite
+  // demands authorization and a reason.
+  const needsCorrection = plan?.requiresHistoricalCorrection === true
+  const correctionIncomplete =
+    needsCorrection && (!correctionAuthorized || correctionReason.trim().length === 0)
 
   return (
     <div className="rounded-[20px] border border-border bg-surface p-4 sm:p-5">
@@ -307,6 +422,154 @@ function ReviewPanel({
             )}
           </section>
 
+          {/* ── R13.8B § 6 — the import plan. ──────────────────────────────
+              Three groups, never merged: an insertion above the endpoint, an
+              insertion below it, and an overwrite are different acts. Nothing
+              here implies one upload equals one week. */}
+          {plan && (
+            <section className="rounded-[18px] border border-border bg-surface-2 p-3 sm:p-4 space-y-4">
+              <p className="ui-label text-muted-fg">{a.planTitle}</p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                <Fact label={a.planSchema} value={`${plan.contractVersion} · ${plan.contractVerdict}`} />
+                <Fact label={a.planEndpoint} value={plan.productionEndpoint ?? '—'} />
+                <Fact label={a.planNewestFrozen} value={plan.workbookLatest ?? '—'} />
+                <Fact label={a.planPublication} value={plan.publicationDate ?? '—'} />
+              </div>
+
+              {/* The live column is REPORTED, never selected. Showing it beside
+                  the frozen column is what makes "not published" visible rather
+                  than merely true. */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Fact
+                  label={a.planFrozenColumn}
+                  value={
+                    plan.frozen.publicationColumnLetter
+                      ? `${plan.frozen.publicationColumnLetter} · ${plan.frozen.publicationDate ?? '—'}`
+                      : '—'
+                  }
+                />
+                <Fact
+                  label={a.planLiveColumn}
+                  value={
+                    plan.frozen.liveColumnLetter
+                      ? `${plan.frozen.liveColumnLetter} · ${plan.frozen.liveColumnDate ?? '—'}`
+                      : '—'
+                  }
+                />
+              </div>
+              <p className="text-[11px] text-muted-fg">{a.planLiveHint}</p>
+
+              <DateList label={a.planNew} dates={plan.newDates} tone="var(--positive)" />
+
+              {plan.gapFillDates.length > 0 && (
+                <div className="space-y-1">
+                  <DateList label={a.planGapFill} dates={plan.gapFillDates} tone="var(--accent)" />
+                  <p className="text-[11px] text-muted-fg">{a.planGapFillHint}</p>
+                </div>
+              )}
+
+              <DateList label={a.planInvalid} dates={plan.invalidDates} tone="var(--negative)" />
+
+              {/* The ONE place this console shows amounts. An administrator
+                  cannot honestly authorize an overwrite without seeing what is
+                  being replaced. */}
+              {plan.corrections.length > 0 && (
+                <section>
+                  <p className="ui-label mb-2" style={{ color: 'var(--warning)' }}>
+                    {a.planChanged} · <span className="ui-number">{plan.corrections.length}</span>
+                  </p>
+                  <ul className="space-y-1">
+                    {plan.corrections.map((c) => (
+                      <li
+                        key={`${c.scope}-${c.basis}-${c.observationDate}`}
+                        className="text-[11px] text-foreground"
+                      >
+                        <span className="font-mono">{c.scope}</span>{' '}
+                        <span className="text-muted-fg">{c.basis}</span>{' '}
+                        <span className="ui-number">{c.observationDate}</span>
+                        {' — '}
+                        <span className="text-muted-fg">{a.planBefore}</span>{' '}
+                        <span className="ui-number">{c.beforeValue ?? '—'}</span>
+                        {' → '}
+                        <span className="text-muted-fg">{a.planAfter}</span>{' '}
+                        <span className="ui-number">{c.afterValue ?? '—'}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              <p className="text-[11px] text-muted-fg">
+                {a.planUnchanged}: <span className="ui-number">{plan.unchangedCount}</span> {a.planCount}
+              </p>
+
+              {/* Informational only. The workbook not freezing a week is a fact
+                  about the workbook, never permission to manufacture one. */}
+              {plan.cadenceGaps.length > 0 && (
+                <section>
+                  <p className="ui-label text-muted-fg mb-1">{a.planCadence}</p>
+                  <ul className="flex flex-wrap gap-1.5">
+                    {plan.cadenceGaps.map((g) => (
+                      <li
+                        key={`${g.from}-${g.to}`}
+                        className="rounded-full border border-border px-2.5 py-0.5 ui-number text-[11px] text-muted-fg"
+                      >
+                        {g.from} → {g.to} ({g.days}d)
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-1 text-[11px] text-muted-fg">{a.planNoInvent}</p>
+                </section>
+              )}
+
+              {plan.newDates.length === 0 &&
+                plan.gapFillDates.length === 0 &&
+                plan.corrections.length === 0 && (
+                  <p className="text-xs" style={{ color: 'var(--muted-fg)' }}>
+                    {a.planNothing}
+                  </p>
+                )}
+            </section>
+          )}
+
+          {/* ── R13.8B § 7 — historical correction mode. ────────────────────
+              Rendered ONLY when an existing identity is being overwritten.
+              Multiple new weeks and gap fills never reach this block. */}
+          {needsCorrection && (
+            <section
+              className="rounded-[18px] border p-3 sm:p-4 space-y-3"
+              style={{ borderColor: 'var(--warning)' }}
+            >
+              <p className="ui-label" style={{ color: 'var(--warning)' }}>
+                {a.correctionTitle}
+              </p>
+              <p className="text-[11px] text-muted-fg">{a.correctionHint}</p>
+
+              <label className="flex items-start gap-2 text-xs text-foreground">
+                <input
+                  type="checkbox"
+                  checked={correctionAuthorized}
+                  onChange={(e) => setCorrectionAuthorized(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>{a.correctionAuthorize}</span>
+              </label>
+
+              <label className="block">
+                <span className="ui-label text-muted-fg">{a.correctionReason}</span>
+                <input
+                  type="text"
+                  value={correctionReason}
+                  onChange={(e) => setCorrectionReason(e.target.value)}
+                  disabled={!correctionAuthorized}
+                  className="mt-1 w-full rounded-[13px] border border-border bg-surface-2 px-3 py-2 text-sm text-foreground disabled:opacity-50"
+                />
+                <span className="mt-1 block text-[11px] text-muted-fg">{a.correctionReasonHint}</span>
+              </label>
+            </section>
+          )}
+
           {/* Confirmation. */}
           <section className="space-y-3">
             <label className="block">
@@ -345,7 +608,16 @@ function ReviewPanel({
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
-                disabled={!review.publishable || busy || noteMissing || confirmDate === ''}
+                disabled={
+                  !review.publishable ||
+                  busy ||
+                  noteMissing ||
+                  confirmDate === '' ||
+                  // An unauthorized overwrite can never be confirmed from here.
+                  // The server and the database each refuse it independently;
+                  // this is the courtesy layer, not the boundary.
+                  correctionIncomplete
+                }
                 onClick={publish}
                 className="rounded-full border border-border px-4 py-1.5 text-xs text-foreground disabled:opacity-50"
               >
@@ -384,6 +656,141 @@ function Fact({ label, value }: { label: string; value: string }) {
   )
 }
 
+// ─── R13.8B § 4 — the administrator front door ───────────────────────────────
+//
+// It posts to the EXISTING `POST /api/family-portfolio/admin/uploads`. No
+// parallel upload endpoint was created: that route already runs the full
+// validation ladder — administrator capability before a byte of the body is
+// read, a Content-Length screen before `formData()` materialises the workbook,
+// the authoritative `file.size` bound, the digest, the twelve content checks and
+// duplicate detection. A second door would have to reimplement all of it.
+//
+// ADMINISTRATOR-ONLY. This control renders only inside the `ready` state, which
+// is reached only when the console index returned 200 — a non-administrator gets
+// 403 there and sees `notAuthorized` instead. The real boundary is the route's
+// own re-check, which runs on every request regardless of what rendered.
+
+function UploadPanel({ onUploaded }: { onUploaded: (uploadId: string) => void }) {
+  const { t } = useLang()
+  const a = t.fpAdmin
+
+  const [file, setFile] = useState<File | null>(null)
+  const [kind, setKind] = useState<'portfolio' | 'alternatives'>('portfolio')
+  const [state, setState] = useState<'idle' | 'uploading' | 'done'>('idle')
+  const [error, setError] = useState<string | null>(null)
+  const [warnings, setWarnings] = useState<ReviewFinding[]>([])
+
+  const submit = useCallback(async () => {
+    if (!file) return
+    setState('uploading')
+    setError(null)
+    setWarnings([])
+    try {
+      // FormData, because the route reads a multipart body. The bytes go
+      // straight from the picker to the server; nothing is parsed client-side.
+      const form = new FormData()
+      form.append('uploadKind', kind)
+      form.append('file', file)
+
+      const res = await fetch('/api/family-portfolio/admin/uploads', { method: 'POST', body: form })
+      const data: { uploadId?: string; error?: string; findings?: ReviewFinding[] } = await res
+        .json()
+        .catch(() => ({}))
+
+      if (!res.ok) {
+        // A blocking upload error is named, not generic: "file_too_large" and
+        // "duplicate_upload" are different problems with different fixes.
+        const code = data.error ?? 'error'
+        setError((a.refusal as Record<string, string>)[code] ?? code)
+        setState('idle')
+        return
+      }
+
+      // Warnings never block: the upload is valid either way, and the draft
+      // preview is where a publication decision is actually made.
+      setWarnings((data.findings ?? []).filter((f) => f.severity !== 'blocking'))
+      setState('done')
+      if (data.uploadId) onUploaded(data.uploadId)
+    } catch {
+      setError(a.error)
+      setState('idle')
+    }
+  }, [file, kind, a, onUploaded])
+
+  return (
+    <div className="rounded-[20px] border border-border bg-surface p-4 sm:p-5">
+      <p className="ui-label text-muted-fg mb-1">{a.uploadTitle}</p>
+      <p className="text-[11px] text-muted-fg mb-3">{a.uploadHint}</p>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="inline-flex items-center gap-2">
+          <span className="ui-label text-muted-fg">{a.uploadKindLabel}</span>
+          <select
+            value={kind}
+            onChange={(e) => setKind(e.target.value === 'alternatives' ? 'alternatives' : 'portfolio')}
+            className="rounded-[13px] border border-border bg-surface-2 px-3 py-1.5 text-xs text-foreground"
+          >
+            <option value="portfolio">{a.kindPortfolio}</option>
+            <option value="alternatives">{a.kindAlternatives}</option>
+          </select>
+        </label>
+
+        <label className="inline-flex items-center gap-2 cursor-pointer">
+          <span className="rounded-full border border-border px-3 py-1.5 text-xs text-foreground">
+            {a.chooseFile}
+          </span>
+          <input
+            type="file"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            className="sr-only"
+            onChange={(e) => {
+              setFile(e.target.files?.[0] ?? null)
+              setState('idle')
+              setError(null)
+              setWarnings([])
+            }}
+          />
+          <span className="text-xs text-muted-fg truncate max-w-[16rem]">
+            {file ? file.name : a.noFileChosen}
+          </span>
+        </label>
+
+        <button
+          type="button"
+          disabled={!file || state === 'uploading'}
+          onClick={submit}
+          className="rounded-full border border-border px-4 py-1.5 text-xs text-foreground disabled:opacity-50"
+        >
+          {state === 'uploading' ? a.uploading : a.uploadAction}
+        </button>
+      </div>
+
+      {state === 'done' && (
+        <p className="mt-3 text-xs" style={{ color: 'var(--positive)' }}>
+          {a.uploadDone}
+        </p>
+      )}
+
+      {error && (
+        <p className="mt-3 text-xs" style={{ color: 'var(--negative)' }}>
+          {error}
+        </p>
+      )}
+
+      {warnings.length > 0 && (
+        <ul className="mt-3 space-y-1">
+          {warnings.map((w, i) => (
+            <li key={`${w.code}-${i}`} className="text-[11px]" style={{ color: 'var(--warning)' }}>
+              <span className="font-mono">{w.code}</span>{' '}
+              <span className="text-muted-fg">— {w.detail}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function FamilyPortfolioAdminPage() {
@@ -392,8 +799,13 @@ export default function FamilyPortfolioAdminPage() {
 
   const [uploads, setUploads] = useState<UploadRow[]>([])
   const [publications, setPublications] = useState<PublicationRow[]>([])
+  const [importOperations, setImportOperations] = useState<ImportOperationRow[]>([])
   const [state, setState] = useState<'loading' | 'ready' | 'error' | 'denied'>('loading')
   const [selected, setSelected] = useState<UploadRow | null>(null)
+  const [rollbackError, setRollbackError] = useState<string | null>(null)
+  // Set by a successful upload so the freshly-created draft opens as soon as the
+  // console index has reloaded and the row exists to select.
+  const [pendingUploadId, setPendingUploadId] = useState<string | null>(null)
 
   // A monotonic counter drives re-fetching, mirroring the `refreshSeq` pattern
   // used by MacroDataProvider and Compare. The fetch is inlined in the effect
@@ -418,10 +830,15 @@ export default function FamilyPortfolioAdminPage() {
           setState('error')
           return
         }
-        const data: { uploads: UploadRow[]; publications: PublicationRow[] } = await res.json()
+        const data: {
+          uploads: UploadRow[]
+          publications: PublicationRow[]
+          importOperations?: ImportOperationRow[]
+        } = await res.json()
         if (cancelled) return
         setUploads(data.uploads ?? [])
         setPublications(data.publications ?? [])
+        setImportOperations(data.importOperations ?? [])
         setState('ready')
       } catch {
         if (!cancelled) setState('error')
@@ -442,6 +859,42 @@ export default function FamilyPortfolioAdminPage() {
     [reload],
   )
 
+  /**
+   * R13.8B § 10 — reverse a whole import.
+   *
+   * Insertions are removed, overwrites are restored to their exact before-image
+   * and prior lineage, and the displaced publication is promoted back — all in
+   * one transaction. A refusal is SURFACED, not swallowed: when a later import
+   * already rewrote one of these rows the database declines rather than
+   * clobbering it, and the administrator needs to be told that is what happened.
+   */
+  const rollbackImport = useCallback(
+    async (id: string) => {
+      setRollbackError(null)
+      const res = await fetch(`/api/family-portfolio/admin/imports/${id}/rollback`, {
+        method: 'POST',
+      })
+      if (!res.ok) {
+        const data: { error?: string } = await res.json().catch(() => ({}))
+        const code = data.error ?? 'error'
+        setRollbackError((a.refusalImport as Record<string, string>)[code] ?? code)
+      }
+      reload()
+    },
+    [reload, a],
+  )
+
+  // "Adjust state when a prop changes" via the render-time previous-value
+  // pattern on self state — never an effect that calls setState (the React
+  // Compiler rule this codebase follows).
+  if (pendingUploadId !== null && state === 'ready') {
+    const row = uploads.find((u) => u.id === pendingUploadId)
+    if (row) {
+      setPendingUploadId(null)
+      setSelected(row)
+    }
+  }
+
   return (
     <div className="w-full space-y-6">
       <SectionHeader tag={a.tag} title={a.title} subtitle={a.subtitle} />
@@ -456,6 +909,19 @@ export default function FamilyPortfolioAdminPage() {
 
       {state === 'ready' && (
         <>
+          <UploadPanel
+            onUploaded={(uploadId) => {
+              setPendingUploadId(uploadId)
+              reload()
+            }}
+          />
+
+          {rollbackError && (
+            <p className="text-sm" style={{ color: 'var(--negative)' }}>
+              {rollbackError}
+            </p>
+          )}
+
           {selected && (
             <ReviewPanel
               upload={selected}
@@ -568,6 +1034,78 @@ export default function FamilyPortfolioAdminPage() {
                       </td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+          </TableCard>
+
+          {/* ── R13.8B § 10 — the import ledger. ────────────────────────────
+              A publication rollback moves ONE `is_current` pointer for one week.
+              An import rollback reverses every history point the upload wrote,
+              across every week it touched, plus that publication. They are
+              different operations and are offered as such. */}
+          <TableCard title={a.importsTitle} minWidth={720} footer={<TableSourceFooter source={a.source} />}>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className={TH}>{a.colImportDate}</th>
+                    <th className={TH}>{a.colImportCounts}</th>
+                    <th className={TH}>{a.colImportCorrection}</th>
+                    <th className={TH}>{a.colImportCreated}</th>
+                    <th className={TH}>{a.colImportState}</th>
+                    <th className={TH}>{a.colActions}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {importOperations.length === 0 && (
+                    <tr>
+                      <td className={`${CELL} text-muted-fg`} colSpan={6}>
+                        {a.emptyImports}
+                      </td>
+                    </tr>
+                  )}
+                  {importOperations.map((op) => {
+                    const c = op.counts as Record<string, number | undefined>
+                    return (
+                      <tr key={op.id} className="border-b border-border/60">
+                        <td className={`${CELL} ui-number text-foreground`}>{op.asOfDate}</td>
+                        {/* Counts, never amounts — the same rule the rest of this
+                            console follows outside the corrections block. */}
+                        <td className={`${CELL} ui-number text-muted-fg`}>
+                          {a.planNew} <span className="text-foreground">{c.new ?? 0}</span>
+                          {' · '}
+                          {a.planGapFill} <span className="text-foreground">{c.gapFill ?? 0}</span>
+                          {' · '}
+                          {a.planChanged} <span className="text-foreground">{c.changed ?? 0}</span>
+                        </td>
+                        <td className={`${CELL} text-xs text-muted-fg`}>
+                          {op.correctionAuthorized ? (op.correctionReason ?? '—') : '—'}
+                        </td>
+                        <td className={`${CELL} ui-number text-muted-fg`}>{op.createdAt.slice(0, 10)}</td>
+                        <td className={CELL}>
+                          <span
+                            className="text-xs"
+                            style={{ color: op.rolledBackAt ? 'var(--muted-fg)' : 'var(--positive)' }}
+                          >
+                            {op.rolledBackAt ? a.importRolledBack : a.importActive}
+                          </span>
+                        </td>
+                        <td className={CELL}>
+                          {/* An already-reversed import offers no control: the
+                              database refuses a second rollback, and showing a
+                              button that can only fail is not a courtesy. */}
+                          {!op.rolledBackAt && (
+                            <button
+                              type="button"
+                              onClick={() => void rollbackImport(op.id)}
+                              className="rounded-full border border-border px-3 py-1 text-xs text-foreground"
+                            >
+                              {a.rollbackImport}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
           </TableCard>
