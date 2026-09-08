@@ -256,6 +256,63 @@ export interface PreviewInput {
   correctionReason?: string | null
 }
 
+/** The workbook's schema identity — everything in a preview that is not the plan. */
+export interface PreviewIdentity {
+  contractVersion: string
+  contractVerdict: WorkbookContractReport['verdict']
+  sheetNames: string[]
+  frozen: FrozenColumnSelection
+}
+
+/**
+ * The ONE mapping from a plan to what an administrator sees.
+ *
+ * R13.8C — split out of `buildWeeklyImportPreview` so the owner-review fixtures
+ * can present a plan produced by the real planner through this same mapping.
+ * There is no second presentation model: a synthetic state and a real upload
+ * reach the screen through exactly this function.
+ */
+export function previewFromPlan(plan: WeeklyImportPlan, identity: PreviewIdentity): WeeklyImportPreview {
+  const counted = countDispositions(plan.observationsToWrite)
+
+  return {
+    previewVersion: IMPORT_PREVIEW_VERSION,
+    planVersion: plan.planVersion,
+    contractVersion: identity.contractVersion,
+    contractVerdict: identity.contractVerdict,
+    sheetNames: identity.sheetNames,
+    frozen: identity.frozen,
+    productionEndpoint: plan.productionEndpoint,
+    workbookLatest: plan.workbookLatest,
+    publicationDate: plan.publicationDate,
+    newDates: plan.newDates,
+    gapFillDates: plan.gapFillDates,
+    corrections: plan.corrections.map((c) => ({
+      scope: c.scope,
+      basis: c.basis,
+      seriesIdentity: c.seriesIdentity,
+      observationDate: c.observationDate,
+      beforeValue: c.beforeValue,
+      afterValue: c.afterValue,
+    })),
+    unchangedCount: plan.unchangedDates.length,
+    invalidDates: plan.invalidDates,
+    cadenceGaps: plan.cadenceGaps.map((g) => ({ from: g.from, to: g.to, days: g.days })),
+    action: plan.action,
+    requiresHistoricalCorrection: plan.requiresHistoricalCorrection,
+    blocked: plan.blocked,
+    blockCodes: plan.blockCodes,
+    counts: {
+      new: counted.created,
+      gapFill: counted.gapFill,
+      changed: counted.changed,
+      unchanged: plan.unchangedDates.length,
+      invalid: plan.invalidDates.length,
+    },
+    planFingerprint: planFingerprint(plan),
+  }
+}
+
 /**
  * Builds the administrator-facing import plan.
  *
@@ -287,44 +344,12 @@ export function buildWeeklyImportPreview(
     correctionReason: input.correctionReason,
   })
 
-  const counted = countDispositions(plan.observationsToWrite)
-
-  const preview: WeeklyImportPreview = {
-    previewVersion: IMPORT_PREVIEW_VERSION,
-    planVersion: plan.planVersion,
+  const preview = previewFromPlan(plan, {
     contractVersion: contract.contractVersion,
     contractVerdict: contract.verdict,
     sheetNames: contract.structure?.sheetNames ?? [],
     frozen: input.selection,
-    productionEndpoint: plan.productionEndpoint,
-    workbookLatest: plan.workbookLatest,
-    publicationDate: plan.publicationDate,
-    newDates: plan.newDates,
-    gapFillDates: plan.gapFillDates,
-    corrections: plan.corrections.map((c) => ({
-      scope: c.scope,
-      basis: c.basis,
-      seriesIdentity: c.seriesIdentity,
-      observationDate: c.observationDate,
-      beforeValue: c.beforeValue,
-      afterValue: c.afterValue,
-    })),
-    unchangedCount: plan.unchangedDates.length,
-    invalidDates: plan.invalidDates,
-    cadenceGaps: plan.cadenceGaps.map((g) => ({ from: g.from, to: g.to, days: g.days })),
-    action: plan.action,
-    requiresHistoricalCorrection: plan.requiresHistoricalCorrection,
-    blocked: plan.blocked,
-    blockCodes: plan.blockCodes,
-    counts: {
-      new: counted.created,
-      gapFill: counted.gapFill,
-      changed: counted.changed,
-      unchanged: plan.unchangedDates.length,
-      invalid: plan.invalidDates.length,
-    },
-    planFingerprint: planFingerprint(plan),
-  }
+  })
 
   return { preview, plan, extraction }
 }

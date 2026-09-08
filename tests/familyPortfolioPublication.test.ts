@@ -1055,6 +1055,14 @@ describe('R13.5 · routes', () => {
 
 describe('R13.5 · administrator page', () => {
   const page = read(ADMIN_PAGE)
+  // R13.8C — the import plan's composition moved into a co-located
+  // presentational component and a pure derivation module. Assertions about
+  // WHAT the console shows scan the whole surface; assertions about the page's
+  // own tables (footer-per-table) stay on the page alone.
+  const surface =
+    page +
+    read('src/components/familyPortfolio/ImportPlanPreview.tsx') +
+    read('src/lib/familyPortfolio/importPlanPresentation.ts')
 
   test('it renders only what the API returned and states so', () => {
     assert.match(page, /NEVER PROTECTION/)
@@ -1077,17 +1085,21 @@ describe('R13.5 · administrator page', () => {
   })
 
   test('it uses semantic tokens only — no raw palette, no hardcoded hex', () => {
-    assert.ok(!/(bg|text|border)-(gray|zinc|slate|emerald|red|blue)-\d/.test(page))
+    assert.ok(!/(bg|text|border)-(gray|zinc|slate|emerald|red|blue)-\d/.test(surface))
     // The only hex-like literals allowed are none: colours come from var(--…).
-    assert.ok(!/#[0-9a-fA-F]{6}/.test(page))
-    assert.match(page, /var\(--negative\)/)
-    assert.match(page, /var\(--positive\)/)
+    assert.ok(!/#[0-9a-fA-F]{6}/.test(surface))
+    // R13.8C — the signal tokens are declared ONCE, in the presentation module's
+    // TONE table, and consumed by name everywhere else.
+    assert.match(surface, /var\(--negative\)/)
+    assert.match(surface, /var\(--positive\)/)
+    assert.match(surface, /var\(--warning\)/)
+    assert.match(surface, /var\(--accent\)/)
   })
 
   test('dense tables scroll inside their card, never the page', () => {
     const widths = page.match(/minWidth=\{(\d+)\}/g) ?? []
     assert.ok(widths.length >= 2, 'both tables must declare a card-level min width')
-    assert.match(page, /grid-cols-1 sm:grid-cols-3/)
+    assert.match(surface, /grid-cols-1 sm:grid-cols-3/)
   })
 
   test('each table ends with exactly one TableSourceFooter', () => {

@@ -41,6 +41,7 @@ import {
 import { RESUMEN_PARSER_VERSION } from '@/lib/familyPortfolio/resumen/parseResumen'
 import { ALTERNATIVES_PARSER_VERSION } from '@/lib/familyPortfolio/alternatives/parseAlternatives'
 import { planImportForDraft } from '@/lib/familyPortfolio/importPreviewServer'
+import { isImportFixtureId } from '@/lib/familyPortfolio/fixtures/importPreviewFixtures'
 import {
   getUploadFindings,
   getPublication,
@@ -92,6 +93,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
   const { id } = await context.params
   if (!UUID.test(id)) return fail('not_found', 404)
+
+  // R13.8C § 12 — a review fixture is READ-ONLY, in every environment. It exists
+  // in no table, so there is nothing to publish; refusing here, before the body
+  // is read, means a fixture can never reach `loadDraft` or the import RPC.
+  if (isImportFixtureId(id)) return fail('read_only_fixture', 403)
 
   let body: Record<string, unknown> = {}
   try {

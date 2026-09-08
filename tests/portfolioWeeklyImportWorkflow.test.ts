@@ -44,6 +44,11 @@ const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
 const codeOf = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
 
 const ADMIN_PAGE = 'src/app/portfolio/admin/page.tsx'
+// R13.8C — the plan's composition moved into a co-located presentational
+// component with a pure derivation module; the page composes them.
+const PREVIEW_COMPONENT = 'src/components/familyPortfolio/ImportPlanPreview.tsx'
+const PRESENTATION_MODULE = 'src/lib/familyPortfolio/importPlanPresentation.ts'
+const IMPORT_FIXTURES = 'src/lib/familyPortfolio/fixtures/importPreviewFixtures.ts'
 const PUBLISH_ROUTE = 'src/app/api/family-portfolio/admin/uploads/[id]/publish/route.ts'
 const DRAFT_ROUTE = 'src/app/api/family-portfolio/admin/uploads/[id]/route.ts'
 const UPLOADS_ROUTE = 'src/app/api/family-portfolio/admin/uploads/route.ts'
@@ -426,7 +431,9 @@ describe('R13.8B § 4 — the upload control', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('R13.8B §§ 6-7 — preview and confirmation', () => {
-  const page = read(ADMIN_PAGE)
+  // The administrator SURFACE: the page plus the component it composes.
+  const page = read(ADMIN_PAGE) + read(PREVIEW_COMPONENT)
+  const component = read(PREVIEW_COMPONENT)
 
   test('the preview names all three groups separately', () => {
     for (const key of ['planNew', 'planGapFill', 'planChanged', 'planUnchanged', 'planCadence']) {
@@ -444,7 +451,9 @@ describe('R13.8B §§ 6-7 — preview and confirmation', () => {
   })
 
   test('an overwrite shows its exact before and after', () => {
-    assert.ok(page.includes('a.planBefore') && page.includes('a.planAfter'))
+    // R13.8C — as a two-column table: the current (published) value and the
+    // workbook value, side by side, with the change between them.
+    assert.ok(page.includes('a.colCurrentValue') && page.includes('a.colWorkbookValue'))
     assert.match(page, /c\.beforeValue/)
     assert.match(page, /c\.afterValue/)
   })
@@ -456,7 +465,9 @@ describe('R13.8B §§ 6-7 — preview and confirmation', () => {
 
   test('correction mode renders ONLY when an identity is overwritten', () => {
     assert.match(page, /const needsCorrection = plan\?\.requiresHistoricalCorrection === true/)
-    assert.match(page, /\{needsCorrection && \(/)
+    // R13.8C — the correction card is its own component, and it returns nothing
+    // unless the plan overwrites an identity.
+    assert.match(component, /if \(!plan\.requiresHistoricalCorrection\) return null/)
   })
 
   test('confirm is disabled until an overwrite is authorized AND explained', () => {
@@ -669,6 +680,7 @@ describe('R13.8B — hygiene', () => {
     for (const rel of [
       PREVIEW_MODULE, PREVIEW_SERVER, DRAFT_REVIEW, PUBLISH_ROUTE, DRAFT_ROUTE,
       UPLOADS_ROUTE, IMPORT_ROLLBACK_ROUTE, ADMIN_PAGE,
+      PREVIEW_COMPONENT, PRESENTATION_MODULE, IMPORT_FIXTURES,
       'src/lib/db/repositories/portfolioPublicationRepository.ts',
       'tests/fixtures/weeklyImportWorkbook.ts',
     ]) {
@@ -695,6 +707,7 @@ describe('R13.8B — hygiene', () => {
     const needle = ['nmi', 'private', 'inputs'].join('-')
     for (const rel of [
       PREVIEW_MODULE, PREVIEW_SERVER, PUBLISH_ROUTE, DRAFT_ROUTE, ADMIN_PAGE,
+      PREVIEW_COMPONENT, PRESENTATION_MODULE, IMPORT_FIXTURES,
       'tests/portfolioWeeklyImportWorkflow.test.ts', 'tests/fixtures/weeklyImportWorkbook.ts',
     ]) {
       assert.ok(!read(rel).includes(needle), rel)

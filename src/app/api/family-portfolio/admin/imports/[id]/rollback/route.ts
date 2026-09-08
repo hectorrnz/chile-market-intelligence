@@ -25,6 +25,7 @@ import { NextResponse } from 'next/server'
 import { guardPrivateApi } from '@/lib/auth/apiGuard'
 import { getFamilyPortfolioEntitlement } from '@/lib/portfolioAccess/getEntitlement'
 import { rollbackPortfolioImport } from '@/lib/db/repositories/portfolioPublicationRepository'
+import { isImportFixtureOperationId } from '@/lib/familyPortfolio/fixtures/importPreviewFixtures'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -60,6 +61,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const { id } = await context.params
   if (!UUID.test(id)) {
     return NextResponse.json({ error: 'not_found' }, { status: 404, headers: NO_STORE })
+  }
+
+  // R13.8C § 12 — a review-fixture ledger row is READ-ONLY, in every
+  // environment: it exists in no table, so there is nothing to reverse, and the
+  // RPC is never reached for it.
+  if (isImportFixtureOperationId(id)) {
+    return NextResponse.json({ error: 'read_only_fixture' }, { status: 403, headers: NO_STORE })
   }
 
   let note: string | null = null

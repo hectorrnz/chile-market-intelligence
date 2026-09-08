@@ -792,7 +792,9 @@ describe('R13.8 · privacy', () => {
     }
     // …and the administrator sees it before publishing: findings are listed
     // with their severity, and each cross-check is chipped agrees/mismatch.
-    const admin = read('src/app/portfolio/admin/page.tsx')
+    // R13.8C — that markup lives in the console's co-located presentational
+    // component; the page composes it.
+    const admin = read('src/components/familyPortfolio/ImportPlanPreview.tsx')
     assert.match(admin, /review\.findings\.map/)
     assert.match(admin, /f\.severity === 'warning' \? a\.warning/)
     assert.match(admin, /review\.performance\.map/)

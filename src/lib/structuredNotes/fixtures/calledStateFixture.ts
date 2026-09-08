@@ -72,14 +72,11 @@ export function isReviewFixtureId(id: string): boolean {
 /**
  * Fixtures are Preview/development only.
  *
- * `VERCEL_ENV` is 'production' on the production deployment, 'preview' on a
- * Preview one, and undefined locally. Deny-on-production rather than
- * allow-on-preview so an unset variable in some future runtime cannot silently
- * open the surface... except locally, where there is no deployment at all.
+ * R13.8C — the gate itself moved to `src/lib/reviewFixtures.ts` so the Family
+ * Portfolio import fixtures consult the SAME rule. Re-exported here so every
+ * existing import site and test keeps working unchanged.
  */
-export function reviewFixturesEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.VERCEL_ENV !== 'production'
-}
+export { reviewFixturesEnabled } from '../../reviewFixtures.ts'
 
 // ── Source-backed contract terms (XS3164820824, as filed) ────────────────────
 //

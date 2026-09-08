@@ -957,3 +957,67 @@ source never froze. The planner proposes nothing.
 R13.8B is therefore **IMPLEMENTATION COMPLETE — AWAITING REAL NEW-WEEK E2E**. The first genuinely
 newer workbook must be run through upload → preview → classification → expected packet before any
 Production release is authorized.
+
+### AE.13 R13.8C — the owner preview (presentation only)
+
+R13.8C changed **how the administrator sees** the R13.8B workflow and nothing about what it does.
+Workbook semantics, the NEW / GAP_FILL / CHANGED classification, frozen-column selection, the atomic
+import RPC, rollback lineage, authorization and the correction-reason rule are byte-for-byte the
+R13.8B code paths; every R13.8B test still runs against them.
+
+**Where the Preview comes from.** The repository is linked to the Vercel project
+`nevada-market-intelligence` through the GitHub integration (`.vercel/repo.json`, untracked). Every
+push of a branch produces a Preview deployment and a GitHub *Deployment* record whose status carries
+the URL — there is no Vercel CLI on the workstation and none is needed:
+
+```
+gh api "repos/{owner}/{repo}/deployments?ref=<sha>&environment=Preview" --jq '.[0].id'
+gh api "repos/{owner}/{repo}/deployments/<id>/statuses" --jq '.[0].environment_url'
+```
+
+The Preview runs against the **same Supabase project as Production** (there is one project). Reading
+the console there is a Production read; **uploading a real workbook through the Preview would be a
+Production write** (`portfolio_source_uploads` + storage), and confirming would fail because
+`20260821000000` is not applied there. Until the migration is released, the Preview is for looking,
+and the synthetic states below are what to look at.
+
+**Synthetic review states (§ 12).** `src/lib/familyPortfolio/fixtures/importPreviewFixtures.ts`
+defines seven fixed upload ids (`00000000-0000-4000-8000-0000000f1c0a` … `…f1c10`) — A no changes ·
+B one new week · C three-week catch-up · D gap fill + new · E historical change · F mixed · G
+validation failure — plus two ledger rows (an active catch-up and a reversed correction). Each state
+is a set of synthetic `SeriesObservation`s run through the **real** `planWeeklyImport` and mapped by
+the **real** `previewFromPlan` (split out of `buildWeeklyImportPreview` for exactly this reuse); the
+fixture module never assigns a disposition. The gate is `reviewFixturesEnabled()` in
+`src/lib/reviewFixtures.ts`, shared with the Structured Notes called-state fixture and closed when
+`VERCEL_ENV === 'production'`. The console index and the per-upload GET serve fixtures only after the
+administrator check; the publish and import-rollback routes refuse a fixture id with
+`read_only_fixture` before reading a body. On Preview the fixtures appear at the end of the uploads
+table, every filename beginning `FIXTURE-`, status `review_fixture`.
+
+**What the console now says.** `ImportPlanPreview` (`src/components/familyPortfolio/`) composes the
+plan in order of consequence: a one-line **verdict** ("3 new weeks will be stored. All 3 weeks are
+added to the history; 2026-08-21 becomes the current publication."), the **publication facts**
+(current endpoint · new publication · newest frozen week · publication source = *Frozen weekly
+snapshot*) with the live column reported on a non-interactive diagnostic line marked *Not used for
+publication*, then **New weeks** and **Gap fills** as separate cards (every date a chip; the one that
+becomes current says so in words; the gap-fill copy reads "insertions, not overwrites — normal
+confirmation remains available"), then — only when an identity is overwritten — a visibly stronger
+**Historical correction required** card holding the before/after table (scope · date · metric ·
+current value · workbook value · change), the authorization checkbox, the reason field and the
+*Apply historical correction* button, so the reason is never below unrelated metadata. Warnings
+follow; unchanged count, cadence gaps and workbook metadata are folded into a details block. The
+normal *Publish* button is disabled whenever an overwrite is present and reads *Nothing to apply* for
+`nothing_to_append`. Both rollbacks use the shared `DeleteButton`; the import ledger names each
+import's source workbook and shows its NEW / GAP_FILL / CHANGED counts in their own tones.
+`describeImportPlan` (`src/lib/familyPortfolio/importPlanPresentation.ts`) is the pure verdict
+derivation, tested under Node in both languages.
+
+**Observed, not changed.** The server still accepts a confirmation for a `nothing_to_append` plan:
+`nmi_import_portfolio_workbook` has no zero-observation guard, so such a request would create a new
+revision of the same week with an empty history packet (the R13.5 re-publication semantic). The
+console never offers it. Whether the RPC should refuse it outright is an owner decision.
+
+**Residual.** The ledger shows an import's as-of date, source workbook and counts, not the list of
+dates it touched — the before-image ledger is not exposed by any read route yet. Spanish rendering is
+covered by dictionary parity and the verdict tests, not by the headless-Chrome sweep (the language
+provider reads `localStorage` only on the client).

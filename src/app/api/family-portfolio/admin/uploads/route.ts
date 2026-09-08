@@ -30,6 +30,11 @@ import {
   listPublications,
   listImportOperations,
 } from '@/lib/db/repositories/portfolioPublicationRepository'
+import { reviewFixturesEnabled } from '@/lib/reviewFixtures'
+import {
+  listImportFixtureUploads,
+  listImportFixtureOperations,
+} from '@/lib/familyPortfolio/fixtures/importPreviewFixtures'
 
 // `node:zlib` and `node:crypto` are unavailable on Edge.
 export const runtime = 'nodejs'
@@ -68,6 +73,23 @@ export async function GET() {
     listPublications(),
     listImportOperations(),
   ])
+
+  // R13.8C § 12 — owner-review fixtures, Preview/development ONLY, and only
+  // after the administrator check above. Seven synthetic upload rows and two
+  // synthetic ledger rows are APPENDED after the real ones; every filename says
+  // FIXTURE and every status reads `review_fixture`. On the production
+  // deployment the gate is closed and this branch adds nothing.
+  if (reviewFixturesEnabled()) {
+    return NextResponse.json(
+      {
+        uploads: [...uploads, ...listImportFixtureUploads()],
+        publications,
+        importOperations: [...importOperations, ...listImportFixtureOperations()],
+      },
+      { headers: NO_STORE },
+    )
+  }
+
   return NextResponse.json({ uploads, publications, importOperations }, { headers: NO_STORE })
 }
 

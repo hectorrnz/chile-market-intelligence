@@ -26,6 +26,8 @@ import { getFamilyPortfolioEntitlement } from '@/lib/portfolioAccess/getEntitlem
 import { createUploadSignedUrl, SIGNED_URL_TTL_SECONDS } from '@/lib/db/repositories/portfolioUploadRepository'
 import { buildDraftReview } from '@/lib/familyPortfolio/draftReview'
 import { planImportForDraft } from '@/lib/familyPortfolio/importPreviewServer'
+import { reviewFixturesEnabled } from '@/lib/reviewFixtures'
+import { buildImportFixture } from '@/lib/familyPortfolio/fixtures/importPreviewFixtures'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -49,6 +51,36 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   // clean 404 rather than a driver error.
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
     return NextResponse.json({ error: 'not_found' }, { status: 404, headers: NO_STORE })
+  }
+
+  // R13.8C § 12 — owner-review fixture, Preview/development ONLY.
+  //
+  // Served AFTER the administrator check, so it is not an authorization bypass;
+  // gated on the deployment, so production never serves it; keyed on one of
+  // seven fixed ids, so no parameter shapes it. The plan it carries was produced
+  // by the REAL planner and mapped by the REAL preview — only the observations
+  // were supplied rather than extracted. No object is downloaded and no table is
+  // read: `downloadUrl` is honestly null.
+  const fixture = reviewFixturesEnabled() ? buildImportFixture(id) : null
+  if (fixture) {
+    return NextResponse.json(
+      {
+        uploadId: fixture.upload.id,
+        uploadKind: fixture.upload.uploadKind,
+        originalFilename: fixture.upload.originalFilename,
+        fileSha256: fixture.upload.fileSha256,
+        fileSizeBytes: fixture.upload.fileSizeBytes,
+        status: fixture.upload.status,
+        uploadedAt: fixture.upload.uploadedAt,
+        downloadUrl: null,
+        downloadUrlExpiresInSeconds: 0,
+        draft: fixture.review,
+        draftError: null,
+        importPlan: fixture.importPlan,
+        importPlanError: null,
+      },
+      { headers: NO_STORE },
+    )
   }
 
   const result = await createUploadSignedUrl(id)

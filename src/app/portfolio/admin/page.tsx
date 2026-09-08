@@ -14,18 +14,40 @@
 // module shell and its `Overview · Portfolio · Weekly Changes · Alternatives ·
 // Admin` navigation belong to Stage 6, and are deliberately NOT built here.
 //
-// NO AMOUNTS ARE RENDERED. The review payload carries counts, cell references,
-// row labels and pass/fail; the figures themselves go from the parser straight
-// into the publication RPC without ever being serialized to a browser.
+// NO AMOUNTS ARE RENDERED — with the one R13.8B exception, the before/after of
+// an identity an import would OVERWRITE, which lives in `ImportPlanPreview`. The
+// review payload otherwise carries counts, cell references, row labels and
+// pass/fail; the figures themselves go from the parser straight into the import
+// RPC without ever being serialized to a browser.
+//
+// R13.8C — this file owns the WORKFLOW (fetches, submit, gates, tables); the
+// import plan's composition and hierarchy live in
+// `src/components/familyPortfolio/ImportPlanPreview.tsx` and its pure
+// derivations in `src/lib/familyPortfolio/importPlanPresentation.ts`.
 
 import { useCallback, useEffect, useState } from 'react'
 import { useLang } from '@/components/providers/LangProvider'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
 import { TableCard } from '@/components/fable/TableCard'
+import { DeleteButton } from '@/components/fable/DeleteButton'
+import { ChipLabel } from '@/components/fable/Chip'
+import {
+  ImportPlanPreview,
+  WorkflowSteps,
+  type DraftReview,
+  type ImportPlan,
+  type ReviewFinding,
+  type WorkflowStep,
+} from '@/components/familyPortfolio/ImportPlanPreview'
+import { TONE, isNoOp } from '@/lib/familyPortfolio/importPlanPresentation'
 
 const CELL = 'py-2.5 px-3 first:pl-4 last:pr-4'
 const TH = 'text-left py-2.5 px-3 first:pl-4 last:pr-4 ui-table-header text-muted-fg'
+const BUTTON = 'rounded-full border border-border px-4 py-1.5 text-xs text-foreground disabled:opacity-50 disabled:cursor-not-allowed'
+
+/** The status the server stamps on a Preview-only review fixture (R13.8C § 12). */
+const FIXTURE_STATUS = 'review_fixture'
 
 interface UploadRow {
   id: string
@@ -48,72 +70,6 @@ interface PublicationRow {
   parserVersion: string
 }
 
-interface ReviewFinding {
-  severity: 'blocking' | 'warning' | 'info'
-  code: string
-  detail: string
-  scope?: string
-  sourceSheet?: string
-  sourceCell?: string
-  rowLabel?: string
-}
-
-interface DraftReview {
-  uploadKind: 'portfolio' | 'alternatives'
-  detectedAsOfDate: string | null
-  previousWeekDate: string | null
-  beginningOfYearDate: string | null
-  scopes: Array<{ scope: string; rowCount: number; unavailableCount: number }>
-  performance: Array<{ scope: string; basis: string; metric: string; agrees: boolean; indeterminate: boolean }>
-  groups: Array<{ category: string; currency: string; holdings: number }>
-  legend: Array<{ event: string; hex: string }>
-  unclassifiedEventCells: string[]
-  findings: ReviewFinding[]
-  recordCount: number
-  publishable: boolean
-  refusals: string[]
-  warningCount: number
-}
-
-// ─── R13.8B — the import plan ────────────────────────────────────────────────
-
-interface PreviewCorrection {
-  scope: string
-  basis: string
-  observationDate: string
-  beforeValue: number | null
-  afterValue: number | null
-}
-
-interface ImportPlan {
-  contractVersion: string
-  contractVerdict: string
-  sheetNames: string[]
-  frozen: {
-    publicationColumnLetter: string | null
-    publicationDate: string | null
-    historicalColumnCount: number
-    liveColumnLetter: string | null
-    liveColumnDate: string | null
-    refusal: string | null
-  }
-  productionEndpoint: string | null
-  workbookLatest: string | null
-  publicationDate: string | null
-  newDates: string[]
-  gapFillDates: string[]
-  corrections: PreviewCorrection[]
-  unchangedCount: number
-  invalidDates: string[]
-  cadenceGaps: Array<{ from: string; to: string; days: number }>
-  action: string
-  requiresHistoricalCorrection: boolean
-  blocked: boolean
-  blockCodes: string[]
-  counts: { new: number; gapFill: number; changed: number; unchanged: number; invalid: number }
-  planFingerprint: string
-}
-
 interface ImportOperationRow {
   id: string
   uploadId: string
@@ -126,48 +82,17 @@ interface ImportOperationRow {
   rolledBackAt: string | null
 }
 
-function severityColor(severity: ReviewFinding['severity']): string {
-  if (severity === 'blocking') return 'var(--negative)'
-  if (severity === 'warning') return 'var(--warning)'
-  return 'var(--muted-fg)'
-}
-
-/**
- * A list of reporting dates.
- *
- * Dates, never values: NEW and GAP_FILL points are insertions, and an
- * administrator confirming them is agreeing to a set of WEEKS. Only an overwrite
- * shows amounts, and it shows them in its own block below.
- */
-function DateList({ label, dates, tone }: { label: string; dates: string[]; tone: string }) {
-  if (dates.length === 0) return null
-  return (
-    <section>
-      <p className="ui-label mb-2" style={{ color: tone }}>
-        {label} · <span className="ui-number">{dates.length}</span>
-      </p>
-      <ul className="flex flex-wrap gap-1.5">
-        {dates.map((d) => (
-          <li
-            key={d}
-            className="rounded-full border border-border px-2.5 py-0.5 ui-number text-[11px] text-foreground"
-          >
-            {d}
-          </li>
-        ))}
-      </ul>
-    </section>
-  )
-}
-
 // ─── Draft review panel ───────────────────────────────────────────────────────
 
 function ReviewPanel({
   upload,
+  onLoaded,
   onPublished,
   onClose,
 }: {
   upload: UploadRow
+  /** The parse finished (well or badly) — the step indicator moves to Preview. */
+  onLoaded: () => void
   onPublished: () => void
   onClose: () => void
 }) {
@@ -200,6 +125,7 @@ function ReviewPanel({
         if (!res.ok) {
           setError(a.error)
           setLoading(false)
+          onLoaded()
           return
         }
         const data: {
@@ -213,17 +139,19 @@ function ReviewPanel({
         if (!data.draft) setError(data.draftError ?? a.error)
         else setConfirmDate(data.draft.detectedAsOfDate ?? '')
         setLoading(false)
+        onLoaded()
       } catch {
         if (!cancelled) {
           setError(a.error)
           setLoading(false)
+          onLoaded()
         }
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [upload.id, a.error])
+  }, [upload.id, a.error, onLoaded])
 
   const detected = review?.detectedAsOfDate ?? null
   // The note is required exactly when the administrator asserts a date the file
@@ -288,6 +216,13 @@ function ReviewPanel({
   const correctionIncomplete =
     needsCorrection && (!correctionAuthorized || correctionReason.trim().length === 0)
 
+  // R13.8C § 7 — a plan that writes nothing gets no enabled Apply. The server
+  // would accept the request; the console simply never offers it for a no-op.
+  const nothingToApply = plan !== null && isNoOp(plan)
+
+  const cannotSubmit = !review?.publishable || busy || noteMissing || confirmDate === ''
+  const isFixture = upload.status === FIXTURE_STATUS
+
   return (
     <div className="rounded-[20px] border border-border bg-surface p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -295,280 +230,64 @@ function ReviewPanel({
           <p className="ui-label text-muted-fg mb-1">
             {upload.uploadKind === 'portfolio' ? a.kindPortfolio : a.kindAlternatives}
           </p>
-          <p className="text-sm text-foreground truncate">{upload.originalFilename}</p>
+          <p className="text-sm text-foreground truncate" title={upload.originalFilename}>
+            {upload.originalFilename}
+          </p>
+          {isFixture && (
+            <p className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-fg">
+              <ChipLabel>{a.fixtureBadge}</ChipLabel>
+              {a.fixtureNote}
+            </p>
+          )}
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-full border border-border px-3 py-1 text-xs text-muted-fg hover:text-foreground"
-        >
+        <button type="button" onClick={onClose} className="rounded-full border border-border px-3 py-1 text-xs text-muted-fg hover:text-foreground">
           {a.close}
         </button>
       </div>
 
-      {loading && <p className="mt-4 text-xs text-muted-fg">{a.loading}</p>}
+      {loading && (
+        <p className="mt-4 text-xs text-muted-fg" role="status">
+          {a.parsing}
+        </p>
+      )}
 
       {error && (
-        <p className="mt-4 text-xs" style={{ color: 'var(--negative)' }}>
+        <p className="mt-4 text-xs" role="alert" style={{ color: TONE.blocked }}>
           {error}
         </p>
       )}
 
       {review && (
         <div className="mt-4 space-y-5">
-          <p className="text-[11px] text-muted-fg">{a.noAmountsNote}</p>
-
-          {/* Dates — proposed, never asserted. */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Fact label={a.detectedDate} value={review.detectedAsOfDate ?? '—'} />
-            <Fact label={a.previousWeek} value={review.previousWeekDate ?? '—'} />
-            <Fact label={a.beginningOfYear} value={review.beginningOfYearDate ?? '—'} />
-          </div>
-
-          {review.scopes.length > 0 && (
-            <section>
-              <p className="ui-label text-muted-fg mb-2">{a.scopeSummary}</p>
-              <ul className="flex flex-wrap gap-2">
-                {review.scopes.map((s) => (
-                  <li
-                    key={s.scope}
-                    className="rounded-full border border-border px-3 py-1 text-xs text-foreground"
+          <ImportPlanPreview
+            plan={plan}
+            review={review}
+            correction={{
+              authorized: correctionAuthorized,
+              reason: correctionReason,
+              onAuthorizedChange: setCorrectionAuthorized,
+              onReasonChange: setCorrectionReason,
+              disabled: busy,
+              // R13.8C § 6 — the STRONGER confirmation, inside the correction
+              // card beside the reason it needs. Same submit as the normal
+              // button; the server and the database each still refuse an
+              // unauthorized or unexplained overwrite on their own.
+              action: (
+                <>
+                  <button
+                    type="button"
+                    disabled={cannotSubmit || correctionIncomplete}
+                    onClick={publish}
+                    className="rounded-full border px-4 py-1.5 text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ borderColor: TONE.changed, color: TONE.changed }}
                   >
-                    <span className="font-mono">{s.scope}</span>{' '}
-                    <span className="ui-number">{s.rowCount}</span> {a.rows}
-                    {s.unavailableCount > 0 && (
-                      <span className="text-muted-fg">
-                        {' · '}
-                        <span className="ui-number">{s.unavailableCount}</span> {a.unavailable}
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {review.groups.length > 0 && (
-            <section>
-              <p className="ui-label text-muted-fg mb-2">{a.groups}</p>
-              <ul className="flex flex-wrap gap-2">
-                {review.groups.map((g) => (
-                  <li
-                    key={`${g.category}-${g.currency}`}
-                    className="rounded-full border border-border px-3 py-1 text-xs text-foreground"
-                  >
-                    {g.category} · {g.currency} · <span className="ui-number">{g.holdings}</span>{' '}
-                    {a.holdings}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {review.performance.length > 0 && (
-            <section>
-              <p className="ui-label text-muted-fg mb-2">{a.performanceChecks}</p>
-              <ul className="flex flex-wrap gap-2">
-                {review.performance.map((p, i) => (
-                  <li
-                    key={`${p.scope}-${p.basis}-${p.metric}-${i}`}
-                    className="rounded-full border border-border px-3 py-1 text-xs"
-                    style={{
-                      color: p.indeterminate
-                        ? 'var(--muted-fg)'
-                        : p.agrees
-                          ? 'var(--positive)'
-                          : 'var(--warning)',
-                    }}
-                  >
-                    <span className="font-mono">{p.scope}</span> {p.metric} —{' '}
-                    {p.indeterminate ? a.indeterminate : p.agrees ? a.agrees : a.mismatch}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {review.unclassifiedEventCells.length > 0 && (
-            <section>
-              <p className="ui-label mb-2" style={{ color: 'var(--warning)' }}>
-                {a.unclassified}
-              </p>
-              <p className="text-[11px] text-muted-fg mb-2">{a.unclassifiedHint}</p>
-              <p className="font-mono text-[11px] text-foreground break-all">
-                {review.unclassifiedEventCells.join(', ')}
-              </p>
-            </section>
-          )}
-
-          <section>
-            <p className="ui-label text-muted-fg mb-2">{a.findings}</p>
-            {review.findings.length === 0 ? (
-              <p className="text-xs text-muted-fg">{a.noFindings}</p>
-            ) : (
-              <ul className="space-y-1">
-                {review.findings.map((f, i) => (
-                  <li key={`${f.code}-${i}`} className="text-xs text-foreground">
-                    <span style={{ color: severityColor(f.severity) }}>
-                      {f.severity === 'blocking' ? a.blocking : f.severity === 'warning' ? a.warning : a.info}
-                    </span>
-                    {' · '}
-                    <span className="font-mono">{f.code}</span>
-                    {f.sourceCell && <span className="font-mono text-muted-fg"> {f.sourceCell}</span>}
-                    <span className="text-muted-fg"> — {f.detail}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          {/* ── R13.8B § 6 — the import plan. ──────────────────────────────
-              Three groups, never merged: an insertion above the endpoint, an
-              insertion below it, and an overwrite are different acts. Nothing
-              here implies one upload equals one week. */}
-          {plan && (
-            <section className="rounded-[18px] border border-border bg-surface-2 p-3 sm:p-4 space-y-4">
-              <p className="ui-label text-muted-fg">{a.planTitle}</p>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-                <Fact label={a.planSchema} value={`${plan.contractVersion} · ${plan.contractVerdict}`} />
-                <Fact label={a.planEndpoint} value={plan.productionEndpoint ?? '—'} />
-                <Fact label={a.planNewestFrozen} value={plan.workbookLatest ?? '—'} />
-                <Fact label={a.planPublication} value={plan.publicationDate ?? '—'} />
-              </div>
-
-              {/* The live column is REPORTED, never selected. Showing it beside
-                  the frozen column is what makes "not published" visible rather
-                  than merely true. */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <Fact
-                  label={a.planFrozenColumn}
-                  value={
-                    plan.frozen.publicationColumnLetter
-                      ? `${plan.frozen.publicationColumnLetter} · ${plan.frozen.publicationDate ?? '—'}`
-                      : '—'
-                  }
-                />
-                <Fact
-                  label={a.planLiveColumn}
-                  value={
-                    plan.frozen.liveColumnLetter
-                      ? `${plan.frozen.liveColumnLetter} · ${plan.frozen.liveColumnDate ?? '—'}`
-                      : '—'
-                  }
-                />
-              </div>
-              <p className="text-[11px] text-muted-fg">{a.planLiveHint}</p>
-
-              <DateList label={a.planNew} dates={plan.newDates} tone="var(--positive)" />
-
-              {plan.gapFillDates.length > 0 && (
-                <div className="space-y-1">
-                  <DateList label={a.planGapFill} dates={plan.gapFillDates} tone="var(--accent)" />
-                  <p className="text-[11px] text-muted-fg">{a.planGapFillHint}</p>
-                </div>
-              )}
-
-              <DateList label={a.planInvalid} dates={plan.invalidDates} tone="var(--negative)" />
-
-              {/* The ONE place this console shows amounts. An administrator
-                  cannot honestly authorize an overwrite without seeing what is
-                  being replaced. */}
-              {plan.corrections.length > 0 && (
-                <section>
-                  <p className="ui-label mb-2" style={{ color: 'var(--warning)' }}>
-                    {a.planChanged} · <span className="ui-number">{plan.corrections.length}</span>
-                  </p>
-                  <ul className="space-y-1">
-                    {plan.corrections.map((c) => (
-                      <li
-                        key={`${c.scope}-${c.basis}-${c.observationDate}`}
-                        className="text-[11px] text-foreground"
-                      >
-                        <span className="font-mono">{c.scope}</span>{' '}
-                        <span className="text-muted-fg">{c.basis}</span>{' '}
-                        <span className="ui-number">{c.observationDate}</span>
-                        {' — '}
-                        <span className="text-muted-fg">{a.planBefore}</span>{' '}
-                        <span className="ui-number">{c.beforeValue ?? '—'}</span>
-                        {' → '}
-                        <span className="text-muted-fg">{a.planAfter}</span>{' '}
-                        <span className="ui-number">{c.afterValue ?? '—'}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-
-              <p className="text-[11px] text-muted-fg">
-                {a.planUnchanged}: <span className="ui-number">{plan.unchangedCount}</span> {a.planCount}
-              </p>
-
-              {/* Informational only. The workbook not freezing a week is a fact
-                  about the workbook, never permission to manufacture one. */}
-              {plan.cadenceGaps.length > 0 && (
-                <section>
-                  <p className="ui-label text-muted-fg mb-1">{a.planCadence}</p>
-                  <ul className="flex flex-wrap gap-1.5">
-                    {plan.cadenceGaps.map((g) => (
-                      <li
-                        key={`${g.from}-${g.to}`}
-                        className="rounded-full border border-border px-2.5 py-0.5 ui-number text-[11px] text-muted-fg"
-                      >
-                        {g.from} → {g.to} ({g.days}d)
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="mt-1 text-[11px] text-muted-fg">{a.planNoInvent}</p>
-                </section>
-              )}
-
-              {plan.newDates.length === 0 &&
-                plan.gapFillDates.length === 0 &&
-                plan.corrections.length === 0 && (
-                  <p className="text-xs" style={{ color: 'var(--muted-fg)' }}>
-                    {a.planNothing}
-                  </p>
-                )}
-            </section>
-          )}
-
-          {/* ── R13.8B § 7 — historical correction mode. ────────────────────
-              Rendered ONLY when an existing identity is being overwritten.
-              Multiple new weeks and gap fills never reach this block. */}
-          {needsCorrection && (
-            <section
-              className="rounded-[18px] border p-3 sm:p-4 space-y-3"
-              style={{ borderColor: 'var(--warning)' }}
-            >
-              <p className="ui-label" style={{ color: 'var(--warning)' }}>
-                {a.correctionTitle}
-              </p>
-              <p className="text-[11px] text-muted-fg">{a.correctionHint}</p>
-
-              <label className="flex items-start gap-2 text-xs text-foreground">
-                <input
-                  type="checkbox"
-                  checked={correctionAuthorized}
-                  onChange={(e) => setCorrectionAuthorized(e.target.checked)}
-                  className="mt-0.5"
-                />
-                <span>{a.correctionAuthorize}</span>
-              </label>
-
-              <label className="block">
-                <span className="ui-label text-muted-fg">{a.correctionReason}</span>
-                <input
-                  type="text"
-                  value={correctionReason}
-                  onChange={(e) => setCorrectionReason(e.target.value)}
-                  disabled={!correctionAuthorized}
-                  className="mt-1 w-full rounded-[13px] border border-border bg-surface-2 px-3 py-2 text-sm text-foreground disabled:opacity-50"
-                />
-                <span className="mt-1 block text-[11px] text-muted-fg">{a.correctionReasonHint}</span>
-              </label>
-            </section>
-          )}
+                    {a.applyCorrection}
+                  </button>
+                  <span className="text-[11px] text-muted-fg">{a.normalConfirmDisabled}</span>
+                </>
+              ),
+            }}
+          />
 
           {/* Confirmation. */}
           <section className="space-y-3">
@@ -609,49 +328,29 @@ function ReviewPanel({
               <button
                 type="button"
                 disabled={
-                  !review.publishable ||
-                  busy ||
-                  noteMissing ||
-                  confirmDate === '' ||
-                  // An unauthorized overwrite can never be confirmed from here.
-                  // The server and the database each refuse it independently;
+                  cannotSubmit ||
+                  // Nothing to write: never an enabled Apply for a no-op.
+                  nothingToApply ||
+                  // An overwrite can never be confirmed from HERE. The stronger
+                  // control inside the correction card is the only path, and
+                  // the server and the database each refuse independently;
                   // this is the courtesy layer, not the boundary.
+                  needsCorrection ||
                   correctionIncomplete
                 }
                 onClick={publish}
-                className="rounded-full border border-border px-4 py-1.5 text-xs text-foreground disabled:opacity-50"
+                className={BUTTON}
               >
-                {a.publish}
+                {nothingToApply ? a.nothingToApply : a.publish}
               </button>
-              <span
-                className="text-xs"
-                style={{ color: review.publishable ? 'var(--positive)' : 'var(--negative)' }}
-              >
+              <span className="text-xs" style={{ color: review.publishable ? TONE.new : TONE.blocked }}>
                 {review.publishable ? a.publishable : a.notPublishable}
               </span>
+              {needsCorrection && <span className="text-[11px] text-muted-fg">{a.normalConfirmDisabled}</span>}
             </div>
-
-            {!review.publishable && review.refusals.length > 0 && (
-              <ul className="space-y-1">
-                {review.refusals.map((r) => (
-                  <li key={r} className="text-xs" style={{ color: 'var(--negative)' }}>
-                    {(a.refusal as Record<string, string>)[r] ?? r}
-                  </li>
-                ))}
-              </ul>
-            )}
           </section>
         </div>
       )}
-    </div>
-  )
-}
-
-function Fact({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-[18px] border border-border bg-surface-2 px-3 py-2">
-      <p className="ui-label text-muted-fg">{label}</p>
-      <p className="ui-number text-sm text-foreground">{value}</p>
     </div>
   )
 }
@@ -670,7 +369,15 @@ function Fact({ label, value }: { label: string; value: string }) {
 // 403 there and sees `notAuthorized` instead. The real boundary is the route's
 // own re-check, which runs on every request regardless of what rendered.
 
-function UploadPanel({ onUploaded }: { onUploaded: (uploadId: string) => void }) {
+type UploadStage = 'choose' | 'chosen' | 'uploading' | 'uploaded'
+
+function UploadPanel({
+  onStage,
+  onUploaded,
+}: {
+  onStage: (stage: UploadStage) => void
+  onUploaded: (uploadId: string) => void
+}) {
   const { t } = useLang()
   const a = t.fpAdmin
 
@@ -683,6 +390,7 @@ function UploadPanel({ onUploaded }: { onUploaded: (uploadId: string) => void })
   const submit = useCallback(async () => {
     if (!file) return
     setState('uploading')
+    onStage('uploading')
     setError(null)
     setWarnings([])
     try {
@@ -703,6 +411,7 @@ function UploadPanel({ onUploaded }: { onUploaded: (uploadId: string) => void })
         const code = data.error ?? 'error'
         setError((a.refusal as Record<string, string>)[code] ?? code)
         setState('idle')
+        onStage('chosen')
         return
       }
 
@@ -710,12 +419,14 @@ function UploadPanel({ onUploaded }: { onUploaded: (uploadId: string) => void })
       // preview is where a publication decision is actually made.
       setWarnings((data.findings ?? []).filter((f) => f.severity !== 'blocking'))
       setState('done')
+      onStage('uploaded')
       if (data.uploadId) onUploaded(data.uploadId)
     } catch {
       setError(a.error)
       setState('idle')
+      onStage('chosen')
     }
-  }, [file, kind, a, onUploaded])
+  }, [file, kind, a, onStage, onUploaded])
 
   return (
     <div className="rounded-[20px] border border-border bg-surface p-4 sm:p-5">
@@ -735,8 +446,8 @@ function UploadPanel({ onUploaded }: { onUploaded: (uploadId: string) => void })
           </select>
         </label>
 
-        <label className="inline-flex items-center gap-2 cursor-pointer">
-          <span className="rounded-full border border-border px-3 py-1.5 text-xs text-foreground">
+        <label className="inline-flex min-w-0 max-w-full items-center gap-2 cursor-pointer">
+          <span className="shrink-0 rounded-full border border-border px-3 py-1.5 text-xs text-foreground">
             {a.chooseFile}
           </span>
           <input
@@ -744,35 +455,33 @@ function UploadPanel({ onUploaded }: { onUploaded: (uploadId: string) => void })
             accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             className="sr-only"
             onChange={(e) => {
-              setFile(e.target.files?.[0] ?? null)
+              const picked = e.target.files?.[0] ?? null
+              setFile(picked)
               setState('idle')
               setError(null)
               setWarnings([])
+              onStage(picked ? 'chosen' : 'choose')
             }}
           />
-          <span className="text-xs text-muted-fg truncate max-w-[16rem]">
+          {/* The browser supplies a bare filename — never a path. */}
+          <span className="min-w-0 truncate text-xs text-muted-fg" title={file?.name}>
             {file ? file.name : a.noFileChosen}
           </span>
         </label>
 
-        <button
-          type="button"
-          disabled={!file || state === 'uploading'}
-          onClick={submit}
-          className="rounded-full border border-border px-4 py-1.5 text-xs text-foreground disabled:opacity-50"
-        >
+        <button type="button" disabled={!file || state === 'uploading'} onClick={submit} className={BUTTON}>
           {state === 'uploading' ? a.uploading : a.uploadAction}
         </button>
       </div>
 
       {state === 'done' && (
-        <p className="mt-3 text-xs" style={{ color: 'var(--positive)' }}>
+        <p className="mt-3 text-xs" role="status" style={{ color: TONE.new }}>
           {a.uploadDone}
         </p>
       )}
 
       {error && (
-        <p className="mt-3 text-xs" style={{ color: 'var(--negative)' }}>
+        <p className="mt-3 text-xs" role="alert" style={{ color: TONE.blocked }}>
           {error}
         </p>
       )}
@@ -780,9 +489,8 @@ function UploadPanel({ onUploaded }: { onUploaded: (uploadId: string) => void })
       {warnings.length > 0 && (
         <ul className="mt-3 space-y-1">
           {warnings.map((w, i) => (
-            <li key={`${w.code}-${i}`} className="text-[11px]" style={{ color: 'var(--warning)' }}>
-              <span className="font-mono">{w.code}</span>{' '}
-              <span className="text-muted-fg">— {w.detail}</span>
+            <li key={`${w.code}-${i}`} className="text-[11px]" style={{ color: TONE.changed }}>
+              <span className="font-mono">{w.code}</span> <span className="text-muted-fg">— {w.detail}</span>
             </li>
           ))}
         </ul>
@@ -792,6 +500,15 @@ function UploadPanel({ onUploaded }: { onUploaded: (uploadId: string) => void })
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
+
+/** A count of import points in its disposition's tone; zero stays muted. */
+function CountToken({ label, value, tone }: { label: string; value: number; tone: string }) {
+  return (
+    <span className="whitespace-nowrap" style={{ color: value > 0 ? tone : undefined }}>
+      {label} <span className="ui-number font-medium">{value}</span>
+    </span>
+  )
+}
 
 export default function FamilyPortfolioAdminPage() {
   const { t } = useLang()
@@ -806,6 +523,13 @@ export default function FamilyPortfolioAdminPage() {
   // Set by a successful upload so the freshly-created draft opens as soon as the
   // console index has reloaded and the row exists to select.
   const [pendingUploadId, setPendingUploadId] = useState<string | null>(null)
+  // R13.8C § 2 — where the administrator is in Choose → Upload → Parse →
+  // Preview → Confirm. Derived from three plain facts, never a second state
+  // machine: the upload control's stage, whether a draft is open and parsed,
+  // and whether the last confirmation applied.
+  const [uploadStage, setUploadStage] = useState<UploadStage>('choose')
+  const [reviewLoaded, setReviewLoaded] = useState(false)
+  const [applied, setApplied] = useState(false)
 
   // A monotonic counter drives re-fetching, mirroring the `refreshSeq` pattern
   // used by MacroDataProvider and Compare. The fetch is inlined in the effect
@@ -850,13 +574,32 @@ export default function FamilyPortfolioAdminPage() {
   }, [reloadSeq])
 
   const reload = useCallback(() => setReloadSeq((n) => n + 1), [])
+  const onReviewLoaded = useCallback(() => setReviewLoaded(true), [])
 
+  const openDraft = useCallback((row: UploadRow) => {
+    setReviewLoaded(false)
+    setApplied(false)
+    setSelected(row)
+  }, [])
+
+  /**
+   * R13.5 — a publication rollback moves ONE `is_current` pointer for one week.
+   * Resolves `false` on refusal so the shared destructive control returns to
+   * idle and the refusal line below says why.
+   */
   const rollback = useCallback(
-    async (id: string) => {
-      await fetch(`/api/family-portfolio/admin/publications/${id}/rollback`, { method: 'POST' })
+    async (id: string): Promise<boolean> => {
+      setRollbackError(null)
+      const res = await fetch(`/api/family-portfolio/admin/publications/${id}/rollback`, { method: 'POST' })
+      if (!res.ok) {
+        const data: { error?: string } = await res.json().catch(() => ({}))
+        const code = data.error ?? 'error'
+        setRollbackError((a.refusalImport as Record<string, string>)[code] ?? (a.refusal as Record<string, string>)[code] ?? code)
+      }
       reload()
+      return res.ok
     },
-    [reload],
+    [reload, a],
   )
 
   /**
@@ -869,7 +612,7 @@ export default function FamilyPortfolioAdminPage() {
    * clobbering it, and the administrator needs to be told that is what happened.
    */
   const rollbackImport = useCallback(
-    async (id: string) => {
+    async (id: string): Promise<boolean> => {
       setRollbackError(null)
       const res = await fetch(`/api/family-portfolio/admin/imports/${id}/rollback`, {
         method: 'POST',
@@ -880,6 +623,7 @@ export default function FamilyPortfolioAdminPage() {
         setRollbackError((a.refusalImport as Record<string, string>)[code] ?? code)
       }
       reload()
+      return res.ok
     },
     [reload, a],
   )
@@ -891,9 +635,25 @@ export default function FamilyPortfolioAdminPage() {
     const row = uploads.find((u) => u.id === pendingUploadId)
     if (row) {
       setPendingUploadId(null)
+      setReviewLoaded(false)
+      setApplied(false)
       setSelected(row)
     }
   }
+
+  const step: WorkflowStep = selected
+    ? reviewLoaded
+      ? 'preview'
+      : 'parse'
+    : applied
+      ? 'confirm'
+      : uploadStage === 'uploading' || uploadStage === 'chosen'
+        ? 'upload'
+        : uploadStage === 'uploaded'
+          ? 'parse'
+          : 'choose'
+
+  const filenameOf = (uploadId: string) => uploads.find((u) => u.id === uploadId)?.originalFilename ?? '—'
 
   return (
     <div className="w-full space-y-6">
@@ -901,7 +661,7 @@ export default function FamilyPortfolioAdminPage() {
 
       {state === 'denied' && <p className="text-sm text-muted-fg">{a.notAuthorized}</p>}
       {state === 'error' && (
-        <p className="text-sm" style={{ color: 'var(--negative)' }}>
+        <p className="text-sm" style={{ color: TONE.blocked }}>
           {a.error}
         </p>
       )}
@@ -909,15 +669,24 @@ export default function FamilyPortfolioAdminPage() {
 
       {state === 'ready' && (
         <>
+          <WorkflowSteps current={step} />
+
           <UploadPanel
+            onStage={setUploadStage}
             onUploaded={(uploadId) => {
               setPendingUploadId(uploadId)
               reload()
             }}
           />
 
+          {applied && !selected && (
+            <p className="text-sm" role="status" style={{ color: TONE.new }}>
+              {a.importApplied}
+            </p>
+          )}
+
           {rollbackError && (
-            <p className="text-sm" style={{ color: 'var(--negative)' }}>
+            <p className="text-sm" role="alert" style={{ color: TONE.blocked }}>
               {rollbackError}
             </p>
           )}
@@ -925,9 +694,12 @@ export default function FamilyPortfolioAdminPage() {
           {selected && (
             <ReviewPanel
               upload={selected}
+              onLoaded={onReviewLoaded}
               onClose={() => setSelected(null)}
               onPublished={() => {
                 setSelected(null)
+                setApplied(true)
+                setUploadStage('choose')
                 reload()
               }}
             />
@@ -936,106 +708,101 @@ export default function FamilyPortfolioAdminPage() {
           {/* Dense tables scroll inside their own card — page-level horizontal
               overflow is never acceptable (responsive conventions). */}
           <TableCard title={a.uploadsTitle} minWidth={720} footer={<TableSourceFooter source={a.source} />}>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className={TH}>{a.colFile}</th>
-                    <th className={TH}>{a.colKind}</th>
-                    <th className={TH}>{a.colStatus}</th>
-                    <th className={TH}>{a.colDate}</th>
-                    <th className={TH}>{a.colUploaded}</th>
-                    <th className={TH}>{a.colActions}</th>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className={TH}>{a.colFile}</th>
+                  <th className={TH}>{a.colKind}</th>
+                  <th className={TH}>{a.colStatus}</th>
+                  <th className={TH}>{a.colDate}</th>
+                  <th className={TH}>{a.colUploaded}</th>
+                  <th className={TH}>{a.colActions}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {uploads.length === 0 && (
+                  <tr>
+                    <td className={`${CELL} text-muted-fg`} colSpan={6}>
+                      {a.empty}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {uploads.length === 0 && (
-                    <tr>
-                      <td className={`${CELL} text-muted-fg`} colSpan={6}>
-                        {a.empty}
-                      </td>
-                    </tr>
-                  )}
-                  {uploads.map((u) => (
-                    <tr key={u.id} className="border-b border-border/60">
-                      <td className={`${CELL} text-foreground`}>{u.originalFilename}</td>
-                      <td className={`${CELL} text-muted-fg`}>
-                        {u.uploadKind === 'portfolio' ? a.kindPortfolio : a.kindAlternatives}
-                      </td>
-                      <td className={`${CELL} font-mono text-xs text-muted-fg`}>{u.status}</td>
-                      <td className={`${CELL} ui-number text-muted-fg`}>
-                        {u.confirmedAsOfDate ?? u.detectedAsOfDate ?? '—'}
-                      </td>
-                      <td className={`${CELL} ui-number text-muted-fg`}>{u.uploadedAt.slice(0, 10)}</td>
-                      <td className={CELL}>
-                        <button
-                          type="button"
-                          onClick={() => setSelected(u)}
-                          className="rounded-full border border-border px-3 py-1 text-xs text-foreground"
-                        >
-                          {a.review}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                )}
+                {uploads.map((u) => (
+                  <tr key={u.id} className="border-b border-border/60">
+                    <td className={`${CELL} text-foreground`}>
+                      <span className="inline-flex flex-wrap items-center gap-2">
+                        <span className="max-w-[18rem] truncate" title={u.originalFilename}>
+                          {u.originalFilename}
+                        </span>
+                        {u.status === FIXTURE_STATUS && <ChipLabel>{a.fixtureBadge}</ChipLabel>}
+                      </span>
+                    </td>
+                    <td className={`${CELL} text-muted-fg`}>{u.uploadKind === 'portfolio' ? a.kindPortfolio : a.kindAlternatives}</td>
+                    <td className={`${CELL} font-mono text-xs text-muted-fg`}>{u.status}</td>
+                    <td className={`${CELL} ui-number whitespace-nowrap text-muted-fg`}>{u.confirmedAsOfDate ?? u.detectedAsOfDate ?? '—'}</td>
+                    <td className={`${CELL} ui-number whitespace-nowrap text-muted-fg`}>{u.uploadedAt.slice(0, 10)}</td>
+                    <td className={CELL}>
+                      <button type="button" onClick={() => openDraft(u)} className="rounded-full border border-border px-3 py-1 text-xs text-foreground">
+                        {a.review}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </TableCard>
 
           <TableCard title={a.publicationsTitle} minWidth={720} footer={<TableSourceFooter source={a.source} />}>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className={TH}>{a.colKind}</th>
-                    <th className={TH}>{a.colDate}</th>
-                    <th className={TH}>{a.colRevision}</th>
-                    <th className={TH}>{a.colCurrent}</th>
-                    <th className={TH}>{a.colPublishedAt}</th>
-                    <th className={TH}>{a.colParser}</th>
-                    <th className={TH}>{a.colActions}</th>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className={TH}>{a.colKind}</th>
+                  <th className={TH}>{a.colDate}</th>
+                  <th className={TH}>{a.colRevision}</th>
+                  <th className={TH}>{a.colCurrent}</th>
+                  <th className={TH}>{a.colPublishedAt}</th>
+                  <th className={TH}>{a.colParser}</th>
+                  <th className={TH}>{a.colActions}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {publications.length === 0 && (
+                  <tr>
+                    <td className={`${CELL} text-muted-fg`} colSpan={7}>
+                      {a.emptyPublications}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {publications.length === 0 && (
-                    <tr>
-                      <td className={`${CELL} text-muted-fg`} colSpan={7}>
-                        {a.emptyPublications}
-                      </td>
-                    </tr>
-                  )}
-                  {publications.map((p) => (
-                    <tr key={p.id} className="border-b border-border/60">
-                      <td className={`${CELL} text-muted-fg`}>
-                        {p.uploadKind === 'portfolio' ? a.kindPortfolio : a.kindAlternatives}
-                      </td>
-                      <td className={`${CELL} ui-number text-foreground`}>{p.asOfDate}</td>
-                      <td className={`${CELL} ui-number text-muted-fg`}>{p.revision}</td>
-                      <td className={CELL}>
-                        <span
-                          className="inline-block h-2 w-2 rounded-full align-middle"
-                          style={{ background: p.isCurrent ? 'var(--positive)' : 'var(--muted-fg)' }}
-                          aria-hidden
-                        />
-                        <span className="ml-2 text-xs text-muted-fg">
-                          {p.isCurrent ? a.colCurrent : '—'}
-                        </span>
-                      </td>
-                      <td className={`${CELL} ui-number text-muted-fg`}>{p.publishedAt.slice(0, 10)}</td>
-                      <td className={`${CELL} font-mono text-xs text-muted-fg`}>{p.parserVersion}</td>
-                      <td className={CELL}>
-                        {!p.isCurrent && (
-                          <button
-                            type="button"
-                            onClick={() => void rollback(p.id)}
-                            className="rounded-full border border-border px-3 py-1 text-xs text-foreground"
-                          >
-                            {a.rollback}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                )}
+                {publications.map((p) => (
+                  <tr key={p.id} className="border-b border-border/60">
+                    <td className={`${CELL} text-muted-fg`}>{p.uploadKind === 'portfolio' ? a.kindPortfolio : a.kindAlternatives}</td>
+                    <td className={`${CELL} ui-number whitespace-nowrap text-foreground`}>{p.asOfDate}</td>
+                    <td className={`${CELL} ui-number whitespace-nowrap text-muted-fg`}>{p.revision}</td>
+                    <td className={CELL}>
+                      <span className="inline-block h-2 w-2 rounded-full align-middle" style={{ background: p.isCurrent ? TONE.new : TONE.neutral }} aria-hidden />
+                      <span className="ml-2 text-xs text-muted-fg">{p.isCurrent ? a.colCurrent : '—'}</span>
+                    </td>
+                    <td className={`${CELL} ui-number whitespace-nowrap text-muted-fg`}>{p.publishedAt.slice(0, 10)}</td>
+                    <td className={`${CELL} font-mono text-xs text-muted-fg`}>{p.parserVersion}</td>
+                    <td className={CELL}>
+                      {!p.isCurrent && (
+                        // The shared destructive control (Delete Control Rule):
+                        // a visible question, confirmed in words, same handler.
+                        <DeleteButton
+                          label={`${a.rollback}: ${p.asOfDate} · rev. ${p.revision}`}
+                          confirmLabel={a.rollbackPublicationConfirm}
+                          onConfirm={() => rollback(p.id)}
+                          size="sm"
+                          layout="overlay"
+                        >
+                          {a.rollback}
+                        </DeleteButton>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </TableCard>
 
           {/* ── R13.8B § 10 — the import ledger. ────────────────────────────
@@ -1043,71 +810,82 @@ export default function FamilyPortfolioAdminPage() {
               An import rollback reverses every history point the upload wrote,
               across every week it touched, plus that publication. They are
               different operations and are offered as such. */}
-          <TableCard title={a.importsTitle} minWidth={720} footer={<TableSourceFooter source={a.source} />}>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className={TH}>{a.colImportDate}</th>
-                    <th className={TH}>{a.colImportCounts}</th>
-                    <th className={TH}>{a.colImportCorrection}</th>
-                    <th className={TH}>{a.colImportCreated}</th>
-                    <th className={TH}>{a.colImportState}</th>
-                    <th className={TH}>{a.colActions}</th>
+          <TableCard title={a.importsTitle} minWidth={900} footer={<TableSourceFooter source={a.source} />}>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className={TH}>{a.colImportDate}</th>
+                  <th className={TH}>{a.colImportSource}</th>
+                  <th className={TH}>{a.colImportCounts}</th>
+                  <th className={TH}>{a.colImportCorrection}</th>
+                  <th className={TH}>{a.colImportCreated}</th>
+                  <th className={TH}>{a.colImportState}</th>
+                  <th className={TH}>{a.colActions}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {importOperations.length === 0 && (
+                  <tr>
+                    <td className={`${CELL} text-muted-fg`} colSpan={7}>
+                      {a.emptyImports}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {importOperations.length === 0 && (
-                    <tr>
-                      <td className={`${CELL} text-muted-fg`} colSpan={6}>
-                        {a.emptyImports}
+                )}
+                {importOperations.map((op) => {
+                  const c = op.counts as Record<string, number | undefined>
+                  const source = filenameOf(op.uploadId)
+                  return (
+                    <tr key={op.id} className="border-b border-border/60">
+                      <td className={`${CELL} ui-number whitespace-nowrap text-foreground`}>{op.asOfDate}</td>
+                      <td className={`${CELL} text-xs text-muted-fg`}>
+                        <span className="inline-block max-w-[16rem] truncate align-bottom" title={source}>
+                          {source}
+                        </span>
+                      </td>
+                      {/* Counts, never amounts — the same rule the rest of this
+                          console follows outside the corrections block. Each
+                          disposition in its own tone, so the composition of the
+                          history an import wrote is visible at a glance. */}
+                      <td className={`${CELL} text-xs text-muted-fg`}>
+                        <span className="inline-flex flex-wrap gap-x-2 gap-y-0.5">
+                          <CountToken label={a.planNew} value={c.new ?? 0} tone={TONE.new} />
+                          <CountToken label={a.planGapFill} value={c.gapFill ?? 0} tone={TONE.gapFill} />
+                          <CountToken label={a.planChanged} value={c.changed ?? 0} tone={TONE.changed} />
+                        </span>
+                      </td>
+                      <td className={`${CELL} text-xs text-muted-fg`}>
+                        <span className="inline-block max-w-[16rem] truncate align-bottom" title={op.correctionReason ?? undefined}>
+                          {op.correctionAuthorized ? op.correctionReason ?? '—' : '—'}
+                        </span>
+                      </td>
+                      <td className={`${CELL} ui-number whitespace-nowrap text-muted-fg`}>{op.createdAt.slice(0, 10)}</td>
+                      <td className={CELL}>
+                        <span className="text-xs whitespace-nowrap" style={{ color: op.rolledBackAt ? TONE.neutral : TONE.new }}>
+                          {op.rolledBackAt ? a.importRolledBack : a.importActive}
+                        </span>
+                      </td>
+                      <td className={CELL}>
+                        {/* An already-reversed import offers no control: the
+                            database refuses a second rollback, and showing a
+                            button that can only fail is not a courtesy. */}
+                        {!op.rolledBackAt && (
+                          <DeleteButton
+                            label={`${a.rollbackImport}: ${op.asOfDate} · ${source}`}
+                            confirmLabel={a.rollbackImportConfirm}
+                            title={a.rollbackImportHint}
+                            onConfirm={() => rollbackImport(op.id)}
+                            size="sm"
+                            layout="overlay"
+                          >
+                            {a.rollbackImport}
+                          </DeleteButton>
+                        )}
                       </td>
                     </tr>
-                  )}
-                  {importOperations.map((op) => {
-                    const c = op.counts as Record<string, number | undefined>
-                    return (
-                      <tr key={op.id} className="border-b border-border/60">
-                        <td className={`${CELL} ui-number text-foreground`}>{op.asOfDate}</td>
-                        {/* Counts, never amounts — the same rule the rest of this
-                            console follows outside the corrections block. */}
-                        <td className={`${CELL} ui-number text-muted-fg`}>
-                          {a.planNew} <span className="text-foreground">{c.new ?? 0}</span>
-                          {' · '}
-                          {a.planGapFill} <span className="text-foreground">{c.gapFill ?? 0}</span>
-                          {' · '}
-                          {a.planChanged} <span className="text-foreground">{c.changed ?? 0}</span>
-                        </td>
-                        <td className={`${CELL} text-xs text-muted-fg`}>
-                          {op.correctionAuthorized ? (op.correctionReason ?? '—') : '—'}
-                        </td>
-                        <td className={`${CELL} ui-number text-muted-fg`}>{op.createdAt.slice(0, 10)}</td>
-                        <td className={CELL}>
-                          <span
-                            className="text-xs"
-                            style={{ color: op.rolledBackAt ? 'var(--muted-fg)' : 'var(--positive)' }}
-                          >
-                            {op.rolledBackAt ? a.importRolledBack : a.importActive}
-                          </span>
-                        </td>
-                        <td className={CELL}>
-                          {/* An already-reversed import offers no control: the
-                              database refuses a second rollback, and showing a
-                              button that can only fail is not a courtesy. */}
-                          {!op.rolledBackAt && (
-                            <button
-                              type="button"
-                              onClick={() => void rollbackImport(op.id)}
-                              className="rounded-full border border-border px-3 py-1 text-xs text-foreground"
-                            >
-                              {a.rollbackImport}
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+                  )
+                })}
+              </tbody>
+            </table>
           </TableCard>
         </>
       )}
