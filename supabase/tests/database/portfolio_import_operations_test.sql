@@ -720,6 +720,18 @@ select is(
   '2026-08-21'::date, 'pre-state for the snapshot cases: 2026-08-21 is current');
 select is(pg_temp.current_total('2026-08-21'), 900::numeric,
   'pre-state for the snapshot cases: the standing total is 900');
+
+-- The standing publication ROW, captured so § 7 can assert against the row that
+-- actually stands rather than against an assumed revision number. Earlier
+-- sections publish at this date too, so its revision is not 1, and hard-coding
+-- one would make these assertions depend on edits made hundreds of lines above.
+create temporary table snapshot_prestate as
+  select id as pub_before, revision as rev_before
+    from public.portfolio_publications
+   where upload_kind = 'portfolio' and as_of_date = '2026-08-21' and is_current;
+
+select is((select count(*)::int from snapshot_prestate), 1,
+  'pre-state for the snapshot cases: exactly one publication stands for 2026-08-21');
 select is(
   (select count(*)::int from public.portfolio_publications), 7,
   'pre-state for the snapshot cases: seven publication rows');
@@ -822,11 +834,12 @@ select is(
 select is(
   (select revision from public.portfolio_publications
     where upload_kind = 'portfolio' and as_of_date = '2026-08-21' and is_current),
-  2, 'it went through the existing revision lifecycle — no new financial rule');
+  (select rev_before + 1 from snapshot_prestate),
+  'it went through the existing revision lifecycle — no new financial rule');
 select is(
-  (select count(*)::int from public.portfolio_publications
-    where as_of_date = '2026-08-21' and revision = 1 and not is_current
-      and superseded_by is not null),
+  (select count(*)::int from public.portfolio_publications p
+     join snapshot_prestate x on x.pub_before = p.id
+    where not p.is_current and p.superseded_by is not null),
   1, 'and the revision it replaced is demoted and points at its successor');
 
 -- No correction authorization was required, and none was invented. Same-date
@@ -851,12 +864,18 @@ select lives_ok(
       'Reversing the snapshot-only correction.')$$,
   'a snapshot-only import can be reversed');
 
+select is(
+  (select id from public.portfolio_publications
+    where upload_kind = 'portfolio' and as_of_date = '2026-08-21' and is_current),
+  (select pub_before from snapshot_prestate),
+  'the exact previous publication is standing again, figure for figure — the same row, not a re-derivation');
 select is(pg_temp.current_total('2026-08-21'), 900::numeric,
-  'the exact previous publication is standing again, figure for figure');
+  'and it carries the figures it carried before');
 select is(
   (select revision from public.portfolio_publications
     where upload_kind = 'portfolio' and as_of_date = '2026-08-21' and is_current),
-  1, 'and it is the original revision, not a third one minted to undo the second');
+  (select rev_before from snapshot_prestate),
+  'at its original revision, not a third one minted to undo the second');
 select is(
   (select count(*)::int from public.portfolio_publications), 8,
   'the reversed revision is retained, never deleted — it can be rolled forward');
@@ -876,7 +895,10 @@ select throws_ok(
       'r13.8c2.weekly_import_plan.3',
       pg_temp.standing_rows_with('2026-08-21', 'value_class', '"not_a_value_class"'::jsonb),
       '[]'::jsonb)$$,
-  '23514',
+  -- The FOUR-argument form. `throws_ok(sql, errcode, description)` reads its
+  -- third argument as the expected MESSAGE, not as a description, so a SQLSTATE
+  -- match still fails on the message text.
+  '23514', NULL,
   'a snapshot-only import that fails late raises');
 
 select is(
@@ -956,7 +978,7 @@ values
   ('dddd000f-0000-0000-0000-00000000000f', 'portfolio', 'private/uf.xlsx', 'uf.xlsx',
    repeat('9', 64), 1000, 'd1111111-1111-1111-1111-111111111111', 'test.parser.1', 'draft'),
   ('dddd0010-0000-0000-0000-000000000010', 'portfolio', 'private/u10.xlsx', 'u10.xlsx',
-   repeat('b', 64), 1000, 'd1111111-1111-1111-1111-111111111111', 'test.parser.1', 'draft');
+   repeat('0', 64), 1000, 'd1111111-1111-1111-1111-111111111111', 'test.parser.1', 'draft');
 
 -- 7h. ONE GAP FILL, publication otherwise IDENTICAL. A gap fill does not move
 --     the endpoint, so this week's snapshot legitimately restates itself — and
