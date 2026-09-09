@@ -78,7 +78,12 @@ values
   ('cccc0004-0000-0000-0000-000000000004', 'portfolio', 'private/rh4.xlsx', 'rh4.xlsx',
    repeat('4', 64), 1000, 'c1111111-1111-1111-1111-111111111111', 'test.parser.1', 'draft'),
   ('cccc0005-0000-0000-0000-000000000005', 'portfolio', 'private/rh5.xlsx', 'rh5.xlsx',
-   repeat('5', 64), 1000, 'c1111111-1111-1111-1111-111111111111', 'test.parser.1', 'draft');
+   repeat('5', 64), 1000, 'c1111111-1111-1111-1111-111111111111', 'test.parser.1', 'draft'),
+  -- FOLLOW-UP D: two more uploads, for the performance-history section.
+  ('cccc0006-0000-0000-0000-000000000006', 'portfolio', 'private/rh6.xlsx', 'rh6.xlsx',
+   repeat('6', 64), 1000, 'c1111111-1111-1111-1111-111111111111', 'test.parser.1', 'draft'),
+  ('cccc0007-0000-0000-0000-000000000007', 'portfolio', 'private/rh7.xlsx', 'rh7.xlsx',
+   repeat('7', 64), 1000, 'c1111111-1111-1111-1111-111111111111', 'test.parser.1', 'draft');
 
 -- Builders, so each packet below reads as intent rather than as JSON.
 create or replace function pg_temp.obs(
