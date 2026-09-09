@@ -115,6 +115,7 @@ import { GlassSurface } from '@/components/fable/GlassSurface'
 import { KpiHero } from '@/components/fable/KpiHero'
 import { TableCard } from '@/components/fable/TableCard'
 import { SegmentedControl } from '@/components/fable/SegmentedControl'
+import { Switch } from '@/components/fable/Switch'
 import { PrivacyToggle } from '@/components/fable/PrivacyValue'
 import { usePrivacyMode } from '@/components/fable/usePrivacyMode'
 import { TableSourceFooter } from '@/components/ui/TableSourceFooter'
@@ -242,13 +243,6 @@ function structuralRowClasses(rowType: string): string {
       return ''
   }
 }
-
-/**
- * Sentinel for "no custom range — compare with the preceding published week"
- * (R13.R1.1 § 13). A non-date string, so it can never collide with a real
- * `as_of_date` option value.
- */
-const WEEKLY_DEFAULT = 'weekly'
 
 /** Main's labels are the source's own; a stable empty map keeps the memo cheap. */
 const NO_OVERRIDES: ReadonlyMap<string, string> = new Map()
@@ -393,6 +387,19 @@ function WeeklyChangesPageInner() {
    * until a range is chosen.
    */
   const [compareFrom, setCompareFrom] = useState<string | null>(null)
+  /**
+   * COMPARE MODE (post-R13.8). Off is the page: Weekly Changes compares the
+   * selected week with the one published immediately before it, and BOTH date
+   * controls are read-only — there is nothing to choose, so offering a choice
+   * only invited the reader to build a pair the page was not showing. The old
+   * FROM dropdown carried a "Weekly" sentinel option for the same job and read
+   * as a range whose value happened to be a word; it is gone.
+   *
+   * Deliberately NOT persisted: a comparison is a question asked once, not a
+   * standing preference, and a reader returning to the page should find the
+   * standard weekly view rather than someone's month-old endpoints.
+   */
+  const [compareOn, setCompareOn] = useState(false)
   const requestKey = `${activeScope ?? ''}|${asOf ?? 'latest'}|${compareFrom ?? 'weekly'}`
   const [slot, setSlot] = useState<FetchSlot | null>(null)
 
@@ -418,8 +425,12 @@ function WeeklyChangesPageInner() {
     setPrevScope(activeScope)
     setIncludeCash(false)
     // A custom range belongs to the scope it was chosen in; carrying it across
-    // could name a week the new scope has not published.
+    // could name a week the new scope has not published. Both endpoints and the
+    // mode itself reset together, so the new scope opens on its own standard
+    // weekly comparison rather than on a stale pair or an empty control.
     setCompareFrom(null)
+    setAsOf(null)
+    setCompareOn(false)
   }
   const [prevRequestKey, setPrevRequestKey] = useState(requestKey)
   if (prevRequestKey !== requestKey) {
@@ -594,26 +605,71 @@ function WeeklyChangesPageInner() {
                 remeasureToken={lang}
               />
             )}
+            {/* ── Compare · FROM · TO, in that reading order ────────────────
+                One switch and two dates. OFF is the page's own behaviour — the
+                selected week against the one published immediately before it —
+                and both selects are read-only, showing the pair actually on
+                screen rather than inviting a choice that would not be honoured.
+                ON hands both endpoints to the reader.
+
+                The toggle appears only when the book HAS an earlier week to
+                compare against; on the earliest published week there is no
+                comparison to configure, and the page says so in its own state
+                rather than through a control that would do nothing. */}
+            {ready && pub && earlierWeeks.length > 0 && (
+              <label className="flex items-center gap-2 text-xs text-muted-fg">
+                <span className="ui-label">{w.compareToggle}</span>
+                <Switch
+                  checked={compareOn}
+                  onCheckedChange={(next) => {
+                    if (next) {
+                      // Entering compare keeps the pair on screen: the reader
+                      // adjusts from where they are, the view does not jump.
+                      setAsOf(pub.asOfDate)
+                      setCompareOn(true)
+                      return
+                    }
+                    // Leaving it returns to the page's default — the latest
+                    // week against its predecessor — never a historical week
+                    // the reader can no longer change while the controls are
+                    // read-only.
+                    setCompareOn(false)
+                    setCompareFrom(null)
+                    setAsOf(null)
+                  }}
+                  disabled={loading}
+                  aria-label={w.compareModeLabel}
+                />
+              </label>
+            )}
+            {/* The FROM endpoint. Only weeks strictly EARLIER than the selected
+                one are offered, so a reversed range cannot be built in the UI at
+                all; the server still refuses one independently
+                (`from_not_before_to`). Read-only off compare, where it shows
+                the immediately preceding published week the page resolved. */}
+            {ready && pub && earlierWeeks.length > 0 && (
+              <WeekSelector
+                weeks={earlierWeeks}
+                value={compareFrom ?? prevPub?.asOfDate ?? earlierWeeks[0].asOfDate}
+                onChange={(next) => setCompareFrom(next)}
+                disabled={loading || !compareOn}
+                label={w.compareFrom}
+              />
+            )}
             {ready && data.weeks.length > 0 && pub && (
               <WeekSelector
                 weeks={data.weeks}
                 value={asOf ?? pub.asOfDate}
-                onChange={(next) => setAsOf(next)}
-                disabled={loading}
-                label={data.weeks.length > 1 ? w.compareTo : undefined}
-              />
-            )}
-            {/* § 13 — the FROM endpoint. Only weeks strictly EARLIER than the
-                selected one are offered, so an invalid range cannot be built in
-                the UI at all; the server still refuses one independently. */}
-            {ready && pub && earlierWeeks.length > 0 && (
-              <WeekSelector
-                weeks={earlierWeeks}
-                value={compareFrom ?? WEEKLY_DEFAULT}
-                onChange={(next) => setCompareFrom(next === WEEKLY_DEFAULT ? null : next)}
-                disabled={loading}
-                label={w.compareFrom}
-                leadingOption={{ value: WEEKLY_DEFAULT, label: w.compareWeekly }}
+                onChange={(next) => {
+                  // A TO that moves at or before the chosen FROM would invert
+                  // every sign. The opening endpoint is dropped rather than
+                  // carried into an impossible pair — the page falls back to
+                  // this week's own predecessor, which is always valid.
+                  if (compareFrom !== null && compareFrom >= next) setCompareFrom(null)
+                  setAsOf(next)
+                }}
+                disabled={loading || !compareOn}
+                label={w.compareTo}
               />
             )}
             <PrivacyToggle masked={masked} onToggle={() => setMasked((prev) => !prev)} />
@@ -695,15 +751,20 @@ function WeeklyChangesPageInner() {
                 The split is the point: the two halves answer different
                 questions and repeat nothing.
 
-                  LEFT — THE LEDGER. How the week got from one value to the
+                  LEFT — THE HEADLINE. The whole week as one figure: the value
+                  change, and the rate it represents. Vertically centred against
+                  the taller ledger beside it, its own text left-aligned.
+
+                  RIGHT — THE LEDGER. How the week got from one value to the
                   other, read top to bottom: opening value, the money the book
                   MADE, the money that MOVED IN OR OUT, closing value. Opening
                   and closing are set larger than the two movements between
                   them; they are the week's endpoints, and the two middle rows
                   are what happened in between.
 
-                  RIGHT — THE HEADLINE. The same week as one figure: the value
-                  change, and the rate it represents.
+                  The headline led the stacked layout from the start; the
+                  post-R13.8 pass made the wide layout agree with it instead of
+                  reversing the two with `order`.
 
                 NOTHING ELSE JOINS THEM, deliberately. Every other total-level
                 figure this page could add is either already a ledger row or
@@ -721,11 +782,10 @@ function WeeklyChangesPageInner() {
                 value are rows 1 and 4 of the ledger beside them.
 
                 DOM ORDER IS THE CONTRACT'S — § 6h item 2, then item 3 — and
-                the headline is placed right at xl with `order`. That also
-                gives the stacked layout the better reading: the figure first,
-                then the ledger that explains it. Nothing in the block is
-                focusable, so the visual and DOM orders cannot diverge for a
-                keyboard or a screen reader.
+                it is now also the visual order at every breakpoint: no `order`
+                utility flips the two, so nothing can diverge between what is
+                read and what is seen, for a keyboard, a screen reader or a
+                printed page.
 
                 ── THE IMPLIED-vs-PUBLISHED CROSS-CHECK IS NO LONGER DRAWN ──
 
@@ -751,13 +811,20 @@ function WeeklyChangesPageInner() {
                 differing from the workbook's own previous column — still says
                 so here, in one line, without printing the second figure. */}
             <GlassSurface variant="card" className="p-4 xl:p-5">
-              <div className="grid grid-cols-1 xl:grid-cols-[1fr_minmax(0,0.8fr)] gap-4 xl:gap-0">
-                {/* § 6h item 2 · THE HEADLINE — placed RIGHT at xl, and first in
-                    the stack below it, which is the better reading order there:
-                    the figure, then the ledger that explains it. */}
+              {/* The headline LEADS and the ledger explains it — the owner's
+                  order, and now the DOM's own, so no `order` utility flips the
+                  two at any breakpoint and the visual, DOM and reading orders
+                  are one thing. The narrower column is the headline's: the
+                  ledger carries four label/value rows and needs the width. */}
+              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,0.8fr)_1fr] gap-4 xl:gap-0">
+                {/* § 6h item 2 · THE HEADLINE — LEFT at xl, first in the stack
+                    below it. `justify-center` centres it against the taller
+                    ledger beside it (the grid stretches both cells, so the
+                    column IS the card's height); text stays left-aligned —
+                    nothing here centres a line of type. */}
                 <KpiHero
                   bare
-                  className="xl:order-2 justify-center border-b border-border pb-4 xl:border-b-0 xl:border-l xl:pb-0 xl:pl-6"
+                  className="justify-center border-b border-border pb-4 xl:border-b-0 xl:pb-0 xl:pr-6"
                   label={w.weeklyValueChange}
                   value={total.weeklyValueChange}
                   formatValue={(v) => (v > 0 ? `+${formatUsd(v)}` : formatUsd(v))}
@@ -768,9 +835,10 @@ function WeeklyChangesPageInner() {
                 />
 
                 {/* § 6h item 3 · THE LEDGER — flow / investment-result
-                    reconciliation, read top to bottom. */}
+                    reconciliation, read top to bottom. RIGHT at xl, so it
+                    carries the dividing rule. */}
                 {flowRecon && (
-                <div className="xl:order-1 flex flex-col gap-2 min-w-0 xl:pr-6">
+                <div className="flex flex-col gap-2 min-w-0 xl:border-l xl:border-border xl:pl-6">
                   <h2 className="ui-label text-muted-fg">{w.flowReconTitle}</h2>
                   <dl className="flex flex-col gap-1.5">
                     {(

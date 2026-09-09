@@ -715,6 +715,10 @@ export const dict = {
           'Each bar is the change in a hierarchy row\'s own published value between the two weeks shown. Net flows and profit are not separate components — the asset-level changes already contain their effects. Actual Portfolio Value Change = Weekly P&L + Net Flows; this is a value-change decomposition, not an investment-return attribution.',
         vwfTruncated:      'The record begins after this period would start, so the comparison opens on the earliest published week.',
         vwfSingleWeek:     'This period holds a single published week, so there is no earlier endpoint to compare against.',
+        // The book publishes no week at the trailing month's boundary, so the
+        // window opens at the last one before it — wider than the label, and
+        // said so rather than inferred from the dates.
+        vwfWiderWindow:    'The book publishes no week at this period’s start, so the window opens at the last published week before it and is wider than the period named.',
         vwfNoPublications: 'No week has been published for this portfolio yet.',
         vwfUnavailable:    'A value-change decomposition is not available for this portfolio and period.',
         vwfEarliestWeek:   'The opening endpoint is the earliest published week, which has no predecessor of its own.',
@@ -829,8 +833,11 @@ export const dict = {
         pairNote:           'Compared against the immediately preceding published week — not necessarily seven calendar days earlier.',
         // R13.R1.1 § 13 — a custom range is never titled a "Weekly Change".
         compareModeLabel:   'Comparison',
-        compareWeekly:      'Weekly',
         compareCustom:      'Custom range',
+        // The switch that hands both endpoints to the reader. Off, the page is
+        // the standard weekly comparison and both dates are read-only; the old
+        // "Weekly" pseudo-range option is gone with the dropdown that held it.
+        compareToggle:      'Compare',
         compareFrom:        'From',
         compareTo:          'To',
         customTitle:        'Portfolio Value Change',
@@ -2687,6 +2694,7 @@ export const dict = {
           'Cada barra es la variación del valor publicado de una fila de la jerarquía entre las dos semanas mostradas. Los flujos netos y la utilidad no son componentes separados: las variaciones a nivel de activo ya contienen sus efectos. Variación Efectiva de Valor del Portafolio = Utilidad/Pérdida Semanal + Flujos Netos; esto es una descomposición de variación de valor, no una atribución de retorno de inversión.',
         vwfTruncated:      'El registro comienza después del inicio de este período, por lo que la comparación abre en la semana publicada más antigua.',
         vwfSingleWeek:     'Este período contiene una sola semana publicada, por lo que no existe un extremo anterior con el cual comparar.',
+        vwfWiderWindow:    'El libro no publica una semana al inicio de este período, por lo que la ventana abre en la última semana publicada anterior y es más amplia que el período nombrado.',
         vwfNoPublications: 'Aún no se ha publicado ninguna semana para este portafolio.',
         vwfUnavailable:    'No hay una descomposición de variación de valor disponible para este portafolio y período.',
         vwfEarliestWeek:   'El extremo inicial es la semana publicada más antigua, que no tiene una semana previa propia.',
@@ -2765,8 +2773,8 @@ export const dict = {
         previousWeekLabel:  'Semana Publicada Anterior',
         pairNote:           'Comparado contra la semana publicada inmediatamente anterior — no necesariamente siete días calendario antes.',
         compareModeLabel:   'Comparación',
-        compareWeekly:      'Semanal',
         compareCustom:      'Rango personalizado',
+        compareToggle:      'Comparar',
         compareFrom:        'Desde',
         compareTo:          'Hasta',
         customTitle:        'Variación del Valor del Portafolio',

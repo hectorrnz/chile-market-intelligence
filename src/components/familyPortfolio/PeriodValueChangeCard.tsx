@@ -343,6 +343,15 @@ export function PeriodValueChangeCard({ scope, masked, source }: PeriodValueChan
               so "3M" can never stand in for a span the record could not give. */}
           <p className="ui-meta text-muted-fg mt-1.5 ui-number">{windowLabel}</p>
 
+          {/* A trailing month whose boundary falls between two publications
+              opens at the last one BEFORE it, so the window contains the period
+              rather than a fragment of it. Wider than the label implies — and
+              therefore said out loud, not left for the reader to infer from the
+              dates above. */}
+          {range?.openingPrecedesBoundary === true && (
+            <p className="ui-meta text-muted-fg mt-0.5">{o.vwfWiderWindow}</p>
+          )}
+
           {/* Opening → closing → change. The two levels are the endpoints the
               whole decomposition is a difference of, so showing the change
               without them leaves the reader unable to size it. One KPI strip:

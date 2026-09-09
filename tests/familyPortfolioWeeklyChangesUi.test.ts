@@ -908,7 +908,10 @@ describe('R13.8 · responsive & accessibility', () => {
     // R13.R3C.4 — items 2–3 are ONE card split by a rule, so the top region's
     // grid is now internal to it and collapses 2 → 1 at the same breakpoint;
     // the movers/chart row still collapses 2 → 1 and ends level at xl.
-    assert.match(page, /grid-cols-1 xl:grid-cols-\[1fr_minmax\(0,0\.8fr\)\] gap-4 xl:gap-0/)
+    // Post-R13.8 — the headline moved LEFT and the ledger RIGHT, so the
+    // narrower track is now the FIRST one; the ledger's four label/value rows
+    // take the wider.
+    assert.match(page, /grid-cols-1 xl:grid-cols-\[minmax\(0,0\.8fr\)_1fr\] gap-4 xl:gap-0/)
     assert.match(page, /grid-cols-1 xl:grid-cols-\[minmax\(0,1fr\)_minmax\(0,1\.15fr\)\] gap-4 items-stretch/)
     assert.match(page, /minWidth=\{760\}/)
     assert.match(page, /maxHeight=\{640\}/)
@@ -919,11 +922,34 @@ describe('R13.8 · responsive & accessibility', () => {
     // One rule, two orientations, chosen by the same breakpoint that decides
     // whether the block is two columns at all — so it can never be a vertical
     // line across a stacked layout, or a horizontal one splitting two columns.
-    assert.match(page, /border-b border-border pb-4 xl:border-b-0 xl:border-l xl:pb-0 xl:pl-6/)
-    assert.match(page, /xl:order-1 flex flex-col gap-2 min-w-0 xl:pr-6/)
-    // The ledger is LEFT and the headline RIGHT at xl, while DOM order stays
-    // the contract's (item 2, then item 3) — see the block's own comment.
-    assert.match(page, /xl:order-2/)
+    // Post-R13.8 the rule belongs to the LEDGER, which is now the right-hand
+    // column; the headline keeps only the stacked layout's bottom rule.
+    assert.match(page, /border-b border-border pb-4 xl:border-b-0 xl:pb-0 xl:pr-6/)
+    assert.match(page, /flex flex-col gap-2 min-w-0 xl:border-l xl:border-border xl:pl-6/)
+  })
+
+  test('post-R13.8 — the headline is LEFT, the ledger RIGHT, and no `order` flips them', () => {
+    // The requested reading order, achieved by DOM order alone: item 2 (the
+    // headline) then item 3 (the ledger), at every breakpoint. An `order`
+    // utility anywhere in this block would mean the seen order and the read
+    // order can disagree — for a screen reader, a keyboard, or print.
+    assert.ok(!/xl:order-[12]/.test(page), 'no order utility reverses the two halves')
+    const hero = page.indexOf('label={w.weeklyValueChange}')
+    const ledger = page.indexOf('{w.flowReconTitle}')
+    assert.ok(hero > 0 && ledger > 0)
+    assert.ok(hero < ledger, 'the Weekly Value Change headline precedes the reconciliation')
+  })
+
+  test('post-R13.8 — the headline is vertically centred while its text stays left-aligned', () => {
+    // `justify-center` on a flex COLUMN is main-axis (vertical) centring: the
+    // grid stretches the cell to the ledger's height, so the figure sits at the
+    // card's middle. Nothing centres a line of type — no `text-center`, no
+    // `items-center`, either of which would centre the words instead.
+    const heroClass = /className="justify-center border-b border-border pb-4 xl:border-b-0 xl:pb-0 xl:pr-6"/
+    assert.match(page, heroClass)
+    const block = page.slice(page.indexOf('grid-cols-1 xl:grid-cols-[minmax(0,0.8fr)_1fr]'), page.indexOf('{w.flowReconNote}'))
+    assert.ok(!/text-center/.test(block), 'the headline block never centres its text')
+    assert.ok(!/items-center/.test(block), 'no cross-axis centring turns the left-aligned text central')
   })
 
   test('the contributors chart narrows its axis gutter below sm', () => {

@@ -9,6 +9,21 @@
 // API returned, newest first; the label is the week's own as-of date, read
 // straight off the string (never through `new Date()`, which would shift a
 // date-only value across Chile's UTC offset).
+//
+// ── DATES ONLY (post-R13.8) ────────────────────────────────────────────────
+//
+// The option carried a "· Rev. N" suffix on any revised week. Revision is
+// PUBLICATION BOOKKEEPING: R13.8's restatement pass lifted seven weeks to a new
+// revision at once, so an ordinary reader picking a date was suddenly reading
+// "31-07-2026 · Rev. 4" and being asked to care which internal revision of a
+// week they were looking at. They cannot choose otherwise in any case — the API
+// serves the CURRENT revision of each date and no superseded one is reachable
+// from here — so the suffix offered a distinction without a choice.
+//
+// The identity is not lost, only unlabelled here: `revision` still travels on
+// every week, the page headers and the provenance footnote beside the source
+// still print it, and the administrator's own audit surfaces still show the
+// full revision chain.
 
 import { useId } from 'react'
 import { useLang } from '@/components/providers/LangProvider'
@@ -20,15 +35,10 @@ interface WeekSelectorProps {
   value: string
   onChange: (asOfDate: string) => void
   disabled?: boolean
-  /** Overrides the default "week" label — R13.R1.1 § 13 reuses this control as
-   *  the custom range's FROM endpoint, which needs its own name. */
+  /** Overrides the default "week" label — the Weekly Changes compare controls
+   *  reuse this control as the FROM and TO endpoints, which need their own
+   *  names. */
   label?: string
-  /**
-   * An extra option ABOVE the weeks. The § 13 range selector uses it for the
-   * weekly default, so choosing a range and returning to weekly are the same
-   * one control rather than a mode switch the user has to find first.
-   */
-  leadingOption?: { value: string; label: string }
 }
 
 export function WeekSelector({
@@ -37,7 +47,6 @@ export function WeekSelector({
   onChange,
   disabled,
   label,
-  leadingOption,
 }: WeekSelectorProps) {
   const { t } = useLang()
   const id = useId()
@@ -50,17 +59,15 @@ export function WeekSelector({
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        className="bg-surface border border-border rounded-[13px] px-2.5 py-1.5 text-xs text-foreground ui-number"
+        // A disabled control must still be READ, not just seen to be off: the
+        // dates it holds are the comparison the page is showing. So it dims and
+        // takes the not-allowed cursor, and stops there — no muted foreground
+        // on top, which would put the one figure that matters below AA.
+        className="bg-surface border border-border rounded-[13px] px-2.5 py-1.5 text-xs text-foreground ui-number disabled:opacity-60 disabled:cursor-not-allowed"
       >
-        {leadingOption && (
-          <option key="__leading" value={leadingOption.value}>
-            {leadingOption.label}
-          </option>
-        )}
         {weeks.map((w) => (
           <option key={w.asOfDate} value={w.asOfDate}>
             {formatIsoDateLabel(w.asOfDate)}
-            {w.revision > 1 ? ` · ${t.fp.portfolio.revisionShort} ${w.revision}` : ''}
           </option>
         ))}
       </select>

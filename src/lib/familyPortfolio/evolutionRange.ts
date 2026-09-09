@@ -90,6 +90,37 @@ export function shiftIsoMonths(iso: string, months: number): string | null {
 }
 
 /**
+ * Plain day arithmetic on a date-only value. `Date.UTC` is used purely as a
+ * calendar, never as a clock — no local timezone can shift the result, and the
+ * function is as deterministic as the month shift above.
+ */
+export function shiftIsoDays(iso: string, days: number): string | null {
+  const p = parseIso(iso)
+  if (p === null) return null
+  const t = Date.UTC(p.y, p.m - 1, p.d) + days * 86_400_000
+  return new Date(t).toISOString().slice(0, 10)
+}
+
+/**
+ * THE 1M DEFINITION, in one place for every surface that offers the period.
+ *
+ * 1M is a TRAILING window of FOUR WEEKLY CHANGE INTERVALS — 28 days back from
+ * the endpoint — not a calendar month and emphatically not month-to-date. This
+ * is a WEEKLY book: a month of it is four steps, so four steps is what the
+ * period names. Ending 2026-09-04 the boundary is 2026-08-07, and the window
+ * spans the four intervals 08-07→08-14→08-21→08-28→09-04.
+ *
+ * It was a calendar-month shift until the post-R13.8 follow-up. That read as
+ * month-to-date whenever the endpoint sat early in a month — the endpoint week
+ * plus whatever else happened to share its calendar month — which after the
+ * first real catch-up import left the value-change card with a single
+ * publication in the window and nothing to compare. A fixed four-week reach
+ * cannot express that failure: it always spans four weekly intervals of
+ * history, whatever the calendar is doing.
+ */
+export const TRAILING_MONTH_DAYS = 28
+
+/**
  * The logical period start for a range ending at `endpoint`. Null means "no
  * lower bound" (ALL). ISO date strings compare correctly as strings, so the
  * boundary is applied by plain lexicographic comparison — no timezone, no
@@ -104,8 +135,9 @@ export function periodBoundary(endpoint: string, period: EvolutionPeriod): strin
     // YTD is the calendar year of the ENDPOINT, not of the viewer's today.
     case 'YTD':
       return formatIso({ y: p.y, m: 1, d: 1 })
+    // Four weekly intervals, never a calendar month — see TRAILING_MONTH_DAYS.
     case '1M':
-      return shiftIsoMonths(endpoint, -1)
+      return shiftIsoDays(endpoint, -TRAILING_MONTH_DAYS)
     case '3M':
       return shiftIsoMonths(endpoint, -3)
     case '1Y':
