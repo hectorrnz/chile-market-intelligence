@@ -49,6 +49,8 @@ import {
   publishAlternatives,
   upsertCommentary,
   importPortfolioWorkbook,
+  stageRowHistory,
+  discardRowHistoryStaging,
   type HoldingPayload,
   type EventPayload,
   type ImportObservationPayload,
@@ -246,6 +248,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         corrections: built.preview.corrections,
         historicalRestatementDates: plan.historicalRestatementDates,
         historicalRestatementCount: plan.historicalPublicationRestatements.length,
+        // R13.8E - the third cause of the gate. Naming it is what makes the
+        // refusal actionable: an administrator refused for a row-level overwrite
+        // they were never shown could not act on it.
+        requiresRowHistoryCorrection: plan.requiresRowHistoryCorrection,
+        rowHistoryChangedDates: plan.rowHistory.datesChanged,
+        rowHistoryChangedCount: plan.rowHistory.changedCount,
       })
     }
 
@@ -272,10 +280,15 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     // R13.8D.1 widens it once more: an import that appends nothing and leaves
     // this week's snapshot equivalent can still be correcting already-published
     // weeks, and that is a durable financial mutation, not a no-op.
+    // R13.8E widens it a fourth time: recording row-level values for reporting
+    // dates the book has never held at row grain is a durable write, even when
+    // every level and every published figure is identical.
     if (
       plan.observationsToWrite.length === 0 &&
       !plan.publicationChanged &&
-      plan.historicalPublicationRestatements.length === 0
+      plan.historicalPublicationRestatements.length === 0 &&
+      plan.rowHistory.insertedCount === 0 &&
+      plan.rowHistory.changedCount === 0
     ) {
       return fail('nothing_to_append', 409, {
         action: plan.action,
@@ -326,10 +339,29 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       }
     })
 
-    // ONE call. The publication, every history mutation and the audit record
-    // commit together or not at all. There is no post-commit second write and no
-    // sequential fallback — a partially-applied catch-up is exactly what R13.8B
-    // exists to make impossible.
+    // -- R13.8E: STAGE THE ROW HISTORY FIRST.
+    //
+    // A first backfill carries every clean frozen column the workbook holds --
+    // measured at 19,757 rows and 4.2 MB of JSON for the current book. Sending
+    // that as one more RPC argument would make a financial write depend on an
+    // HTTP body limit that says nothing about whether the data is correct, so it
+    // travels in bounded chunks and the import receives only the batch id.
+    //
+    // NOTHING DURABLE HAPPENS HERE. These rows are transport: no surface reads
+    // them, the RPC consumes and deletes them inside its own transaction, and it
+    // REFUSES unless the number staged matches the number declared -- so a lost
+    // chunk is a refusal, never a partially written history.
+    const rowHistoryStagingId = randomUUID()
+    const rowHistoryRows = built.rowHistory.rows
+    if (rowHistoryRows.length > 0) {
+      const staged = await stageRowHistory(rowHistoryStagingId, rowHistoryRows)
+      if (!staged.ok) return fail('row_history_stage_failed', 502)
+    }
+
+    // ONE call. The publication, every history mutation, every row-history row
+    // and the audit record commit together or not at all. There is no
+    // post-commit second write and no sequential fallback -- a partially-applied
+    // catch-up is exactly what R13.8B exists to make impossible.
     const imported = await importPortfolioWorkbook({
       uploadId: id,
       asOfDate: dateResult.date,
@@ -367,8 +399,23 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         // rather than leaving it ambiguous whether it was considered at all.
         liveColumnLetter: loaded.draft.frozen?.liveColumnLetter ?? null,
         liveColumnDate: loaded.draft.frozen?.liveColumnDate ?? null,
+        // R13.8E -- the row-history relay. The id names the staged batch and the
+        // count is what makes a lost chunk a refusal instead of a silent partial
+        // write. Both ride in the already-versioned metadata packet, so
+        // `nmi_import_portfolio_workbook` KEEPS ITS EXACT 14-ARGUMENT SIGNATURE
+        // and there is never a moment with two callable import functions.
+        rowHistoryStagingId: rowHistoryRows.length > 0 ? rowHistoryStagingId : null,
+        rowHistoryRowCount: rowHistoryRows.length,
+        rowHistoryVersion: built.rowHistory.version,
       },
     })
+
+    // A refused or failed import leaves the relay behind. The chunks are scratch
+    // and nothing can read them, but removing them keeps the table empty between
+    // imports rather than relying on the next one's purge.
+    if (!imported.ok && rowHistoryRows.length > 0) {
+      await discardRowHistoryStaging(rowHistoryStagingId)
+    }
 
     // The RPC reports counts alongside its identifiers; the route reduces that to
     // the common publication shape and keeps the import id for the response.

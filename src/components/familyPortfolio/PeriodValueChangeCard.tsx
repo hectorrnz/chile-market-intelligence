@@ -167,6 +167,12 @@ export function PeriodValueChangeCard({
     key: string
     ok: boolean
     list: FamilyPortfolioWeek[]
+    /**
+     * R13.8E - reporting weeks that carry ROW-LEVEL history without carrying a
+     * publication. These can OPEN a rolling window; they are never publications
+     * and never enter `list`.
+     */
+    rowHistory: string[]
   } | null>(null)
 
   useEffect(() => {
@@ -175,7 +181,12 @@ export function PeriodValueChangeCard({
     ;(async () => {
       const result = await fetchFamilyPortfolioWeeklyChanges(scope)
       if (cancelled) return
-      setWeeks({ key: scope, ok: result.ok, list: result.ok ? (result.data.weeks ?? []) : [] })
+      setWeeks({
+        key: scope,
+        ok: result.ok,
+        list: result.ok ? (result.data.weeks ?? []) : [],
+        rowHistory: result.ok ? (result.data.rowHistoryDates ?? []) : [],
+      })
     })()
     return () => {
       cancelled = true
@@ -184,10 +195,14 @@ export function PeriodValueChangeCard({
 
   const spineSlot = weeks !== null && weeks.key === scope ? weeks : null
   const spine = spineSlot !== null && spineSlot.ok ? spineSlot.list : null
+  const rowHistoryWeeks = spineSlot !== null && spineSlot.ok ? spineSlot.rowHistory : NO_REPORTING_WEEKS
 
   const range = useMemo(
-    () => (spine === null ? null : selectValueChangeRange(spine, safePeriod, null, reportingWeeks)),
-    [spine, safePeriod, reportingWeeks],
+    () =>
+      spine === null
+        ? null
+        : selectValueChangeRange(spine, safePeriod, null, reportingWeeks, rowHistoryWeeks),
+    [spine, safePeriod, reportingWeeks, rowHistoryWeeks],
   )
 
   // ── The comparison itself ────────────────────────────────────────────────

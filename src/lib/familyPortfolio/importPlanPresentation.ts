@@ -105,6 +105,18 @@ export interface ImportPlan {
   historicalRestatementCount?: number
   requiresEvolutionCorrection?: boolean
   requiresPublicationRestatementCorrection?: boolean
+  /**
+   * R13.8E — the row-level history this workbook would write, decided on the
+   * server against Production's own rows. Optional so a pre-R13.8E payload
+   * renders unchanged; absent means "none observed".
+   */
+  requiresRowHistoryCorrection?: boolean
+  rowHistory?: {
+    insertedCount: number
+    changedCount: number
+    readonly datesInserted: readonly string[]
+    readonly datesChanged: readonly string[]
+  }
   blocked: boolean
   blockCodes: string[]
   counts: { new: number; gapFill: number; changed: number; unchanged: number; invalid: number }
@@ -199,6 +211,9 @@ export interface VerdictStrings {
   verdictPublicationTitle: string
   verdictPublicationBody: string
   verdictPublicationMixedBody: string
+  /** R13.8E — row-level values for reporting dates the book holds none for. */
+  verdictRowHistoryTitle: string
+  verdictRowHistoryBody: string
   /** R13.8D.1 — already-published weeks the workbook now states differently. */
   verdictRestatementTitle: string
   verdictRestatementOnlyBody: string
@@ -279,6 +294,20 @@ export function describeImportPlan(plan: ImportPlan, a: VerdictStrings): ImportV
         tone: TONE.changed,
         title: a.verdictPublicationTitle,
         body: fill(a.verdictPublicationBody, { date, d: plan.publicationDifferenceCount ?? 0 }),
+      }
+    }
+    // R13.8E — no week to append and no published figure moved, but the workbook
+    // carries row-level values for reporting dates the book has never held at
+    // row grain. Calling that "nothing to apply" is what would leave the rolling
+    // contributor window permanently unbuildable.
+    const rhInserted = plan.rowHistory?.insertedCount ?? 0
+    const rhDates = plan.rowHistory?.datesInserted.length ?? 0
+    if (rhInserted > 0) {
+      return {
+        kind: 'append',
+        tone: TONE.gapFill,
+        title: a.verdictRowHistoryTitle,
+        body: fill(a.verdictRowHistoryBody, { n: rhDates, r: rhInserted }),
       }
     }
     return { kind: 'nothing', tone: TONE.neutral, title: a.verdictNothingTitle, body: a.verdictNothingBody }

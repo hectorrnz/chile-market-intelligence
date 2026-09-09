@@ -750,3 +750,141 @@ export async function getEvolutionObservations(
     })),
   }
 }
+
+// ---------------------------------------------------------------------------
+// R13.8E — ROW-LEVEL HISTORY.
+//
+// The same client discipline as everything above: `portfolio_row_history`
+// carries the scope-filtered read policy from its own migration, so reading it
+// through the CALLER'S OWN session makes PostgreSQL re-derive the entitlement
+// rather than trusting the route's decision.
+//
+// A row-history date is NOT a publication and must never be offered as one. It
+// is an analytical endpoint — the opening side of a rolling multi-week window —
+// and the surfaces that consume it say so.
+// ---------------------------------------------------------------------------
+
+type RowHistorySelect = {
+  from: (t: string) => {
+    select: (c: string) => {
+      eq: (col: string, v: unknown) => {
+        eq: (col: string, v: unknown) => {
+          order: (col: string, opts: { ascending: boolean }) => Promise<{
+            data:
+              | Array<{
+                  row_key: string
+                  parent_row_key: string | null
+                  depth: number
+                  display_order: number
+                  row_type: string
+                  label_es: string
+                  label_en: string | null
+                  currency: string
+                  value: number | null
+                  value_class: string
+                }>
+              | null
+            error: unknown
+          }>
+        }
+      }
+    }
+  }
+}
+
+/**
+ * One scope's hierarchy rows at ONE frozen reporting date.
+ *
+ * Returned in `SnapshotRowRead` shape so the pure change functions accept it
+ * unchanged — but the three publication-only fields are deliberately null.
+ * Row history stores the observed VALUE of each row at its date and nothing
+ * derived from a neighbouring week; `previousValue` at a date is simply the
+ * value already held at the date before it, and storing it twice would put the
+ * series inside itself.
+ */
+export async function getRowHistoryForScope(
+  scope: string,
+  observationDate: string,
+): Promise<
+  | { ok: true; rows: SnapshotRowRead[] }
+  | { ok: false; code: 'not_configured' | 'read_failed' }
+> {
+  const client = await getSupabaseUserClient()
+  if (!client) return { ok: false, code: 'not_configured' }
+
+  const { data, error } = await (client as never as RowHistorySelect)
+    .from('portfolio_row_history')
+    .select(
+      'row_key, parent_row_key, depth, display_order, row_type, label_es, label_en, currency, value, value_class',
+    )
+    .eq('scope', scope)
+    .eq('observation_date', observationDate)
+    .order('display_order', { ascending: true })
+
+  if (error) return { ok: false, code: 'read_failed' }
+  return {
+    ok: true,
+    rows: (data ?? []).map((r) => ({
+      rowKey: r.row_key,
+      parentRowKey: r.parent_row_key,
+      depth: r.depth,
+      displayOrder: r.display_order,
+      rowType: r.row_type,
+      labelEs: r.label_es,
+      labelEn: r.label_en,
+      currency: r.currency,
+      // null stays null — an unreadable source cell is never a zero position.
+      value: r.value,
+      valueClass: r.value_class,
+      previousValue: null,
+      beginningOfYearValue: null,
+      difference: null,
+      differenceClass: null,
+    })),
+  }
+}
+
+type RowHistoryDateSelect = {
+  from: (t: string) => {
+    select: (c: string) => {
+      eq: (col: string, v: unknown) => {
+        order: (col: string, opts: { ascending: boolean }) => Promise<{
+          data: Array<{ observation_date: string; row_count: number }> | null
+          error: unknown
+        }>
+      }
+    }
+  }
+}
+
+/**
+ * Every reporting date this scope has row-level history for, ascending.
+ *
+ * Read from the coverage view rather than the table so asking "which dates can
+ * open a rolling window?" costs one small aggregate instead of ~20,000 rows.
+ * A failed read yields an EMPTY list, never a fabricated one: the surface then
+ * reports the window as unbuildable, which is the honest degradation.
+ */
+export async function listRowHistoryDates(
+  scope: string,
+): Promise<
+  | { ok: true; dates: string[] }
+  | { ok: false; code: 'not_configured' | 'read_failed' }
+> {
+  const client = await getSupabaseUserClient()
+  if (!client) return { ok: false, code: 'not_configured' }
+
+  const { data, error } = await (client as never as RowHistoryDateSelect)
+    .from('portfolio_row_history_coverage')
+    .select('observation_date, row_count')
+    .eq('scope', scope)
+    .order('observation_date', { ascending: true })
+
+  if (error) return { ok: false, code: 'read_failed' }
+  return {
+    ok: true,
+    dates: (data ?? [])
+      .filter((r) => Number(r.row_count) > 0)
+      .map((r) => String(r.observation_date)),
+  }
+}

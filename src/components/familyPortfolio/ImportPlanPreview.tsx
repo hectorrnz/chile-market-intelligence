@@ -476,6 +476,69 @@ function signed(delta: number): string {
   return `${delta > 0 ? '+' : ''}${formatUsd(delta, 0)}`
 }
 
+// ── R13.8E — ROW-LEVEL HISTORY ───────────────────────────────────────────────
+//
+// WHY ITS OWN CARD, AGAIN. The evolution card shows overwritten PORTFOLIO
+// LEVELS; the restatement card shows re-published WEEKS. This shows neither: it
+// shows source-backed row values recorded at frozen reporting dates that mostly
+// have no publication at all. Folding it into either would tell an
+// administrator something was republished when nothing was.
+//
+// INSERTIONS AND OVERWRITES ARE VISUALLY DIFFERENT, because only one of them is
+// a correction. Appending 19,757 rows for weeks the book never held at row level
+// is an ordinary insertion and needs no authorization; moving a value it already
+// recorded is a rewrite of settled history and needs both.
+function RowHistoryCard({ plan }: { plan: ImportPlan }) {
+  const { t } = useLang()
+  const a = t.fpAdmin
+  const rh = plan.rowHistory
+  if (!rh || (rh.insertedCount === 0 && rh.changedCount === 0)) return null
+
+  const changed = rh.changedCount > 0
+  const tone = changed ? TONE.changed : TONE.gapFill
+
+  return (
+    <section
+      className={`${CARD} space-y-2`}
+      data-group="row-history"
+      style={{
+        borderColor: tone,
+        borderLeft: `3px solid ${tone}`,
+        background: `color-mix(in oklab, ${tone} 7%, var(--surface))`,
+      }}
+    >
+      <p className="ui-label" style={{ color: tone }}>
+        {a.rowHistoryTitle}
+      </p>
+      <p className="text-[11px] text-muted-fg">{a.rowHistoryNote}</p>
+
+      {rh.insertedCount > 0 && (
+        <p className="text-xs text-foreground">
+          {fill(a.rowHistoryInserted, { r: rh.insertedCount, n: rh.datesInserted.length })}
+        </p>
+      )}
+      {changed && (
+        <>
+          <p className="text-xs text-foreground">
+            {fill(a.rowHistoryChanged, { r: rh.changedCount, n: rh.datesChanged.length })}
+          </p>
+          <p className="text-[11px]" style={{ color: TONE.changed }}>
+            {a.rowHistoryChangedNote}
+          </p>
+          <p className="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-muted-fg">
+            <span>{a.rowHistoryDatesLabel}:</span>
+            {rh.datesChanged.map((d) => (
+              <span key={d} className="ui-number text-foreground">
+                {d}
+              </span>
+            ))}
+          </p>
+        </>
+      )}
+    </section>
+  )
+}
+
 function HistoricalChangesCard({ plan, controls }: { plan: ImportPlan; controls: CorrectionControls }) {
   const { t } = useLang()
   const a = t.fpAdmin
@@ -860,6 +923,11 @@ export function ImportPlanPreview({
               card, so what is being authorized is on screen before the checkbox
               that authorizes it. */}
           <RestatementCard plan={plan} />
+          {/* R13.8E — row-level history sits above the authorization card for
+              the same reason: an overwrite here is a correction to settled
+              history, and it must be visible before the checkbox that
+              authorizes it. */}
+          <RowHistoryCard plan={plan} />
           <HistoricalChangesCard plan={plan} controls={correction} />
         </>
       )}

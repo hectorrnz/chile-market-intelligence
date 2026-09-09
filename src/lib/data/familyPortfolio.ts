@@ -460,6 +460,10 @@ export type WeeklyChangesState =
    *  nearest week; the caller is told the range is unusable. */
   | 'from_not_found'
   | 'from_not_before_to'
+  /** R13.8E - the opening endpoint has row-level history recorded but released
+   *  no rows to this reader. Honest emptiness, never a comparison against
+   *  nothing, which would report every position as newly created. */
+  | 'opening_not_available'
 
 export interface WeeklyChangesResponse {
   scope: string
@@ -480,6 +484,13 @@ export interface WeeklyChangesResponse {
   previousPublication: { asOfDate: string; publishedAt: string | null } | null
   /** Which two things the change is a difference of — see `WeeklyBasis`. */
   weeklyBasis?: WeeklyBasis
+  /** R13.8E - where the opening endpoint's rows came from. `row_history` is a
+   *  frozen reporting week the source closed that the book never published; it
+   *  is never a publication and never appears in `weeks`. */
+  openingSource?: 'source_previous_week' | 'publication' | 'row_history'
+  /** R13.8E - every reporting week this scope has ROW-LEVEL history for. Used to
+   *  decide whether a rolling window can be opened. NOT a list of publications. */
+  rowHistoryDates?: string[]
   /** `weekly` (default) or `custom` — R13.R1.1 § 13. Drives the surface title:
    *  a multi-week range is never presented as a Weekly Change. */
   mode?: ComparisonMode

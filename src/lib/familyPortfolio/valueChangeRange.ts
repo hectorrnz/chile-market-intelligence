@@ -117,6 +117,12 @@ export type ValueChangeRangeState =
    * a four-interval label) or to synthesise a snapshot for the week (inventing
    * financial history). Saying which week is missing is the only honest third
    * option.
+   *
+   * R13.8E MAKES THIS STATE RARE RATHER THAN REDEFINING IT. Row-level history
+   * now persists the source's own values at every frozen reporting date, so
+   * 2026-08-07 can open the window without ever becoming a publication. The
+   * refusal remains for a week the book genuinely holds no rows for -- and it
+   * still names the date rather than widening.
    */
   | 'opening_not_published'
 
@@ -151,6 +157,16 @@ export interface ValueChangeRange {
    * instead of showing an empty card with no explanation.
    */
   requiredOpeningDate: string | null
+  /**
+   * WHERE THE OPENING ENDPOINT'S ROWS COME FROM (R13.8E).
+   *
+   * `publication` -- a full published week, as every period has always used.
+   * `row_history` -- a frozen reporting week the source closed but the book
+   * never published, whose row-level values are persisted analytically. It is
+   * NOT a publication and must never be offered as one in Holdings or Compare.
+   * Null when no window resolved.
+   */
+  openingSource: 'publication' | 'row_history' | null
   state: ValueChangeRangeState
 }
 
@@ -173,6 +189,7 @@ const EMPTY: Omit<ValueChangeRange, 'period'> = {
   truncatedByHistory: false,
   weekCount: null,
   requiredOpeningDate: null,
+  openingSource: null,
   state: 'no_publications',
 }
 
@@ -206,6 +223,19 @@ export function selectValueChangeRange(
   period: ValueChangePeriod,
   endpointOverride?: string | null,
   reportingWeeks?: readonly string[] | null,
+  /**
+   * R13.8E — reporting weeks that carry ROW-LEVEL HISTORY without carrying a
+   * publication, and can therefore open a rolling window.
+   *
+   * Only 1M consults it, and only for its OPENING endpoint. The closing endpoint
+   * is always a real published week, and no calendar period's definition
+   * changes: 3M / YTD / 1Y / ALL still open at the first PUBLICATION on or after
+   * their boundary, exactly as before.
+   *
+   * Omitting it reproduces the pre-R13.8E behaviour precisely, so every existing
+   * caller and fixture keeps the window it already had.
+   */
+  rowHistoryWeeks?: readonly string[] | null,
 ): ValueChangeRange {
   const dates = orderedDates(weeks)
   if (dates.length === 0) return { period, ...EMPTY }
@@ -251,12 +281,29 @@ export function selectValueChangeRange(
         truncatedByHistory: true,
         weekCount: dates.includes(endpoint) ? 1 : null,
         requiredOpeningDate: null,
+        openingSource: null,
         state: 'single_week',
       }
     }
-    if (!dates.includes(required)) {
-      // The week exists in the book's history but was never published, so no
-      // row-level snapshot can open the window. Named, never approximated.
+
+    // R13.8E — the opening endpoint may be a PUBLICATION or a frozen reporting
+    // week whose row-level values the book persists analytically. A publication
+    // is preferred when both exist, because it carries the performance rows too.
+    const rowHistory = new Set(
+      (Array.isArray(rowHistoryWeeks) ? rowHistoryWeeks : []).filter(
+        (d) => typeof d === 'string' && ISO_DATE.test(d),
+      ),
+    )
+    const openingSource: 'publication' | 'row_history' | null = dates.includes(required)
+      ? 'publication'
+      : rowHistory.has(required)
+        ? 'row_history'
+        : null
+
+    if (openingSource === null) {
+      // The week exists in the book's reporting history but carries neither a
+      // publication nor persisted row-level values, so nothing can open the
+      // window. Named, never approximated.
       return {
         period,
         fromDate: null,
@@ -265,10 +312,14 @@ export function selectValueChangeRange(
         truncatedByHistory: false,
         weekCount: null,
         requiredOpeningDate: required,
+        openingSource: null,
         state: 'opening_not_published',
       }
     }
-    const within = dates.filter((d) => d >= required && d <= endpoint)
+    // Counted over the REPORTING spine, not the publication spine: the window is
+    // four source intervals wide whether or not the weeks inside it were ever
+    // published, and calling that "2 weeks" would misdescribe a month.
+    const within = spine.filter((d) => d >= required && d <= endpoint)
     return {
       period,
       fromDate: required,
@@ -277,6 +328,7 @@ export function selectValueChangeRange(
       truncatedByHistory: false,
       weekCount: within.length,
       requiredOpeningDate: null,
+      openingSource,
       state: 'ok',
     }
   }
@@ -300,6 +352,7 @@ export function selectValueChangeRange(
       truncatedByHistory,
       weekCount: lone === null ? null : 1,
       requiredOpeningDate: null,
+      openingSource: null,
       state: 'single_week',
     }
   }
@@ -312,6 +365,7 @@ export function selectValueChangeRange(
     truncatedByHistory,
     weekCount: within.length,
     requiredOpeningDate: null,
+    openingSource: 'publication',
     state: 'ok',
   }
 }

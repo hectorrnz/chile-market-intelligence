@@ -826,6 +826,209 @@ export async function listStandingPublicationPayloads(
   return { ok: true, payloads: [...byId.values()] }
 }
 
+// ---------------------------------------------------------------------------
+// R13.8E — ROW-LEVEL HISTORY: planning read and staging relay.
+// ---------------------------------------------------------------------------
+
+/** One row-history identity as Production currently holds it. */
+export interface PersistedRowHistoryRead {
+  scope: string
+  observationDate: string
+  rowKey: string
+  value: number | null
+  valueClass: string
+}
+
+interface RowHistoryReadShape {
+  from: (t: string) => {
+    select: (c: string) => {
+      order: (
+        col: string,
+        o: { ascending: boolean },
+      ) => {
+        order: (
+          col: string,
+          o: { ascending: boolean },
+        ) => {
+          order: (
+            col: string,
+            o: { ascending: boolean },
+          ) => {
+            range: (
+              from: number,
+              to: number,
+            ) => Promise<{
+              data:
+                | Array<{
+                    scope: string
+                    observation_date: string
+                    row_key: string
+                    value: number | null
+                    value_class: string
+                  }>
+                | null
+              error: { message?: string } | null
+            }>
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * How many row-history identities one page asks for.
+ *
+ * The whole table is ~19,757 rows for the current book, so four or five pages
+ * cover it. Paging is not an optimisation here — PostgREST caps a response at a
+ * server-configured row limit, and a silently short read would make every
+ * unread identity look ABSENT, turning an ordinary re-upload into thousands of
+ * fabricated insertions.
+ */
+const ROW_HISTORY_PAGE = 5000
+
+/**
+ * Every row-history identity Production holds, with its value and class.
+ *
+ * Read through the ADMIN client for the same reason
+ * `listPersistedEvolutionObservations` is: planning an import is a whole-book
+ * operation an already-authorized administrator performs across every scope,
+ * and it never reaches a member surface.
+ *
+ * A page that comes back exactly full is followed by another request; a page
+ * that comes back short ends the walk. That is the only termination rule, so a
+ * cap can shorten the work but can never shorten the ANSWER.
+ */
+export async function listPersistedRowHistory(): Promise<
+  { ok: true; rows: PersistedRowHistoryRead[] } | Fail
+> {
+  const client = getSupabaseAdminClient() as never as RowHistoryReadShape | null
+  if (!client) return { ok: false, code: 'not_configured' }
+
+  const rows: PersistedRowHistoryRead[] = []
+  for (let page = 0; ; page += 1) {
+    const from = page * ROW_HISTORY_PAGE
+    const { data, error } = await client
+      .from('portfolio_row_history')
+      .select('scope, observation_date, row_key, value, value_class')
+      .order('observation_date', { ascending: true })
+      .order('scope', { ascending: true })
+      .order('row_key', { ascending: true })
+      .range(from, from + ROW_HISTORY_PAGE - 1)
+
+    if (error) {
+      return { ok: false, code: 'rpc_failed', reason: error.message ?? 'row_history_read_failed' }
+    }
+    const batch = data ?? []
+    for (const r of batch) {
+      rows.push({
+        scope: String(r.scope),
+        observationDate: String(r.observation_date),
+        rowKey: String(r.row_key),
+        value: r.value === null || r.value === undefined ? null : Number(r.value),
+        valueClass: String(r.value_class),
+      })
+    }
+    if (batch.length < ROW_HISTORY_PAGE) break
+  }
+  return { ok: true, rows }
+}
+
+/**
+ * One staged row-history row, in the exact shape the RPC's `jsonb_to_recordset`
+ * reads. Snake-cased for that reason, like every other RPC payload here.
+ */
+export interface RowHistoryStagedRow {
+  scope: string
+  observation_date: string
+  row_key: string
+  parent_row_key: string | null
+  depth: number
+  display_order: number
+  row_type: string
+  label_es: string
+  label_en: string | null
+  currency: string
+  value: number | null
+  value_class: string
+  source_sheet: string
+  source_cell: string
+  source_row: number | null
+  parser_version: string
+  disposition: 'new' | 'gap_fill' | 'changed'
+  /**
+   * The pre-state the plan asserts, for an overwrite only. The RPC re-reads it
+   * under the import lock and refuses the whole import if it has moved — and
+   * writes the before-image it READ, never this one.
+   */
+  prior_value: number | null
+  prior_value_class: string | null
+}
+
+interface StagingWriteShape {
+  from: (t: string) => {
+    insert: (rows: unknown[]) => Promise<{ error: { message?: string } | null }>
+    delete: () => {
+      eq: (col: string, v: string) => Promise<{ error: { message?: string } | null }>
+    }
+  }
+}
+
+/**
+ * How many row-history rows travel in one staged chunk.
+ *
+ * At ~213 bytes of JSON per row a 2,000-row chunk is ~430 KB — comfortably
+ * inside any HTTP body limit, while a first backfill of ~19,757 rows costs ten
+ * requests. The size exists to make the transport boring; the import's
+ * atomicity does not depend on it, because the RPC consumes every chunk inside
+ * its own transaction.
+ */
+export const ROW_HISTORY_STAGE_CHUNK = 2000
+
+/**
+ * Stages one import's row history immediately before the import runs.
+ *
+ * WHY A RELAY AT ALL. A first backfill carries every clean frozen column the
+ * workbook holds — 4.2 MB of JSON for the current book. Making the import's
+ * success depend on whether that fits in one request body would tie a financial
+ * write to a transport limit that says nothing about whether the data is right.
+ *
+ * These rows are TRANSPORT, NOT STATE. Nothing reads them but the import that
+ * consumes and deletes them in the same transaction, and the RPC refuses to
+ * proceed unless the number of staged rows matches the number the caller says
+ * it staged — so a lost chunk is a refusal, never a partially written history.
+ */
+export async function stageRowHistory(
+  stagingId: string,
+  rows: readonly RowHistoryStagedRow[],
+): Promise<{ ok: true; staged: number } | Fail> {
+  const client = getSupabaseAdminClient() as never as StagingWriteShape | null
+  if (!client) return { ok: false, code: 'not_configured' }
+  if (rows.length === 0) return { ok: true, staged: 0 }
+
+  const chunks = chunk([...rows], ROW_HISTORY_STAGE_CHUNK)
+  for (let i = 0; i < chunks.length; i += 1) {
+    const { error } = await client
+      .from('portfolio_row_history_staging')
+      .insert([{ staging_id: stagingId, chunk_index: i, rows: chunks[i] }])
+    if (error) {
+      // Leave nothing behind on a partial stage. The chunks are scratch, so a
+      // failed cleanup is not itself a failure — the RPC's count check refuses
+      // an incomplete relay, and the next import purges anything older than a day.
+      await discardRowHistoryStaging(stagingId)
+      return { ok: false, code: 'rpc_failed', reason: error.message ?? 'row_history_stage_failed' }
+    }
+  }
+  return { ok: true, staged: rows.length }
+}
+
+/** Removes a staged batch the import never consumed. Best-effort by design. */
+export async function discardRowHistoryStaging(stagingId: string): Promise<void> {
+  const client = getSupabaseAdminClient() as never as StagingWriteShape | null
+  if (!client) return
+  await client.from('portfolio_row_history_staging').delete().eq('staging_id', stagingId)
+}
+
 /** One history mutation, in the exact shape the RPC's `jsonb_to_recordset` reads. */
 export interface ImportObservationPayload {
   scope: string
@@ -872,6 +1075,20 @@ export interface ImportHistoricalPublicationPayload {
   performance_rows: PerformanceRowPayload[]
   /** Audit only — the DB re-derives whether the week genuinely differs. */
   difference_count: number
+  /**
+   * R13.8E — THE RESTATED WEEK'S OWN ANCHORS, read off its own frozen column.
+   *
+   * Before this, a restatement inherited the IMPORT's anchors, so the seven
+   * weeks corrected in the first real catch-up import each recorded
+   * `previousWeekDate = 2026-08-28` — a date two months AFTER the week it
+   * claims to precede. The values were always right; only this metadata was
+   * wrong, and the weekly surfaces read it as a financial basis.
+   *
+   * Null stays null. A column whose own anchor the parser could not resolve
+   * records none, never a neighbour's.
+   */
+  previous_week_date: string | null
+  beginning_of_year_date: string | null
 }
 
 /**

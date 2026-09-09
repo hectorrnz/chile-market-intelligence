@@ -40,6 +40,7 @@ import {
   type WeeklyImportPlan,
   type PlannedObservation,
   type HistoricalPublicationRestatement,
+  type RowHistorySummary,
 } from './weeklyImportPlan.ts'
 import type {
   PublicationComparison,
@@ -58,6 +59,20 @@ import { buildSnapshotRowPayload, buildPerformanceRowPayload } from './publicati
 export interface HistoricalColumnPayload {
   rows: ReturnType<typeof buildSnapshotRowPayload>
   performance: ReturnType<typeof buildPerformanceRowPayload>
+  /**
+   * R13.8E — THE COLUMN'S OWN ANCHOR DATES.
+   *
+   * Captured here because they are the only place they can be captured: the
+   * parse that produced these rows is the only one that ever sees this column's
+   * previous-week and beginning-of-year headers. Before this, a restatement
+   * inherited the IMPORT's anchors and 2026-06-19 ended up recording
+   * `previousWeekDate = 2026-08-28`.
+   *
+   * Null stays null — a column whose anchor the parser could not resolve
+   * records none rather than a neighbour's.
+   */
+  previousWeekDate: string | null
+  beginningOfYearDate: string | null
 }
 
 /**
@@ -169,10 +184,13 @@ export function parseAtFrozenPublicationColumn(
      * frozen column, keyed by reporting date.
      *
      * That is what historical-publication-restatement detection compares against
-     * Production, and it is captured from the scan `selectFrozenPublicationColumn`
-     * already performs, so switching it on costs no additional parse. Off by
-     * default: the alternatives path and every pure test that only wants the
-     * publication column should not carry ~100 payloads it will never read.
+     * Production, and — since R13.8E — it is also the SOURCE OF ROW HISTORY:
+     * every one of these payloads is persisted at its own reporting date, not
+     * only the handful that turn out to restate a publication. It is captured
+     * from the scan `selectFrozenPublicationColumn` already performs, so
+     * switching it on costs no additional parse. Off by default: the
+     * alternatives path and every pure test that only wants the publication
+     * column should not carry ~100 payloads it will never read.
      */
     captureHistoricalPayloads?: boolean
   } = {},
@@ -187,6 +205,8 @@ export function parseAtFrozenPublicationColumn(
         historicalPayloads.set(column.date, {
           rows: buildSnapshotRowPayload(draft),
           performance: buildPerformanceRowPayload(draft),
+          previousWeekDate: draft.previousWeekDate,
+          beginningOfYearDate: draft.beginningOfYearDate,
         })
       }
     : undefined
@@ -281,9 +301,13 @@ export interface WeeklyImportPreview {
 
   action: WeeklyImportPlan['action']
   requiresHistoricalCorrection: boolean
-  /** Which cause armed the gate (R13.8D.1). Either, both, or neither. */
+  /** Which cause armed the gate (R13.8D.1, R13.8E). Any, all, or none. */
   requiresEvolutionCorrection: boolean
   requiresPublicationRestatementCorrection: boolean
+  /** R13.8E — a row-level identity at a frozen date whose value the workbook moves. */
+  requiresRowHistoryCorrection: boolean
+  /** R13.8E — what this import would do to row-level history. */
+  rowHistory: RowHistorySummary
 
   /**
    * R13.8D.1 — ALREADY-PUBLISHED WEEKS THE WORKBOOK NOW STATES DIFFERENTLY.
@@ -371,6 +395,16 @@ export function planFingerprint(plan: WeeklyImportPlan): string {
   for (const r of plan.historicalPublicationRestatements) {
     canonical.push(`restatement|${r.asOfDate}|${r.publicationId}|${r.revision}|${r.differenceCount}`)
   }
+  // R13.8E — the row-level history this import would write is an assertion about
+  // Production too, and the one an administrator authorizing an OVERWRITE is
+  // agreeing to most directly. Covering the counts and the dates means a row
+  // history that moved between preview and confirm — another import landed, a
+  // rollback ran — refuses the confirmation instead of applying an authorization
+  // that was given for a different set of rows.
+  canonical.push(
+    `rowHistory|${plan.rowHistory.insertedCount}|${plan.rowHistory.changedCount}|` +
+      `${plan.rowHistory.datesInserted.join(',')}|${plan.rowHistory.datesChanged.join(',')}`,
+  )
   canonical.push(`plan|${plan.planVersion}`)
   return createHash('sha256').update(canonical.join('\n')).digest('hex')
 }
@@ -414,6 +448,12 @@ export interface PreviewInput {
    * caller that cannot read them, which is "none observed" — never "none exist".
    */
   historicalPublicationRestatements?: readonly HistoricalPublicationRestatement[]
+  /**
+   * R13.8E — what this import would do to row-level history, as classified by
+   * the caller against Production's own rows. Omitted by a caller that cannot
+   * read them, which is "none observed" — never "none exist".
+   */
+  rowHistory?: RowHistorySummary
 }
 
 /** The workbook's schema identity — everything in a preview that is not the plan. */
@@ -504,6 +544,8 @@ export function previewFromPlan(plan: WeeklyImportPlan, identity: PreviewIdentit
     requiresHistoricalCorrection: plan.requiresHistoricalCorrection,
     requiresEvolutionCorrection: plan.requiresEvolutionCorrection,
     requiresPublicationRestatementCorrection: plan.requiresPublicationRestatementCorrection,
+    requiresRowHistoryCorrection: plan.requiresRowHistoryCorrection,
+    rowHistory: plan.rowHistory,
     historicalRestatements,
     historicalRestatementDates: plan.historicalRestatementDates,
     historicalRestatementCount: plan.historicalPublicationRestatements.length,
@@ -556,6 +598,7 @@ export function buildWeeklyImportPreview(
     correctionReason: input.correctionReason,
     publicationComparison: input.publicationDiff?.comparison,
     historicalPublicationRestatements: input.historicalPublicationRestatements,
+    rowHistory: input.rowHistory,
   })
 
   const preview = previewFromPlan(plan, {

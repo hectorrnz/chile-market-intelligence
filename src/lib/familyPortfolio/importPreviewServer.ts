@@ -24,10 +24,13 @@ import {
   listPublications,
   getStandingPublicationPayload,
   listStandingPublicationPayloads,
+  listPersistedRowHistory,
 } from '@/lib/db/repositories/portfolioPublicationRepository'
 import type { HistoricalPublicationRestatement } from './weeklyImportPlan.ts'
 import { buildSnapshotRowPayload, buildPerformanceRowPayload } from './publicationPayload.ts'
 import { comparePublicationPayload } from './publicationMaterialDiff.ts'
+import { planRowHistory, type RowHistoryPlan } from './rowHistory.ts'
+import { RESUMEN_PARSER_VERSION } from './resumen/parseResumen.ts'
 
 export type ImportPreviewFailure =
   | { ok: false; code: 'not_configured' }
@@ -36,6 +39,15 @@ export type ImportPreviewFailure =
   | { ok: false; code: 'publication_read_failed' }
   /** R13.8D.1 — the already-published weeks could not be read and compared. */
   | { ok: false; code: 'historical_publication_read_failed' }
+  /**
+   * R13.8E — Production's existing row history could not be read.
+   *
+   * A FAILURE, never an assumed-empty book. Treating an unreadable table as
+   * "holds nothing" would classify ~19,757 existing identities as insertions,
+   * and the import would then be refused by the database's own uniqueness key
+   * after an administrator had already authorized it.
+   */
+  | { ok: false; code: 'row_history_read_failed' }
 
 export interface ImportPreviewSuccess {
   ok: true
@@ -56,6 +68,13 @@ export interface ImportPreviewSuccess {
    * so the seven corrections and the five new weeks commit as one operation.
    */
   historicalPublications: ImportHistoricalPublicationPayload[]
+  /**
+   * R13.8E — the row-level history this import would write, already classified.
+   * The confirm route stages exactly `rowHistory.rows` and passes the batch id
+   * to the same RPC call, so the preview and the write can never describe
+   * different rows.
+   */
+  rowHistory: RowHistoryPlan
 }
 
 /**
@@ -187,11 +206,39 @@ export async function planImportForDraft(
         snapshot_rows: workbookPayload.rows,
         performance_rows: workbookPayload.performance,
         difference_count: diff.differenceCount,
+        // R13.8E — each restated week's OWN anchors, off its own frozen column.
+        // Passing the import's here is exactly the defect that left seven
+        // published weeks claiming a previous week two months in their future.
+        previous_week_date: workbookPayload.previousWeekDate,
+        beginning_of_year_date: workbookPayload.beginningOfYearDate,
       })
     }
   }
   historicalRestatements.sort((a, b) => (a.asOfDate < b.asOfDate ? -1 : 1))
   historicalPublications.sort((a, b) => (a.as_of_date < b.as_of_date ? -1 : 1))
+
+  // ── R13.8E — ROW-LEVEL HISTORY.
+  //
+  // Every clean frozen column the workbook holds, including the one being
+  // published, is offered at row grain. `loaded.historicalPayloads` is keyed by
+  // reporting date and was captured during the column scan the preview already
+  // ran, so this costs one Production read and no additional parse.
+  //
+  // A FAILED READ IS A FAILURE. An unreadable row-history table treated as
+  // empty would classify every existing identity as an insertion, and the
+  // database's own uniqueness key would then refuse an import an administrator
+  // had already authorized.
+  const persistedRows = await listPersistedRowHistory()
+  if (!persistedRows.ok) {
+    return persistedRows.code === 'not_configured'
+      ? { ok: false, code: 'not_configured' }
+      : { ok: false, code: 'row_history_read_failed' }
+  }
+  const rowHistory = planRowHistory({
+    workbook: new Map([...loaded.historicalPayloads].map(([date, p]) => [date, p.rows])),
+    persisted: persistedRows.rows,
+    parserVersion: RESUMEN_PARSER_VERSION,
+  })
 
   const built = buildWeeklyImportPreview({
     bytes: loaded.bytes,
@@ -203,6 +250,12 @@ export async function planImportForDraft(
     correctionReason: options.correctionReason,
     publicationDiff,
     historicalPublicationRestatements: historicalRestatements,
+    rowHistory: {
+      insertedCount: rowHistory.counts.new + rowHistory.counts.gap_fill,
+      changedCount: rowHistory.counts.changed,
+      datesInserted: rowHistory.datesInserted,
+      datesChanged: rowHistory.datesChanged,
+    },
   })
 
   return {
@@ -213,5 +266,6 @@ export async function planImportForDraft(
     rows,
     performance,
     historicalPublications,
+    rowHistory,
   }
 }

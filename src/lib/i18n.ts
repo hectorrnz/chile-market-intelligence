@@ -170,6 +170,17 @@ export const dict = {
       restatementDelta: 'Difference',
       restatementMore: '{n} further field(s) not listed for this week.',
       restatementFieldCount: '{n} field(s)',
+      verdictRowHistoryTitle: 'Row-level history is appended',
+      verdictRowHistoryBody:
+        'No week is added and no published figure changes, but the workbook carries row-level values for {n} reporting date(s) the book does not hold at row level — {r} row(s) in total. Applying records them as history. They do not become publications.',
+      rowHistoryTitle: 'Row-level history',
+      rowHistoryNote:
+        'Source-backed values for every frozen reporting date, including weeks that carry no publication. This is analytical history: never a publication, never a revision, and never selectable as a Holdings or Compare week.',
+      rowHistoryInserted: '{r} row(s) added across {n} reporting date(s)',
+      rowHistoryChanged: '{r} row(s) overwritten across {n} reporting date(s)',
+      rowHistoryChangedNote:
+        'Overwriting a recorded row-level value is a correction to settled history. Confirm only with a written reason.',
+      rowHistoryDatesLabel: 'Dates',
       restatementLevelUnchanged: 'Portfolio levels for these weeks are unchanged — no evolution value is overwritten.',
       publicationDiffTitle: 'Proposed changes to the current publication',
       publicationDiffNote:
@@ -2310,6 +2321,17 @@ export const dict = {
       restatementDelta: 'Diferencia',
       restatementMore: '{n} campo(s) adicional(es) no listado(s) para esta semana.',
       restatementFieldCount: '{n} campo(s)',
+      verdictRowHistoryTitle: 'Se agrega historial a nivel de fila',
+      verdictRowHistoryBody:
+        'No se agrega ninguna semana ni cambia ninguna cifra publicada, pero el libro trae valores a nivel de fila para {n} fecha(s) de reporte que el sistema no tiene a ese nivel — {r} fila(s) en total. Aplicar las registra como historial. No se convierten en publicaciones.',
+      rowHistoryTitle: 'Historial a nivel de fila',
+      rowHistoryNote:
+        'Valores respaldados por la fuente para cada fecha de reporte congelada, incluidas semanas sin publicación. Es historial analítico: nunca es una publicación, nunca es una revisión y nunca es seleccionable como semana en Posiciones o Comparar.',
+      rowHistoryInserted: '{r} fila(s) agregada(s) en {n} fecha(s) de reporte',
+      rowHistoryChanged: '{r} fila(s) sobrescrita(s) en {n} fecha(s) de reporte',
+      rowHistoryChangedNote:
+        'Sobrescribir un valor a nivel de fila ya registrado es una corrección de historia establecida. Confirme solo con un motivo escrito.',
+      rowHistoryDatesLabel: 'Fechas',
       restatementLevelUnchanged: 'Los niveles de portafolio de estas semanas no cambian — ningún valor de evolución se sobrescribe.',
       publicationDiffTitle: 'Cambios propuestos a la publicación vigente',
       publicationDiffNote:

@@ -702,6 +702,12 @@ describe('R13.8D.1 · the preview reports restatements as their own category', (
       verdictRestatementOnlyBody: 'only r={r} d={d}',
       verdictRestatementAppendBody: 'append n={n} r={r} d={d}',
       verdictRestatementEvolutionBody: 'evo c={c} r={r} d={d}',
+      // R13.8E added a fourth verdict. It cannot fire on this fixture — the
+      // restatement branch outranks it — but the strings are required, and a
+      // fixture missing one would fail to compile rather than silently render
+      // `undefined` into a sentence an administrator acts on.
+      verdictRowHistoryTitle: 'ROWHISTORY',
+      verdictRowHistoryBody: 'rows n={n} r={r}',
     }
     const verdict = describeImportPlan(preview as unknown as ImportPlan, strings)
     assert.equal(verdict.title, 'RESTATED')

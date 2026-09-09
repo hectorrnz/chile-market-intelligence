@@ -253,6 +253,12 @@ export type ImportAction =
   | 'publication_correction'
   /** An overwrite of history AND a restatement of the standing snapshot. */
   | 'mixed_correction'
+  /**
+   * R13.8E — no week to append and no published figure moved, but the workbook
+   * carries row-level values for reporting dates the book has never held at row
+   * grain. An insertion, so no authorization; a real write, so never a no-op.
+   */
+  | 'row_history_append'
 
 export type PlanBlockCode =
   | 'historical_correction_required'
@@ -299,6 +305,42 @@ export interface WeeklyImportInput {
    * and the DATABASE re-derives it from its own rows before writing anything.
    */
   historicalPublicationRestatements?: readonly HistoricalPublicationRestatement[]
+  /**
+   * R13.8E — the row-level history this workbook would write.
+   *
+   * OMITTING IT IS "none observed", the same discipline as the two fields above:
+   * a pure caller that never read Production's row history keeps its exact
+   * pre-R13.8E classification, and the DATABASE re-derives every disposition
+   * from its own rows before writing anything.
+   *
+   * Row history is a THIRD independent axis. It can turn a would-be no-op into a
+   * real import — appending row-level values for weeks the book has never held
+   * at row grain is a durable change even when every level and every published
+   * figure is identical — and its overwrites take the same authorization gate as
+   * the other two forms of settled history.
+   */
+  rowHistory?: RowHistorySummary
+}
+
+/**
+ * R13.8E — what an import would do to row-level history, in the small shape the
+ * planner needs. The full plan lives in `rowHistory.ts`; only the counts and the
+ * dates reach a classification decision.
+ */
+export interface RowHistorySummary {
+  insertedCount: number
+  changedCount: number
+  /** Reporting dates gaining row-level history for the first time, ascending. */
+  datesInserted: readonly string[]
+  /** Reporting dates with at least one overwritten identity, ascending. */
+  datesChanged: readonly string[]
+}
+
+const NO_ROW_HISTORY: RowHistorySummary = {
+  insertedCount: 0,
+  changedCount: 0,
+  datesInserted: [],
+  datesChanged: [],
 }
 
 export interface WeeklyImportPlan {
@@ -352,9 +394,13 @@ export interface WeeklyImportPlan {
    * told which kind — see `corrections` and `historicalPublicationRestatements`.
    */
   requiresHistoricalCorrection: boolean
-  /** Which of the two causes triggered the gate. Either, both, or neither. */
+  /** Which of the three causes triggered the gate. Any, all, or none. */
   requiresEvolutionCorrection: boolean
   requiresPublicationRestatementCorrection: boolean
+  /** R13.8E — a row-level identity at a frozen date whose value the workbook moves. */
+  requiresRowHistoryCorrection: boolean
+  /** R13.8E — what this import would do to row-level history. */
+  rowHistory: RowHistorySummary
   correctionReason: string | null
   blocked: boolean
   blockCodes: PlanBlockCode[]
@@ -581,10 +627,19 @@ export function planWeeklyImport(input: WeeklyImportInput): WeeklyImportPlan {
     .sort((a, b) => (a.asOfDate < b.asOfDate ? -1 : a.asOfDate > b.asOfDate ? 1 : 0))
   const historicalRestatementDates = [...new Set(restatements.map((r) => r.asOfDate))]
 
+  // R13.8E adds the THIRD form of settled history: a row-level identity at a
+  // frozen reporting date whose value the workbook now states differently. It
+  // shares this gate and nothing else, so an administrator is still told which
+  // kind of history is being rewritten.
+  const rowHistory = input.rowHistory ?? NO_ROW_HISTORY
+
   const requiresEvolutionCorrection = changed.length > 0
   const requiresPublicationRestatementCorrection = restatements.length > 0
+  const requiresRowHistoryCorrection = rowHistory.changedCount > 0
   const requiresHistoricalCorrection =
-    requiresEvolutionCorrection || requiresPublicationRestatementCorrection
+    requiresEvolutionCorrection ||
+    requiresPublicationRestatementCorrection ||
+    requiresRowHistoryCorrection
 
   const reason = typeof input.correctionReason === 'string' ? input.correctionReason.trim() : ''
   if (requiresHistoricalCorrection) {
@@ -616,10 +671,17 @@ export function planWeeklyImport(input: WeeklyImportInput): WeeklyImportPlan {
       // An overwrite of settled history that ALSO restates this week's standing
       // snapshot is both corrections at once, and the preview must say so.
       action = publicationChanged ? 'mixed_correction' : 'historical_correction_only'
-    } else {
+    } else if (publicationChanged) {
       // The R13.8C.2 correction. History is settled; if the snapshot moved, this
       // is a real publication mutation and must not be refused as a no-op.
-      action = publicationChanged ? 'publication_correction' : 'nothing_to_append'
+      action = 'publication_correction'
+    } else if (rowHistory.insertedCount > 0) {
+      // R13.8E — nothing to APPEND at week grain, but row-level history the book
+      // has never held is a real durable write. Refusing it as a no-op is what
+      // would leave the rolling contributor window permanently unbuildable.
+      action = 'row_history_append'
+    } else {
+      action = 'nothing_to_append'
     }
   } else if (requiresHistoricalCorrection) {
     action = 'append_with_correction'
@@ -666,6 +728,8 @@ export function planWeeklyImport(input: WeeklyImportInput): WeeklyImportPlan {
     requiresHistoricalCorrection,
     requiresEvolutionCorrection,
     requiresPublicationRestatementCorrection,
+    requiresRowHistoryCorrection,
+    rowHistory,
     correctionReason: reason.length > 0 ? reason : null,
     blocked: blockCodes.size > 0,
     blockCodes: [...blockCodes],
@@ -704,6 +768,57 @@ export interface HistoryStore {
    * Optional so every pre-R13.8D.1 caller and fixture keeps working unchanged.
    */
   publications?: Readonly<Record<string, PublicationState>>
+  /**
+   * R13.8E — row-level history, keyed in the model by its canonical identity
+   * `(scope, observationDate, rowKey)`.
+   *
+   * Optional so every pre-R13.8E caller and fixture keeps working unchanged.
+   * These rows are NOT publications: nothing here has an `is_current`, a
+   * revision or a superseded-by pointer, and no surface may select one of these
+   * dates as a published week.
+   */
+  rowHistory?: readonly RowHistoryState[]
+}
+
+/** One row-level identity as the book holds it at one reporting date. */
+export interface RowHistoryState {
+  scope: string
+  observationDate: string
+  rowKey: string
+  value: number | null
+  valueClass: string
+  /** The import operation that last wrote it. Null for a row written earlier. */
+  importId: string | null
+}
+
+/**
+ * R13.8E — one row-level write an import would make.
+ *
+ * The lean shape the reference model needs: the identity, what it becomes, and
+ * (for an overwrite) what the caller asserts it currently is. The staged RPC
+ * payload carries presentation and provenance too; none of that participates in
+ * atomicity, so restating it here would only invite the two shapes to drift.
+ */
+export interface RowHistoryWrite {
+  scope: string
+  observationDate: string
+  rowKey: string
+  disposition: WriteDisposition
+  value: number | null
+  valueClass: string
+  priorValue: number | null
+  priorValueClass: string | null
+}
+
+/** The before-image of one row-level write, as the ledger records it. */
+export interface RowHistoryRecordEntry extends RowHistoryWrite {
+  /** Null exactly when the identity was ABSENT — how rollback tells the two apart. */
+  priorImportId: string | null
+  priorExisted: boolean
+}
+
+function rowHistoryKey(r: { scope: string; observationDate: string; rowKey: string }): string {
+  return `${r.scope}|${r.observationDate}|${r.rowKey}`
 }
 
 /**
@@ -756,6 +871,11 @@ export interface ImportRecord {
    * whole rather than leaving corrected historical revisions standing.
    */
   publicationCorrections: PublicationCorrectionEntry[]
+  /**
+   * R13.8E — the before-image of every row-level write. Insertions are removed
+   * on rollback; overwrites are restored to exactly this.
+   */
+  rowHistoryEntries: RowHistoryRecordEntry[]
 }
 
 export type ApplyFailureCode =
@@ -763,6 +883,13 @@ export type ApplyFailureCode =
   | 'nothing_to_write'
   | 'no_publication_date'
   | 'uninterpretable_observation'
+  /**
+   * R13.8E — a row-level write whose asserted pre-state does not match the book:
+   * an insertion whose identity already exists, an overwrite of an identity that
+   * does not, or an overwrite whose recorded value has moved. The plan was built
+   * against a book that has since changed, so the whole import is refused.
+   */
+  | 'stale_row_history'
 
 export type ApplyResult =
   | { ok: true; store: HistoryStore; record: ImportRecord; written: number }
@@ -781,6 +908,11 @@ export function applyImportPlan(
   store: HistoryStore,
   plan: WeeklyImportPlan,
   importId: string,
+  /**
+   * R13.8E — the row-level writes this import would make, in the order they were
+   * planned. Omitted means none, which reproduces the pre-R13.8E model exactly.
+   */
+  rowHistoryWrites: readonly RowHistoryWrite[] = [],
 ): ApplyResult {
   if (plan.blocked) return { ok: false, code: 'plan_blocked', store }
   // R13.8C.2 — NOTHING TO WRITE IS A PROPERTY OF THE WHOLE IMPORT, NOT ONLY ITS
@@ -791,10 +923,14 @@ export function applyImportPlan(
   // An import that appends nothing and leaves this week's snapshot equivalent can
   // still be correcting seven published weeks, and refusing it here would make
   // this model contradict the RPC it specifies.
+  // R13.8E — and so is a row-level value the book has never held. An import that
+  // appends no week, restates no publication and still records 19,757 rows of
+  // source-backed history is emphatically not a no-op.
   if (
     plan.observationsToWrite.length === 0 &&
     !plan.publicationChanged &&
-    plan.historicalPublicationRestatements.length === 0
+    plan.historicalPublicationRestatements.length === 0 &&
+    rowHistoryWrites.length === 0
   ) {
     return { ok: false, code: 'nothing_to_write', store }
   }
@@ -843,6 +979,70 @@ export function applyImportPlan(
     }
   }
 
+  // ── R13.8E — the row-level writes, staged and verified before anything commits.
+  //
+  // Every assertion is checked against the store FIRST, so a stale write in the
+  // ten-thousandth row leaves the first 9,999 unwritten, the publication where it
+  // was and the evolution series untouched. That is the whole point of staging:
+  // "all or nothing" has to survive a failure discovered late.
+  const rowIndex = new Map<string, number>()
+  const nextRows: RowHistoryState[] = (store.rowHistory ?? []).map((r) => ({ ...r }))
+  nextRows.forEach((r, i) => rowIndex.set(rowHistoryKey(r), i))
+
+  const rowEntries: RowHistoryRecordEntry[] = []
+  const rowStaged: Array<{ at: number | undefined; write: RowHistoryWrite }> = []
+  // One identity may be written at most ONCE per import. The database's unique
+  // key would refuse the second, and discovering that mid-write is exactly the
+  // partially-applied import this model exists to make impossible.
+  const rowSeen = new Set<string>()
+  for (const w of rowHistoryWrites) {
+    const key = rowHistoryKey(w)
+    if (rowSeen.has(key)) return { ok: false, code: 'stale_row_history', store }
+    rowSeen.add(key)
+    const at = rowIndex.get(key)
+
+    if (w.disposition === 'changed') {
+      if (at === undefined) return { ok: false, code: 'stale_row_history', store }
+      const standing = nextRows[at]
+      if (
+        standing.value !== w.priorValue ||
+        standing.valueClass !== w.priorValueClass
+      ) {
+        return { ok: false, code: 'stale_row_history', store }
+      }
+    } else if (at !== undefined) {
+      // An insertion whose identity already exists is a stale plan or an
+      // overwrite mislabelled as an insertion. Either way, refuse whole.
+      return { ok: false, code: 'stale_row_history', store }
+    }
+
+    rowEntries.push({
+      ...w,
+      priorValue: at === undefined ? null : nextRows[at].value,
+      priorValueClass: at === undefined ? null : nextRows[at].valueClass,
+      priorImportId: at === undefined ? null : nextRows[at].importId,
+      priorExisted: at !== undefined,
+    })
+    rowStaged.push({ at, write: w })
+  }
+
+  for (const { at, write } of rowStaged) {
+    const row: RowHistoryState = {
+      scope: write.scope,
+      observationDate: write.observationDate,
+      rowKey: write.rowKey,
+      value: write.value,
+      valueClass: write.valueClass,
+      importId,
+    }
+    if (at === undefined) {
+      rowIndex.set(rowHistoryKey(row), nextRows.length)
+      nextRows.push(row)
+    } else {
+      nextRows[at] = row
+    }
+  }
+
   const previousPublication = store.currentPublication
   const publication: PublicationState = {
     asOfDate: plan.publicationDate,
@@ -882,6 +1082,7 @@ export function applyImportPlan(
       observations: next,
       currentPublication: publication,
       publications: nextPublications,
+      rowHistory: nextRows,
     },
     record: {
       importId,
@@ -895,6 +1096,7 @@ export function applyImportPlan(
       publication,
       previousPublication,
       publicationCorrections,
+      rowHistoryEntries: rowEntries,
     },
     written: entries.length,
   }
@@ -937,6 +1139,18 @@ export function rollbackImport(store: HistoryStore, record: ImportRecord): Rollb
     }
   }
 
+  // R13.8E — and every ROW this import wrote must still belong to it. A later
+  // import that restated one of these rows owns it now; reversing to this
+  // import's before-image would silently discard that correction.
+  const standingRows = new Map<string, RowHistoryState>()
+  for (const r of store.rowHistory ?? []) standingRows.set(rowHistoryKey(r), r)
+  for (const e of record.rowHistoryEntries) {
+    const standing = standingRows.get(rowHistoryKey(e))
+    if (standing === undefined || standing.importId !== record.importId) {
+      return { ok: false, code: 'superseded_by_later_import', store }
+    }
+  }
+
   const remove = new Set<string>()
   const restore = new Map<string, { value: number | null; status: ObservationStatus }>()
   for (const e of record.entries) {
@@ -961,12 +1175,41 @@ export function rollbackImport(store: HistoryStore, record: ImportRecord): Rollb
     else publications[correction.asOfDate] = correction.priorPublication
   }
 
+  // ── R13.8E — row-level history, reversed exactly.
+  //
+  // An insertion is REMOVED; an overwrite is restored to the value, class and
+  // lineage it displaced. Restoring the lineage matters as much as the number:
+  // leaving the pointer at this import would make a later rollback of whichever
+  // import wrote the row first refuse, believing something else had moved it on.
+  const rowRemove = new Set<string>()
+  const rowRestore = new Map<string, RowHistoryState>()
+  for (const e of record.rowHistoryEntries) {
+    const key = rowHistoryKey(e)
+    if (!e.priorExisted) {
+      rowRemove.add(key)
+    } else {
+      rowRestore.set(key, {
+        scope: e.scope,
+        observationDate: e.observationDate,
+        rowKey: e.rowKey,
+        value: e.priorValue,
+        valueClass: e.priorValueClass ?? '',
+        importId: e.priorImportId,
+      })
+    }
+  }
+
+  const rowHistory = (store.rowHistory ?? [])
+    .filter((r) => !rowRemove.has(rowHistoryKey(r)))
+    .map((r) => rowRestore.get(rowHistoryKey(r)) ?? { ...r })
+
   return {
     ok: true,
     store: {
       observations,
       currentPublication: record.previousPublication,
       publications,
+      rowHistory,
     },
   }
 }
