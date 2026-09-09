@@ -58,7 +58,7 @@ import { dict } from '../src/lib/i18n.ts'
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const read = (rel: string) => readFileSync(path.join(HERE, '..', rel), 'utf8')
 
-const MIGRATION = read('supabase/migrations/20260822000000_portfolio_row_history.sql')
+const MIGRATION = read('supabase/migrations/20260822000000_portfolio_analytical_history.sql')
 const PRIOR_MIGRATION_PATH = 'supabase/migrations/20260821000000_portfolio_import_operations.sql'
 const ROW_HISTORY_LIB = read('src/lib/familyPortfolio/rowHistory.ts')
 const PUBLISH_ROUTE = read('src/app/api/family-portfolio/admin/uploads/[id]/publish/route.ts')

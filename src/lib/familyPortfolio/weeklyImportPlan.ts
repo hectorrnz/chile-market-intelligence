@@ -320,6 +320,12 @@ export interface WeeklyImportInput {
    * the other two forms of settled history.
    */
   rowHistory?: RowHistorySummary
+  /**
+   * FOLLOW-UP D — what an import would do to PERFORMANCE history: the source's
+   * own weekly flow, profit and return at every frozen reporting date. Same
+   * shape and same gate as row history, one identity dimension across.
+   */
+  performanceHistory?: PerformanceHistorySummary
 }
 
 /**
@@ -337,6 +343,24 @@ export interface RowHistorySummary {
 }
 
 const NO_ROW_HISTORY: RowHistorySummary = {
+  insertedCount: 0,
+  changedCount: 0,
+  datesInserted: [],
+  datesChanged: [],
+}
+
+/**
+ * FOLLOW-UP D — what an import would do to performance history, in the small
+ * shape the planner needs. The full plan lives in `performanceHistory.ts`.
+ */
+export interface PerformanceHistorySummary {
+  insertedCount: number
+  changedCount: number
+  datesInserted: readonly string[]
+  datesChanged: readonly string[]
+}
+
+const NO_PERFORMANCE_HISTORY: PerformanceHistorySummary = {
   insertedCount: 0,
   changedCount: 0,
   datesInserted: [],
@@ -399,8 +423,12 @@ export interface WeeklyImportPlan {
   requiresPublicationRestatementCorrection: boolean
   /** R13.8E — a row-level identity at a frozen date whose value the workbook moves. */
   requiresRowHistoryCorrection: boolean
+  /** FOLLOW-UP D — a performance metric at a frozen date whose value the workbook moves. */
+  requiresPerformanceHistoryCorrection: boolean
   /** R13.8E — what this import would do to row-level history. */
   rowHistory: RowHistorySummary
+  /** FOLLOW-UP D — what this import would do to performance history. */
+  performanceHistory: PerformanceHistorySummary
   correctionReason: string | null
   blocked: boolean
   blockCodes: PlanBlockCode[]
@@ -632,14 +660,19 @@ export function planWeeklyImport(input: WeeklyImportInput): WeeklyImportPlan {
   // shares this gate and nothing else, so an administrator is still told which
   // kind of history is being rewritten.
   const rowHistory = input.rowHistory ?? NO_ROW_HISTORY
+  // FOLLOW-UP D adds the FOURTH form: a source-stated weekly metric at a frozen
+  // reporting date whose value the workbook now states differently.
+  const performanceHistory = input.performanceHistory ?? NO_PERFORMANCE_HISTORY
 
   const requiresEvolutionCorrection = changed.length > 0
   const requiresPublicationRestatementCorrection = restatements.length > 0
   const requiresRowHistoryCorrection = rowHistory.changedCount > 0
+  const requiresPerformanceHistoryCorrection = performanceHistory.changedCount > 0
   const requiresHistoricalCorrection =
     requiresEvolutionCorrection ||
     requiresPublicationRestatementCorrection ||
-    requiresRowHistoryCorrection
+    requiresRowHistoryCorrection ||
+    requiresPerformanceHistoryCorrection
 
   const reason = typeof input.correctionReason === 'string' ? input.correctionReason.trim() : ''
   if (requiresHistoricalCorrection) {
@@ -675,10 +708,11 @@ export function planWeeklyImport(input: WeeklyImportInput): WeeklyImportPlan {
       // The R13.8C.2 correction. History is settled; if the snapshot moved, this
       // is a real publication mutation and must not be refused as a no-op.
       action = 'publication_correction'
-    } else if (rowHistory.insertedCount > 0) {
-      // R13.8E — nothing to APPEND at week grain, but row-level history the book
+    } else if (rowHistory.insertedCount > 0 || performanceHistory.insertedCount > 0) {
+      // R13.8E — nothing to APPEND at week grain, but analytical history the book
       // has never held is a real durable write. Refusing it as a no-op is what
-      // would leave the rolling contributor window permanently unbuildable.
+      // would leave the rolling contributor window permanently unbuildable, and
+      // (FOLLOW-UP D) a custom period unable to separate flows from result.
       action = 'row_history_append'
     } else {
       action = 'nothing_to_append'
@@ -729,7 +763,9 @@ export function planWeeklyImport(input: WeeklyImportInput): WeeklyImportPlan {
     requiresEvolutionCorrection,
     requiresPublicationRestatementCorrection,
     requiresRowHistoryCorrection,
+    requiresPerformanceHistoryCorrection,
     rowHistory,
+    performanceHistory,
     correctionReason: reason.length > 0 ? reason : null,
     blocked: blockCodes.size > 0,
     blockCodes: [...blockCodes],
@@ -778,6 +814,58 @@ export interface HistoryStore {
    * dates as a published week.
    */
   rowHistory?: readonly RowHistoryState[]
+  /**
+   * FOLLOW-UP D — the source-stated weekly metrics the book holds at every
+   * frozen reporting date. Optional for the same reason `rowHistory` is: every
+   * pre-existing caller and fixture keeps working unchanged. Also not
+   * publications: no `is_current`, no revision, no superseded-by.
+   */
+  performanceHistory?: readonly PerformanceHistoryState[]
+}
+
+/** One performance metric as the book holds it at one reporting date. */
+export interface PerformanceHistoryState {
+  scope: string
+  basis: string
+  metric: string
+  observationDate: string
+  value: number | null
+  valueClass: string
+  /** The import operation that last wrote it. Null for one written earlier. */
+  importId: string | null
+}
+
+/**
+ * FOLLOW-UP D — one performance-metric write an import would make. The same
+ * lean shape as `RowHistoryWrite`: identity, what it becomes, and (for an
+ * overwrite) what the caller asserts it currently is.
+ */
+export interface PerformanceHistoryWrite {
+  scope: string
+  basis: string
+  metric: string
+  observationDate: string
+  disposition: WriteDisposition
+  value: number | null
+  valueClass: string
+  priorValue: number | null
+  priorValueClass: string | null
+}
+
+/** The before-image of one performance-metric write, as the ledger records it. */
+export interface PerformanceHistoryRecordEntry extends PerformanceHistoryWrite {
+  /** Null exactly when the identity was ABSENT — how rollback tells the two apart. */
+  priorImportId: string | null
+  priorExisted: boolean
+}
+
+function performanceHistoryKey(p: {
+  scope: string
+  basis: string
+  metric: string
+  observationDate: string
+}): string {
+  return `${p.scope}|${p.basis}|${p.metric}|${p.observationDate}`
 }
 
 /** One row-level identity as the book holds it at one reporting date. */
@@ -876,6 +964,11 @@ export interface ImportRecord {
    * on rollback; overwrites are restored to exactly this.
    */
   rowHistoryEntries: RowHistoryRecordEntry[]
+  /**
+   * FOLLOW-UP D — the before-image of every performance-metric write. Insertions
+   * are removed on rollback; overwrites are restored to exactly this.
+   */
+  performanceHistoryEntries: PerformanceHistoryRecordEntry[]
 }
 
 export type ApplyFailureCode =
@@ -890,6 +983,11 @@ export type ApplyFailureCode =
    * against a book that has since changed, so the whole import is refused.
    */
   | 'stale_row_history'
+  /**
+   * FOLLOW-UP D — the same three staleness failures at metric grain. Kept as its
+   * own code so an operator is told WHICH history the plan went stale against.
+   */
+  | 'stale_performance_history'
 
 export type ApplyResult =
   | { ok: true; store: HistoryStore; record: ImportRecord; written: number }
@@ -913,6 +1011,11 @@ export function applyImportPlan(
    * planned. Omitted means none, which reproduces the pre-R13.8E model exactly.
    */
   rowHistoryWrites: readonly RowHistoryWrite[] = [],
+  /**
+   * FOLLOW-UP D — the performance-metric writes this import would make. Omitted
+   * means none, which reproduces the pre-FOLLOW-UP-D model exactly.
+   */
+  performanceHistoryWrites: readonly PerformanceHistoryWrite[] = [],
 ): ApplyResult {
   if (plan.blocked) return { ok: false, code: 'plan_blocked', store }
   // R13.8C.2 — NOTHING TO WRITE IS A PROPERTY OF THE WHOLE IMPORT, NOT ONLY ITS
@@ -930,7 +1033,10 @@ export function applyImportPlan(
     plan.observationsToWrite.length === 0 &&
     !plan.publicationChanged &&
     plan.historicalPublicationRestatements.length === 0 &&
-    rowHistoryWrites.length === 0
+    rowHistoryWrites.length === 0 &&
+    // FOLLOW-UP D — and neither is a book that gains 106 weeks of source-stated
+    // flows it has never held.
+    performanceHistoryWrites.length === 0
   ) {
     return { ok: false, code: 'nothing_to_write', store }
   }
@@ -1043,6 +1149,61 @@ export function applyImportPlan(
     }
   }
 
+  // ── FOLLOW-UP D — the performance-metric writes, staged and verified the same
+  //    way and for the same reason. Both histories are fully verified before
+  //    either is applied, so a stale metric discovered after 19,757 rows were
+  //    staged still leaves the book exactly as it was.
+  const perfIndex = new Map<string, number>()
+  const nextPerf: PerformanceHistoryState[] = (store.performanceHistory ?? []).map((p) => ({ ...p }))
+  nextPerf.forEach((p, i) => perfIndex.set(performanceHistoryKey(p), i))
+
+  const perfEntries: PerformanceHistoryRecordEntry[] = []
+  const perfStaged: Array<{ at: number | undefined; write: PerformanceHistoryWrite }> = []
+  const perfSeen = new Set<string>()
+  for (const w of performanceHistoryWrites) {
+    const key = performanceHistoryKey(w)
+    if (perfSeen.has(key)) return { ok: false, code: 'stale_performance_history', store }
+    perfSeen.add(key)
+    const at = perfIndex.get(key)
+
+    if (w.disposition === 'changed') {
+      if (at === undefined) return { ok: false, code: 'stale_performance_history', store }
+      const standing = nextPerf[at]
+      if (standing.value !== w.priorValue || standing.valueClass !== w.priorValueClass) {
+        return { ok: false, code: 'stale_performance_history', store }
+      }
+    } else if (at !== undefined) {
+      return { ok: false, code: 'stale_performance_history', store }
+    }
+
+    perfEntries.push({
+      ...w,
+      priorValue: at === undefined ? null : nextPerf[at].value,
+      priorValueClass: at === undefined ? null : nextPerf[at].valueClass,
+      priorImportId: at === undefined ? null : nextPerf[at].importId,
+      priorExisted: at !== undefined,
+    })
+    perfStaged.push({ at, write: w })
+  }
+
+  for (const { at, write } of perfStaged) {
+    const metric: PerformanceHistoryState = {
+      scope: write.scope,
+      basis: write.basis,
+      metric: write.metric,
+      observationDate: write.observationDate,
+      value: write.value,
+      valueClass: write.valueClass,
+      importId,
+    }
+    if (at === undefined) {
+      perfIndex.set(performanceHistoryKey(metric), nextPerf.length)
+      nextPerf.push(metric)
+    } else {
+      nextPerf[at] = metric
+    }
+  }
+
   const previousPublication = store.currentPublication
   const publication: PublicationState = {
     asOfDate: plan.publicationDate,
@@ -1083,6 +1244,7 @@ export function applyImportPlan(
       currentPublication: publication,
       publications: nextPublications,
       rowHistory: nextRows,
+      performanceHistory: nextPerf,
     },
     record: {
       importId,
@@ -1097,6 +1259,7 @@ export function applyImportPlan(
       previousPublication,
       publicationCorrections,
       rowHistoryEntries: rowEntries,
+      performanceHistoryEntries: perfEntries,
     },
     written: entries.length,
   }
@@ -1146,6 +1309,17 @@ export function rollbackImport(store: HistoryStore, record: ImportRecord): Rollb
   for (const r of store.rowHistory ?? []) standingRows.set(rowHistoryKey(r), r)
   for (const e of record.rowHistoryEntries) {
     const standing = standingRows.get(rowHistoryKey(e))
+    if (standing === undefined || standing.importId !== record.importId) {
+      return { ok: false, code: 'superseded_by_later_import', store }
+    }
+  }
+
+  // FOLLOW-UP D — and every performance METRIC this import wrote must still
+  // belong to it, on identical reasoning.
+  const standingPerf = new Map<string, PerformanceHistoryState>()
+  for (const p of store.performanceHistory ?? []) standingPerf.set(performanceHistoryKey(p), p)
+  for (const e of record.performanceHistoryEntries ?? []) {
+    const standing = standingPerf.get(performanceHistoryKey(e))
     if (standing === undefined || standing.importId !== record.importId) {
       return { ok: false, code: 'superseded_by_later_import', store }
     }
@@ -1203,6 +1377,30 @@ export function rollbackImport(store: HistoryStore, record: ImportRecord): Rollb
     .filter((r) => !rowRemove.has(rowHistoryKey(r)))
     .map((r) => rowRestore.get(rowHistoryKey(r)) ?? { ...r })
 
+  // ── FOLLOW-UP D — performance history, reversed exactly the same way.
+  const perfRemove = new Set<string>()
+  const perfRestore = new Map<string, PerformanceHistoryState>()
+  for (const e of record.performanceHistoryEntries ?? []) {
+    const key = performanceHistoryKey(e)
+    if (!e.priorExisted) {
+      perfRemove.add(key)
+    } else {
+      perfRestore.set(key, {
+        scope: e.scope,
+        basis: e.basis,
+        metric: e.metric,
+        observationDate: e.observationDate,
+        value: e.priorValue,
+        valueClass: e.priorValueClass ?? '',
+        importId: e.priorImportId,
+      })
+    }
+  }
+
+  const performanceHistory = (store.performanceHistory ?? [])
+    .filter((p) => !perfRemove.has(performanceHistoryKey(p)))
+    .map((p) => perfRestore.get(performanceHistoryKey(p)) ?? { ...p })
+
   return {
     ok: true,
     store: {
@@ -1210,6 +1408,7 @@ export function rollbackImport(store: HistoryStore, record: ImportRecord): Rollb
       currentPublication: record.previousPublication,
       publications,
       rowHistory,
+      performanceHistory,
     },
   }
 }

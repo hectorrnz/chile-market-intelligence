@@ -20,6 +20,11 @@
 -- be there afterwards. Every assertion after each `throws_ok` re-reads the
 -- tables and proves they are not.
 --
+-- FOLLOW-UP D adds section 11, which holds PERFORMANCE history to the same
+-- bar: the canonical identity, the relay refusals, an atomic write inside the
+-- import, the authorization gate on an overwrite, an exact rollback with its
+-- lineage, and the full family-scope isolation matrix.
+--
 -- `throws_ok` runs its query inside a plpgsql exception block, which is a real
 -- subtransaction: catching the error rolls back everything the function did,
 -- exactly as a failed RPC call would. `lives_ok` is its counterpart -- on
@@ -129,6 +134,39 @@ returns void
 language sql
 as $$
   insert into public.portfolio_row_history_staging (staging_id, chunk_index, rows)
+  values (p_id, 0, p_rows);
+$$;
+
+-- FOLLOW-UP D: one staged performance-history metric, in the shape
+-- `jsonb_to_recordset` reads.
+create or replace function pg_temp.ph(
+  p_scope text, p_basis text, p_metric text, p_date text, p_value numeric,
+  p_disposition text default 'new',
+  p_prior numeric default null)
+returns jsonb
+language sql
+as $$
+  select jsonb_build_object(
+    'scope', p_scope, 'basis', p_basis, 'metric', p_metric,
+    'observation_date', p_date,
+    'value', p_value,
+    'value_class', case
+                     when p_value is null then 'unavailable'
+                     when p_metric = 'flow' then 'source_provided_flow'
+                     else 'source_provided_return' end,
+    'source_sheet', 'RESUMEN', 'source_cell', 'DA97', 'source_row', 97,
+    'parser_version', 'test.parser.1',
+    'disposition', p_disposition,
+    'prior_value', p_prior,
+    'prior_value_class', case when p_disposition = 'changed'
+                              then 'source_provided_flow' else null end);
+$$;
+
+create or replace function pg_temp.stage_ph(p_id uuid, p_rows jsonb)
+returns void
+language sql
+as $$
+  insert into public.portfolio_performance_history_staging (staging_id, chunk_index, rows)
   values (p_id, 0, p_rows);
 $$;
 
@@ -764,6 +802,401 @@ select is(
   0, 'the coverage view is scope-filtered too -- it is security_invoker');
 select ok(
   (select count(*)::int from public.portfolio_row_history_coverage where scope = 'jaime') = 1,
+  'and reports the reader''s own dates');
+
+select pg_temp.as_service();
+
+-- ===========================================================================
+-- 11 - PERFORMANCE HISTORY (POST-R13.8 FOLLOW-UP D)
+-- ===========================================================================
+--
+-- The same model at METRIC grain, held to the same bar: the canonical identity,
+-- the relay refusals, an atomic write inside the import, the authorization gate
+-- on an overwrite, an exact rollback, and the family-scope isolation.
+--
+-- WHY IT MATTERS SEPARATELY FROM ROW HISTORY. Row history says what each holding
+-- stood at; this says how much money moved in or out. A custom-period
+-- reconciliation subtracts these flows from the value change to get the result,
+-- so a flow that is silently missing or silently zero would attribute a deposit
+-- to performance.
+
+select pg_temp.as_service();
+
+-- 11.1 - Schema and posture -------------------------------------------------
+
+select has_table('public', 'portfolio_performance_history',
+  'the performance-history table exists');
+select has_table('public', 'portfolio_import_performance_history_mutations',
+  'the performance-history before-image ledger exists');
+select has_table('public', 'portfolio_performance_history_staging',
+  'the performance-history staging relay exists');
+
+-- The canonical identity MIRRORS the publication performance identity with the
+-- publication replaced by the date. Basis is part of it here, unlike in row
+-- history, because it genuinely distinguishes two Main series.
+select col_is_unique('public', 'portfolio_performance_history',
+  array['scope', 'basis', 'metric', 'observation_date'],
+  'the canonical identity is (scope, basis, metric, observation_date)');
+
+select has_column('public', 'portfolio_performance_history', 'basis',
+  'performance history carries basis, because the publication identity has it');
+
+select hasnt_column('public', 'portfolio_performance_history', 'is_current',
+  'performance history carries no is_current');
+select hasnt_column('public', 'portfolio_performance_history', 'revision',
+  'performance history carries no revision');
+select hasnt_column('public', 'portfolio_performance_history', 'superseded_by',
+  'performance history carries no supersession pointer');
+select hasnt_column('public', 'portfolio_performance_history', 'publication_id',
+  'performance history is keyed by a reporting DATE, never by a publication');
+
+select has_column('public', 'portfolio_performance_history', 'import_operation_id',
+  'performance history carries forward lineage to the import that wrote it');
+select has_column('public', 'portfolio_import_performance_history_mutations', 'prior_row',
+  'the ledger records the WHOLE displaced metric, so a reversal is exact');
+
+select has_function('public', 'nmi_staged_performance_history', array['uuid'],
+  'the staged set is a resolvable function, not a temp table');
+
+-- 11.2 - An unstated metric can never become a number -----------------------
+
+select throws_ok(
+  $$insert into public.portfolio_performance_history
+      (scope, basis, metric, observation_date, value, value_class,
+       source_upload_id, source_sheet, source_cell, parser_version)
+    values ('main','ex_chilean_equities','flow','2026-08-07', 0, 'unavailable',
+            'cccc0001-0000-0000-0000-000000000001', 'RESUMEN', 'DA97', 'test.parser.1')$$,
+  '23514',
+  'an unavailable metric carrying a number is refused by the database');
+
+select lives_ok(
+  $$insert into public.portfolio_performance_history
+      (scope, basis, metric, observation_date, value, value_class,
+       source_upload_id, source_sheet, source_cell, parser_version)
+    values ('main','ex_chilean_equities','ytd_return','2026-06-05', null, 'unavailable',
+            'cccc0001-0000-0000-0000-000000000001', 'RESUMEN', 'DA99', 'test.parser.1')$$,
+  'an unavailable metric with NO number is accepted');
+
+delete from public.portfolio_performance_history where observation_date = date '2026-06-05';
+
+-- 11.3 - The relay refuses an incomplete batch ------------------------------
+
+select pg_temp.stage_ph(
+  'dddd9001-0000-0000-0000-000000000001'::uuid,
+  jsonb_build_array(
+    pg_temp.ph('main', 'ex_chilean_equities', 'flow',          '2026-08-28', 1000),
+    pg_temp.ph('main', 'ex_chilean_equities', 'weekly_profit', '2026-08-28', 250)));
+
+select throws_ok(
+  $$select public.nmi_import_portfolio_workbook(
+      'cccc0006-0000-0000-0000-000000000006'::uuid, '2026-08-28'::date,
+      'c1111111-1111-1111-1111-111111111111'::uuid, 'test.parser.1', 'test.plan.1',
+      pg_temp.rows_payload(140),
+      jsonb_build_array(pg_temp.obs('2026-08-28','new',140)),
+      '[]'::jsonb, false, null, '{}'::jsonb, null,
+      jsonb_build_object(
+        'performanceHistoryStagingId', 'dddd9001-0000-0000-0000-000000000001',
+        'performanceHistoryRowCount', 3,
+        'previousWeekDate', '2026-08-21'))$$,
+  'import_refused_performance_history_staging_incomplete',
+  'a staged batch shorter than the declared count refuses the whole import');
+
+select is(
+  (select count(*)::int from public.portfolio_performance_history
+    where observation_date = date '2026-08-28'),
+  0, 'and not one metric was written');
+
+select throws_ok(
+  $$select public.nmi_import_portfolio_workbook(
+      'cccc0006-0000-0000-0000-000000000006'::uuid, '2026-08-28'::date,
+      'c1111111-1111-1111-1111-111111111111'::uuid, 'test.parser.1', 'test.plan.1',
+      pg_temp.rows_payload(140),
+      jsonb_build_array(pg_temp.obs('2026-08-28','new',140)),
+      '[]'::jsonb, false, null, '{}'::jsonb, null,
+      jsonb_build_object(
+        'performanceHistoryStagingId', 'dddd9001-0000-0000-0000-000000000001',
+        'previousWeekDate', '2026-08-21'))$$,
+  'import_refused_performance_history_count_missing',
+  'a relay with no declared count is refused rather than trusted');
+
+select throws_ok(
+  $$select public.nmi_import_portfolio_workbook(
+      'cccc0006-0000-0000-0000-000000000006'::uuid, '2026-08-28'::date,
+      'c1111111-1111-1111-1111-111111111111'::uuid, 'test.parser.1', 'test.plan.1',
+      pg_temp.rows_payload(140),
+      jsonb_build_array(pg_temp.obs('2026-08-28','new',140)),
+      '[]'::jsonb, false, null, '{}'::jsonb, null,
+      jsonb_build_object(
+        'performanceHistoryRowCount', 2,
+        'previousWeekDate', '2026-08-21'))$$,
+  'import_refused_performance_history_staging_missing',
+  'a declared count with no relay at all is refused');
+
+-- 11.4 - The happy path: written inside the import, with lineage ------------
+
+select pg_temp.stage_ph(
+  'dddd9002-0000-0000-0000-000000000002'::uuid,
+  jsonb_build_array(
+    pg_temp.ph('main',   'ex_chilean_equities', 'flow',          '2026-08-28', 1000),
+    pg_temp.ph('main',   'ex_chilean_equities', 'weekly_profit', '2026-08-28', 250),
+    pg_temp.ph('main',   'with_chilean_equities', 'flow',        '2026-08-28', 1000),
+    pg_temp.ph('jaime',  'total',               'flow',          '2026-08-28', 500),
+    pg_temp.ph('andres', 'total',               'flow',          '2026-08-28', null)));
+
+select lives_ok(
+  $$select public.nmi_import_portfolio_workbook(
+      'cccc0006-0000-0000-0000-000000000006'::uuid, '2026-08-28'::date,
+      'c1111111-1111-1111-1111-111111111111'::uuid, 'test.parser.1', 'test.plan.1',
+      pg_temp.rows_payload(140),
+      jsonb_build_array(pg_temp.obs('2026-08-28','new',140)),
+      '[]'::jsonb, false, null, '{}'::jsonb, null,
+      jsonb_build_object(
+        'performanceHistoryStagingId', 'dddd9002-0000-0000-0000-000000000002',
+        'performanceHistoryRowCount', 5,
+        'previousWeekDate', '2026-08-21'))$$,
+  'a complete relay applies inside the import');
+
+select is(
+  (select count(*)::int from public.portfolio_performance_history
+    where observation_date = date '2026-08-28'),
+  5, 'every staged metric was written');
+
+-- Main publishes BOTH bases at one date, which is exactly why basis is part of
+-- the identity: without it these two flows would collide.
+select is(
+  (select count(*)::int from public.portfolio_performance_history
+    where scope = 'main' and metric = 'flow' and observation_date = date '2026-08-28'),
+  2, 'Main''s two bases coexist at one date under the same metric');
+
+select is(
+  (select value_class from public.portfolio_performance_history
+    where scope = 'andres' and metric = 'flow' and observation_date = date '2026-08-28'),
+  'unavailable', 'a metric the source did not state stays unavailable');
+select ok(
+  (select value is null from public.portfolio_performance_history
+    where scope = 'andres' and metric = 'flow' and observation_date = date '2026-08-28'),
+  'and carries NO number -- never a zero flow, which would assert no money moved');
+
+select ok(
+  (select import_operation_id = pg_temp.op_id('cccc0006-0000-0000-0000-000000000006')
+     from public.portfolio_performance_history
+    where scope = 'jaime' and metric = 'flow' and observation_date = date '2026-08-28'),
+  'each metric records the import operation that wrote it');
+
+select is(
+  (select count(*)::int from public.portfolio_performance_history_staging
+    where staging_id = 'dddd9002-0000-0000-0000-000000000002'),
+  0, 'the relay was consumed and cleared inside the same transaction');
+
+-- 11.5 - The no-op and the authorization gate --------------------------------
+
+select throws_ok(
+  $$select public.nmi_import_portfolio_workbook(
+      'cccc0006-0000-0000-0000-000000000006'::uuid, '2026-08-28'::date,
+      'c1111111-1111-1111-1111-111111111111'::uuid, 'test.parser.1', 'test.plan.1',
+      pg_temp.rows_payload(140),
+      '[]'::jsonb, '[]'::jsonb, false, null, '{}'::jsonb, null,
+      jsonb_build_object('previousWeekDate', '2026-08-21'))$$,
+  'import_refused_nothing_to_append',
+  'an import that would write no history and change no publication is refused');
+
+-- An overwrite of a settled metric needs authorization AND a written reason.
+select pg_temp.stage_ph(
+  'dddd9003-0000-0000-0000-000000000003'::uuid,
+  jsonb_build_array(
+    pg_temp.ph('jaime', 'total', 'flow', '2026-08-28', 1655600, 'changed', 500)));
+
+select throws_ok(
+  $$select public.nmi_import_portfolio_workbook(
+      'cccc0007-0000-0000-0000-000000000007'::uuid, '2026-09-04'::date,
+      'c1111111-1111-1111-1111-111111111111'::uuid, 'test.parser.1', 'test.plan.1',
+      pg_temp.rows_payload(150),
+      jsonb_build_array(pg_temp.obs('2026-09-04','new',150)),
+      '[]'::jsonb, false, null, '{}'::jsonb, null,
+      jsonb_build_object(
+        'performanceHistoryStagingId', 'dddd9003-0000-0000-0000-000000000003',
+        'performanceHistoryRowCount', 1,
+        'previousWeekDate', '2026-08-28'))$$,
+  'import_refused_historical_correction_required',
+  'restating a settled weekly flow requires authorization and a reason');
+
+-- A stale overwrite -- the value has moved since the plan was made.
+select pg_temp.stage_ph(
+  'dddd9004-0000-0000-0000-000000000004'::uuid,
+  jsonb_build_array(
+    pg_temp.ph('jaime', 'total', 'flow', '2026-08-28', 1655600, 'changed', 999)));
+
+select throws_ok(
+  $$select public.nmi_import_portfolio_workbook(
+      'cccc0007-0000-0000-0000-000000000007'::uuid, '2026-09-04'::date,
+      'c1111111-1111-1111-1111-111111111111'::uuid, 'test.parser.1', 'test.plan.1',
+      pg_temp.rows_payload(150),
+      jsonb_build_array(pg_temp.obs('2026-09-04','new',150)),
+      '[]'::jsonb, true, 'the workbook restated an August flow', '{}'::jsonb, null,
+      jsonb_build_object(
+        'performanceHistoryStagingId', 'dddd9004-0000-0000-0000-000000000004',
+        'performanceHistoryRowCount', 1,
+        'previousWeekDate', '2026-08-28'))$$,
+  'import_refused_stale_performance_history_value_moved',
+  'an overwrite whose asserted before-image has moved refuses the whole import');
+
+-- An INSERTION of an identity that already exists is equally stale.
+select pg_temp.stage_ph(
+  'dddd9005-0000-0000-0000-000000000005'::uuid,
+  jsonb_build_array(
+    pg_temp.ph('jaime', 'total', 'flow', '2026-08-28', 1)));
+
+select throws_ok(
+  $$select public.nmi_import_portfolio_workbook(
+      'cccc0007-0000-0000-0000-000000000007'::uuid, '2026-09-04'::date,
+      'c1111111-1111-1111-1111-111111111111'::uuid, 'test.parser.1', 'test.plan.1',
+      pg_temp.rows_payload(150),
+      jsonb_build_array(pg_temp.obs('2026-09-04','new',150)),
+      '[]'::jsonb, false, null, '{}'::jsonb, null,
+      jsonb_build_object(
+        'performanceHistoryStagingId', 'dddd9005-0000-0000-0000-000000000005',
+        'performanceHistoryRowCount', 1,
+        'previousWeekDate', '2026-08-28'))$$,
+  'import_refused_stale_performance_history_identity_exists',
+  'an insertion of an identity the book already holds is refused');
+
+select is(
+  (select value from public.portfolio_performance_history
+    where scope = 'jaime' and metric = 'flow' and observation_date = date '2026-08-28'),
+  500::numeric, 'and the settled metric never moved');
+
+-- 11.6 - The authorized overwrite, then an exact rollback --------------------
+
+select pg_temp.stage_ph(
+  'dddd9006-0000-0000-0000-000000000006'::uuid,
+  jsonb_build_array(
+    pg_temp.ph('jaime', 'total', 'flow', '2026-08-28', 1655600, 'changed', 500)));
+
+select lives_ok(
+  $$select public.nmi_import_portfolio_workbook(
+      'cccc0007-0000-0000-0000-000000000007'::uuid, '2026-09-04'::date,
+      'c1111111-1111-1111-1111-111111111111'::uuid, 'test.parser.1', 'test.plan.1',
+      pg_temp.rows_payload(150),
+      jsonb_build_array(pg_temp.obs('2026-09-04','new',150)),
+      '[]'::jsonb, true, 'the workbook restated an August flow', '{}'::jsonb, null,
+      jsonb_build_object(
+        'performanceHistoryStagingId', 'dddd9006-0000-0000-0000-000000000006',
+        'performanceHistoryRowCount', 1,
+        'previousWeekDate', '2026-08-28'))$$,
+  'an authorized overwrite of a settled metric applies');
+
+select is(
+  (select value from public.portfolio_performance_history
+    where scope = 'jaime' and metric = 'flow' and observation_date = date '2026-08-28'),
+  1655600::numeric, 'the recorded flow moved');
+
+select lives_ok(
+  $$select public.nmi_rollback_portfolio_import(
+      pg_temp.op_id('cccc0007-0000-0000-0000-000000000007'),
+      'c1111111-1111-1111-1111-111111111111'::uuid, null)$$,
+  'the overwrite reverses');
+
+select is(
+  (select value from public.portfolio_performance_history
+    where scope = 'jaime' and metric = 'flow' and observation_date = date '2026-08-28'),
+  500::numeric, 'rollback restored the exact before-image');
+select is(
+  (select import_operation_id from public.portfolio_performance_history
+    where scope = 'jaime' and metric = 'flow' and observation_date = date '2026-08-28'),
+  pg_temp.op_id('cccc0006-0000-0000-0000-000000000006'),
+  'and restored the LINEAGE, so a later rollback of the first import still chains');
+
+-- A stale rollback is refused: a metric this import wrote now belongs elsewhere.
+update public.portfolio_performance_history
+   set import_operation_id = pg_temp.op_id('cccc0005-0000-0000-0000-000000000005')
+ where scope = 'main' and basis = 'ex_chilean_equities' and metric = 'flow'
+   and observation_date = date '2026-08-28';
+
+select throws_ok(
+  $$select public.nmi_rollback_portfolio_import(
+      pg_temp.op_id('cccc0006-0000-0000-0000-000000000006'),
+      'c1111111-1111-1111-1111-111111111111'::uuid, null)$$,
+  'rollback_refused_performance_history_superseded_by_later_import',
+  'a rollback whose metrics a later import owns is refused WHOLE');
+
+select is(
+  (select count(*)::int from public.portfolio_performance_history
+    where observation_date = date '2026-08-28'),
+  5, 'and not one metric was reversed');
+
+update public.portfolio_performance_history
+   set import_operation_id = pg_temp.op_id('cccc0006-0000-0000-0000-000000000006')
+ where scope = 'main' and basis = 'ex_chilean_equities' and metric = 'flow'
+   and observation_date = date '2026-08-28';
+
+-- 11.7 - RLS: the same isolation a published performance row gets ------------
+
+select is(
+  (select count(*)::int from pg_catalog.pg_policies
+    where schemaname = 'public' and tablename = 'portfolio_performance_history'),
+  1, 'exactly one policy: a scope-filtered read');
+
+select is(
+  (select policyname from pg_catalog.pg_policies
+    where schemaname = 'public' and tablename = 'portfolio_performance_history'),
+  'portfolio_performance_history_scope_select',
+  'and it is the named scope-filtered policy, not some other one');
+
+select ok(has_table_privilege('authenticated', 'public.portfolio_performance_history', 'SELECT'),
+  'authenticated holds SELECT');
+select ok(not has_table_privilege('authenticated', 'public.portfolio_performance_history', 'INSERT'),
+  'authenticated holds no INSERT');
+select ok(not has_table_privilege('authenticated', 'public.portfolio_performance_history', 'UPDATE'),
+  'authenticated holds no UPDATE');
+select ok(not has_table_privilege('authenticated', 'public.portfolio_performance_history', 'DELETE'),
+  'authenticated holds no DELETE');
+select ok(not has_table_privilege('authenticated',
+    'public.portfolio_import_performance_history_mutations', 'SELECT'),
+  'authenticated cannot read the performance-history ledger');
+select ok(not has_table_privilege('authenticated',
+    'public.portfolio_performance_history_staging', 'SELECT'),
+  'authenticated cannot read the performance-history relay');
+
+select pg_temp.as_user('c1111111-1111-1111-1111-111111111111');
+select is(
+  (select count(*)::int from public.portfolio_performance_history
+    where observation_date = date '2026-08-28'),
+  5, 'an administrator reads every scope');
+
+select pg_temp.as_user('c3333333-3333-3333-3333-333333333333');
+select is(
+  (select count(*)::int from public.portfolio_performance_history where scope = 'jaime'),
+  1, 'JAIME reads his own performance history');
+select is(
+  (select count(*)::int from public.portfolio_performance_history where scope = 'andres'),
+  0, 'JAIME cannot read ANDRES''s weekly flows');
+
+select pg_temp.as_user('c4444444-4444-4444-4444-444444444444');
+select is(
+  (select count(*)::int from public.portfolio_performance_history where scope = 'jaime'),
+  0, 'ANDRES cannot read JAIME''s weekly flows');
+
+select pg_temp.as_user('c6666666-6666-6666-6666-666666666666');
+select is(
+  (select count(*)::int from public.portfolio_performance_history
+    where scope in ('jaime','andres','pablo')),
+  0, 'an account with NO portfolio principal has no personal scope at all');
+
+select pg_temp.as_anon();
+select throws_ok(
+  $$select count(*) from public.portfolio_performance_history$$,
+  'permission denied for table portfolio_performance_history',
+  'anon holds no privilege to read performance history at all');
+
+select pg_temp.as_service();
+
+-- The coverage view answers through the same predicate, not around it.
+select pg_temp.as_user('c3333333-3333-3333-3333-333333333333');
+select is(
+  (select count(*)::int from public.portfolio_performance_history_coverage where scope = 'andres'),
+  0, 'the performance coverage view is scope-filtered too -- it is security_invoker');
+select ok(
+  (select count(*)::int from public.portfolio_performance_history_coverage where scope = 'jaime') = 1,
   'and reports the reader''s own dates');
 
 select pg_temp.as_service();

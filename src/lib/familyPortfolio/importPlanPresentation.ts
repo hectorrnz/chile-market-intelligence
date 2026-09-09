@@ -117,6 +117,18 @@ export interface ImportPlan {
     readonly datesInserted: readonly string[]
     readonly datesChanged: readonly string[]
   }
+  /**
+   * FOLLOW-UP D - the PERFORMANCE history this workbook would write: the
+   * source's own weekly flow, profit and return at every frozen reporting date.
+   * Same optionality rule as row history.
+   */
+  requiresPerformanceHistoryCorrection?: boolean
+  performanceHistory?: {
+    insertedCount: number
+    changedCount: number
+    readonly datesInserted: readonly string[]
+    readonly datesChanged: readonly string[]
+  }
   blocked: boolean
   blockCodes: string[]
   counts: { new: number; gapFill: number; changed: number; unchanged: number; invalid: number }
@@ -300,14 +312,26 @@ export function describeImportPlan(plan: ImportPlan, a: VerdictStrings): ImportV
     // carries row-level values for reporting dates the book has never held at
     // row grain. Calling that "nothing to apply" is what would leave the rolling
     // contributor window permanently unbuildable.
+    // FOLLOW-UP D reaches the same verdict for PERFORMANCE history, and the two
+    // are reported together: one import writes both, so an administrator told
+    // about one and not the other would approve more than they were shown. The
+    // dates counted are the UNION - a date usually gains both at once, and
+    // adding the two counts would double it.
     const rhInserted = plan.rowHistory?.insertedCount ?? 0
-    const rhDates = plan.rowHistory?.datesInserted.length ?? 0
-    if (rhInserted > 0) {
+    const phInserted = plan.performanceHistory?.insertedCount ?? 0
+    const unionDates = new Set<string>([
+      ...(plan.rowHistory?.datesInserted ?? []),
+      ...(plan.performanceHistory?.datesInserted ?? []),
+    ])
+    if (rhInserted > 0 || phInserted > 0) {
       return {
         kind: 'append',
         tone: TONE.gapFill,
         title: a.verdictRowHistoryTitle,
-        body: fill(a.verdictRowHistoryBody, { n: rhDates, r: rhInserted }),
+        body: fill(a.verdictRowHistoryBody, {
+          n: unionDates.size,
+          r: rhInserted + phInserted,
+        }),
       }
     }
     return { kind: 'nothing', tone: TONE.neutral, title: a.verdictNothingTitle, body: a.verdictNothingBody }

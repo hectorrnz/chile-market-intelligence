@@ -53,6 +53,22 @@ const wEs = dict.es.fp.weeklyChanges
 // 1 · § 6h page order — the nine documented sections, in the documented order
 // ═══════════════════════════════════════════════════════════════════════════
 
+/**
+ * FOLLOW-UP D — the reconciliation ledger, wherever it lives.
+ *
+ * Its four rows moved out of the JSX into a `useMemo` that chooses between the
+ * WEEKLY ledger and the PERIOD one, so a region that stopped at the card no
+ * longer contains them. This returns the memo AND the card, which together are
+ * the ledger: what its rows are, and how they are drawn.
+ */
+function ledgerRegion(page: string): string {
+  const memoAt = page.indexOf('THE RECONCILIATION LEDGER, CHOSEN BY MODE')
+  const cardEnd = page.indexOf('item 4 · RETIRED')
+  const memo = memoAt >= 0 ? page.slice(memoAt, page.indexOf('const reclassifications')) : ''
+  const card = page.slice(page.indexOf('w.periodReconTitle : w.flowReconTitle'), cardEnd)
+  return memo + card
+}
+
 describe('R13.8 · § 6h page order', () => {
   test('every surviving section renders, in the contract order', () => {
     // Each marker is the section's own i18n title reference (or its anchor
@@ -68,7 +84,9 @@ describe('R13.8 · § 6h page order', () => {
       // card that used to follow it is deleted, so the hero's own label is the
       // section's marker.
       'w.weeklyValueChange', // 2 · total-level weekly metrics
-      'w.flowReconTitle', // 3 · flow / investment-result reconciliation
+      // FOLLOW-UP D — the heading is chosen by mode, so the marker is the
+      // expression rather than the weekly key alone.
+      'w.periodReconTitle : w.flowReconTitle', // 3 · flow / result reconciliation
       // 4 · RETIRED — see `R13.R3B.1 · the waterfall is retired from this page`
       'w.increasesTitle', // 5a · Largest Weekly Value Increases
       'w.decreasesTitle', // 5b · Largest Weekly Value Decreases
@@ -681,7 +699,7 @@ describe('R13.8 · privacy', () => {
   })
 
   test('R13.R3C.4 — the ledger reads opening → made → moved → closing, and states nothing else', () => {
-    const ledger = page.slice(page.indexOf('{w.flowReconTitle}'), page.indexOf('item 4 · RETIRED'))
+    const ledger = ledgerRegion(page)
     assert.ok(ledger.length > 0, 'the reconciliation card exists')
     const order = ['w.previousValueLabel', 'o.weeklyProfit', 'w.flowLabel', 'w.endingValueLabel']
     let cursor = -1
@@ -691,10 +709,19 @@ describe('R13.8 · privacy', () => {
       assert.ok(at > cursor, `${marker} must follow the previous ledger row`)
       cursor = at
     }
-    // Exactly four rows, with the closing line set off as the SUM of the three
-    // above it rather than a fifth term.
-    assert.equal((ledger.match(/\{ label: [wo]\./g) ?? []).length, 4)
-    assert.equal((ledger.match(/divider: true/g) ?? []).length, 1)
+    // FOLLOW-UP D — TWO ledgers of exactly four rows each: the weekly one
+    // above, and the PERIOD one a custom range reads instead. Each closes with
+    // its line set off as the SUM of the three above it, never a fifth term.
+    assert.equal((ledger.match(/\{ label: [wo]\./g) ?? []).length, 8)
+    assert.equal((ledger.match(/divider: true/g) ?? []).length, 2)
+    const periodOrder = ['w.periodFromLabel', 'w.periodProfit', 'w.periodFlow', 'w.periodToLabel']
+    let periodCursor = -1
+    for (const marker of periodOrder) {
+      const at = ledger.indexOf(marker)
+      assert.ok(at >= 0, `${marker} is a row of the period ledger`)
+      assert.ok(at > periodCursor, `${marker} must follow the previous period row`)
+      periodCursor = at
+    }
     // Every ledger amount goes through the mask; none through formatUsd.
     assert.ok(!ledger.includes('formatUsd('), 'the ledger never formats an amount itself')
     assert.equal((ledger.match(/<MaskedAmount value=\{r\.value\}/g) ?? []).length, 1)
@@ -723,7 +750,7 @@ describe('R13.8 · privacy', () => {
     assert.match(route, /flowReconciliation/)
     assert.match(page, /const flowRecon = data\?\.flowReconciliation \?\? null/)
     // The two figures are gone from the CARD…
-    const ledger = page.slice(page.indexOf('{w.flowReconTitle}'), page.indexOf('item 4 · RETIRED'))
+    const ledger = ledgerRegion(page)
     assert.ok(!/expectedCurrent/.test(ledger), 'the implied value is no longer printed')
     // …and the verdict still reaches the reader in the status section, beside
     // the driver reconciliation — so a real residual can never go silent.
@@ -731,7 +758,10 @@ describe('R13.8 · privacy', () => {
     assert.match(status, /state=\{displayState\(flowRecon\.status\)\}/)
     // A residual also says so on the card itself — one line, and no second
     // amount, so the note above it can never assert an identity the rows deny.
-    assert.match(page, /flowRecon\.status === 'residual'/)
+    // FOLLOW-UP D — the weekly residual note is now explicitly weekly-only; a
+    // custom range gets its own cross-check line instead.
+    assert.match(page, /!isCustomRange && flowRecon\?\.status === 'residual'/)
+    assert.match(page, /periodPerf\?\.profitCrossCheck === 'mismatch'/)
     assert.match(page, /\{w\.flowReconResidual\}/)
   })
 
@@ -934,8 +964,8 @@ describe('R13.8 · responsive & accessibility', () => {
     // utility anywhere in this block would mean the seen order and the read
     // order can disagree — for a screen reader, a keyboard, or print.
     assert.ok(!/xl:order-[12]/.test(page), 'no order utility reverses the two halves')
-    const hero = page.indexOf('label={w.weeklyValueChange}')
-    const ledger = page.indexOf('{w.flowReconTitle}')
+    const hero = page.indexOf('isCustomRange ? w.customTitle : w.weeklyValueChange')
+    const ledger = page.indexOf('w.periodReconTitle : w.flowReconTitle')
     assert.ok(hero > 0 && ledger > 0)
     assert.ok(hero < ledger, 'the Weekly Value Change headline precedes the reconciliation')
   })
@@ -947,7 +977,10 @@ describe('R13.8 · responsive & accessibility', () => {
     // `items-center`, either of which would centre the words instead.
     const heroClass = /className="justify-center border-b border-border pb-4 xl:border-b-0 xl:pb-0 xl:pr-6"/
     assert.match(page, heroClass)
-    const block = page.slice(page.indexOf('grid-cols-1 xl:grid-cols-[minmax(0,0.8fr)_1fr]'), page.indexOf('{w.flowReconNote}'))
+    const block = page.slice(
+      page.indexOf('grid-cols-1 xl:grid-cols-[minmax(0,0.8fr)_1fr]'),
+      page.indexOf('isCustomRange ? w.periodReconNote : w.flowReconNote'),
+    )
     assert.ok(!/text-center/.test(block), 'the headline block never centres its text')
     assert.ok(!/items-center/.test(block), 'no cross-axis centring turns the left-aligned text central')
   })

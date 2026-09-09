@@ -51,6 +51,8 @@ import {
   importPortfolioWorkbook,
   stageRowHistory,
   discardRowHistoryStaging,
+  stagePerformanceHistory,
+  discardPerformanceHistoryStaging,
   type HoldingPayload,
   type EventPayload,
   type ImportObservationPayload,
@@ -254,6 +256,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         requiresRowHistoryCorrection: plan.requiresRowHistoryCorrection,
         rowHistoryChangedDates: plan.rowHistory.datesChanged,
         rowHistoryChangedCount: plan.rowHistory.changedCount,
+        // FOLLOW-UP D - the fourth cause, named for the same reason.
+        requiresPerformanceHistoryCorrection: plan.requiresPerformanceHistoryCorrection,
+        performanceHistoryChangedDates: plan.performanceHistory.datesChanged,
+        performanceHistoryChangedCount: plan.performanceHistory.changedCount,
       })
     }
 
@@ -288,7 +294,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       !plan.publicationChanged &&
       plan.historicalPublicationRestatements.length === 0 &&
       plan.rowHistory.insertedCount === 0 &&
-      plan.rowHistory.changedCount === 0
+      plan.rowHistory.changedCount === 0 &&
+      // FOLLOW-UP D widens it a fifth time: recording the source's own weekly
+      // flows for dates the book has never held is a durable write too, and it
+      // is what makes a custom period reconcilable at all.
+      plan.performanceHistory.insertedCount === 0 &&
+      plan.performanceHistory.changedCount === 0
     ) {
       return fail('nothing_to_append', 409, {
         action: plan.action,
@@ -358,6 +369,22 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       if (!staged.ok) return fail('row_history_stage_failed', 502)
     }
 
+    // FOLLOW-UP D -- the performance-history relay, staged the same way. A
+    // failure here discards the row-history batch too: leaving one relay full
+    // while the import never runs is scratch nothing will consume.
+    const performanceHistoryStagingId = randomUUID()
+    const performanceHistoryRows = built.performanceHistory.rows
+    if (performanceHistoryRows.length > 0) {
+      const staged = await stagePerformanceHistory(
+        performanceHistoryStagingId,
+        performanceHistoryRows,
+      )
+      if (!staged.ok) {
+        if (rowHistoryRows.length > 0) await discardRowHistoryStaging(rowHistoryStagingId)
+        return fail('performance_history_stage_failed', 502)
+      }
+    }
+
     // ONE call. The publication, every history mutation, every row-history row
     // and the audit record commit together or not at all. There is no
     // post-commit second write and no sequential fallback -- a partially-applied
@@ -407,6 +434,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         rowHistoryStagingId: rowHistoryRows.length > 0 ? rowHistoryStagingId : null,
         rowHistoryRowCount: rowHistoryRows.length,
         rowHistoryVersion: built.rowHistory.version,
+        // FOLLOW-UP D -- the performance-history relay, riding the SAME metadata
+        // packet for the same reason. Two analytical histories, one 14-argument
+        // import function, one transaction.
+        performanceHistoryStagingId:
+          performanceHistoryRows.length > 0 ? performanceHistoryStagingId : null,
+        performanceHistoryRowCount: performanceHistoryRows.length,
+        performanceHistoryVersion: built.performanceHistory.version,
       },
     })
 
@@ -415,6 +449,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     // imports rather than relying on the next one's purge.
     if (!imported.ok && rowHistoryRows.length > 0) {
       await discardRowHistoryStaging(rowHistoryStagingId)
+    }
+    if (!imported.ok && performanceHistoryRows.length > 0) {
+      await discardPerformanceHistoryStaging(performanceHistoryStagingId)
     }
 
     // The RPC reports counts alongside its identifiers; the route reduces that to

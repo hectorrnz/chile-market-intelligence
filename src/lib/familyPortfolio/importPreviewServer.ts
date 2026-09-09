@@ -25,11 +25,16 @@ import {
   getStandingPublicationPayload,
   listStandingPublicationPayloads,
   listPersistedRowHistory,
+  listPersistedPerformanceHistory,
 } from '@/lib/db/repositories/portfolioPublicationRepository'
 import type { HistoricalPublicationRestatement } from './weeklyImportPlan.ts'
 import { buildSnapshotRowPayload, buildPerformanceRowPayload } from './publicationPayload.ts'
 import { comparePublicationPayload } from './publicationMaterialDiff.ts'
 import { planRowHistory, type RowHistoryPlan } from './rowHistory.ts'
+import {
+  planPerformanceHistory,
+  type PerformanceHistoryPlan,
+} from './performanceHistory.ts'
 import { RESUMEN_PARSER_VERSION } from './resumen/parseResumen.ts'
 
 export type ImportPreviewFailure =
@@ -48,6 +53,7 @@ export type ImportPreviewFailure =
    * after an administrator had already authorized it.
    */
   | { ok: false; code: 'row_history_read_failed' }
+  | { ok: false; code: 'performance_history_read_failed' }
 
 export interface ImportPreviewSuccess {
   ok: true
@@ -75,6 +81,11 @@ export interface ImportPreviewSuccess {
    * different rows.
    */
   rowHistory: RowHistoryPlan
+  /**
+   * FOLLOW-UP D — the performance-history plan, staged the same way. The confirm
+   * route stages exactly `performanceHistory.rows` and passes that batch id.
+   */
+  performanceHistory: PerformanceHistoryPlan
 }
 
 /**
@@ -240,6 +251,26 @@ export async function planImportForDraft(
     parserVersion: RESUMEN_PARSER_VERSION,
   })
 
+  // ── FOLLOW-UP D — PERFORMANCE HISTORY.
+  //
+  // The same payloads, at metric grain: the source's own weekly flow, profit and
+  // return for every clean frozen column. Read and planned beside row history so
+  // one preview describes everything one import would write.
+  //
+  // A FAILED READ IS A FAILURE, for the identical reason: an unreadable table
+  // treated as empty would classify every settled metric as an insertion.
+  const persistedPerf = await listPersistedPerformanceHistory()
+  if (!persistedPerf.ok) {
+    return persistedPerf.code === 'not_configured'
+      ? { ok: false, code: 'not_configured' }
+      : { ok: false, code: 'performance_history_read_failed' }
+  }
+  const performanceHistory = planPerformanceHistory({
+    workbook: new Map([...loaded.historicalPayloads].map(([date, p]) => [date, p.performance])),
+    persisted: persistedPerf.rows,
+    parserVersion: RESUMEN_PARSER_VERSION,
+  })
+
   const built = buildWeeklyImportPreview({
     bytes: loaded.bytes,
     selection: loaded.frozen,
@@ -256,6 +287,12 @@ export async function planImportForDraft(
       datesInserted: rowHistory.datesInserted,
       datesChanged: rowHistory.datesChanged,
     },
+    performanceHistory: {
+      insertedCount: performanceHistory.counts.new + performanceHistory.counts.gap_fill,
+      changedCount: performanceHistory.counts.changed,
+      datesInserted: performanceHistory.datesInserted,
+      datesChanged: performanceHistory.datesChanged,
+    },
   })
 
   return {
@@ -267,5 +304,6 @@ export async function planImportForDraft(
     performance,
     historicalPublications,
     rowHistory,
+    performanceHistory,
   }
 }

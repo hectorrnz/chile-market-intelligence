@@ -1,6 +1,19 @@
--- R13.8E -- SOURCE-BACKED ROW-LEVEL HISTORY AT EVERY FROZEN REPORTING DATE.
+-- R13.8E + POST-R13.8 FOLLOW-UP D -- THE SOURCE-BACKED ANALYTICAL HISTORY LAYER.
 --
--- WHAT WAS MISSING. `portfolio_snapshot_rows` is keyed by `publication_id`, so a
+-- TWO HISTORIES, ONE MIGRATION, ONE TRANSACTION. Row history (section 1) stores
+-- what each holding stood at on every frozen reporting date; performance history
+-- (section 6) stores the source's own weekly flow, profit and return at those
+-- same dates. They answer two different questions that a custom FROM -> TO
+-- comparison needs at once -- which positions moved, and how much money moved
+-- in or out -- and they are written by the SAME import transaction, because a
+-- book holding one without the other cannot reconcile a period.
+--
+-- This file was extended rather than layered: it has NOT been applied to
+-- Production, so Production immutability does not attach to it yet, and two
+-- migrations for one analytical layer would be archaeology for no gain.
+--
+-- WHAT WAS MISSING (ROW HISTORY). `portfolio_snapshot_rows` is keyed by
+-- `publication_id`, so a
 -- row-level value exists only for a week the book PUBLISHED. The evolution
 -- series and the import mutation ledger are both total-level. After a catch-up
 -- import the book therefore holds 2026-08-07 as a portfolio LEVEL but has no
@@ -18,8 +31,9 @@
 -- a publication. The locked R13.8 architecture is unchanged:
 --
 --   ONE upload -> ONE import operation -> N evolution points
---              -> ONE newest full publication
---              -> N source-backed row-history dates.
+--              -> N source-backed row-history dates
+--              -> N source-backed performance-history dates
+--              -> ONE newest full publication.
 --
 -- IT ALSO FIXES A REAL WRITE-PATH DEFECT (see section 6). R13.8D.1's historical
 -- restatement path stamped the IMPORT ANCHOR's `previousWeekDate` onto every
@@ -300,15 +314,238 @@ revoke all privileges on public.portfolio_row_history_coverage from public, anon
 grant select on public.portfolio_row_history_coverage to authenticated, service_role;
 
 -- ===========================================================================
--- 6. The import RPC -- SAME SIGNATURE, three new responsibilities
+-- 6. Performance history -- the same model, at METRIC grain
+-- ===========================================================================
+--
+-- WHAT WAS STILL MISSING AFTER SECTION 1. Row history answers "what did each
+-- holding stand at on 2026-08-07". It cannot answer "how much money moved in or
+-- out between 2026-04-30 and 2026-09-04", because a flow is not a row value --
+-- it is a stated weekly performance metric, and `portfolio_performance_rows` is
+-- keyed by `publication_id`, so it exists only for weeks the book PUBLISHED.
+--
+-- A custom FROM -> TO comparison is therefore not a weekly view, and it cannot
+-- be reconciled from levels alone:
+--
+--     Period P&L = To value - From value - SUM(weekly flow over (FROM, TO])
+--
+-- Every term of that sum lives in a week that mostly has no publication.
+--
+-- CANONICAL IDENTITY. `portfolio_performance_rows` identifies a metric by
+-- (publication_id, scope, basis, metric). Performance history replaces the
+-- publication with the reporting date it observes, giving
+-- (scope, basis, metric, observation_date).
+--
+-- `basis` IS part of that identity and is carried, unlike in row history where
+-- it is deliberately absent -- because it genuinely distinguishes two different
+-- performance series for Main (`ex_chilean_equities` and
+-- `with_chilean_equities`), while a snapshot row belongs to a scope alone. The
+-- rule in both tables is the same: reuse the publication identity exactly, and
+-- invent no dimension the source model does not have.
+--
+-- WHAT THIS IS NOT. Like row history, this is historical analytical storage: no
+-- `is_current`, no revision chain, no `superseded_by`, and no date here is ever
+-- selectable as a published week.
+create table if not exists public.portfolio_performance_history (
+  id               uuid primary key default gen_random_uuid(),
+  scope            text not null check (scope in ('main', 'jaime', 'andres', 'pablo')),
+  -- Identical vocabulary to `portfolio_performance_rows`. A metric name is the
+  -- persisted contract every reader queries by; a second spelling here would be
+  -- a silently empty series rather than an error.
+  basis            text not null check (basis in
+                     ('ex_chilean_equities','with_chilean_equities','total')),
+  metric           text not null check (metric in
+                     ('flow','weekly_profit','weekly_return','ytd_profit','ytd_return')),
+  observation_date date not null,
+  value            numeric,
+  value_class      text not null check (value_class in
+                     ('source_value','source_provided_return','source_provided_flow',
+                      'nmi_calculated','unavailable','not_reproducible')),
+  source_upload_id uuid not null references public.portfolio_source_uploads(id) on delete restrict,
+  import_operation_id uuid references public.portfolio_import_operations(id) on delete restrict,
+  source_sheet     text not null,
+  source_cell      text not null,
+  source_row       int,
+  parser_version   text not null,
+  metadata         jsonb not null default '{}'::jsonb,
+  ingested_at      timestamptz not null default now(),
+  constraint portfolio_performance_history_key
+    unique (scope, basis, metric, observation_date),
+  -- The same rule row history carries: an unreadable metric is NULL and
+  -- `unavailable`, never 0. A zero flow is a real statement that no money moved,
+  -- and a period sum that quietly turned absence into zero would understate it.
+  constraint portfolio_performance_history_unavailable_ck check (
+    value_class <> 'unavailable' or value is null
+  )
+);
+
+create index if not exists portfolio_performance_history_scope_idx
+  on public.portfolio_performance_history (scope, basis, metric, observation_date);
+create index if not exists portfolio_performance_history_date_idx
+  on public.portfolio_performance_history (observation_date);
+create index if not exists portfolio_performance_history_import_idx
+  on public.portfolio_performance_history (import_operation_id);
+
+comment on table public.portfolio_performance_history is
+  'Source-stated weekly performance metrics at EVERY frozen reporting date, including the many that '
+  'carry no publication. Analytical history, never a publication: no is_current, no revision chain.';
+comment on column public.portfolio_performance_history.value is
+  'NULL is a real answer. A metric the source did not state is unavailable with no number -- never 0, '
+  'which for a flow would assert that no money moved.';
+
+-- The before-image ledger, at metric grain.
+create table if not exists public.portfolio_import_performance_history_mutations (
+  id                  uuid primary key default gen_random_uuid(),
+  import_operation_id uuid not null references public.portfolio_import_operations(id) on delete cascade,
+  scope               text not null,
+  basis               text not null,
+  metric              text not null,
+  observation_date    date not null,
+  disposition         text not null check (disposition in ('new','gap_fill','changed')),
+  prior_value         numeric,
+  prior_value_class   text,
+  prior_import_operation_id uuid references public.portfolio_import_operations(id) on delete restrict,
+  prior_row           jsonb,
+  new_value           numeric,
+  new_value_class     text not null,
+  created_at          timestamptz not null default now(),
+  constraint portfolio_import_performance_history_mutations_key
+    unique (import_operation_id, scope, basis, metric, observation_date),
+  constraint portfolio_import_performance_history_mutations_before_ck check (
+    (disposition in ('new','gap_fill')
+      and prior_value is null and prior_value_class is null and prior_row is null)
+    or (disposition = 'changed' and prior_value_class is not null and prior_row is not null)
+  ),
+  constraint portfolio_import_performance_history_mutations_unavailable_ck check (
+    new_value_class <> 'unavailable' or new_value is null
+  )
+);
+
+create index if not exists portfolio_import_performance_history_mutations_op_idx
+  on public.portfolio_import_performance_history_mutations (import_operation_id);
+create index if not exists portfolio_import_performance_history_mutations_identity_idx
+  on public.portfolio_import_performance_history_mutations
+     (scope, basis, metric, observation_date);
+
+-- The relay, mirroring section 3 exactly.
+--
+-- A first backfill is 2,260 metrics and ~0.85 MB -- an order of magnitude
+-- smaller than row history, and it would very likely fit in one request body.
+-- It travels the same way regardless: two transports for two histories written
+-- by one transaction would be two failure modes to reason about, and "it still
+-- fits" is not a property anyone should have to re-verify every week.
+create table if not exists public.portfolio_performance_history_staging (
+  staging_id  uuid not null,
+  chunk_index int  not null check (chunk_index >= 0),
+  rows        jsonb not null,
+  created_at  timestamptz not null default now(),
+  primary key (staging_id, chunk_index)
+);
+
+create index if not exists portfolio_performance_history_staging_created_idx
+  on public.portfolio_performance_history_staging (created_at);
+
+comment on table public.portfolio_performance_history_staging is
+  'Transport only. Performance-history chunks staged immediately before nmi_import_portfolio_workbook, '
+  'consumed and deleted inside that transaction. Never read by any surface.';
+
+-- ONE definition of the staged metric shape, for the same reason
+-- `nmi_staged_row_history` exists: the import reads this set repeatedly and
+-- every one of those statements must stay statically analysable to
+-- `plpgsql_check` and `supabase db lint`.
+create or replace function public.nmi_staged_performance_history(p_staging_id uuid)
+returns table (
+  scope text, basis text, metric text, observation_date date,
+  value numeric, value_class text,
+  source_sheet text, source_cell text, source_row int, parser_version text,
+  disposition text, prior_value numeric, prior_value_class text
+)
+language sql
+stable
+set search_path = ''
+as $$
+  select x.scope, x.basis, x.metric, x.observation_date, x.value, x.value_class,
+         x.source_sheet, x.source_cell, x.source_row, x.parser_version,
+         x.disposition, x.prior_value, x.prior_value_class
+    from public.portfolio_performance_history_staging s
+    cross join lateral jsonb_to_recordset(s.rows) as x(
+      scope text, basis text, metric text, observation_date date,
+      value numeric, value_class text,
+      source_sheet text, source_cell text, source_row int, parser_version text,
+      disposition text, prior_value numeric, prior_value_class text)
+   where p_staging_id is not null and s.staging_id = p_staging_id;
+$$;
+
+revoke all on function public.nmi_staged_performance_history(uuid) from public, anon, authenticated;
+grant execute on function public.nmi_staged_performance_history(uuid) to service_role;
+
+-- RLS: identical posture to section 4. Performance history holds portfolio
+-- FIGURES, so it takes the same scope-filtered predicate as
+-- `portfolio_performance_rows`; the ledger and the relay carry every scope at
+-- once and stay service-role only.
+alter table public.portfolio_performance_history enable row level security;
+alter table public.portfolio_import_performance_history_mutations enable row level security;
+alter table public.portfolio_performance_history_staging enable row level security;
+
+do $$
+declare
+  tbl text;
+  pol record;
+begin
+  foreach tbl in array array[
+    'portfolio_performance_history',
+    'portfolio_import_performance_history_mutations',
+    'portfolio_performance_history_staging'
+  ] loop
+    for pol in
+      select policyname from pg_catalog.pg_policies
+       where schemaname = 'public' and tablename = tbl
+    loop
+      execute format('drop policy %I on public.%I', pol.policyname, tbl);
+    end loop;
+  end loop;
+end $$;
+
+create policy "portfolio_performance_history_scope_select"
+  on public.portfolio_performance_history
+  for select to authenticated
+  using (public.nmi_can_access_scope(scope));
+
+revoke all privileges on table public.portfolio_performance_history from public, anon, authenticated;
+revoke all privileges on table public.portfolio_import_performance_history_mutations
+  from public, anon, authenticated;
+revoke all privileges on table public.portfolio_performance_history_staging
+  from public, anon, authenticated;
+grant select on table public.portfolio_performance_history to authenticated;
+grant all privileges on table public.portfolio_performance_history to service_role;
+grant all privileges on table public.portfolio_import_performance_history_mutations to service_role;
+grant all privileges on table public.portfolio_performance_history_staging to service_role;
+
+-- Coverage, for the planner -- the analogue of section 5.
+create or replace view public.portfolio_performance_history_coverage
+with (security_invoker = true) as
+select scope, basis, observation_date, count(*)::bigint as metric_count
+  from public.portfolio_performance_history
+ group by scope, basis, observation_date;
+
+revoke all privileges on public.portfolio_performance_history_coverage from public, anon;
+grant select on public.portfolio_performance_history_coverage to authenticated, service_role;
+
+-- ===========================================================================
+-- 7. The import RPC -- SAME SIGNATURE, five new responsibilities
 -- ===========================================================================
 --
 --   a. Row history is written inside the import transaction, from the staging
 --      relay named in `p_metadata->>'rowHistoryStagingId'`.
---   b. A restated historical week carries ITS OWN previous-week anchor, not the
+--   b. Performance history is written the same way, from
+--      `p_metadata->>'performanceHistoryStagingId'`, in the SAME transaction.
+--      Two analytical histories, one atomic write -- never a post-commit
+--      best-effort second pass.
+--   c. A restated historical week carries ITS OWN previous-week anchor, not the
 --      import's.
---   c. An anchor that is not strictly earlier than the week it belongs to is
+--   d. An anchor that is not strictly earlier than the week it belongs to is
 --      refused outright, at either endpoint.
+--   e. An overwrite of a settled performance-history metric joins the existing
+--      authorization gate.
 --
 -- `create or replace` with the identical argument list REPLACES the deployed
 -- function in place. The previous release's application code calls it with the
@@ -361,6 +598,12 @@ declare
   v_rh_new    int  := 0;
   v_rh_changed int := 0;
   v_anchor    date;
+  -- POST-R13.8 FOLLOW-UP D
+  v_perf_staging  uuid := nullif(btrim(coalesce(p_metadata->>'performanceHistoryStagingId', '')), '')::uuid;
+  v_perf_declared int  := nullif(btrim(coalesce(p_metadata->>'performanceHistoryRowCount', '')), '')::int;
+  v_perf_staged   int  := 0;
+  v_ph_new        int  := 0;
+  v_ph_changed    int  := 0;
 begin
   -- Serialise the whole import path before reading anything it will assert on.
   perform public.nmi_lock_portfolio_import('portfolio');
@@ -371,6 +614,10 @@ begin
   delete from public.portfolio_row_history_staging
    where created_at < now() - interval '1 day'
      and (v_staging is null or staging_id <> v_staging);
+
+  delete from public.portfolio_performance_history_staging
+   where created_at < now() - interval '1 day'
+     and (v_perf_staging is null or staging_id <> v_perf_staging);
 
   if p_observations is null or jsonb_typeof(p_observations) <> 'array' then
     raise exception 'import_refused_invalid_observations';
@@ -445,6 +692,34 @@ begin
     raise exception 'import_refused_unknown_row_history_disposition';
   end if;
 
+  -- ---- FOLLOW-UP D: the same three checks for the performance relay. A
+  --      history that arrives partially is a silent omission, and a period
+  --      reconciliation built on a missing week is wrong in a way no reader
+  --      could detect.
+  select count(*),
+         count(*) filter (where p.disposition in ('new','gap_fill')),
+         count(*) filter (where p.disposition = 'changed')
+    into v_perf_staged, v_ph_new, v_ph_changed
+    from public.nmi_staged_performance_history(v_perf_staging) p;
+
+  if v_perf_staging is not null then
+    if v_perf_declared is null then
+      raise exception 'import_refused_performance_history_count_missing';
+    end if;
+    if v_perf_declared <> v_perf_staged then
+      raise exception 'import_refused_performance_history_staging_incomplete';
+    end if;
+  elsif v_perf_declared is not null and v_perf_declared > 0 then
+    raise exception 'import_refused_performance_history_staging_missing';
+  end if;
+
+  if exists (
+    select 1 from public.nmi_staged_performance_history(v_perf_staging)
+     where disposition is null or disposition not in ('new','gap_fill','changed')
+  ) then
+    raise exception 'import_refused_unknown_performance_history_disposition';
+  end if;
+
   perform public.nmi_lock_publication_series('portfolio', p_as_of_date);
 
   select id into v_prev_pub
@@ -454,19 +729,24 @@ begin
   v_publication_unchanged := coalesce(
     public.nmi_portfolio_publication_unchanged(v_prev_pub, p_rows, p_performance), false);
 
-  -- R13.8E widens the no-op test a fourth time: appending row history for weeks
-  -- the book has never held at row level is a real durable change, even when
-  -- every level and every published figure is identical.
+  -- R13.8E widened the no-op test a fourth time: appending row history for
+  -- weeks the book has never held at row level is a real durable change, even
+  -- when every level and every published figure is identical. FOLLOW-UP D
+  -- widens it a fifth, for performance history, on the same reasoning -- a book
+  -- that gains the weekly flows of 106 weeks it never held has changed.
   if v_history_mutations = 0 and v_publication_unchanged and v_restatements = 0
-     and v_rh_new = 0 and v_rh_changed = 0 then
+     and v_rh_new = 0 and v_rh_changed = 0
+     and v_ph_new = 0 and v_ph_changed = 0 then
     raise exception 'import_refused_nothing_to_append';
   end if;
 
   -- AN OVERWRITE OF SETTLED HISTORY REQUIRES AUTHORIZATION AND A REASON.
-  -- R13.8E adds the third form: a row-history identity whose value the workbook
-  -- now states differently. Insertions never require it, however many.
+  -- R13.8E added the third form (a row-history identity whose value the workbook
+  -- now states differently); FOLLOW-UP D adds the fourth, at metric grain.
+  -- Insertions never require it, however many.
   if v_restatements > 0
      or v_rh_changed > 0
+     or v_ph_changed > 0
      or exists (
        select 1 from jsonb_to_recordset(p_observations) as o(disposition text)
         where o.disposition = 'changed'
@@ -520,6 +800,50 @@ begin
             or r.value_class is distinct from s.prior_value_class)
   ) then
     raise exception 'import_refused_stale_row_history_value_moved';
+  end if;
+
+  -- ---- FOLLOW-UP D: performance-history stale-plan assertions, before
+  --      anything mutates. Identical reasoning to the row-history trio above:
+  --      the plan was made against a book that may have moved since.
+  if exists (
+    select 1
+      from public.nmi_staged_performance_history(v_perf_staging) s
+      join public.portfolio_performance_history h
+        on h.scope = s.scope
+       and h.basis = s.basis
+       and h.metric = s.metric
+       and h.observation_date = s.observation_date
+     where s.disposition in ('new','gap_fill')
+  ) then
+    raise exception 'import_refused_stale_performance_history_identity_exists';
+  end if;
+
+  if exists (
+    select 1
+      from public.nmi_staged_performance_history(v_perf_staging) s
+      left join public.portfolio_performance_history h
+        on h.scope = s.scope
+       and h.basis = s.basis
+       and h.metric = s.metric
+       and h.observation_date = s.observation_date
+     where s.disposition = 'changed' and h.id is null
+  ) then
+    raise exception 'import_refused_stale_performance_history_identity_absent';
+  end if;
+
+  if exists (
+    select 1
+      from public.nmi_staged_performance_history(v_perf_staging) s
+      join public.portfolio_performance_history h
+        on h.scope = s.scope
+       and h.basis = s.basis
+       and h.metric = s.metric
+       and h.observation_date = s.observation_date
+     where s.disposition = 'changed'
+       and (h.value is distinct from s.prior_value
+            or h.value_class is distinct from s.prior_value_class)
+  ) then
+    raise exception 'import_refused_stale_performance_history_value_moved';
   end if;
 
   insert into public.portfolio_import_operations
@@ -602,10 +926,67 @@ begin
      where s.disposition in ('new','gap_fill');
   end if;
 
-  -- The relay has done its job. Deleting inside the transaction means a rollback
-  -- of this import also restores the chunks, so a retry finds them intact.
+  -- ---- FOLLOW-UP D: apply performance history. Ledger first, same as above,
+  --      and for the same reason: a before-image asserted by the caller is not
+  --      evidence of what was actually standing.
+  --
+  -- It sits beside row history, BEFORE the restatement and evolution loops, so
+  -- the two histories commit or roll back as one thing and the loops after them
+  -- remain genuinely late failures.
+  if v_perf_staged > 0 then
+    insert into public.portfolio_import_performance_history_mutations
+      (import_operation_id, scope, basis, metric, observation_date, disposition,
+       prior_value, prior_value_class, prior_import_operation_id, prior_row,
+       new_value, new_value_class)
+    select v_op_id, s.scope, s.basis, s.metric, s.observation_date, s.disposition,
+           case when s.disposition = 'changed' then h.value end,
+           case when s.disposition = 'changed' then h.value_class end,
+           case when s.disposition = 'changed' then h.import_operation_id end,
+           case when s.disposition = 'changed' then to_jsonb(h) end,
+           s.value, s.value_class
+      from public.nmi_staged_performance_history(v_perf_staging) s
+      left join public.portfolio_performance_history h
+        on h.scope = s.scope
+       and h.basis = s.basis
+       and h.metric = s.metric
+       and h.observation_date = s.observation_date;
+
+    update public.portfolio_performance_history h
+       set value = s.value,
+           value_class = s.value_class,
+           source_upload_id = p_upload_id,
+           source_sheet = s.source_sheet,
+           source_cell = s.source_cell,
+           source_row = s.source_row,
+           parser_version = s.parser_version,
+           import_operation_id = v_op_id,
+           ingested_at = now()
+      from public.nmi_staged_performance_history(v_perf_staging) s
+     where h.scope = s.scope
+       and h.basis = s.basis
+       and h.metric = s.metric
+       and h.observation_date = s.observation_date
+       and s.disposition = 'changed';
+
+    insert into public.portfolio_performance_history
+      (scope, basis, metric, observation_date, value, value_class,
+       source_upload_id, source_sheet, source_cell, source_row, parser_version,
+       import_operation_id)
+    select s.scope, s.basis, s.metric, s.observation_date, s.value, s.value_class,
+           p_upload_id, s.source_sheet, s.source_cell, s.source_row,
+           s.parser_version, v_op_id
+      from public.nmi_staged_performance_history(v_perf_staging) s
+     where s.disposition in ('new','gap_fill');
+  end if;
+
+  -- The relays have done their job. Deleting inside the transaction means a
+  -- rollback of this import also restores the chunks, so a retry finds them
+  -- intact.
   if v_staging is not null then
     delete from public.portfolio_row_history_staging where staging_id = v_staging;
+  end if;
+  if v_perf_staging is not null then
+    delete from public.portfolio_performance_history_staging where staging_id = v_perf_staging;
   end if;
 
 
@@ -751,11 +1132,13 @@ begin
     'updated', v_updated,
     'historicalPublicationsCorrected', v_restated,
     'rowHistoryInserted', v_rh_new,
-    'rowHistoryChanged', v_rh_changed);
+    'rowHistoryChanged', v_rh_changed,
+    'performanceHistoryInserted', v_ph_new,
+    'performanceHistoryChanged', v_ph_changed);
 end $$;
 
 -- ===========================================================================
--- 7. Reversing an import -- now including row history
+-- 8. Reversing an import -- now including row and performance history
 -- ===========================================================================
 create or replace function public.nmi_rollback_portfolio_import(
   p_import_id uuid,
@@ -775,6 +1158,8 @@ declare
   v_demoted   int := 0;
   v_rh_removed  int := 0;
   v_rh_restored int := 0;
+  v_ph_removed  int := 0;
+  v_ph_restored int := 0;
 begin
   perform public.nmi_lock_portfolio_import('portfolio');
 
@@ -813,6 +1198,21 @@ begin
        and r.import_operation_id is distinct from p_import_id
   ) then
     raise exception 'rollback_refused_row_history_superseded_by_later_import';
+  end if;
+
+  -- FOLLOW-UP D -- the same ownership test at metric grain.
+  if exists (
+    select 1
+      from public.portfolio_import_performance_history_mutations pm
+      join public.portfolio_performance_history h
+        on h.scope = pm.scope
+       and h.basis = pm.basis
+       and h.metric = pm.metric
+       and h.observation_date = pm.observation_date
+     where pm.import_operation_id = p_import_id
+       and h.import_operation_id is distinct from p_import_id
+  ) then
+    raise exception 'rollback_refused_performance_history_superseded_by_later_import';
   end if;
 
   if v_op.publication_id is not null and not exists (
@@ -899,6 +1299,45 @@ begin
   )
   select count(*) into v_rh_restored from restored;
 
+  -- FOLLOW-UP D -- performance history, set-based and exact. An insertion is
+  -- removed; an overwrite is restored from the WHOLE displaced row, so the
+  -- provenance and lineage come back with the number.
+  with perf_removed as (
+    delete from public.portfolio_performance_history h
+     using public.portfolio_import_performance_history_mutations pm
+     where pm.import_operation_id = p_import_id
+       and pm.disposition in ('new','gap_fill')
+       and h.scope = pm.scope
+       and h.basis = pm.basis
+       and h.metric = pm.metric
+       and h.observation_date = pm.observation_date
+       and h.import_operation_id = p_import_id
+    returning 1
+  )
+  select count(*) into v_ph_removed from perf_removed;
+
+  with perf_restored as (
+    update public.portfolio_performance_history h
+       set value = pm.prior_value,
+           value_class = pm.prior_value_class,
+           source_upload_id = (pm.prior_row->>'source_upload_id')::uuid,
+           source_sheet = (pm.prior_row->>'source_sheet'),
+           source_cell = (pm.prior_row->>'source_cell'),
+           source_row = (pm.prior_row->>'source_row')::int,
+           parser_version = (pm.prior_row->>'parser_version'),
+           import_operation_id = pm.prior_import_operation_id,
+           ingested_at = now()
+      from public.portfolio_import_performance_history_mutations pm
+     where pm.import_operation_id = p_import_id
+       and pm.disposition = 'changed'
+       and h.scope = pm.scope
+       and h.basis = pm.basis
+       and h.metric = pm.metric
+       and h.observation_date = pm.observation_date
+    returning 1
+  )
+  select count(*) into v_ph_restored from perf_restored;
+
   if v_op.publication_id is not null then
     update public.portfolio_publications
        set is_current = false, superseded_by = null
@@ -954,11 +1393,13 @@ begin
     'historicalPublicationsReverted', v_demoted,
     'rowHistoryRemoved', v_rh_removed,
     'rowHistoryRestored', v_rh_restored,
+    'performanceHistoryRemoved', v_ph_removed,
+    'performanceHistoryRestored', v_ph_restored,
     'promotedPublicationId', v_op.previous_publication_id);
 end $$;
 
 -- ===========================================================================
--- 8. Grants
+-- 9. Grants
 -- ===========================================================================
 revoke all on function public.nmi_import_portfolio_workbook(
   uuid, date, uuid, text, text, jsonb, jsonb, jsonb, boolean, text, jsonb, text, jsonb, jsonb)
@@ -972,7 +1413,7 @@ grant execute on function public.nmi_rollback_portfolio_import(uuid, uuid, text)
   to service_role;
 
 -- ===========================================================================
--- 9. Postconditions
+-- 10. Postconditions
 -- ===========================================================================
 do $$
 declare
@@ -1062,5 +1503,66 @@ begin
    where ns.nspname = 'public' and p.proname = 'nmi_rollback_portfolio_import';
   if src not like '%portfolio_import_row_history_mutations%' then
     raise exception 'nmi_rollback_portfolio_import does not reverse row history';
+  end if;
+  if src not like '%portfolio_import_performance_history_mutations%' then
+    raise exception 'nmi_rollback_portfolio_import does not reverse performance history';
+  end if;
+
+  -- ---- FOLLOW-UP D: performance history, held to the same bar.
+  if to_regclass('public.portfolio_performance_history') is null
+     or to_regclass('public.portfolio_import_performance_history_mutations') is null
+     or to_regclass('public.portfolio_performance_history_staging') is null then
+    raise exception 'performance-history tables are missing after migration';
+  end if;
+
+  -- The canonical identity mirrors the PUBLICATION performance identity with the
+  -- publication replaced by the date -- basis included, because it is part of
+  -- that identity.
+  select count(*) into n
+    from pg_catalog.pg_constraint
+   where conrelid = 'public.portfolio_performance_history'::regclass
+     and conname = 'portfolio_performance_history_key'
+     and contype = 'u';
+  if n <> 1 then
+    raise exception 'portfolio_performance_history is missing its (scope, basis, metric, observation_date) key';
+  end if;
+
+  if exists (
+    select 1 from information_schema.columns
+     where table_schema = 'public' and table_name = 'portfolio_performance_history'
+       and column_name in ('is_current','revision','superseded_by','publication_id')
+  ) then
+    raise exception 'portfolio_performance_history must not carry publication lifecycle columns';
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_policies
+     where schemaname = 'public' and tablename = 'portfolio_performance_history'
+       and policyname = 'portfolio_performance_history_scope_select'
+  ) then
+    raise exception 'portfolio_performance_history is missing its scope-filtered read policy';
+  end if;
+
+  if has_table_privilege('authenticated', 'public.portfolio_performance_history', 'INSERT')
+     or has_table_privilege('authenticated', 'public.portfolio_performance_history', 'UPDATE')
+     or has_table_privilege('authenticated', 'public.portfolio_performance_history', 'DELETE') then
+    raise exception 'authenticated gained write privileges on portfolio_performance_history';
+  end if;
+
+  if has_table_privilege('authenticated', 'public.portfolio_import_performance_history_mutations', 'SELECT')
+     or has_table_privilege('authenticated', 'public.portfolio_performance_history_staging', 'SELECT') then
+    raise exception 'authenticated gained read on a performance-history internal table';
+  end if;
+
+  if to_regprocedure('public.nmi_staged_performance_history(uuid)') is null then
+    raise exception 'nmi_staged_performance_history is missing';
+  end if;
+
+  select pg_get_functiondef(p.oid) into src
+    from pg_catalog.pg_proc p
+    join pg_catalog.pg_namespace ns on ns.oid = p.pronamespace
+   where ns.nspname = 'public' and p.proname = 'nmi_import_portfolio_workbook';
+  if src not like '%portfolio_performance_history%' then
+    raise exception 'nmi_import_portfolio_workbook does not write performance history';
   end if;
 end $$;

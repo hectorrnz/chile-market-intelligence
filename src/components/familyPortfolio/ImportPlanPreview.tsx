@@ -539,6 +539,72 @@ function RowHistoryCard({ plan }: { plan: ImportPlan }) {
   )
 }
 
+// ── FOLLOW-UP D — PERFORMANCE HISTORY ───────────────────────────────────────
+//
+// A SEPARATE CARD FROM ROW HISTORY, for the reason the row-history card is
+// separate from the evolution card: they are different measures. Row history is
+// what each holding stood at; this is the source's own stated weekly flow,
+// profit and return. They are written by the same transaction and usually cover
+// the same dates, but an administrator authorizing an overwrite must be told
+// which of the two is being rewritten — a restated FLOW changes how a period
+// separates earnings from deposits, and a restated ROW does not.
+function PerformanceHistoryCard({ plan }: { plan: ImportPlan }) {
+  const { t } = useLang()
+  const a = t.fpAdmin
+  const ph = plan.performanceHistory
+  if (!ph || (ph.insertedCount === 0 && ph.changedCount === 0)) return null
+
+  const changed = ph.changedCount > 0
+  const tone = changed ? TONE.changed : TONE.gapFill
+
+  return (
+    <section
+      className={`${CARD} space-y-2`}
+      data-group="performance-history"
+      style={{
+        borderColor: tone,
+        borderLeft: `3px solid ${tone}`,
+        background: `color-mix(in oklab, ${tone} 7%, var(--surface))`,
+      }}
+    >
+      <p className="ui-label" style={{ color: tone }}>
+        {a.performanceHistoryTitle}
+      </p>
+      <p className="text-[11px] text-muted-fg">{a.performanceHistoryNote}</p>
+
+      {ph.insertedCount > 0 && (
+        <p className="text-xs text-foreground">
+          {fill(a.performanceHistoryInserted, {
+            r: ph.insertedCount,
+            n: ph.datesInserted.length,
+          })}
+        </p>
+      )}
+      {changed && (
+        <>
+          <p className="text-xs text-foreground">
+            {fill(a.performanceHistoryChanged, {
+              r: ph.changedCount,
+              n: ph.datesChanged.length,
+            })}
+          </p>
+          <p className="text-[11px]" style={{ color: TONE.changed }}>
+            {a.performanceHistoryChangedNote}
+          </p>
+          <p className="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-muted-fg">
+            <span>{a.rowHistoryDatesLabel}:</span>
+            {ph.datesChanged.map((d) => (
+              <span key={d} className="ui-number text-foreground">
+                {d}
+              </span>
+            ))}
+          </p>
+        </>
+      )}
+    </section>
+  )
+}
+
 function HistoricalChangesCard({ plan, controls }: { plan: ImportPlan; controls: CorrectionControls }) {
   const { t } = useLang()
   const a = t.fpAdmin
@@ -928,6 +994,7 @@ export function ImportPlanPreview({
               history, and it must be visible before the checkbox that
               authorizes it. */}
           <RowHistoryCard plan={plan} />
+          <PerformanceHistoryCard plan={plan} />
           <HistoricalChangesCard plan={plan} controls={correction} />
         </>
       )}

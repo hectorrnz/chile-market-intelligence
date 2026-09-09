@@ -249,6 +249,17 @@ const values = (items: ReadonlyArray<{ value: number }>) => items.map((i) => i.v
 // 1 · The contribution contract
 // ═══════════════════════════════════════════════════════════════════════════
 
+/**
+ * FOLLOW-UP D — the combined headline + ledger block, including the `useMemo`
+ * that now decides the ledger's four rows by mode. The rows left the JSX; the
+ * properties asserted about them did not.
+ */
+function combinedBlock(page: string): string {
+  const memoAt = page.indexOf('THE RECONCILIATION LEDGER, CHOSEN BY MODE')
+  const memo = memoAt >= 0 ? page.slice(memoAt, page.indexOf('const reclassifications')) : ''
+  return memo + page.slice(page.indexOf('items 2–3'), page.indexOf('§ 6h items 5–6'))
+}
+
 describe('R13.R3C · contribution contract', () => {
   test('a component is closing − opening, and the set reconciles to the portfolio change', () => {
     const { set } = setOf(MAIN, 'top_level')
@@ -1577,20 +1588,28 @@ describe('R13.R3C.2 · presentation', () => {
     assert.equal((row.match(/<GlassSurface/g) ?? []).length, 1, 'one card, not two')
     assert.match(row, /<KpiHero\s*\n\s*bare/)
     // Weekly return stays the hero's own change chip, stated once.
-    assert.match(row, /changeLabel=\{`\$\{formatRatioPct\(total\.weeklyReturn\)\}/)
+    // FOLLOW-UP D — the chip is chosen by mode; weekly keeps the source's own
+    // stated weekly return, and a custom range gets the chain-linked one.
+    assert.match(row, /`\$\{formatRatioPct\(total\.weeklyReturn\)\} \$\{o\.weeklyReturn\}`/)
+    assert.match(row, /`\$\{formatRatioPct\(periodPerf\.periodReturn\)\} \$\{w\.periodReturn\}`/)
     assert.equal((row.match(/o\.weeklyReturn/g) ?? []).length, 1, 'weekly return is stated once')
   })
 
   test('R13.R3C.4 — the ledger emphasises the week\'s ENDPOINTS, not its movements', () => {
     const page = read(WEEKLY)
-    const row = page.slice(page.indexOf('items 2–3'), page.indexOf('§ 6h items 5–6'))
+    const row = combinedBlock(page)
     // Exactly the two endpoint rows are `strong`; the two movements between
     // them are not — that is the whole emphasis rule, in one flag.
     assert.match(row, /\{ label: w\.previousValueLabel,[^}]*strong: true/)
     assert.match(row, /\{ label: w\.endingValueLabel,[^}]*strong: true/)
     assert.ok(!/\{ label: o\.weeklyProfit,[^}]*strong/.test(row), 'weekly P&L is not an endpoint')
     assert.ok(!/\{ label: w\.flowLabel,[^}]*strong/.test(row), 'net flows are not an endpoint')
-    assert.equal((row.match(/strong: true/g) ?? []).length, 2)
+    // Two ledgers now — weekly and period — each with exactly two endpoints.
+    assert.equal((row.match(/strong: true/g) ?? []).length, 4)
+    assert.match(row, /\{ label: w\.periodFromLabel,[^}]*strong: true/)
+    assert.match(row, /\{ label: w\.periodToLabel,[^}]*strong: true/)
+    assert.ok(!/\{ label: w\.periodProfit,[^}]*strong/.test(row), 'period P&L is not an endpoint')
+    assert.ok(!/\{ label: w\.periodFlow,[^}]*strong/.test(row), 'period flows are not an endpoint')
     // And `strong` is what actually enlarges the figure, not just its label.
     assert.match(row, /r\.strong \? 'text-base font-semibold' : ''/)
     assert.match(row, /r\.strong \? 'text-sm' : 'text-xs'/)
@@ -1601,7 +1620,7 @@ describe('R13.R3C.2 · presentation', () => {
     // appears exactly once, and the two that are derivable from the others
     // (the change, and the return) live on the headline side only.
     const page = read(WEEKLY)
-    const row = page.slice(page.indexOf('items 2–3'), page.indexOf('§ 6h items 5–6'))
+    const row = combinedBlock(page)
     const code = row.replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
     for (const figure of [
       'flowRecon.previousValue',

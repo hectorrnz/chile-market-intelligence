@@ -888,3 +888,135 @@ export async function listRowHistoryDates(
       .map((r) => String(r.observation_date)),
   }
 }
+
+type PerformanceHistorySelect = {
+  from: (t: string) => {
+    select: (c: string) => {
+      eq: (col: string, v: unknown) => {
+        eq: (col: string, v: unknown) => {
+          gt: (col: string, v: unknown) => {
+            lte: (col: string, v: unknown) => {
+              order: (col: string, opts: { ascending: boolean }) => Promise<{
+                data: Array<{
+                  metric: string
+                  observation_date: string
+                  value: number | null
+                  value_class: string
+                }> | null
+                error: unknown
+              }>
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+/** One source-stated weekly metric at one reporting date. */
+export interface PerformanceHistoryRead {
+  metric: string
+  observationDate: string
+  value: number | null
+  valueClass: string
+}
+
+/**
+ * FOLLOW-UP D — one scope and basis's source-stated weekly metrics over the
+ * HALF-OPEN window `(fromDate, toDate]`.
+ *
+ * The window is applied IN THE QUERY, not after it, for two reasons. The
+ * exclusion of the FROM week is the rule most likely to be got wrong by a caller
+ * — its flow is already inside the FROM closing value — so stating it once here
+ * keeps it out of every call site. And a period spanning two years is at most a
+ * few hundred rows rather than the whole table.
+ *
+ * Read through the CALLER'S OWN session, so PostgreSQL's scope policy re-derives
+ * entitlement rather than trusting a decision the server already made.
+ */
+export async function getPerformanceHistoryRange(
+  scope: string,
+  basis: string,
+  fromDate: string,
+  toDate: string,
+): Promise<
+  | { ok: true; rows: PerformanceHistoryRead[] }
+  | { ok: false; code: 'not_configured' | 'read_failed' }
+> {
+  const client = await getSupabaseUserClient()
+  if (!client) return { ok: false, code: 'not_configured' }
+
+  const { data, error } = await (client as never as PerformanceHistorySelect)
+    .from('portfolio_performance_history')
+    .select('metric, observation_date, value, value_class')
+    .eq('scope', scope)
+    .eq('basis', basis)
+    .gt('observation_date', fromDate)
+    .lte('observation_date', toDate)
+    .order('observation_date', { ascending: true })
+
+  if (error) return { ok: false, code: 'read_failed' }
+  return {
+    ok: true,
+    rows: (data ?? []).map((r) => ({
+      metric: String(r.metric),
+      observationDate: String(r.observation_date),
+      // null stays null. A flow the source never stated is not a zero flow, and
+      // a period sum that treated it as one would understate the money moved.
+      value: r.value === null || r.value === undefined ? null : Number(r.value),
+      valueClass: String(r.value_class),
+    })),
+  }
+}
+
+type PerformanceHistoryDateSelect = {
+  from: (t: string) => {
+    select: (c: string) => {
+      eq: (col: string, v: unknown) => {
+        eq: (col: string, v: unknown) => {
+          order: (col: string, opts: { ascending: boolean }) => Promise<{
+            data: Array<{ observation_date: string; metric_count: number }> | null
+            error: unknown
+          }>
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Every reporting date this scope and basis has performance history for.
+ *
+ * This IS the reporting spine a period window is derived from, so it must come
+ * from the same basis the period will sum — Main's `with_chilean_equities` block
+ * only begins at 2026-01-02, and deriving the window from a longer spine would
+ * report "incomplete history" for weeks that were never in this series at all.
+ *
+ * A failed read yields an EMPTY list, so a period that cannot be built is
+ * reported as unbuildable rather than built from somewhere else.
+ */
+export async function listPerformanceHistoryDates(
+  scope: string,
+  basis: string,
+): Promise<
+  | { ok: true; dates: string[] }
+  | { ok: false; code: 'not_configured' | 'read_failed' }
+> {
+  const client = await getSupabaseUserClient()
+  if (!client) return { ok: false, code: 'not_configured' }
+
+  const { data, error } = await (client as never as PerformanceHistoryDateSelect)
+    .from('portfolio_performance_history_coverage')
+    .select('observation_date, metric_count')
+    .eq('scope', scope)
+    .eq('basis', basis)
+    .order('observation_date', { ascending: true })
+
+  if (error) return { ok: false, code: 'read_failed' }
+  return {
+    ok: true,
+    dates: (data ?? [])
+      .filter((r) => Number(r.metric_count) > 0)
+      .map((r) => String(r.observation_date)),
+  }
+}

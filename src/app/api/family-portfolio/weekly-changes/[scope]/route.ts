@@ -54,7 +54,13 @@ import {
   getSnapshotValuesByKeys,
   getRowHistoryForScope,
   listRowHistoryDates,
+  getPerformanceHistoryRange,
+  listPerformanceHistoryDates,
 } from '@/lib/db/repositories/familyPortfolioReadRepository'
+import {
+  buildPeriodPerformance,
+  type PeriodPerformance,
+} from '@/lib/familyPortfolio/periodPerformance'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -305,6 +311,52 @@ export async function GET(request: Request, context: { params: Promise<{ scope: 
   // never merged. Both nodes keep their own identity and their own change.
   const reclassifications = detectReclassifications(nodes)
 
+  // ── FOLLOW-UP D — CUSTOM COMPARE IS A PERIOD, NOT A WEEK ─────────────────
+  //
+  // Over an arbitrary FROM → TO the source's own single-week flow, profit and
+  // return describe the wrong interval, so `suppressSingleWeekMetrics` removes
+  // them (above) and they are replaced here by CUMULATIVE figures summed over
+  // every reporting interval in (FROM, TO].
+  //
+  // The half-open window is the whole point: the FROM week's own flow already
+  // moved the book to the value this comparison OPENS at, so counting it again
+  // would double-count it. The TO week's flow happened inside the period and
+  // counts.
+  //
+  // WEEKLY MODE COMPUTES NONE OF THIS. Its figures are the source's own stated
+  // week, unchanged, and reaching for a period aggregate there would replace a
+  // published number with a derived one.
+  let periodPerformance: PeriodPerformance | null = null
+  if (mode === 'custom') {
+    const [spineDates, metrics] = await Promise.all([
+      listPerformanceHistoryDates(scope, basis),
+      getPerformanceHistoryRange(scope, basis, openingEndpoint.asOfDate, current.asOfDate),
+    ])
+    // A FAILED READ IS NOT AN EMPTY PERIOD. Both degrade to `null`, which the
+    // surface renders as unavailable and names — never a flow of zero, which
+    // would silently attribute every deposit in the period to performance.
+    if (spineDates.ok && metrics.ok) {
+      const pick = (metric: string) =>
+        metrics.rows
+          .filter((r) => r.metric === metric)
+          .map((r) => ({ observationDate: r.observationDate, value: r.value }))
+
+      periodPerformance = buildPeriodPerformance({
+        fromDate: openingEndpoint.asOfDate,
+        toDate: current.asOfDate,
+        // The spine of THIS basis, so a window is never judged incomplete for
+        // weeks that were never part of this series. Main's
+        // `with_chilean_equities` block only begins at 2026-01-02.
+        reportingDates: spineDates.dates,
+        openingValue: total.previousValue,
+        closingValue: total.currentValue,
+        flows: pick('flow'),
+        profits: pick('weekly_profit'),
+        returns: pick('weekly_return'),
+      })
+    }
+  }
+
   // --- Historical weekly-change trend: each week through its OWN binding.
   const publicationIds = spine.publications.map((p) => p.id)
   const bindings = await getPerformanceBindings(publicationIds, scope)
@@ -370,6 +422,17 @@ export async function GET(request: Request, context: { params: Promise<{ scope: 
       availableGroupings: scope === 'main' ? ['top_level'] : ['sociedad', 'asset_class'],
       total,
       flowReconciliation,
+      /**
+       * FOLLOW-UP D — the CUSTOM-PERIOD reconciliation, present only in `custom`
+       * mode and null in `weekly` mode.
+       *
+       * `From value + Period P&L + Period Net Flows = To value`, with P&L
+       * derived from that identity and the source's own weekly profits summed
+       * separately as an independent cross-check. `periodReturn` chain-links the
+       * source's weekly returns; it is never P&L divided by the opening value,
+       * which a mid-period contribution would distort.
+       */
+      periodPerformance,
       waterfall,
       driverRowKeys: drivers.map((d) => d.rowKey),
       nodes,

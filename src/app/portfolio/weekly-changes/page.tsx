@@ -482,6 +482,11 @@ function WeeklyChangesPageInner() {
   const nodes = useMemo(() => data?.nodes ?? [], [data])
   const total = data?.total ?? null
   const flowRecon = data?.flowReconciliation ?? null
+  // FOLLOW-UP D - the CUSTOM-PERIOD reconciliation. The server returns it
+  // only in `custom` mode, so this is null on every weekly view and the
+  // weekly ledger below is chosen by which of the two is present rather than
+  // by re-deriving the mode.
+  const periodPerf = data?.periodPerformance ?? null
 
   // ── Every derived figure below comes from the LOCKED pure module ──────────
   const ranked = useMemo(() => rankWeeklyChanges(nodes, { excludeCash: !includeCash }), [nodes, includeCash])
@@ -594,6 +599,42 @@ function WeeklyChangesPageInner() {
     if (compareOn || prevPub === null) return earlierWeeks
     return [{ asOfDate: prevPub.asOfDate, revision: 0, publishedAt: prevPub.publishedAt ?? '' }]
   }, [compareOn, earlierWeeks, prevPub])
+  // ── FOLLOW-UP D · THE RECONCILIATION LEDGER, CHOSEN BY MODE ────────────
+  //
+  // Four rows either way — opening level, result, flows, closing level — but
+  // they are DIFFERENT MEASURES over different intervals, so they carry
+  // different labels and come from different sources:
+  //
+  //   WEEKLY  the source's own stated week, straight from `flowReconciliation`.
+  //   PERIOD  cumulative over every reporting interval in (From, To], from
+  //           `periodPerformance`, whose P&L is derived from the identity the
+  //           note beneath the ledger states.
+  //
+  // Built here rather than inline so the JSX renders ONE list and the two modes
+  // cannot drift into two different row orders or two different emphases.
+  const ledger = useMemo(() => {
+    if (isCustomRange) {
+      if (periodPerf === null) return null
+      return {
+        rows: [
+          { label: w.periodFromLabel, value: periodPerf.openingValue, signed: false, strong: true },
+          { label: w.periodProfit, value: periodPerf.profit, signed: true },
+          { label: w.periodFlow, value: periodPerf.netFlows, signed: true },
+          { label: w.periodToLabel, value: periodPerf.closingValue, signed: false, strong: true, divider: true },
+        ],
+      }
+    }
+    if (flowRecon === null) return null
+    return {
+      rows: [
+        { label: w.previousValueLabel, value: flowRecon.previousValue, signed: false, strong: true },
+        { label: o.weeklyProfit, value: flowRecon.profit, signed: true },
+        { label: w.flowLabel, value: flowRecon.flow, signed: true },
+        { label: w.endingValueLabel, value: flowRecon.actualCurrent, signed: false, strong: true, divider: true },
+      ],
+    }
+  }, [isCustomRange, periodPerf, flowRecon, w, o])
+
   const reclassifications = data?.reclassifications ?? []
 
   return (
@@ -859,32 +900,50 @@ function WeeklyChangesPageInner() {
                     ledger beside it (the grid stretches both cells, so the
                     column IS the card's height); text stays left-aligned —
                     nothing here centres a line of type. */}
+{/* FOLLOW-UP D - THE HEADLINE SPEAKS THE MODE'S OWN LANGUAGE.
+                    A custom range is a PERIOD: calling its change a "Weekly
+                    Value Change" and its rate a "Weekly Return" would name the
+                    wrong interval for every figure under it. The value itself is
+                    unchanged - a difference of two snapshots is correct over any
+                    span - but the RATE is not: weekly mode shows the source's
+                    own stated weekly return, and a period shows the chain-linked
+                    return over the whole range, which is null and hidden when
+                    the source did not state one for every interval. */}
                 <KpiHero
                   bare
                   className="justify-center border-b border-border pb-4 xl:border-b-0 xl:pb-0 xl:pr-6"
-                  label={w.weeklyValueChange}
+                  label={isCustomRange ? w.customTitle : w.weeklyValueChange}
                   value={total.weeklyValueChange}
                   formatValue={(v) => (v > 0 ? `+${formatUsd(v)}` : formatUsd(v))}
                   privacyMasked={masked}
                   countUp
-                  changeValue={total.weeklyReturn}
-                  changeLabel={`${formatRatioPct(total.weeklyReturn)} ${o.weeklyReturn}`}
+                  changeValue={isCustomRange ? (periodPerf?.periodReturn ?? null) : total.weeklyReturn}
+                  changeLabel={
+                    isCustomRange
+                      ? periodPerf?.periodReturn != null
+                        ? `${formatRatioPct(periodPerf.periodReturn)} ${w.periodReturn}`
+                        : undefined
+                      : `${formatRatioPct(total.weeklyReturn)} ${o.weeklyReturn}`
+                  }
                 />
 
                 {/* § 6h item 3 · THE LEDGER — flow / investment-result
                     reconciliation, read top to bottom. RIGHT at xl, so it
                     carries the dividing rule. */}
-                {flowRecon && (
+{/* FOLLOW-UP D - TWO LEDGERS, ONE SHAPE.
+                    Weekly mode reads the source's own stated week. A custom
+                    range reads the PERIOD reconciliation: the same four rows,
+                    but the two movements are cumulative across every reporting
+                    interval in (From, To] and none of the labels says "week".
+                    The identity each claims is the one its own note states. */}
+                {ledger && (
                 <div className="flex flex-col gap-2 min-w-0 xl:border-l xl:border-border xl:pl-6">
-                  <h2 className="ui-label text-muted-fg">{w.flowReconTitle}</h2>
+                  <h2 className="ui-label text-muted-fg">
+                    {isCustomRange ? w.periodReconTitle : w.flowReconTitle}
+                  </h2>
                   <dl className="flex flex-col gap-1.5">
                     {(
-                      [
-                        { label: w.previousValueLabel, value: flowRecon.previousValue, signed: false, strong: true },
-                        { label: o.weeklyProfit, value: flowRecon.profit, signed: true },
-                        { label: w.flowLabel, value: flowRecon.flow, signed: true },
-                        { label: w.endingValueLabel, value: flowRecon.actualCurrent, signed: false, strong: true, divider: true },
-                      ] as Array<{
+                      ledger.rows as Array<{
                         label: string
                         value: number | null
                         signed: boolean
@@ -911,12 +970,40 @@ function WeeklyChangesPageInner() {
                       </div>
                     ))}
                   </dl>
-                  <p className="ui-meta text-muted-fg">{w.flowReconNote}</p>
+                  <p className="ui-meta text-muted-fg">
+                    {isCustomRange ? w.periodReconNote : w.flowReconNote}
+                  </p>
                   {/* Never on a week that reconciles, and never a second amount:
                       an equation whose printed terms do not sum must say so, or
                       the note above it becomes a claim the card disproves. */}
-                  {flowRecon.status === 'residual' && (
+                  {!isCustomRange && flowRecon?.status === 'residual' && (
                     <p className="ui-meta text-warning">{w.flowReconResidual}</p>
+                  )}
+                  {/* FOLLOW-UP D - the PERIOD disclosures. The identity above
+                      always reconciles by construction (P&L is derived from it),
+                      so the honest check is the INDEPENDENT one: the sum of the
+                      source's own weekly results over the same window. A
+                      mismatch is stated rather than resolved in favour of
+                      whichever number is convenient. */}
+                  {isCustomRange && periodPerf?.profitCrossCheck === 'ok' && (
+                    <p className="ui-meta text-muted-fg">{w.periodCrossCheck}</p>
+                  )}
+                  {isCustomRange && periodPerf?.profitCrossCheck === 'mismatch' && (
+                    <p className="ui-meta text-warning">{w.periodCrossMismatch}</p>
+                  )}
+                  {isCustomRange && periodPerf !== null && periodPerf.netFlows === null && (
+                    <p className="ui-meta text-muted-fg">{w.periodFlowsUnavailable}</p>
+                  )}
+                  {isCustomRange && periodPerf !== null && periodPerf.periodReturn === null && (
+                    <p className="ui-meta text-muted-fg">{w.periodReturnUnavailable}</p>
+                  )}
+                  {isCustomRange && periodPerf?.periodReturn != null && (
+                    <p className="ui-meta text-muted-fg">{w.periodReturnNote}</p>
+                  )}
+                  {isCustomRange && periodPerf !== null && periodPerf.intervals.length > 0 && (
+                    <p className="ui-meta text-muted-fg ui-number">
+                      {periodPerf.intervals.length} {w.periodIntervals}
+                    </p>
                   )}
                 </div>
                 )}

@@ -448,6 +448,7 @@ import type {
   Waterfall,
   WeeklyBasis,
 } from '@/lib/familyPortfolio/weeklyChanges'
+import type { PeriodPerformance } from '@/lib/familyPortfolio/periodPerformance'
 
 export type WeeklyChangesState =
   | 'ok'
@@ -502,6 +503,11 @@ export interface WeeklyChangesResponse {
   availableGroupings?: DriverGrouping[]
   total?: TotalMetrics
   flowReconciliation?: FlowReconciliation
+  /** FOLLOW-UP D — the CUSTOM-PERIOD reconciliation. Present only in `custom`
+   *  mode; null in `weekly` mode, where the source's own stated week is used
+   *  unchanged. Its identity is
+   *  `From value + Period P&L + Period Net Flows = To value`. */
+  periodPerformance?: PeriodPerformance | null
   waterfall?: Waterfall
   driverRowKeys?: string[]
   nodes?: ChangeNode[]

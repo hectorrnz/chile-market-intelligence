@@ -1029,6 +1029,187 @@ export async function discardRowHistoryStaging(stagingId: string): Promise<void>
   await client.from('portfolio_row_history_staging').delete().eq('staging_id', stagingId)
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Performance history (POST-R13.8 FOLLOW-UP D)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Four chained `order` calls, because the unique key has four components. */
+interface PerformanceHistoryReadShape {
+  from: (t: string) => {
+    select: (c: string) => {
+      order: (
+        col: string,
+        o: { ascending: boolean },
+      ) => {
+        order: (
+          col: string,
+          o: { ascending: boolean },
+        ) => {
+          order: (
+            col: string,
+            o: { ascending: boolean },
+          ) => {
+            order: (
+              col: string,
+              o: { ascending: boolean },
+            ) => {
+              range: (
+                from: number,
+                to: number,
+              ) => Promise<{
+                data:
+                  | Array<{
+                      scope: string
+                      basis: string
+                      metric: string
+                      observation_date: string
+                      value: number | null
+                      value_class: string
+                    }>
+                  | null
+                error: { message?: string } | null
+              }>
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+/** One performance-history identity as Production holds it. */
+export interface PersistedPerformanceHistoryRead {
+  scope: string
+  basis: string
+  metric: string
+  observationDate: string
+  value: number | null
+  valueClass: string
+}
+
+const PERFORMANCE_HISTORY_PAGE = 5000
+
+/**
+ * Every performance-history identity Production holds, with its value and class.
+ *
+ * The same admin-client, short-page-terminates walk `listPersistedRowHistory`
+ * performs, and for the same reason: planning an import is a whole-book
+ * operation an already-authorized administrator performs across every scope, and
+ * it never reaches a member surface.
+ */
+export async function listPersistedPerformanceHistory(): Promise<
+  { ok: true; rows: PersistedPerformanceHistoryRead[] } | Fail
+> {
+  const client = getSupabaseAdminClient() as never as PerformanceHistoryReadShape | null
+  if (!client) return { ok: false, code: 'not_configured' }
+
+  const rows: PersistedPerformanceHistoryRead[] = []
+  for (let page = 0; ; page += 1) {
+    const from = page * PERFORMANCE_HISTORY_PAGE
+    // A TOTAL order, so paging is stable. `(observation_date, scope, basis,
+    // metric)` is the unique key re-ordered — without every component a row can
+    // sit on two pages or on none, and a missed identity reads as ABSENT, which
+    // turns an ordinary re-upload into a fabricated insertion.
+    const { data, error } = await client
+      .from('portfolio_performance_history')
+      .select('scope, basis, metric, observation_date, value, value_class')
+      .order('observation_date', { ascending: true })
+      .order('scope', { ascending: true })
+      .order('basis', { ascending: true })
+      .order('metric', { ascending: true })
+      .range(from, from + PERFORMANCE_HISTORY_PAGE - 1)
+
+    if (error) {
+      return {
+        ok: false,
+        code: 'rpc_failed',
+        reason: error.message ?? 'performance_history_read_failed',
+      }
+    }
+    const batch = data ?? []
+    for (const r of batch) {
+      rows.push({
+        scope: String(r.scope),
+        basis: String(r.basis),
+        metric: String(r.metric),
+        observationDate: String(r.observation_date),
+        value: r.value === null || r.value === undefined ? null : Number(r.value),
+        valueClass: String(r.value_class),
+      })
+    }
+    if (batch.length < PERFORMANCE_HISTORY_PAGE) break
+  }
+  return { ok: true, rows }
+}
+
+/**
+ * One staged performance-history metric, in the exact shape the RPC's
+ * `jsonb_to_recordset` reads. Snake-cased for that reason.
+ */
+export interface PerformanceHistoryStagedRow {
+  scope: string
+  basis: string
+  metric: string
+  observation_date: string
+  value: number | null
+  value_class: string
+  source_sheet: string
+  source_cell: string
+  source_row: number | null
+  parser_version: string
+  disposition: 'new' | 'gap_fill' | 'changed'
+  /**
+   * The pre-state the plan asserts, for an overwrite only. The RPC re-reads it
+   * under the import lock, refuses if it has moved, and writes the before-image
+   * it READ rather than this one.
+   */
+  prior_value: number | null
+  prior_value_class: string | null
+}
+
+/**
+ * How many performance-history metrics travel in one staged chunk.
+ *
+ * A first backfill is ~2,260 metrics and ~0.85 MB, so this is one or two
+ * requests rather than ten. It uses a relay anyway: one transport shape for both
+ * histories is one thing to reason about, and "it still fits in a request body"
+ * is not a property worth re-verifying each week.
+ */
+export const PERFORMANCE_HISTORY_STAGE_CHUNK = 2000
+
+/** Stages one import's performance history immediately before the import runs. */
+export async function stagePerformanceHistory(
+  stagingId: string,
+  rows: readonly PerformanceHistoryStagedRow[],
+): Promise<{ ok: true; staged: number } | Fail> {
+  const client = getSupabaseAdminClient() as never as StagingWriteShape | null
+  if (!client) return { ok: false, code: 'not_configured' }
+  if (rows.length === 0) return { ok: true, staged: 0 }
+
+  const chunks = chunk([...rows], PERFORMANCE_HISTORY_STAGE_CHUNK)
+  for (let i = 0; i < chunks.length; i += 1) {
+    const { error } = await client
+      .from('portfolio_performance_history_staging')
+      .insert([{ staging_id: stagingId, chunk_index: i, rows: chunks[i] }])
+    if (error) {
+      await discardPerformanceHistoryStaging(stagingId)
+      return {
+        ok: false,
+        code: 'rpc_failed',
+        reason: error.message ?? 'performance_history_stage_failed',
+      }
+    }
+  }
+  return { ok: true, staged: rows.length }
+}
+
+/** Removes a staged batch the import never consumed. Best-effort by design. */
+export async function discardPerformanceHistoryStaging(stagingId: string): Promise<void> {
+  const client = getSupabaseAdminClient() as never as StagingWriteShape | null
+  if (!client) return
+  await client.from('portfolio_performance_history_staging').delete().eq('staging_id', stagingId)
+}
+
 /** One history mutation, in the exact shape the RPC's `jsonb_to_recordset` reads. */
 export interface ImportObservationPayload {
   scope: string

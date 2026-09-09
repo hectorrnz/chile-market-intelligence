@@ -41,6 +41,7 @@ import {
   type PlannedObservation,
   type HistoricalPublicationRestatement,
   type RowHistorySummary,
+  type PerformanceHistorySummary,
 } from './weeklyImportPlan.ts'
 import type {
   PublicationComparison,
@@ -306,8 +307,12 @@ export interface WeeklyImportPreview {
   requiresPublicationRestatementCorrection: boolean
   /** R13.8E — a row-level identity at a frozen date whose value the workbook moves. */
   requiresRowHistoryCorrection: boolean
+  /** FOLLOW-UP D — a performance metric at a frozen date whose value the workbook moves. */
+  requiresPerformanceHistoryCorrection: boolean
   /** R13.8E — what this import would do to row-level history. */
   rowHistory: RowHistorySummary
+  /** FOLLOW-UP D — what this import would do to performance history. */
+  performanceHistory: PerformanceHistorySummary
 
   /**
    * R13.8D.1 — ALREADY-PUBLISHED WEEKS THE WORKBOOK NOW STATES DIFFERENTLY.
@@ -404,6 +409,13 @@ export function planFingerprint(plan: WeeklyImportPlan): string {
   canonical.push(
     `rowHistory|${plan.rowHistory.insertedCount}|${plan.rowHistory.changedCount}|` +
       `${plan.rowHistory.datesInserted.join(',')}|${plan.rowHistory.datesChanged.join(',')}`,
+    // FOLLOW-UP D — performance history joins the digest for the same reason row
+    // history did: an approval given when nothing would be written to it must
+    // not silently authorize 2,260 metrics staged a minute later.
+    `performanceHistory|${plan.performanceHistory.insertedCount}|` +
+      `${plan.performanceHistory.changedCount}|` +
+      `${plan.performanceHistory.datesInserted.join(',')}|` +
+      `${plan.performanceHistory.datesChanged.join(',')}`,
   )
   canonical.push(`plan|${plan.planVersion}`)
   return createHash('sha256').update(canonical.join('\n')).digest('hex')
@@ -454,6 +466,8 @@ export interface PreviewInput {
    * read them, which is "none observed" — never "none exist".
    */
   rowHistory?: RowHistorySummary
+  /** FOLLOW-UP D — passed straight through to `planImportForDraft`. */
+  performanceHistory?: PerformanceHistorySummary
 }
 
 /** The workbook's schema identity — everything in a preview that is not the plan. */
@@ -545,7 +559,9 @@ export function previewFromPlan(plan: WeeklyImportPlan, identity: PreviewIdentit
     requiresEvolutionCorrection: plan.requiresEvolutionCorrection,
     requiresPublicationRestatementCorrection: plan.requiresPublicationRestatementCorrection,
     requiresRowHistoryCorrection: plan.requiresRowHistoryCorrection,
+    requiresPerformanceHistoryCorrection: plan.requiresPerformanceHistoryCorrection,
     rowHistory: plan.rowHistory,
+    performanceHistory: plan.performanceHistory,
     historicalRestatements,
     historicalRestatementDates: plan.historicalRestatementDates,
     historicalRestatementCount: plan.historicalPublicationRestatements.length,
@@ -599,6 +615,7 @@ export function buildWeeklyImportPreview(
     publicationComparison: input.publicationDiff?.comparison,
     historicalPublicationRestatements: input.historicalPublicationRestatements,
     rowHistory: input.rowHistory,
+    performanceHistory: input.performanceHistory,
   })
 
   const preview = previewFromPlan(plan, {
