@@ -871,7 +871,7 @@ select throws_ok(
        source_upload_id, source_sheet, source_cell, parser_version)
     values ('main','ex_chilean_equities','flow','2026-08-07', 0, 'unavailable',
             'cccc0001-0000-0000-0000-000000000001', 'RESUMEN', 'DA97', 'test.parser.1')$$,
-  '23514',
+  'new row for relation "portfolio_performance_history" violates check constraint "portfolio_performance_history_unavailable_ck"',
   'an unavailable metric carrying a number is refused by the database');
 
 select lives_ok(
