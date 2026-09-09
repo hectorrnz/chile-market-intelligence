@@ -189,6 +189,47 @@ comment on table public.portfolio_row_history_staging is
   'Transport only. Row-history chunks staged immediately before nmi_import_portfolio_workbook, '
   'consumed and deleted inside that transaction. Never read by any surface.';
 
+-- ONE definition of the staged row shape.
+--
+-- The import reads this set nine times -- to count it, to validate it, to assert
+-- three stale-plan conditions against the book, and to write the ledger, the
+-- updates and the inserts. Materialising it into a temp table would make every
+-- one of those statements unanalysable to `plpgsql_check` and to `supabase db
+-- lint`, which cannot see a relation that only exists at run time. A
+-- set-returning function is the same set, resolvable statically, with the column
+-- list written once instead of nine times.
+--
+-- STABLE, not IMMUTABLE: it reads a table. SECURITY INVOKER, so it can only ever
+-- see what its caller could -- and its caller is the service-role import path.
+create or replace function public.nmi_staged_row_history(p_staging_id uuid)
+returns table (
+  scope text, observation_date date, row_key text, parent_row_key text,
+  depth int, display_order int, row_type text, label_es text, label_en text,
+  currency text, value numeric, value_class text,
+  source_sheet text, source_cell text, source_row int, parser_version text,
+  disposition text, prior_value numeric, prior_value_class text
+)
+language sql
+stable
+set search_path = ''
+as $$
+  select x.scope, x.observation_date, x.row_key, x.parent_row_key, x.depth,
+         x.display_order, x.row_type, x.label_es, x.label_en, x.currency,
+         x.value, x.value_class, x.source_sheet, x.source_cell, x.source_row,
+         x.parser_version, x.disposition, x.prior_value, x.prior_value_class
+    from public.portfolio_row_history_staging s
+    cross join lateral jsonb_to_recordset(s.rows) as x(
+      scope text, observation_date date, row_key text, parent_row_key text,
+      depth int, display_order int, row_type text, label_es text, label_en text,
+      currency text, value numeric, value_class text,
+      source_sheet text, source_cell text, source_row int, parser_version text,
+      disposition text, prior_value numeric, prior_value_class text)
+   where p_staging_id is not null and s.staging_id = p_staging_id;
+$$;
+
+revoke all on function public.nmi_staged_row_history(uuid) from public, anon, authenticated;
+grant execute on function public.nmi_staged_row_history(uuid) to service_role;
+
 -- ===========================================================================
 -- 4. RLS
 -- ===========================================================================
@@ -370,36 +411,17 @@ begin
     from jsonb_to_recordset(p_observations) as o(disposition text)
    where o.disposition in ('new','gap_fill','changed');
 
-  -- ---- R13.8E: gather the staged row history, once, under the import lock.
+  -- ---- R13.8E: measure the staged row history, once, under the import lock.
   --
   -- Set-based from here on. A first backfill is ~19,757 rows; a per-row loop
   -- would be tens of thousands of round trips inside one statement timeout, for
   -- no additional safety -- `nmi_lock_portfolio_import` already serialises every
   -- writer of this table, so there is nothing a per-row `for update` could add.
-  --
-  -- `on commit drop` clears this at the end of the request's transaction, which
-  -- is every real call. The explicit drop is for the case that is not: two
-  -- imports inside ONE transaction, which is exactly how the pgTAP suite runs
-  -- them. Without it the second call would fail on a relation that already
-  -- exists, and the suite could never prove the second import at all.
-  if to_regclass('pg_temp._nmi_row_history') is not null then
-    execute 'drop table pg_temp._nmi_row_history';
-  end if;
-  create temporary table _nmi_row_history on commit drop as
-  select x.scope, x.observation_date, x.row_key, x.parent_row_key, x.depth,
-         x.display_order, x.row_type, x.label_es, x.label_en, x.currency,
-         x.value, x.value_class, x.source_sheet, x.source_cell, x.source_row,
-         x.parser_version, x.disposition, x.prior_value, x.prior_value_class
-    from public.portfolio_row_history_staging s
-    cross join lateral jsonb_to_recordset(s.rows) as x(
-      scope text, observation_date date, row_key text, parent_row_key text,
-      depth int, display_order int, row_type text, label_es text, label_en text,
-      currency text, value numeric, value_class text,
-      source_sheet text, source_cell text, source_row int, parser_version text,
-      disposition text, prior_value numeric, prior_value_class text)
-   where v_staging is not null and s.staging_id = v_staging;
-
-  select count(*) into v_staged from pg_temp._nmi_row_history;
+  select count(*),
+         count(*) filter (where r.disposition in ('new','gap_fill')),
+         count(*) filter (where r.disposition = 'changed')
+    into v_staged, v_rh_new, v_rh_changed
+    from public.nmi_staged_row_history(v_staging) r;
 
   -- A STAGING ID THAT RESOLVES TO NOTHING IS A SILENT OMISSION, NOT AN EMPTY
   -- IMPORT. The caller states how many rows it staged; if the two disagree the
@@ -417,16 +439,11 @@ begin
   end if;
 
   if exists (
-    select 1 from pg_temp._nmi_row_history
+    select 1 from public.nmi_staged_row_history(v_staging)
      where disposition is null or disposition not in ('new','gap_fill','changed')
   ) then
     raise exception 'import_refused_unknown_row_history_disposition';
   end if;
-
-  select count(*) filter (where disposition in ('new','gap_fill')),
-         count(*) filter (where disposition = 'changed')
-    into v_rh_new, v_rh_changed
-    from pg_temp._nmi_row_history;
 
   perform public.nmi_lock_publication_series('portfolio', p_as_of_date);
 
@@ -469,7 +486,7 @@ begin
   -- ---- R13.8E: row-history stale-plan assertions, before anything mutates.
   if exists (
     select 1
-      from pg_temp._nmi_row_history s
+      from public.nmi_staged_row_history(v_staging) s
       join public.portfolio_row_history r
         on r.scope = s.scope
        and r.observation_date = s.observation_date
@@ -481,7 +498,7 @@ begin
 
   if exists (
     select 1
-      from pg_temp._nmi_row_history s
+      from public.nmi_staged_row_history(v_staging) s
       left join public.portfolio_row_history r
         on r.scope = s.scope
        and r.observation_date = s.observation_date
@@ -493,7 +510,7 @@ begin
 
   if exists (
     select 1
-      from pg_temp._nmi_row_history s
+      from public.nmi_staged_row_history(v_staging) s
       join public.portfolio_row_history r
         on r.scope = s.scope
        and r.observation_date = s.observation_date
@@ -542,7 +559,7 @@ begin
            case when s.disposition = 'changed' then r.import_operation_id end,
            case when s.disposition = 'changed' then to_jsonb(r) end,
            s.value, s.value_class
-      from pg_temp._nmi_row_history s
+      from public.nmi_staged_row_history(v_staging) s
       left join public.portfolio_row_history r
         on r.scope = s.scope
        and r.observation_date = s.observation_date
@@ -565,7 +582,7 @@ begin
            parser_version = s.parser_version,
            import_operation_id = v_op_id,
            ingested_at = now()
-      from pg_temp._nmi_row_history s
+      from public.nmi_staged_row_history(v_staging) s
      where r.scope = s.scope
        and r.observation_date = s.observation_date
        and r.row_key = s.row_key
@@ -581,7 +598,7 @@ begin
            coalesce(s.currency, 'USD'), s.value, s.value_class,
            p_upload_id, s.source_sheet, s.source_cell, s.source_row,
            s.parser_version, v_op_id
-      from pg_temp._nmi_row_history s
+      from public.nmi_staged_row_history(v_staging) s
      where s.disposition in ('new','gap_fill');
   end if;
 
@@ -1006,6 +1023,12 @@ begin
   if has_table_privilege('authenticated', 'public.portfolio_import_row_history_mutations', 'SELECT')
      or has_table_privilege('authenticated', 'public.portfolio_row_history_staging', 'SELECT') then
     raise exception 'authenticated gained read on a row-history internal table';
+  end if;
+
+  -- The staged set is resolvable STATICALLY. A temp table would have made every
+  -- statement that reads it invisible to `plpgsql_check` and `supabase db lint`.
+  if to_regprocedure('public.nmi_staged_row_history(uuid)') is null then
+    raise exception 'nmi_staged_row_history is missing';
   end if;
 
   -- Exactly ONE callable import function -- no overload was left behind.
