@@ -1121,6 +1121,86 @@ describe('the rolling 1M contributor window still reads ROW history', () => {
 })
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// No table alias may shadow a declared PL/pgSQL variable
+//
+// CAUGHT IN CI, NOT BY REVIEW. `nmi_import_portfolio_workbook` declares `m` and
+// `h` as record variables for its two loops. PL/pgSQL resolves a qualified name
+// against its DECLARED VARIABLES before a query's aliases, so a statement that
+// aliased `portfolio_performance_history` as `h` bound `h.scope` to the
+// not-yet-assigned loop record and raised
+//
+//     55000: record "h" is not assigned yet
+//
+// at the FIRST stale-plan check — killing every import, in both pgTAP suites,
+// on every path. It typechecks, it lints, and no amount of reading catches it;
+// only a real PostgreSQL run does. This asserts the invariant statically so the
+// next person cannot reintroduce it and wait a CI round-trip to find out.
+
+describe('no table alias shadows a declared PL/pgSQL variable', () => {
+  /** The `declare` block of one function in the migration. */
+  function declaredVars(fn: string): string[] {
+    const start = MIGRATION.indexOf(`create or replace function public.${fn}(`)
+    assert.ok(start > -1, `${fn} must exist`)
+    const body = MIGRATION.slice(start)
+    const declareAt = body.indexOf('\ndeclare\n')
+    const beginAt = body.indexOf('\nbegin\n')
+    if (declareAt === -1 || beginAt === -1 || declareAt > beginAt) return []
+    return body
+      .slice(declareAt, beginAt)
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0 && !l.startsWith('--'))
+      .map((l) => l.split(/\s+/)[0])
+      .filter((n) => /^[a-z_][a-z0-9_]*$/.test(n))
+  }
+
+  /** Every `<table> <alias>` and `<table> as <alias>` in one function body. */
+  function aliases(fn: string): Array<{ table: string; alias: string }> {
+    const start = MIGRATION.indexOf(`create or replace function public.${fn}(`)
+    const rest = MIGRATION.slice(start)
+    const end = rest.indexOf('\nend $$;')
+    const body = rest.slice(0, end === -1 ? undefined : end)
+    const out: Array<{ table: string; alias: string }> = []
+    const re = /public\.([a-z_]+)\s+(?:as\s+)?([a-z][a-z0-9_]{0,3})\b/g
+    let match: RegExpExecArray | null
+    while ((match = re.exec(body)) !== null) {
+      const alias = match[2]
+      // Keywords that legitimately follow a table name are not aliases.
+      if (['set', 'as', 'on', 'using', 'where', 'from', 'is'].includes(alias)) continue
+      out.push({ table: match[1], alias })
+    }
+    return out
+  }
+
+  for (const fn of ['nmi_import_portfolio_workbook', 'nmi_rollback_portfolio_import']) {
+    test(`${fn} aliases nothing it also declares`, () => {
+      const declared = new Set(declaredVars(fn))
+      assert.ok(declared.size > 0, `${fn} must declare variables`)
+      for (const { table, alias } of aliases(fn)) {
+        assert.ok(
+          !declared.has(alias),
+          `${fn}: alias "${alias}" for ${table} shadows the declared variable "${alias}" — ` +
+            'PL/pgSQL binds the variable first and the statement raises 55000 at run time',
+        )
+      }
+    })
+  }
+
+  test('the import declares `h` and `m`, so those two aliases stay forbidden', () => {
+    // Non-vacuity: the guard above only means something if these are declared.
+    const declared = new Set(declaredVars('nmi_import_portfolio_workbook'))
+    assert.ok(declared.has('h'), '`h` is the restatement loop record')
+    assert.ok(declared.has('m'), '`m` is the evolution loop record')
+  })
+
+  test('performance history is aliased `ph`, and never `h`', () => {
+    assert.ok(!/portfolio_performance_history\s+h\b/.test(MIGRATION))
+    assert.match(MIGRATION, /portfolio_performance_history ph\b/)
+    // And the reason is recorded beside the declaration that forced it.
+    assert.match(MIGRATION, /NOTE ON ALIASES/)
+  })
+})
+
 // pgTAP coverage
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 

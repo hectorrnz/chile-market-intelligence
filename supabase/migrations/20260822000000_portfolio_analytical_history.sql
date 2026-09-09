@@ -599,6 +599,12 @@ declare
   v_rh_changed int := 0;
   v_anchor    date;
   -- POST-R13.8 FOLLOW-UP D
+  -- NOTE ON ALIASES: this function declares `m` and `h` as record variables
+  -- for its two loops, and PL/pgSQL resolves a qualified name against its
+  -- DECLARED VARIABLES before a query's aliases. A statement that aliased
+  -- `portfolio_performance_history` as `h` therefore bound `h.scope` to the
+  -- not-yet-assigned loop record and raised 55000, killing every import. The
+  -- performance-history statements below use `ph`; row history uses `r`.
   v_perf_staging  uuid := nullif(btrim(coalesce(p_metadata->>'performanceHistoryStagingId', '')), '')::uuid;
   v_perf_declared int  := nullif(btrim(coalesce(p_metadata->>'performanceHistoryRowCount', '')), '')::int;
   v_perf_staged   int  := 0;
@@ -808,11 +814,11 @@ begin
   if exists (
     select 1
       from public.nmi_staged_performance_history(v_perf_staging) s
-      join public.portfolio_performance_history h
-        on h.scope = s.scope
-       and h.basis = s.basis
-       and h.metric = s.metric
-       and h.observation_date = s.observation_date
+      join public.portfolio_performance_history ph
+        on ph.scope = s.scope
+       and ph.basis = s.basis
+       and ph.metric = s.metric
+       and ph.observation_date = s.observation_date
      where s.disposition in ('new','gap_fill')
   ) then
     raise exception 'import_refused_stale_performance_history_identity_exists';
@@ -821,12 +827,12 @@ begin
   if exists (
     select 1
       from public.nmi_staged_performance_history(v_perf_staging) s
-      left join public.portfolio_performance_history h
-        on h.scope = s.scope
-       and h.basis = s.basis
-       and h.metric = s.metric
-       and h.observation_date = s.observation_date
-     where s.disposition = 'changed' and h.id is null
+      left join public.portfolio_performance_history ph
+        on ph.scope = s.scope
+       and ph.basis = s.basis
+       and ph.metric = s.metric
+       and ph.observation_date = s.observation_date
+     where s.disposition = 'changed' and ph.id is null
   ) then
     raise exception 'import_refused_stale_performance_history_identity_absent';
   end if;
@@ -834,14 +840,14 @@ begin
   if exists (
     select 1
       from public.nmi_staged_performance_history(v_perf_staging) s
-      join public.portfolio_performance_history h
-        on h.scope = s.scope
-       and h.basis = s.basis
-       and h.metric = s.metric
-       and h.observation_date = s.observation_date
+      join public.portfolio_performance_history ph
+        on ph.scope = s.scope
+       and ph.basis = s.basis
+       and ph.metric = s.metric
+       and ph.observation_date = s.observation_date
      where s.disposition = 'changed'
-       and (h.value is distinct from s.prior_value
-            or h.value_class is distinct from s.prior_value_class)
+       and (ph.value is distinct from s.prior_value
+            or ph.value_class is distinct from s.prior_value_class)
   ) then
     raise exception 'import_refused_stale_performance_history_value_moved';
   end if;
@@ -939,19 +945,19 @@ begin
        prior_value, prior_value_class, prior_import_operation_id, prior_row,
        new_value, new_value_class)
     select v_op_id, s.scope, s.basis, s.metric, s.observation_date, s.disposition,
-           case when s.disposition = 'changed' then h.value end,
-           case when s.disposition = 'changed' then h.value_class end,
-           case when s.disposition = 'changed' then h.import_operation_id end,
-           case when s.disposition = 'changed' then to_jsonb(h) end,
+           case when s.disposition = 'changed' then ph.value end,
+           case when s.disposition = 'changed' then ph.value_class end,
+           case when s.disposition = 'changed' then ph.import_operation_id end,
+           case when s.disposition = 'changed' then to_jsonb(ph) end,
            s.value, s.value_class
       from public.nmi_staged_performance_history(v_perf_staging) s
-      left join public.portfolio_performance_history h
-        on h.scope = s.scope
-       and h.basis = s.basis
-       and h.metric = s.metric
-       and h.observation_date = s.observation_date;
+      left join public.portfolio_performance_history ph
+        on ph.scope = s.scope
+       and ph.basis = s.basis
+       and ph.metric = s.metric
+       and ph.observation_date = s.observation_date;
 
-    update public.portfolio_performance_history h
+    update public.portfolio_performance_history ph
        set value = s.value,
            value_class = s.value_class,
            source_upload_id = p_upload_id,
@@ -962,10 +968,10 @@ begin
            import_operation_id = v_op_id,
            ingested_at = now()
       from public.nmi_staged_performance_history(v_perf_staging) s
-     where h.scope = s.scope
-       and h.basis = s.basis
-       and h.metric = s.metric
-       and h.observation_date = s.observation_date
+     where ph.scope = s.scope
+       and ph.basis = s.basis
+       and ph.metric = s.metric
+       and ph.observation_date = s.observation_date
        and s.disposition = 'changed';
 
     insert into public.portfolio_performance_history
@@ -1204,13 +1210,13 @@ begin
   if exists (
     select 1
       from public.portfolio_import_performance_history_mutations pm
-      join public.portfolio_performance_history h
-        on h.scope = pm.scope
-       and h.basis = pm.basis
-       and h.metric = pm.metric
-       and h.observation_date = pm.observation_date
+      join public.portfolio_performance_history ph
+        on ph.scope = pm.scope
+       and ph.basis = pm.basis
+       and ph.metric = pm.metric
+       and ph.observation_date = pm.observation_date
      where pm.import_operation_id = p_import_id
-       and h.import_operation_id is distinct from p_import_id
+       and ph.import_operation_id is distinct from p_import_id
   ) then
     raise exception 'rollback_refused_performance_history_superseded_by_later_import';
   end if;
@@ -1303,21 +1309,21 @@ begin
   -- removed; an overwrite is restored from the WHOLE displaced row, so the
   -- provenance and lineage come back with the number.
   with perf_removed as (
-    delete from public.portfolio_performance_history h
+    delete from public.portfolio_performance_history ph
      using public.portfolio_import_performance_history_mutations pm
      where pm.import_operation_id = p_import_id
        and pm.disposition in ('new','gap_fill')
-       and h.scope = pm.scope
-       and h.basis = pm.basis
-       and h.metric = pm.metric
-       and h.observation_date = pm.observation_date
-       and h.import_operation_id = p_import_id
+       and ph.scope = pm.scope
+       and ph.basis = pm.basis
+       and ph.metric = pm.metric
+       and ph.observation_date = pm.observation_date
+       and ph.import_operation_id = p_import_id
     returning 1
   )
   select count(*) into v_ph_removed from perf_removed;
 
   with perf_restored as (
-    update public.portfolio_performance_history h
+    update public.portfolio_performance_history ph
        set value = pm.prior_value,
            value_class = pm.prior_value_class,
            source_upload_id = (pm.prior_row->>'source_upload_id')::uuid,
@@ -1330,10 +1336,10 @@ begin
       from public.portfolio_import_performance_history_mutations pm
      where pm.import_operation_id = p_import_id
        and pm.disposition = 'changed'
-       and h.scope = pm.scope
-       and h.basis = pm.basis
-       and h.metric = pm.metric
-       and h.observation_date = pm.observation_date
+       and ph.scope = pm.scope
+       and ph.basis = pm.basis
+       and ph.metric = pm.metric
+       and ph.observation_date = pm.observation_date
     returning 1
   )
   select count(*) into v_ph_restored from perf_restored;
