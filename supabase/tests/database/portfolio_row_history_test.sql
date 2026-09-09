@@ -747,10 +747,13 @@ select is(
     where scope in ('jaime','andres','pablo')),
   0, 'an account with NO portfolio principal has no personal scope at all');
 
+-- Stronger than "anon reads nothing": anon cannot even attempt the read, so
+-- there is no policy for a mistake in one to expose.
 select pg_temp.as_anon();
-select is(
-  (select count(*)::int from public.portfolio_row_history),
-  0, 'anon reads nothing');
+select throws_ok(
+  $$select count(*) from public.portfolio_row_history$$,
+  'permission denied for table portfolio_row_history',
+  'anon holds no privilege to read row history at all');
 
 select pg_temp.as_service();
 
