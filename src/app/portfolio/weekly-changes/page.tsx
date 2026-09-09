@@ -567,6 +567,33 @@ function WeeklyChangesPageInner() {
     () => (data?.weeks ?? []).filter((x) => selectedWeek !== null && x.asOfDate < selectedWeek),
     [data, selectedWeek],
   )
+
+  // TRUE exactly when the week the page is measuring FROM is one the book closed
+  // but never published — the catch-up shape. It is why that date is not in the
+  // Compare list, and the reader is told so rather than left to discover the
+  // option missing.
+  const weeklyOpeningUnpublished =
+    !isCustomRange &&
+    prevPub !== null &&
+    !(data?.weeks ?? []).some((x) => x.asOfDate === prevPub.asOfDate)
+
+  // ── THE FROM CONTROL'S OPTIONS DEPEND ON THE MODE ────────────────────────
+  //
+  // COMPARE ON offers every earlier PUBLISHED week, because a custom comparison
+  // needs a full snapshot at both endpoints.
+  //
+  // COMPARE OFF carries ONE option: the week the page is actually measuring
+  // from, which after a catch-up import is the source's own previous week
+  // (2026-08-28) and not the previous publication (2026-07-31, five weeks
+  // back). That week is deliberately absent from the publication list, so the
+  // read-only control holds it itself rather than rendering blank against a
+  // value its list does not have. It is a LABEL for a resolved endpoint, never
+  // a choice — the select is disabled — and no evolution-only week is ever
+  // offered as a selectable endpoint once compare is on.
+  const fromOptions = useMemo(() => {
+    if (compareOn || prevPub === null) return earlierWeeks
+    return [{ asOfDate: prevPub.asOfDate, revision: 0, publishedAt: prevPub.publishedAt ?? '' }]
+  }, [compareOn, earlierWeeks, prevPub])
   const reclassifications = data?.reclassifications ?? []
 
   return (
@@ -623,9 +650,15 @@ function WeeklyChangesPageInner() {
                   checked={compareOn}
                   onCheckedChange={(next) => {
                     if (next) {
-                      // Entering compare keeps the pair on screen: the reader
-                      // adjusts from where they are, the view does not jump.
+                      // Entering compare is an explicit request for an ENDPOINT
+                      // comparison, so it opens on one: this week against the
+                      // most recent earlier PUBLICATION. It cannot simply keep
+                      // the weekly pair on screen — that opening endpoint is
+                      // the source's own previous-week column, a week the book
+                      // never published, and a custom comparison needs a full
+                      // snapshot at both ends.
                       setAsOf(pub.asOfDate)
+                      setCompareFrom(earlierWeeks[0].asOfDate)
                       setCompareOn(true)
                       return
                     }
@@ -645,12 +678,12 @@ function WeeklyChangesPageInner() {
             {/* The FROM endpoint. Only weeks strictly EARLIER than the selected
                 one are offered, so a reversed range cannot be built in the UI at
                 all; the server still refuses one independently
-                (`from_not_before_to`). Read-only off compare, where it shows
-                the immediately preceding published week the page resolved. */}
-            {ready && pub && earlierWeeks.length > 0 && (
+                (`from_not_before_to`). Read-only off compare, where it names the
+                opening endpoint the page resolved — see `fromOptions`. */}
+            {ready && pub && fromOptions.length > 0 && (
               <WeekSelector
-                weeks={earlierWeeks}
-                value={compareFrom ?? prevPub?.asOfDate ?? earlierWeeks[0].asOfDate}
+                weeks={fromOptions}
+                value={compareFrom ?? fromOptions[0].asOfDate}
                 onChange={(next) => setCompareFrom(next)}
                 disabled={loading || !compareOn}
                 label={w.compareFrom}
@@ -720,10 +753,14 @@ function WeeklyChangesPageInner() {
                 ) : (
                   <>
                     {w.thisWeekLabel}: {formatIsoDateLabel(pub.asOfDate)} · {w.previousWeekLabel}:{' '}
-                    {formatIsoDateLabel(prevPub.asOfDate)} · {w.pairNote}
+                    {formatIsoDateLabel(prevPub.asOfDate)} ·{' '}
+                    {data?.weeklyBasis === 'source_previous_week' ? w.sourcePairNote : w.pairNote}
                   </>
                 )}
               </p>
+              {weeklyOpeningUnpublished && (
+                <p className="ui-meta text-muted-fg">{w.weeklyOpeningUnpublished}</p>
+              )}
               {/* § 13 — why the source's own flow and profit are absent here. An
                   omission a reader can see explained is honest; a silent one is
                   indistinguishable from a bug. */}

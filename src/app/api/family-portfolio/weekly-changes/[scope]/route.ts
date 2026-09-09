@@ -39,7 +39,11 @@ import {
   buildWaterfall,
   buildWeeklyChangeTrend,
   resolvePreviousPortfolioTotal,
+  sourcePreviousWeekRows,
+  hasSourceWeeklyBasis,
   type DriverGrouping,
+  type WeeklyBasis,
+  type WeeklyChangeInputRow,
 } from '@/lib/familyPortfolio/weeklyChanges'
 import { dict } from '@/lib/i18n'
 import {
@@ -148,28 +152,63 @@ export async function GET(request: Request, context: { params: Promise<{ scope: 
     parserVersion: current.parserVersion,
   }
 
-  // The earliest published week genuinely has no comparison. An honest state,
-  // never a zero change (doc 07 § 6b).
-  if (previous === null) {
+  // --- The selected week's own rows first: in WEEKLY mode they may already
+  //     answer the whole question, and a second publication read would then be
+  //     both unnecessary and wrong (see `WeeklyBasis`).
+  const [currentRows, performance] = await Promise.all([
+    getSnapshotRowsForScope(current.id, scope),
+    getPerformanceRowsForScope(current.id, scope),
+  ])
+  if (!currentRows.ok) return fail(currentRows.code, currentRows.code === 'not_configured' ? 503 : 502)
+  if (!performance.ok) return fail(performance.code, performance.code === 'not_configured' ? 503 : 502)
+
+  // ── THE WEEKLY BASIS ──────────────────────────────────────────────────────
+  //
+  // CUSTOM compare always reads two publications: the reader chose both
+  // endpoints and the range is deliberately multi-week.
+  //
+  // WEEKLY prefers this publication's OWN previous-week column. That is the
+  // week the source actually closed before this one — 2026-08-28 for the
+  // 2026-09-04 publication — which after a catch-up import is NOT the previous
+  // publication (2026-07-31, five weeks back). Reading it here keeps the level
+  // change, the source's one-week flow/profit figures and the reconciliation
+  // identity all describing the SAME interval, without publishing a single
+  // catch-up week or touching the locked import architecture.
+  const sourcePreviousDate =
+    mode === 'weekly' &&
+    hasSourceWeeklyBasis(currentRows.rows, current.previousWeekDate, current.asOfDate)
+      ? current.previousWeekDate
+      : null
+  const weeklyBasis: WeeklyBasis =
+    sourcePreviousDate !== null ? 'source_previous_week' : 'adjacent_publication'
+
+  /** The opening endpoint as the surface will label it. Never inferred. */
+  let openingEndpoint: { asOfDate: string; publishedAt: string | null }
+  let previousRowSet: WeeklyChangeInputRow[]
+
+  if (sourcePreviousDate !== null) {
+    // One week, out of this publication alone.
+    openingEndpoint = { asOfDate: sourcePreviousDate, publishedAt: null }
+    previousRowSet = sourcePreviousWeekRows(currentRows.rows)
+  } else if (previous !== null) {
+    // The publication before this one — a custom range, or a week whose own
+    // previous-week column is unusable.
+    openingEndpoint = { asOfDate: previous.asOfDate, publishedAt: previous.publishedAt }
+    const previousRows = await getSnapshotRowsForScope(previous.id, scope)
+    if (!previousRows.ok) return fail(previousRows.code, previousRows.code === 'not_configured' ? 503 : 502)
+    previousRowSet = previousRows.rows
+  } else {
+    // The earliest published week genuinely has no comparison, and the source
+    // states no preceding one. An honest state, never a zero change (doc 07 § 6b).
     return NextResponse.json(
-      { scope, state: 'no_previous_week', weeks, publication, previousPublication: null },
+      { scope, state: 'no_previous_week', weeks, publication, previousPublication: null, mode, weeklyBasis },
       { headers: NO_STORE },
     )
   }
 
-  // --- Financial rows: the caller's own session, RLS is the authority.
-  const [currentRows, previousRows, performance] = await Promise.all([
-    getSnapshotRowsForScope(current.id, scope),
-    getSnapshotRowsForScope(previous.id, scope),
-    getPerformanceRowsForScope(current.id, scope),
-  ])
-  if (!currentRows.ok) return fail(currentRows.code, currentRows.code === 'not_configured' ? 503 : 502)
-  if (!previousRows.ok) return fail(previousRows.code, previousRows.code === 'not_configured' ? 503 : 502)
-  if (!performance.ok) return fail(performance.code, performance.code === 'not_configured' ? 503 : 502)
-
   if (currentRows.rows.length === 0) {
     return NextResponse.json(
-      { scope, state: 'empty', weeks, publication, previousPublication: { asOfDate: previous.asOfDate, publishedAt: previous.publishedAt } },
+      { scope, state: 'empty', weeks, publication, previousPublication: openingEndpoint, mode, weeklyBasis },
       { headers: NO_STORE },
     )
   }
@@ -187,9 +226,9 @@ export async function GET(request: Request, context: { params: Promise<{ scope: 
   // binding, never assumed; the pure helper fails closed if the bound row is
   // missing from either week or changed currency between them.
   const boundKey = perfRows.find((p) => p.basis === basis && p.boundRowKey !== null)?.boundRowKey ?? null
-  const previousTotal = resolvePreviousPortfolioTotal(currentRows.rows, previousRows.rows, boundKey)
+  const previousTotal = resolvePreviousPortfolioTotal(currentRows.rows, previousRowSet, boundKey)
 
-  const nodes = buildChangeNodes(currentRows.rows, previousRows.rows, previousTotal)
+  const nodes = buildChangeNodes(currentRows.rows, previousRowSet, previousTotal)
   // Over a custom range the source's own single-week flow/profit describe the
   // wrong period and are withheld (§ 13); the value change itself is derived
   // from the two snapshots and is correct over any span.
@@ -232,7 +271,14 @@ export async function GET(request: Request, context: { params: Promise<{ scope: 
       state: 'ok',
       weeks,
       publication,
-      previousPublication: { asOfDate: previous.asOfDate, publishedAt: previous.publishedAt },
+      previousPublication: openingEndpoint,
+      /**
+       * WHICH TWO THINGS THE CHANGE IS A DIFFERENCE OF.
+       * `source_previous_week` — this publication's own previous-week column, a
+       * true one-week step even across a catch-up gap. `adjacent_publication` —
+       * the publication before it, which may be several weeks earlier.
+       */
+      weeklyBasis,
       /**
        * `weekly` — the immediately preceding published week (the default).
        * `custom` — an explicit earlier endpoint. The client titles the surface

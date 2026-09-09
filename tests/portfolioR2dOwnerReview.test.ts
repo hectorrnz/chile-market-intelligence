@@ -395,15 +395,23 @@ describe('R13.R2 pass 4 § 2 — flow-adjusted evolution arithmetic', () => {
   // unit check that a slice opens at its own real level, NOT as a claim about
   // where the page adjusts. `portfolioR2eStableEvolution.test.ts` owns that claim.
   test('the path always opens at the real published level of its own first observation', () => {
+    // POST-R13.8 follow-up B: 1M counts four REPORTING INTERVALS on the spine,
+    // not 28 calendar days, so the fixture is WEEKLY - which is what this book
+    // is. Six observations give the window a real opening to slice to (the
+    // second point), which is exactly what this test exists to check.
     const full: FlowObservation[] = [
-      { date: '2025-01-03', value: 500, flow: null },
-      { date: '2025-06-06', value: 900, flow: 300 },
+      { date: '2025-12-05', value: 400, flow: null },
+      { date: '2025-12-12', value: 500, flow: 0 },
+      { date: '2025-12-19', value: 600, flow: 0 },
+      { date: '2025-12-26', value: 700, flow: 0 },
       { date: '2026-01-02', value: 1000, flow: 0 },
       { date: '2026-01-09', value: 1100, flow: 50 },
     ]
     const window = selectEvolutionRange(full, '1M')
+    assert.equal(window.startDate, '2025-12-12', 'four intervals back, not the whole record')
+    assert.equal(window.points.length - 1, 4)
     const out = buildFlowAdjustedSeries(window.points)
-    assert.equal(out.points[0].value, 1000, 'the window opens at its own real level')
+    assert.equal(out.points[0].value, 500, 'the window opens at its own real level')
     assert.equal(out.points[out.points.length - 1].value, 1050)
   })
 

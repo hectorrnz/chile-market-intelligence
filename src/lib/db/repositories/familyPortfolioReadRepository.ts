@@ -78,6 +78,29 @@ function spineDate(meta: Record<string, unknown> | null, key: string): string | 
 }
 
 /**
+ * A recorded anchor date is kept only when it CAN be true — strictly earlier
+ * than the week it describes.
+ *
+ * This is not defensive decoration. R13.8D.1's restatement path stamps the
+ * IMPORT's own anchor dates onto every week it re-publishes, so in Production
+ * the seven weeks 2026-06-19 through 2026-07-31 each carry
+ * `previousWeekDate = 2026-08-28` and `beginningOfYearDate` from the same
+ * import — a "previous week" that falls AFTER the week it precedes. The
+ * row-level values on those weeks are correct; only the recorded dates are not.
+ *
+ * A surface that printed that date would label a June comparison as opening in
+ * August. Nulling it here means every reader — the Overview's four-column
+ * header, the snapshot route, Weekly Changes — falls back to the documented
+ * behaviour for a publication with no recorded anchors: the column renders
+ * WITHOUT a date rather than with a false one. Fixing the stored metadata is a
+ * separate, write-bearing correction to the import path.
+ */
+function anchorBefore(candidate: string | null, asOfDate: string): string | null {
+  if (candidate === null) return null
+  return candidate < asOfDate ? candidate : null
+}
+
+/**
  * Every CURRENT publication of one kind, newest week first.
  *
  * This is the week list behind the historical-week selector, and the only
@@ -127,8 +150,11 @@ export async function listCurrentPublications(
       revision: p.revision,
       publishedAt: p.published_at,
       parserVersion: p.parser_version,
-      previousWeekDate: spineDate(p.metadata, 'previousWeekDate'),
-      beginningOfYearDate: spineDate(p.metadata, 'beginningOfYearDate'),
+      previousWeekDate: anchorBefore(spineDate(p.metadata, 'previousWeekDate'), p.as_of_date),
+      beginningOfYearDate: anchorBefore(
+        spineDate(p.metadata, 'beginningOfYearDate'),
+        p.as_of_date,
+      ),
     })),
   }
 }

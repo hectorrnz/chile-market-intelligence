@@ -104,21 +104,46 @@ export function shiftIsoDays(iso: string, days: number): string | null {
 /**
  * THE 1M DEFINITION, in one place for every surface that offers the period.
  *
- * 1M is a TRAILING window of FOUR WEEKLY CHANGE INTERVALS — 28 days back from
- * the endpoint — not a calendar month and emphatically not month-to-date. This
+ * 1M IS FOUR WEEKLY CHANGE INTERVALS, COUNTED ON THE REPORTING SPINE ITSELF.
+ * Not a calendar month, not month-to-date, and not a fixed number of days. This
  * is a WEEKLY book: a month of it is four steps, so four steps is what the
- * period names. Ending 2026-09-04 the boundary is 2026-08-07, and the window
- * spans the four intervals 08-07→08-14→08-21→08-28→09-04.
+ * period names — ending 2026-09-04 the window is exactly
+ * 08-07, 08-14, 08-21, 08-28, 09-04.
  *
- * It was a calendar-month shift until the post-R13.8 follow-up. That read as
- * month-to-date whenever the endpoint sat early in a month — the endpoint week
- * plus whatever else happened to share its calendar month — which after the
- * first real catch-up import left the value-change card with a single
- * publication in the window and nothing to compare. A fixed four-week reach
- * cannot express that failure: it always spans four weekly intervals of
- * history, whatever the calendar is doing.
+ * IT WAS A CALENDAR-MONTH SHIFT, THEN A 28-DAY REACH, AND BOTH WERE WRONG.
+ * The calendar shift read as month-to-date whenever the endpoint sat early in a
+ * month. The 28-day boundary that replaced it is right only while the source
+ * freezes a column every seven days: skip one week and those same 28 days span
+ * three intervals, not four, so the period would quietly measure less than it
+ * names. Counting INTERVALS cannot express either failure — it returns four
+ * intervals of real history, or reports honestly that the record is shorter.
+ *
+ * `TRAILING_MONTH_DAYS` is retained as the NOMINAL boundary only: a disclosure
+ * date for the reader, never the selector. `openingByIntervals` is the selector.
  */
+export const TRAILING_MONTH_INTERVALS = 4
+
+/** The nominal calendar length of `TRAILING_MONTH_INTERVALS` weekly steps. */
 export const TRAILING_MONTH_DAYS = 28
+
+/**
+ * The date exactly `intervals` reporting steps before `endpoint`, on the spine
+ * the caller supplies.
+ *
+ * The spine is the source's OWN reporting dates, so this counts real weeks the
+ * book closed rather than calendar time. Null when the record does not reach
+ * back that far — honest truncation, never a nearest-date approximation and
+ * never a synthesised opening.
+ */
+export function openingByIntervals(
+  dates: readonly string[],
+  endpoint: string,
+  intervals: number,
+): string | null {
+  const atOrBefore = [...new Set(dates.filter((d) => ISO_DATE.test(d) && d <= endpoint))].sort()
+  if (atOrBefore.length <= intervals) return null
+  return atOrBefore[atOrBefore.length - 1 - intervals]
+}
 
 /**
  * The logical period start for a range ending at `endpoint`. Null means "no
@@ -199,9 +224,30 @@ export function selectEvolutionRange(
       : seriesEnd
 
   const boundary = periodBoundary(endpoint, period)
-  // First ACTUAL observation on/after the boundary — never the boundary itself,
-  // and never a value interpolated onto it.
-  const within = ordered.filter((p) => (boundary === null || p.date >= boundary) && p.date <= endpoint)
+
+  // 1M SELECTS BY INTERVAL COUNT, not by the boundary date. Four real reporting
+  // steps back, whatever calendar distance the source's own cadence puts there.
+  // Every other period is a calendar span, and still opens at the first ACTUAL
+  // observation on or after its boundary — never the boundary itself, and never
+  // a value interpolated onto it.
+  let within: EvolutionObservation[]
+  let truncatedByHistory: boolean
+  if (period === '1M') {
+    const opening = openingByIntervals(
+      ordered.map((p) => p.date),
+      endpoint,
+      TRAILING_MONTH_INTERVALS,
+    )
+    // A record shorter than four intervals is TRUNCATED, not empty: it shows
+    // every step it genuinely has and says the window was clipped.
+    within = ordered.filter((p) => (opening === null || p.date >= opening) && p.date <= endpoint)
+    truncatedByHistory = opening === null
+  } else {
+    within = ordered.filter((p) => (boundary === null || p.date >= boundary) && p.date <= endpoint)
+    // The history begins after the boundary — the range is as long as the
+    // record allows, which is a different statement from "weeks are missing".
+    truncatedByHistory = boundary !== null && ordered[0].date > boundary
+  }
 
   return {
     period,
@@ -209,9 +255,7 @@ export function selectEvolutionRange(
     startDate: within.length > 0 ? within[0].date : null,
     endDate: within.length > 0 ? within[within.length - 1].date : null,
     boundary,
-    // The history begins after the boundary — the range is as long as the
-    // record allows, which is a different statement from "weeks are missing".
-    truncatedByHistory: boundary !== null && ordered[0].date > boundary,
+    truncatedByHistory,
   }
 }
 

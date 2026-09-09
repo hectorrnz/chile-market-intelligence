@@ -733,6 +733,11 @@ function SummaryPageInner() {
   const totalPoints = data?.evolution?.total ?? EMPTY_POINTS
   const inclPoints = isMain ? (data?.evolution?.withChilean ?? EMPTY_POINTS) : totalPoints
   const exclPoints = isMain ? (data?.evolution?.exChilean ?? EMPTY_POINTS) : EMPTY_POINTS
+
+  // The dates of the basis the value-change card measures. Derived here because
+  // the page has already read the evolution history; refetching it inside the
+  // card would be a second request for a list already on screen.
+  const reportingWeeks = useMemo(() => inclPoints.map((p) => p.date), [inclPoints])
   const hasEvolution = inclPoints.length > 0 || exclPoints.length > 0
 
   const safePeriod = isEvolutionPeriod(period) ? period : 'ALL'
@@ -1773,6 +1778,12 @@ function SummaryPageInner() {
                 scope={activeScope}
                 masked={masked}
                 source={t.fp.portfolio.source}
+                /* The REPORTING spine of the very basis Weekly Changes binds to
+                   (`with_chilean_equities` for Main, `total` for a personal
+                   book) — so 1M counts four intervals over the weeks the source
+                   actually closed, including catch-up weeks that carry no
+                   publication of their own. */
+                reportingWeeks={reportingWeeks}
               />
             </div>
 

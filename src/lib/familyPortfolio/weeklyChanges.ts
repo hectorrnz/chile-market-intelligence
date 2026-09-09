@@ -38,6 +38,103 @@ export interface WeeklyChangeInputRow {
   labelEn: string | null
   currency: string
   value: number | null
+  /**
+   * The SAME row's value in the workbook's own previous-week column, captured
+   * at parse time and persisted on the row (`metadata.previousValue`).
+   *
+   * It is the source's statement about the week immediately before this
+   * publication — which after a catch-up import is a week that has NO
+   * publication of its own. That is exactly why it is carried: see
+   * `sourcePreviousWeekRows`.
+   */
+  previousValue?: number | null
+}
+
+// ---------------------------------------------------------------------------
+// 0a · THE WEEKLY BASIS (post-R13.8 follow-up B)
+// ---------------------------------------------------------------------------
+//
+// WHICH TWO THINGS "THIS WEEK'S CHANGE" IS THE DIFFERENCE OF.
+//
+// Until now the answer was always "this publication and the publication before
+// it", and while the book published every week that WAS the previous week. The
+// first real catch-up import broke the equivalence: R13.8's locked architecture
+// is ONE UPLOAD → N EVOLUTION HISTORY POINTS → ONE NEW PUBLICATION, so the
+// publication spine now jumps 2026-07-31 -> 2026-09-04 while the source closed
+// 08-07, 08-14, 08-21 and 08-28 in between.
+//
+// Subtracting the previous PUBLICATION then measures FIVE weeks and calls it
+// one. Worse, it mixes bases: `flow` and `weekly_profit` are the source's own
+// ONE-WEEK figures for 09-04, so `previous + flow + profit = current` was being
+// asked to tie a five-week level change to one week of parts. It cannot, and the
+// residual it produced is the reconciliation warning the owner reported.
+//
+// THE SOURCE ALREADY CARRIES THE ANSWER. Every published row stores its own
+// previous-week value, and the publication stores that column's DATE. So the
+// true one-week comparison for 2026-09-04 is 2026-08-28 -> 2026-09-04, and it
+// comes out of the 09-04 publication alone. No second publication is read, no
+// catch-up week is manufactured, and the locked import architecture is untouched.
+//
+// `adjacent_publication` remains for a publication that predates the recorded
+// previous-week column, and for CUSTOM compare, where the reader deliberately
+// asked for two endpoints.
+
+export type WeeklyBasis =
+  /** The selected publication's own previous-week column — a true one-week step. */
+  | 'source_previous_week'
+  /** The publication immediately before it, which may be several weeks earlier. */
+  | 'adjacent_publication'
+
+/**
+ * The previous week's rows, taken from THIS publication's own previous-week
+ * column rather than from a second publication.
+ *
+ * EVERY row is returned, including one whose previous value is absent. Dropping
+ * those would be a silent fabrication: `buildChangeNodes` reads a MISSING row as
+ * a position that was not held — economically zero — and a blank cell is not
+ * evidence of that. Returned with a null value it becomes `missing_previous` and
+ * the node is honestly `unavailable`, which is the same treatment the parser
+ * already gives the row's own `difference` (`differenceClass: 'unavailable'`).
+ */
+export function sourcePreviousWeekRows(
+  currentRows: readonly WeeklyChangeInputRow[],
+): WeeklyChangeInputRow[] {
+  return currentRows.map((r) => ({ ...r, value: r.previousValue ?? null, previousValue: null }))
+}
+
+/**
+ * Whether this publication can answer the weekly question by itself.
+ *
+ * THREE conditions, and the third is not a formality:
+ *
+ *   1. A recorded previous-week DATE, so the surface can label the endpoint
+ *      honestly instead of showing a dateless one. A publication written before
+ *      that date was recorded fails here and falls back.
+ *
+ *   2. At least one row carrying a previous VALUE, so the comparison is not
+ *      empty.
+ *
+ *   3. THE DATE MUST BE EARLIER THAN THE PUBLICATION'S OWN WEEK. Production
+ *      proves why this is checked rather than assumed: R13.8D.1's restatement
+ *      path stamps the IMPORT's anchor dates onto every week it re-publishes,
+ *      so the seven weeks 2026-06-19 through 2026-07-31 all carry
+ *      `previousWeekDate = 2026-08-28` — a date AFTER the week they describe.
+ *      Their row-level previous values are correct (each equals the week
+ *      genuinely before it), but the recorded DATE is not, and trusting it
+ *      would label a June comparison as opening in August and present a
+ *      reversed range. A date that cannot be true is refused, and the week
+ *      falls back to the publication before it — the right answer there anyway,
+ *      because the spine is dense across those weeks.
+ */
+export function hasSourceWeeklyBasis(
+  currentRows: readonly WeeklyChangeInputRow[],
+  previousWeekDate: string | null,
+  asOfDate: string,
+): boolean {
+  const iso = /^\d{4}-\d{2}-\d{2}$/
+  if (previousWeekDate === null || !iso.test(previousWeekDate)) return false
+  if (!iso.test(asOfDate) || !(previousWeekDate < asOfDate)) return false
+  return currentRows.some((r) => typeof r.previousValue === 'number' && Number.isFinite(r.previousValue))
 }
 
 // ---------------------------------------------------------------------------

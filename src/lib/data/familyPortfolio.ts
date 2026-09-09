@@ -446,6 +446,7 @@ import type {
   TotalMetrics,
   TrendPoint,
   Waterfall,
+  WeeklyBasis,
 } from '@/lib/familyPortfolio/weeklyChanges'
 
 export type WeeklyChangesState =
@@ -472,8 +473,13 @@ export interface WeeklyChangesResponse {
     parserVersion: string
   } | null
   /** The opening endpoint — the preceding week in `weekly` mode, the chosen
-   *  `from` week in `custom`. Null on the earliest published week. */
-  previousPublication: { asOfDate: string; publishedAt: string } | null
+   *  `from` week in `custom`. Null on the earliest published week.
+   *  `publishedAt` is null when the endpoint is the source's own previous-week
+   *  column rather than a publication: that week was closed by the workbook but
+   *  never published, so it has no publication timestamp to report. */
+  previousPublication: { asOfDate: string; publishedAt: string | null } | null
+  /** Which two things the change is a difference of — see `WeeklyBasis`. */
+  weeklyBasis?: WeeklyBasis
   /** `weekly` (default) or `custom` — R13.R1.1 § 13. Drives the surface title:
    *  a multi-week range is never presented as a Weekly Change. */
   mode?: ComparisonMode

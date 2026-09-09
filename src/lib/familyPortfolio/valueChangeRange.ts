@@ -29,29 +29,32 @@
 // by side on Summary describe the same span. No date is interpolated, snapped
 // to a nearest week, or invented.
 //
-// ── 1M REACHES BACK INSTEAD, AND SAYS SO ───────────────────────────────────
+// ── 1M IS FOUR REPORTING INTERVALS, AND WILL NOT APPROXIMATE ──────────────
 //
-// 1M is the one period that cannot use that rule, and the first real catch-up
-// import proved it. R13.8's architecture is ONE UPLOAD → N EVOLUTION HISTORY
-// POINTS → ONE NEW PUBLICATION, so a catch-up week is a real observation with
-// NO publication of its own. After the 2026-09-04 import the publication spine
-// jumps 2026-07-31 → 2026-09-04 while evolution holds 08-07, 08-14, 08-21 and
-// 08-28 in between. "First publication on or after 2026-08-07" is then
-// 2026-09-04 itself — one week, no comparison, and a card reading "this period
-// holds a single published week" for a month the book demonstrably lived
-// through.
+// 1M cannot use the on-or-after rule, and the first real catch-up import proved
+// it. R13.8's architecture is ONE UPLOAD → N EVOLUTION HISTORY POINTS → ONE
+// NEW PUBLICATION, so a catch-up week is a real reporting week with NO
+// publication of its own. After the 2026-09-04 import the publication spine
+// jumps 2026-07-31 → 2026-09-04 while the REPORTING spine holds 08-07, 08-14,
+// 08-21 and 08-28 in between. "First publication on or after the boundary" is
+// then 2026-09-04 itself: one week, no comparison.
 //
-// So for 1M the opening endpoint is the LAST PUBLISHED WEEK AT OR BEFORE the
-// boundary. That window CONTAINS the trailing month rather than being contained
-// by it — the honest direction to err, because the alternative is showing
-// nothing at all — and `openingPrecedesBoundary` says so, so the surface can
-// disclose that the span it drew is wider than the period it was asked for.
-// Nothing is fabricated: both endpoints remain real publications, and a
-// catch-up week never becomes one.
+// The first fix reached BACKWARD instead, opening at the last publication at or
+// before the boundary. That produced 2026-07-31 → 2026-09-04 and called it a
+// month. It is five intervals, not four, and the owner rejected it: a window
+// that CONTAINS the period is still not the period.
 //
-// 3M / YTD / 1Y / ALL are DELIBERATELY UNTOUCHED. They do not share the defect
-// — over the same sparse spine each still resolves to many publications — and
-// silently widening them would redefine periods nobody reported a problem with.
+// So 1M now resolves its opening endpoint EXACTLY, by counting four reporting
+// steps back on the spine the source actually closed (`openingByIntervals`).
+// For 2026-09-04 that is 2026-08-07 and nothing else. If that week carries no
+// publication, this module says so through `opening_not_published` and names
+// the date — it does not widen the window, does not snap to a neighbour, and
+// does not invent a snapshot. An honest refusal beats a plausible wrong number.
+//
+// 3M / YTD / 1Y / ALL are DELIBERATELY UNTOUCHED. They are CALENDAR spans, not
+// interval counts, and over this spine each still resolves to many publications.
+// Redefining them here would change periods
+// nobody reported a problem with.
 //
 // ── FAIL CLOSED ───────────────────────────────────────────────────────────
 //
@@ -60,7 +63,11 @@
 // requesting a range the API would refuse (`from_not_before_to`) or — far
 // worse — showing a zero change, which would read as "flat".
 
-import { periodBoundary } from './evolutionRange.ts'
+import {
+  openingByIntervals,
+  periodBoundary,
+  TRAILING_MONTH_INTERVALS,
+} from './evolutionRange.ts'
 
 /**
  * The five periods the Summary contributors chart offers — now exactly the
@@ -99,6 +106,19 @@ export type ValueChangeRangeState =
    * endpoint to compare against. Honest emptiness — never a zero change.
    */
   | 'single_week'
+  /**
+   * 1M ONLY. The exact opening week the period names is a real reporting week
+   * the book HAS — it is in the evolution history — but it carries no
+   * publication, so the row-level decomposition this card draws cannot be built
+   * from it. `requiredOpeningDate` names that week.
+   *
+   * This is the state that refuses to approximate. The alternatives were to
+   * widen the window to an earlier publication (measuring five intervals under
+   * a four-interval label) or to synthesise a snapshot for the week (inventing
+   * financial history). Saying which week is missing is the only honest third
+   * option.
+   */
+  | 'opening_not_published'
 
 export interface ValueChangeRange {
   period: ValueChangePeriod
@@ -125,13 +145,12 @@ export interface ValueChangeRange {
    */
   weekCount: number | null
   /**
-   * True when the opening endpoint sits EARLIER than the boundary — i.e. the
-   * window is wider than the period asked for, because the book publishes no
-   * week at the boundary itself. Only 1M can reach back this way (see the
-   * header); every other period opens on or after its boundary, so this is
-   * always false for them.
+   * 1M ONLY, and only when the window could not be built: the exact reporting
+   * week the period requires as its opening endpoint. Non-null exactly when the
+   * state is `opening_not_published`, so the surface can name the missing week
+   * instead of showing an empty card with no explanation.
    */
-  openingPrecedesBoundary: boolean
+  requiredOpeningDate: string | null
   state: ValueChangeRangeState
 }
 
@@ -153,33 +172,29 @@ const EMPTY: Omit<ValueChangeRange, 'period'> = {
   boundary: null,
   truncatedByHistory: false,
   weekCount: null,
-  openingPrecedesBoundary: false,
+  requiredOpeningDate: null,
   state: 'no_publications',
 }
 
 /**
- * The 1M opening endpoint: the LAST published week at or before the boundary,
- * so the window spans the whole trailing month rather than whatever fragment of
- * it happens to carry a publication.
+ * THE range selector.
  *
- * When the record itself begins inside the window there is nothing at or before
- * the boundary, and the earliest published week before the endpoint opens it
- * instead — a genuinely short history, reported through `truncatedByHistory`
- * rather than as an absent comparison. Null only when no earlier publication
- * exists at all, which is honest emptiness, not a zero change.
- */
-function trailingMonthOpening(dates: readonly string[], endpoint: string, boundary: string | null): string | null {
-  const earlier = dates.filter((d) => d < endpoint)
-  if (earlier.length === 0) return null
-  if (boundary === null) return earlier[0]
-  const atOrBefore = earlier.filter((d) => d <= boundary)
-  return atOrBefore.length > 0 ? atOrBefore[atOrBefore.length - 1] : earlier[0]
-}
-
-/**
- * THE range selector. The closing endpoint is the spine's own latest published
- * week; the opening endpoint is the first published week on or after the
- * period boundary.
+ * The closing endpoint is the spine's own latest published week. The opening
+ * endpoint depends on the KIND of period:
+ *
+ *   * 1M counts FOUR REPORTING INTERVALS back on `reportingWeeks` — the source's
+ *     own weekly spine, which after a catch-up import holds weeks that carry no
+ *     publication. That opening week is then required to be published; if it is
+ *     not, the range refuses with `opening_not_published` rather than widening.
+ *
+ *   * every other period is a CALENDAR span and opens at the first published
+ *     week on or after its boundary, exactly as before.
+ *
+ * `reportingWeeks` is the evolution history's dates. Omitting it falls back to
+ * the publication dates, which is correct whenever the two spines agree and is
+ * what every pre-existing caller and fixture already assumed — so a caller that
+ * never read the history keeps its previous behaviour instead of being given a
+ * silently different window.
  *
  * `endpointOverride` exists for one legitimate case: pinning the comparison to
  * a week the caller already resolved elsewhere. It cannot invent a week — a
@@ -190,6 +205,7 @@ export function selectValueChangeRange(
   weeks: readonly PublishedWeek[],
   period: ValueChangePeriod,
   endpointOverride?: string | null,
+  reportingWeeks?: readonly string[] | null,
 ): ValueChangeRange {
   const dates = orderedDates(weeks)
   if (dates.length === 0) return { period, ...EMPTY }
@@ -201,15 +217,73 @@ export function selectValueChangeRange(
 
   const boundary = periodBoundary(endpoint, period)
 
+  // The REPORTING spine — every week the source closed, published or not. The
+  // publication spine stands in when the caller supplied none; it is a subset,
+  // so the fallback can only ever count intervals over fewer weeks, never over
+  // weeks that do not exist.
+  //
+  // The ENDPOINT is unioned in. It is a real published week by construction, so
+  // adding it invents nothing — but a reporting series that does not carry it
+  // (a scope whose evolution basis is shorter than its publication spine) would
+  // otherwise make the count start one step too early and reach five intervals
+  // back under a four-interval label. The union makes the count exact whatever
+  // the two spines disagree about.
+  const spine =
+    Array.isArray(reportingWeeks) && reportingWeeks.length > 0
+      ? [
+          ...new Set([
+            ...reportingWeeks.filter((d) => typeof d === 'string' && ISO_DATE.test(d)),
+            endpoint,
+          ]),
+        ].sort()
+      : dates
+
+  if (period === '1M') {
+    const required = openingByIntervals(spine, endpoint, TRAILING_MONTH_INTERVALS)
+    if (required === null) {
+      // The record is shorter than four intervals. Truncated, and reported as
+      // the single-week emptiness it is rather than as a shorter "month".
+      return {
+        period,
+        fromDate: null,
+        toDate: dates.includes(endpoint) ? endpoint : null,
+        boundary,
+        truncatedByHistory: true,
+        weekCount: dates.includes(endpoint) ? 1 : null,
+        requiredOpeningDate: null,
+        state: 'single_week',
+      }
+    }
+    if (!dates.includes(required)) {
+      // The week exists in the book's history but was never published, so no
+      // row-level snapshot can open the window. Named, never approximated.
+      return {
+        period,
+        fromDate: null,
+        toDate: endpoint,
+        boundary,
+        truncatedByHistory: false,
+        weekCount: null,
+        requiredOpeningDate: required,
+        state: 'opening_not_published',
+      }
+    }
+    const within = dates.filter((d) => d >= required && d <= endpoint)
+    return {
+      period,
+      fromDate: required,
+      toDate: endpoint,
+      boundary,
+      truncatedByHistory: false,
+      weekCount: within.length,
+      requiredOpeningDate: null,
+      state: 'ok',
+    }
+  }
+
   // Real publications only, and never a week synthesised to sit on a boundary.
-  // 1M reaches BACK to the last publication at or before the boundary (see the
-  // header); every other period opens at the first one on or after it.
-  const opening =
-    period === '1M'
-      ? trailingMonthOpening(dates, endpoint, boundary)
-      : (dates.find((d) => (boundary === null || d >= boundary) && d <= endpoint) ?? null)
-  const within =
-    opening === null ? [] : dates.filter((d) => d >= opening && d <= endpoint)
+  const opening = dates.find((d) => (boundary === null || d >= boundary) && d <= endpoint) ?? null
+  const within = opening === null ? [] : dates.filter((d) => d >= opening && d <= endpoint)
 
   // The history begins after the boundary — the range is as long as the record
   // allows, which is a different statement from "weeks are missing".
@@ -217,7 +291,7 @@ export function selectValueChangeRange(
 
   if (within.length < 2) {
     // Whatever single week the period could reach, for the surface to name.
-    const lone = within.length === 1 ? within[0] : (dates.includes(endpoint) ? endpoint : null)
+    const lone = within.length === 1 ? within[0] : dates.includes(endpoint) ? endpoint : null
     return {
       period,
       fromDate: null,
@@ -225,21 +299,19 @@ export function selectValueChangeRange(
       boundary,
       truncatedByHistory,
       weekCount: lone === null ? null : 1,
-      openingPrecedesBoundary: false,
+      requiredOpeningDate: null,
       state: 'single_week',
     }
   }
 
-  const fromDate = within[0]
   return {
     period,
-    fromDate,
+    fromDate: within[0],
     toDate: within[within.length - 1],
     boundary,
     truncatedByHistory,
     weekCount: within.length,
-    // Disclosed, never silent: the window opened before the period it names.
-    openingPrecedesBoundary: boundary !== null && fromDate < boundary,
+    requiredOpeningDate: null,
     state: 'ok',
   }
 }

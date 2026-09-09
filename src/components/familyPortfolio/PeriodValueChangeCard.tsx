@@ -125,9 +125,27 @@ interface PeriodValueChangeCardProps {
   masked: boolean
   /** Source attribution — the page's own, so both cards cite one string. */
   source: string
+  /**
+   * The REPORTING spine — every week the source closed for this scope, from the
+   * evolution history the page has already fetched.
+   *
+   * 1M counts four reporting INTERVALS back, and after a catch-up import the
+   * reporting spine holds weeks the publication spine does not (2026-08-07,
+   * 08-14, 08-21, 08-28). Counting over publications alone would silently reach
+   * five intervals back and label it a month. Empty falls back to publications,
+   * which is correct while the two spines agree.
+   */
+  reportingWeeks?: readonly string[]
 }
 
-export function PeriodValueChangeCard({ scope, masked, source }: PeriodValueChangeCardProps) {
+const NO_REPORTING_WEEKS: readonly string[] = []
+
+export function PeriodValueChangeCard({
+  scope,
+  masked,
+  source,
+  reportingWeeks = NO_REPORTING_WEEKS,
+}: PeriodValueChangeCardProps) {
   const { t, lang } = useLang()
   const o = t.fp.overview
   const c = t.fp.contrib
@@ -168,8 +186,8 @@ export function PeriodValueChangeCard({ scope, masked, source }: PeriodValueChan
   const spine = spineSlot !== null && spineSlot.ok ? spineSlot.list : null
 
   const range = useMemo(
-    () => (spine === null ? null : selectValueChangeRange(spine, safePeriod)),
-    [spine, safePeriod],
+    () => (spine === null ? null : selectValueChangeRange(spine, safePeriod, null, reportingWeeks)),
+    [spine, safePeriod, reportingWeeks],
   )
 
   // ── The comparison itself ────────────────────────────────────────────────
@@ -298,6 +316,11 @@ export function PeriodValueChangeCard({ scope, masked, source }: PeriodValueChan
         ? o.vwfNoPublications
         : range !== null && range.state === 'single_week'
           ? o.vwfSingleWeek
+          : // 1M's exact opening week exists in the book's history but carries no
+            // published snapshot, so the decomposition has no opening row set.
+            // The week is NAMED rather than swapped for a nearby one.
+            range !== null && range.state === 'opening_not_published'
+            ? `${o.vwfOpeningNotPublished} ${formatIsoDateLabel(range.requiredOpeningDate ?? '')}`
           : data !== null && data.state === 'no_previous_week'
             ? o.vwfEarliestWeek
             : data !== null && data.state !== 'ok'
@@ -342,15 +365,6 @@ export function PeriodValueChangeCard({ scope, masked, source }: PeriodValueChan
               control carries, then the two REAL published dates it resolved to,
               so "3M" can never stand in for a span the record could not give. */}
           <p className="ui-meta text-muted-fg mt-1.5 ui-number">{windowLabel}</p>
-
-          {/* A trailing month whose boundary falls between two publications
-              opens at the last one BEFORE it, so the window contains the period
-              rather than a fragment of it. Wider than the label implies — and
-              therefore said out loud, not left for the reader to infer from the
-              dates above. */}
-          {range?.openingPrecedesBoundary === true && (
-            <p className="ui-meta text-muted-fg mt-0.5">{o.vwfWiderWindow}</p>
-          )}
 
           {/* Opening → closing → change. The two levels are the endpoints the
               whole decomposition is a difference of, so showing the change

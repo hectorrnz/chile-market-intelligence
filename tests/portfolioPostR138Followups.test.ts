@@ -27,6 +27,8 @@ import { dict } from '../src/lib/i18n.ts'
 import {
   EVOLUTION_PERIODS,
   TRAILING_MONTH_DAYS,
+  TRAILING_MONTH_INTERVALS,
+  openingByIntervals,
   periodBoundary,
   selectEvolutionRange,
   shiftIsoDays,
@@ -79,136 +81,186 @@ const observations = EVOLUTION.map((date, i) => ({ date, value: 1_000 + i }))
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('post-R13.8 · 1M rolling semantics', () => {
-  test('the boundary is four weekly intervals back — not a calendar month', () => {
+  test('1M is FOUR REPORTING INTERVALS, counted on the spine the source closed', () => {
+    assert.equal(TRAILING_MONTH_INTERVALS, 4)
+    // Counted over the real reporting weeks, four intervals back from 2026-09-04
+    // is 2026-08-07 - the week the owner named.
+    assert.equal(openingByIntervals(EVOLUTION, '2026-09-04', 4), '2026-08-07')
+    // The nominal calendar boundary is retained for DISCLOSURE only, and agrees
+    // here because this book freezes a column every seven days.
     assert.equal(TRAILING_MONTH_DAYS, 28)
-    // THE regression. A calendar-month shift from 2026-09-04 lands on
-    // 2026-08-04; four weekly intervals land on 2026-08-07, which is the week
-    // the owner named — the fourth interval back from the endpoint.
     assert.equal(periodBoundary('2026-09-04', '1M'), '2026-08-07')
     assert.equal(shiftIsoDays('2026-09-04', -28), '2026-08-07')
-    // Month-end clamping cannot reappear through the back door: the reach is
-    // the same 28 days from any endpoint, in any month, across a year and a
-    // leap day.
-    assert.equal(periodBoundary('2026-03-05', '1M'), '2026-02-05')
-    assert.equal(periodBoundary('2026-01-02', '1M'), '2025-12-05')
-    assert.equal(periodBoundary('2024-03-06', '1M'), '2024-02-07')
   })
 
-  test('the four intervals ARE 08-07 → 08-14 → 08-21 → 08-28 → 09-04', () => {
+  test('a skipped source week does NOT shorten the period - 28 days would have', () => {
+    // THE reason the boundary is no longer the selector. Drop 08-14 from the
+    // book: 28 days still reaches 08-07, but only three intervals sit inside it.
+    // Interval counting reaches a real fourth step back instead.
+    const skipped = EVOLUTION.filter((d) => d !== '2026-08-14')
+    const withinDays = skipped.filter((d) => d >= '2026-08-07' && d <= '2026-09-04')
+    assert.equal(withinDays.length - 1, 3, 'the 28-day reach would measure three intervals')
+    assert.equal(openingByIntervals(skipped, '2026-09-04', 4), '2026-07-31')
+    const r = selectEvolutionRange(
+      skipped.map((date, i) => ({ date, value: 1_000 + i })),
+      '1M',
+    )
+    assert.equal(r.points.length - 1, 4, 'four intervals, whatever the calendar did')
+  })
+
+  test('the four intervals ARE 08-07 / 08-14 / 08-21 / 08-28 / 09-04', () => {
     const r = selectEvolutionRange(observations, '1M')
     assert.deepEqual(
       r.points.map((p) => p.date),
       ['2026-08-07', '2026-08-14', '2026-08-21', '2026-08-28', '2026-09-04'],
     )
-    // Five endpoints, four intervals — the owner's own arithmetic.
+    // Five endpoints, four intervals - the owner's own arithmetic.
     assert.equal(r.points.length - 1, 4)
     assert.equal(r.startDate, '2026-08-07')
     assert.equal(r.endDate, '2026-09-04')
   })
 
-  test('the value-change card covers 2026-08-07 → 2026-09-04 using AUGUST history', () => {
-    const r = selectValueChangeRange(spine, '1M')
-    assert.equal(r.state, 'ok', 'the trailing month must resolve to a real comparison')
+  test('the value-change card requires 2026-08-07 exactly, and REFUSES to approximate', () => {
+    // THE regression this pass exists for. The first patch resolved this to
+    // 2026-07-31 -> 2026-09-04, five intervals under a four-interval label, and
+    // the owner rejected it. 08-07 is a real reporting week with no publication,
+    // so the decomposition cannot be built and the range says which week.
+    const r = selectValueChangeRange(spine, '1M', null, EVOLUTION)
+    assert.equal(r.state, 'opening_not_published')
+    assert.equal(r.requiredOpeningDate, '2026-08-07')
     assert.equal(r.toDate, '2026-09-04')
-    // The book publishes nothing at the boundary, so the window opens at the
-    // last publication BEFORE it. It therefore CONTAINS the trailing month
-    // rather than being contained by it.
-    assert.equal(r.fromDate, '2026-07-31')
-    assert.ok((r.fromDate as string) <= (r.boundary as string))
-    assert.equal(r.openingPrecedesBoundary, true)
-    assert.equal(r.weekCount, 2)
+    assert.equal(r.fromDate, null, 'no opening endpoint is asserted')
+    // The rejected approximation must not be reachable by any path.
+    assert.notEqual(r.fromDate, '2026-07-31')
   })
 
-  test('it does NOT behave as September month-to-date', () => {
-    const r = selectValueChangeRange(spine, '1M')
-    // MTD would have been: boundary inside September, one publication in the
-    // window, nothing to compare — the exact defect reported.
-    assert.notEqual(r.state, 'single_week')
-    assert.ok((r.fromDate as string) < '2026-09-01', 'the window reaches into August')
-    // And the message that used to render is not reachable for this spine.
-    const single = selectValueChangeRange(spine, '1M').state === 'single_week'
-    assert.equal(single, false)
+  test('it is not September month-to-date either', () => {
+    // MTD would have put the boundary inside September with one publication in
+    // the window. The required opening reaches into AUGUST, as a month should.
+    const r = selectValueChangeRange(spine, '1M', null, EVOLUTION)
+    assert.ok((r.requiredOpeningDate as string) < '2026-09-01')
+    assert.equal((periodBoundary('2026-09-04', '1M') as string).slice(0, 7), '2026-08')
   })
 
-  test('both endpoints stay REAL publications — a catch-up week never becomes one', () => {
+  test('a catch-up week is never promoted to an endpoint', () => {
     const published = new Set(PUBLISHED)
-    const r = selectValueChangeRange(spine, '1M')
-    assert.ok(published.has(r.fromDate as string))
-    assert.ok(published.has(r.toDate as string))
+    const r = selectValueChangeRange(spine, '1M', null, EVOLUTION)
+    assert.ok(r.toDate === null || published.has(r.toDate))
     for (const d of CATCH_UP) {
       assert.notEqual(r.fromDate, d, `${d} has no publication and must never open the window`)
       assert.notEqual(r.toDate, d)
     }
+    // Naming the missing week is not the same as selecting it.
+    assert.ok(CATCH_UP.includes(r.requiredOpeningDate as string))
+    assert.equal(r.state, 'opening_not_published')
   })
 
   test('Main and a personal portfolio resolve by the SAME rule', () => {
-    // The selector is scope-agnostic by construction — it is handed a spine and
-    // knows nothing else. A personal book that skipped a week the family book
-    // published gets the same treatment, from the same function.
-    const personal = PUBLISHED.filter((d) => d !== '2026-07-24').map((asOfDate) => ({ asOfDate }))
-    const main = selectValueChangeRange(spine, '1M')
-    const own = selectValueChangeRange(personal, '1M')
-    assert.equal(main.state, 'ok')
-    assert.equal(own.state, 'ok')
-    assert.equal(own.toDate, '2026-09-04')
-    assert.equal(own.fromDate, '2026-07-31')
-    assert.equal(own.openingPrecedesBoundary, true)
+    // The selector is scope-agnostic by construction - it is handed two spines
+    // and knows nothing else. A personal book shorter than the family's gets the
+    // same treatment, from the same function.
+    const personalEvolution = EVOLUTION.filter((d) => d !== '2026-06-12')
+    const personalSpine = PUBLISHED.filter((d) => d !== '2026-06-12').map((asOfDate) => ({ asOfDate }))
+    const main = selectValueChangeRange(spine, '1M', null, EVOLUTION)
+    const own = selectValueChangeRange(personalSpine, '1M', null, personalEvolution)
+    assert.equal(main.state, own.state)
+    assert.equal(main.requiredOpeningDate, own.requiredOpeningDate)
+    assert.equal(own.requiredOpeningDate, '2026-08-07')
   })
 
-  test('a genuinely short history degrades honestly — never a fabricated endpoint', () => {
-    // History begins INSIDE the window: the earliest real week opens it, and
-    // the range says the record — not the book's weeks — cut it short.
-    const young = [{ asOfDate: '2026-08-28' }, { asOfDate: '2026-09-04' }]
-    const r = selectValueChangeRange(young, '1M')
+  test('a fully published spine resolves 1M to a real four-interval comparison', () => {
+    // The same rule on a book with no catch-up gap: four intervals back is a
+    // published week, so the window opens there and the card draws.
+    const dense = ['2026-08-07', '2026-08-14', '2026-08-21', '2026-08-28', '2026-09-04']
+    const r = selectValueChangeRange(
+      dense.map((asOfDate) => ({ asOfDate })),
+      '1M',
+      null,
+      dense,
+    )
     assert.equal(r.state, 'ok')
-    assert.equal(r.fromDate, '2026-08-28')
-    assert.equal(r.truncatedByHistory, true)
-    assert.equal(r.openingPrecedesBoundary, false)
+    assert.equal(r.fromDate, '2026-08-07')
+    assert.equal(r.toDate, '2026-09-04')
+    assert.equal(r.weekCount, 5)
+    assert.equal(r.requiredOpeningDate, null)
+  })
 
-    // One published week is one week. No zero change, no invented opening.
-    const lone = selectValueChangeRange([{ asOfDate: '2026-09-04' }], '1M')
+  test('a genuinely short history degrades honestly - never a fabricated endpoint', () => {
+    // Fewer than four intervals on record: truncated, and reported as the
+    // single-week emptiness it is rather than as a shorter "month".
+    const young = ['2026-08-28', '2026-09-04']
+    const r = selectValueChangeRange(
+      young.map((asOfDate) => ({ asOfDate })),
+      '1M',
+      null,
+      young,
+    )
+    assert.equal(r.state, 'single_week')
+    assert.equal(r.fromDate, null)
+    assert.equal(r.truncatedByHistory, true)
+    assert.equal(r.requiredOpeningDate, null)
+
+    const lone = selectValueChangeRange([{ asOfDate: '2026-09-04' }], '1M', null, ['2026-09-04'])
     assert.equal(lone.state, 'single_week')
-    assert.equal(lone.fromDate, null)
     assert.equal(lone.toDate, '2026-09-04')
     assert.equal(selectValueChangeRange([], '1M').state, 'no_publications')
   })
 
+  test('omitting the reporting spine falls back to publications, never to a guess', () => {
+    // Every pre-existing caller passes no spine. It then counts intervals over
+    // the publications it does have - a subset, so it can only ever reach
+    // FURTHER back, never onto a week that does not exist.
+    const r = selectValueChangeRange(spine, '1M')
+    assert.equal(r.state, 'ok')
+    assert.equal(r.toDate, '2026-09-04')
+    assert.equal(r.fromDate, '2026-07-10')
+    assert.ok(PUBLISHED.includes(r.fromDate as string))
+  })
+
   test('3M / YTD / 1Y / ALL are NOT redefined by this change', () => {
     // Same sparse spine. Each still opens at the first publication ON OR AFTER
-    // its own boundary — the pre-existing rule, deliberately untouched, because
-    // none of them exhibited the defect.
+    // its own boundary - the pre-existing CALENDAR rule, deliberately untouched,
+    // because none of them exhibited the defect.
     for (const period of ['3M', 'YTD', '1Y'] as const) {
-      const r = selectValueChangeRange(spine, period)
+      const r = selectValueChangeRange(spine, period, null, EVOLUTION)
       assert.equal(r.state, 'ok')
       assert.ok(
         (r.fromDate as string) >= (r.boundary as string),
         `${period} must not reach back past its boundary`,
       )
-      assert.equal(r.openingPrecedesBoundary, false)
+      assert.equal(r.requiredOpeningDate, null)
     }
-    const all = selectValueChangeRange(spine, 'ALL')
+    const all = selectValueChangeRange(spine, 'ALL', null, EVOLUTION)
     assert.equal(all.fromDate, '2026-06-12')
     assert.equal(all.boundary, null)
-    assert.equal(all.openingPrecedesBoundary, false)
     // The calendar arithmetic those three depend on is untouched.
     assert.equal(periodBoundary('2026-09-04', '3M'), '2026-06-04')
     assert.equal(periodBoundary('2026-09-04', 'YTD'), '2026-01-01')
     assert.equal(periodBoundary('2026-09-04', '1Y'), '2025-09-04')
+    // 3M over this spine holds many publications, so it does NOT share the old
+    // 1M defect. Its boundary is still a calendar shift - recorded here so a
+    // later reader can see the audit was performed, not assumed.
+    const threeMonth = selectValueChangeRange(spine, '3M', null, EVOLUTION)
+    assert.ok((threeMonth.weekCount as number) >= 8)
   })
 
-  test('the rails are unchanged — no period was added or removed', () => {
+  test('the rails are unchanged - no period was added or removed', () => {
     assert.deepEqual([...VALUE_CHANGE_PERIODS], ['1M', '3M', 'YTD', '1Y', 'ALL'])
     assert.deepEqual([...EVOLUTION_PERIODS], ['1M', '3M', 'YTD', '1Y', 'ALL'])
   })
 
-  test('a window wider than its label SAYS so, in both languages', () => {
-    assert.match(card, /range\?\.openingPrecedesBoundary === true/)
-    assert.match(card, /o\.vwfWiderWindow/)
+  test('an unbuildable 1M window NAMES the missing week, in both languages', () => {
+    assert.match(card, /range\.state === 'opening_not_published'/)
+    assert.match(card, /o\.vwfOpeningNotPublished/)
+    assert.match(card, /range\.requiredOpeningDate/)
     for (const lang of ['en', 'es'] as const) {
-      const s = dict[lang].fp.overview.vwfWiderWindow
-      assert.equal(typeof s, 'string')
-      assert.ok(s.length > 30, `${lang} disclosure must be a real sentence`)
+      const msg = dict[lang].fp.overview.vwfOpeningNotPublished
+      assert.equal(typeof msg, 'string')
+      assert.ok(msg.length > 30, `${lang} disclosure must be a real sentence`)
     }
+    // The rejected "wider window" wording is gone with the behaviour it described.
+    assert.ok(!/vwfWiderWindow/.test(card))
+    assert.ok(!/openingPrecedesBoundary/.test(card))
   })
 })
 
@@ -304,11 +356,26 @@ describe('post-R13.8 · compare controls', () => {
     assert.match(weeklyPage, /setCompareOn\(false\)\s*\n\s*setCompareFrom\(null\)\s*\n\s*setAsOf\(null\)/)
   })
 
-  test('turning Compare on keeps the pair on screen, then hands over both dates', () => {
-    assert.match(weeklyPage, /setAsOf\(pub\.asOfDate\)\s*\n\s*setCompareOn\(true\)/)
-    // The FROM select shows the resolved previous week until the reader picks
-    // another — never a blank, never a sentinel word.
-    assert.match(weeklyPage, /value=\{compareFrom \?\? prevPub\?\.asOfDate \?\? earlierWeeks\[0\]\.asOfDate\}/)
+  test('turning Compare on opens on a real PUBLICATION pair, not the weekly one', () => {
+    // Compare is an endpoint comparison, so it must open on two endpoints that
+    // can carry one. The weekly opening endpoint is the source's own
+    // previous-week column — a week the book never published — so entering
+    // compare seeds FROM with the most recent earlier PUBLICATION instead.
+    assert.match(weeklyPage, /setAsOf\(pub\.asOfDate\)\s*\n\s*setCompareFrom\(earlierWeeks\[0\]\.asOfDate\)\s*\n\s*setCompareOn\(true\)/)
+    // The FROM select always shows a real date — never a blank, never a
+    // sentinel word — from whichever option list the current mode supplies.
+    assert.match(weeklyPage, /value=\{compareFrom \?\? fromOptions\[0\]\.asOfDate\}/)
+  })
+
+  test('FROM offers publications in compare, and the resolved weekly week off it', () => {
+    // OFF: one read-only option, the week the page is actually measuring from.
+    // That week is deliberately absent from the publication list after a
+    // catch-up import, so the control carries it rather than rendering blank.
+    assert.match(weeklyPage, /if \(compareOn \|\| prevPub === null\) return earlierWeeks/)
+    assert.match(weeklyPage, /asOfDate: prevPub\.asOfDate, revision: 0/)
+    // ON: only published weeks, because a custom comparison needs a full
+    // snapshot at both ends. No evolution-only week is ever offered.
+    assert.match(weeklyPage, /weeks=\{fromOptions\}/)
   })
 
   test('a reversed range cannot be built in the UI, and is refused server-side', () => {
@@ -385,13 +452,24 @@ describe('post-R13.8 · copy', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('post-R13.8 · catch-up weeks stay evolution-only', () => {
-  test('Weekly Changes needs a full publication at BOTH endpoints', () => {
+  test('CUSTOM compare still needs a full publication at BOTH endpoints', () => {
     const route = codeOf(read(WEEKLY_ROUTE))
-    // Both snapshot reads are keyed by a publication id — which is precisely
-    // why an evolution-only week can never be an endpoint here.
+    // Every snapshot read is keyed by a PUBLICATION ID, so an evolution-only
+    // week can never be a selectable custom endpoint — the catch-up
+    // architecture is preserved, not worked around.
     assert.match(route, /getSnapshotRowsForScope\(current\.id, scope\)/)
     assert.match(route, /getSnapshotRowsForScope\(previous\.id, scope\)/)
     assert.match(route, /listCurrentPublications\('portfolio'\)/)
+  })
+
+  test('WEEKLY default reads the source previous-week column, not a second publication', () => {
+    const route = codeOf(read(WEEKLY_ROUTE))
+    // The one-week comparison comes out of the SELECTED publication alone:
+    // its recorded previous-week date plus each row's own previous value.
+    assert.match(route, /hasSourceWeeklyBasis\(currentRows\.rows, current\.previousWeekDate, current\.asOfDate\)/)
+    assert.match(route, /previousRowSet = sourcePreviousWeekRows\(currentRows\.rows\)/)
+    // And it applies ONLY in weekly mode — a custom range is two real endpoints.
+    assert.match(route, /mode === 'weekly' &&\s*\n?\s*hasSourceWeeklyBasis/)
   })
 
   test('no surface manufactures a publication for 08-07 … 08-28', () => {

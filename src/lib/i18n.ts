@@ -718,7 +718,7 @@ export const dict = {
         // The book publishes no week at the trailing month's boundary, so the
         // window opens at the last one before it — wider than the label, and
         // said so rather than inferred from the dates.
-        vwfWiderWindow:    'The book publishes no week at this period’s start, so the window opens at the last published week before it and is wider than the period named.',
+        vwfOpeningNotPublished: 'This period opens on a week the book recorded but never published, so its holdings cannot be decomposed. Opening week:',
         vwfNoPublications: 'No week has been published for this portfolio yet.',
         vwfUnavailable:    'A value-change decomposition is not available for this portfolio and period.',
         vwfEarliestWeek:   'The opening endpoint is the earliest published week, which has no predecessor of its own.',
@@ -831,6 +831,9 @@ export const dict = {
         thisWeekLabel:      'This Week',
         previousWeekLabel:  'Previous Published Week',
         pairNote:           'Compared against the immediately preceding published week — not necessarily seven calendar days earlier.',
+        sourcePairNote:     'Compared against the week the source itself closed immediately before this one — one week, taken from this week’s own published record.',
+        weeklyOpeningUnpublished:
+                            'That week is part of the book’s history but has no published snapshot of its own, so it cannot be chosen as a Compare endpoint. Compare offers published weeks only.',
         // R13.R1.1 § 13 — a custom range is never titled a "Weekly Change".
         compareModeLabel:   'Comparison',
         compareCustom:      'Custom range',
@@ -907,7 +910,7 @@ export const dict = {
         noPreviousWeek:     'This is the earliest published week — no prior published observation exists, so weekly-change analysis is unavailable for it. Select a later week to compare.',
         methodologyTitle:   'Methodology',
         methodologyLevel:   'Below the portfolio total, every figure on this page is a dollar weekly value change, not a return contribution — the source provides no per-asset flows, so per-asset returns are not derivable.',
-        methodologyPair:    'Previous Week is the immediately preceding published week, not necessarily seven calendar days earlier; NMI recomputes each change from the two published snapshots, never from the workbook\'s own difference column.',
+        methodologyPair:    'Previous Week is the week the source closed immediately before this one, read from this week’s own published record; where that week is unavailable it is the immediately preceding published week, which is not necessarily seven calendar days earlier. NMI recomputes each change from the two sets of published values, never from the workbook\'s own difference column.',
         methodologyImpact:  'Impact on Portfolio Value is a row\'s dollar change divided by the previous week\'s portfolio total. It does not measure the row\'s own return.',
         methodologyDrivers: 'Driver reconciliation compares the week\'s asset-level value changes against the published portfolio total; net flows and profit are not separate components because the asset-level changes already contain their effects.',
         methodologyCash:    'Caja y Equivalentes is excluded from the ranked lists by default because it absorbs deposits and withdrawals before they are deployed; a visible toggle can include it.',
@@ -2694,7 +2697,7 @@ export const dict = {
           'Cada barra es la variación del valor publicado de una fila de la jerarquía entre las dos semanas mostradas. Los flujos netos y la utilidad no son componentes separados: las variaciones a nivel de activo ya contienen sus efectos. Variación Efectiva de Valor del Portafolio = Utilidad/Pérdida Semanal + Flujos Netos; esto es una descomposición de variación de valor, no una atribución de retorno de inversión.',
         vwfTruncated:      'El registro comienza después del inicio de este período, por lo que la comparación abre en la semana publicada más antigua.',
         vwfSingleWeek:     'Este período contiene una sola semana publicada, por lo que no existe un extremo anterior con el cual comparar.',
-        vwfWiderWindow:    'El libro no publica una semana al inicio de este período, por lo que la ventana abre en la última semana publicada anterior y es más amplia que el período nombrado.',
+        vwfOpeningNotPublished: 'Este período comienza en una semana registrada por el libro pero nunca publicada, por lo que no es posible descomponer sus posiciones. Semana inicial:',
         vwfNoPublications: 'Aún no se ha publicado ninguna semana para este portafolio.',
         vwfUnavailable:    'No hay una descomposición de variación de valor disponible para este portafolio y período.',
         vwfEarliestWeek:   'El extremo inicial es la semana publicada más antigua, que no tiene una semana previa propia.',
@@ -2772,6 +2775,9 @@ export const dict = {
         thisWeekLabel:      'Esta Semana',
         previousWeekLabel:  'Semana Publicada Anterior',
         pairNote:           'Comparado contra la semana publicada inmediatamente anterior — no necesariamente siete días calendario antes.',
+        sourcePairNote:     'Comparado contra la semana que la propia fuente cerró inmediatamente antes de esta — una semana, tomada del registro publicado de esta misma semana.',
+        weeklyOpeningUnpublished:
+                            'Esa semana forma parte del historial del libro pero no tiene una publicación propia, por lo que no puede elegirse como extremo en Comparar. Comparar ofrece solo semanas publicadas.',
         compareModeLabel:   'Comparación',
         compareCustom:      'Rango personalizado',
         compareToggle:      'Comparar',
@@ -2835,7 +2841,7 @@ export const dict = {
         noPreviousWeek:     'Esta es la semana publicada más antigua — no existe una observación publicada previa, por lo que el análisis de cambios semanales no está disponible para ella. Seleccione una semana posterior para comparar.',
         methodologyTitle:   'Metodología',
         methodologyLevel:   'Bajo el total del portafolio, cada cifra de esta página es una variación de valor semanal en dólares, no una contribución al retorno — la fuente no provee flujos por activo, por lo que los retornos por activo no son derivables.',
-        methodologyPair:    'La Semana Anterior es la semana publicada inmediatamente anterior, no necesariamente siete días calendario antes; NMI recalcula cada variación a partir de los dos cierres publicados, nunca desde la columna de diferencias de la propia planilla.',
+        methodologyPair:    'La Semana Anterior es la semana que la fuente cerró inmediatamente antes de esta, leída del registro publicado de esta misma semana; cuando esa semana no está disponible, es la semana publicada inmediatamente anterior, que no necesariamente es siete días calendario antes. NMI recalcula cada variación a partir de los dos conjuntos de valores publicados, nunca desde la columna de diferencias de la propia planilla.',
         methodologyImpact:  'El Impacto en el Valor del Portafolio es la variación en dólares de una fila dividida por el total del portafolio de la semana anterior. No mide el retorno propio de la fila.',
         methodologyDrivers: 'La conciliación de factores compara las variaciones de valor a nivel de activos de la semana con el total publicado del portafolio; los flujos netos y la utilidad no son componentes separados porque las variaciones a nivel de activos ya contienen sus efectos.',
         methodologyCash:    'Caja y Equivalentes se excluye de las listas de ranking por defecto porque absorbe aportes y retiros antes de ser desplegados; una opción visible permite incluirla.',

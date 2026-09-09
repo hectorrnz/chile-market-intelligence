@@ -1044,7 +1044,11 @@ describe('R13.8 · route and boundaries', () => {
       'the route must not hardcode a waterfall step label')
     // The Impact on Portfolio Value denominator resolves through the pure
     // helper that fails closed on a missing or currency-changed bound row.
-    assert.match(route, /resolvePreviousPortfolioTotal\(currentRows\.rows, previousRows\.rows, boundKey\)/)
+    // POST-R13.8 follow-up B: the second argument is now the resolved previous
+    // ROW SET - the source's own previous-week column in weekly mode, a second
+    // publication's rows in custom mode - but it is still the SAME pure helper,
+    // and it still fails closed on a missing or currency-changed bound row.
+    assert.match(route, /resolvePreviousPortfolioTotal\(currentRows\.rows, previousRowSet, boundKey\)/)
   })
 
   test('Stage 8 never touches the Alternatives surface, even now that Stage 9 exists', () => {
