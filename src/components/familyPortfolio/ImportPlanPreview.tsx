@@ -621,9 +621,19 @@ function HistoricalChangesCard({ plan, controls }: { plan: ImportPlan; controls:
         background: `color-mix(in oklab, ${TONE.changed} 7%, var(--surface))`,
       }}
     >
+      {/* This heading names the GATE, and the gate has four independent causes:
+          an evolution overwrite, a publication restatement, a row-history
+          correction and a performance-history correction. It carried
+          `plan.corrections.length` — the evolution count alone — so an import
+          that restates seven published weeks while overwriting no evolution
+          point read "Historical correction required · 0" immediately above the
+          checkbox authorizing those seven weeks. A cause states its own count on
+          the card that shows that cause: restated weeks on the restatement card,
+          evolution overwrites on the table below. The gate itself is a
+          condition, not a quantity, so it carries no number. */}
       <div>
         <p className="ui-label" style={{ color: TONE.changed }}>
-          {a.verdictCorrectionTitle} · <span className="ui-number">{plan.corrections.length}</span>
+          {a.verdictCorrectionTitle}
         </p>
         <p className="mt-1 text-[11px] text-muted-fg">{a.correctionHint}</p>
       </div>
@@ -635,9 +645,14 @@ function HistoricalChangesCard({ plan, controls }: { plan: ImportPlan; controls:
           something false about what is being authorized. The restatement card
           above carries that half. */}
       {plan.corrections.length > 0 && (
-      /* The ONE place this console shows amounts. Fit table: stacks into one
+      <>
+      {/* The evolution count belongs to the table it counts, never to the gate. */}
+      <p className="ui-label" style={{ color: TONE.changed }}>
+        {a.planChanged} · <span className="ui-number">{plan.corrections.length}</span>
+      </p>
+      {/* The ONE place this console shows amounts. Fit table: stacks into one
           block per identity when the card is narrower than 520px, so the
-          before/after stays readable on a phone without sideways scroll. */
+          before/after stays readable on a phone without sideways scroll. */}
       <div className="nv-tbl-fit-host rounded-[6px] border border-border" style={{ background: 'var(--surface-table)' }}>
         <table className="nv-tbl-fit nv-tbl-fit--stack text-xs">
           <caption className="sr-only">{a.planChanged}</caption>
@@ -692,6 +707,7 @@ function HistoricalChangesCard({ plan, controls }: { plan: ImportPlan; controls:
           <TableSourceFooter source={a.source} />
         </div>
       </div>
+      </>
       )}
 
       {/* Authorization and reason sit DIRECTLY under what they authorize. */}
