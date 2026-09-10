@@ -432,14 +432,17 @@ async function main(): Promise<void> {
   console.log('\n    and a rename does not wait on the population lock')
   sql(psql, RESET_FIXTURES)
   const started = Date.now()
-  const [, renamed] = await Promise.all([
-    sqlAsync(psql, removalScript(T1_HOLD_SECONDS, 0, DEMOTE_A)),
-    sqlAsync(
-      psql,
-      removalScript(0, T2_START_SECONDS, `update public.user_profiles set display_name = 'B renamed' where id = '${ADMIN_B}';`),
-    ),
-  ])
+  // Timed INDIVIDUALLY, not through Promise.all. Awaiting the pair would measure
+  // whichever finished last, which is the removal by construction - the first
+  // version of this check did exactly that and reported the rename taking 4.06s
+  // when it had in fact finished seconds earlier.
+  const removal = sqlAsync(psql, removalScript(T1_HOLD_SECONDS, 0, DEMOTE_A))
+  const renamed = await sqlAsync(
+    psql,
+    removalScript(0, T2_START_SECONDS, `update public.user_profiles set display_name = 'B renamed' where id = '${ADMIN_B}';`),
+  )
   const renameFinishedAt = (Date.now() - started) / 1000
+  await removal
   check(renamed.ok, 'the administrator rename commits', renamed.stderr)
   check(
     renameFinishedAt < T1_HOLD_SECONDS,
