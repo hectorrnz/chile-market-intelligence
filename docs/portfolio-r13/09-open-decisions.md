@@ -26,7 +26,16 @@ and documented (see § "Decided, not open" below) rather than deferred.
 
 ---
 
-## D0 · User provisioning and granular access management — REQUIRED NEXT
+## D0 · User provisioning and granular access management — IMPLEMENTATION SHIPPED (R13.6F)
+
+**Status correction (2026-09-10).** The implementation this section asked for was built and
+released as R13.6F: module entitlements, the module-grant audit, the account lifecycle, the
+`/settings/users` console and the invite flow are live in Production. The paragraph below stating
+that “there is no provisioning UI, and no module-level access model at all” described the state on
+2026-08-31 and is no longer accurate; the open question it raised — whether module access should
+become administrator-configurable — was answered YES and implemented. The mandatory isolation
+invariant restated below is unchanged and still binding. What remains of D0 is the
+real-administrator transition, not the access model.
 
 **Recorded POST-R13.5 (2026-08-31), at the owner's instruction, as a required follow-up stage.**
 

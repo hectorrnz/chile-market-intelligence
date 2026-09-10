@@ -816,7 +816,22 @@ narrative is not kept.
   0 new, 0 gap-fill, 0 changed, 0 restatements, on both the economic and the analytical half.
 
 **Next major workstream: D0 — user provisioning and granular access management**
-(`docs/portfolio-r13/09-open-decisions.md` § D0), unchanged and still REQUIRED NEXT.
+(`docs/portfolio-r13/09-open-decisions.md` § D0).
+
+**D0's implementation already shipped as R13.6F and is live in Production** — module entitlements
+(`20260814000000`), the grant audit (`20260816000000`) and user lifecycle/provisioning
+(`20260817000000`, applied to Production during R13.6F-R2), plus the `/settings/users` console, the
+invite flow and three administrative RPCs. It reached master on 2026-09-02 as squashed PR #4,
+commit `5c70f2d`. **The historical branch `feat/user-provisioning-r13-6f` is archival reference
+only** — every one of its 48 files is represented on master, so there is nothing on it to merge,
+cherry-pick or transplant. D0 audits and extends what is already live; it does not import that
+branch and must not rebuild it under a new name.
+
+What genuinely remains for D0 is the **real-administrator transition**: Production still holds
+exactly ONE application account — the R1.5 Test User, an administrator on a personal address — so
+there is exactly one functional administrator and no owner work-email account. The transition must
+never leave zero functional administrators: provision and fully verify the real administrator
+first, confirm two functional administrators exist, and only then change the Test User.
 
 ---
 
@@ -850,13 +865,11 @@ at the owner's own instruction on 2026-08-31. Non-negotiable invariant carried f
 Jaime/Andrés/Pablo can never see one another's personal portfolio scope; an account with no
 `portfolio_principal` has no personal scope; administrators retain full family access; backend
 authorization (route guard + PostgreSQL RLS + default-deny path policy) stays authoritative — a
-provisioning UI is a fourth layer above those three, never a replacement for any of them. **A
-started-but-diverged attempt at this exact work exists on branch `feat/user-provisioning-r13-6f`**
-(11 commits ahead of, and 52 behind, `master` as of this closeout — branched before R13.7/R13.8
-landed, so it predates the structured-notes reconciliation and family-portfolio import work
-entirely). It is unmerged, unreviewed, and not authorized for use as-is; the next session picking up
-D0 should treat it as reference material to consult, not a branch to fast-forward or merge, given how
-far it has drifted from `master`.
+provisioning UI is a fourth layer above those three, never a replacement for any of them.
+**Superseded on 2026-09-02:** the branch `feat/user-provisioning-r13-6f` described here as an
+unmerged, not-authorized attempt was in fact released as R13.6F through squashed PR #4, commit
+`5c70f2d`. Its content is fully present on master; the branch is archival reference only. See the
+Current Phase entry above.
 
 **No stale-documentation corrections were required this pass.** Checked for: claims of a missing
 Family Portfolio importer, live-column-as-publication-source claims, a "post-commit history upsert"
