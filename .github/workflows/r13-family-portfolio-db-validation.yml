@@ -53,7 +53,9 @@ on:
       - 'tests/userLifecycle.test.ts'
       - 'tests/userProvisioning.test.ts'
       - 'tests/inviteFlow.test.ts'
+      - 'tests/portfolioPublicationMetadataRepair.test.ts'
       - 'scripts/ci/**'
+      - 'scripts/portfolio/**'
       - '.github/workflows/r13-family-portfolio-db-validation.yml'
 
 # Read-only: this workflow never commits, never pushes, never comments.
@@ -358,6 +360,16 @@ jobs:
           node --test "tests/accessControl.test.ts"
           node --test "tests/userProfilesRls.test.ts"
           node --test "tests/supabaseSchema.test.ts"
+
+      # POST-R13.8F — the bounded publication-metadata repair. Its executable
+      # half (atomicity, the late-failure rollback, idempotency, financial
+      # invariance, the EXECUTE privilege) ran inside `supabase test db` above;
+      # this is the static half — packet identity, the derived corrected date,
+      # the orchestrator's single write path, and the migration's posture. A
+      # mechanism that can write to a production publication belongs on the same
+      # gate as the authorization contract.
+      - name: Run the publication-metadata repair suite
+        run: node --test "tests/portfolioPublicationMetadataRepair.test.ts"
 
       # `always()` so a failure above still tears the stack down. Nothing is
       # dumped, uploaded, or retained: no artifact, no database export.

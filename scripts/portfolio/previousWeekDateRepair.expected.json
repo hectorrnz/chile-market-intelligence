@@ -1,0 +1,13 @@
+{
+  "_note": "POST-R13.8F — the seven previousWeekDate corrections the owner authorized, transcribed verbatim from the release brief. This file is an AUTHORIZATION, not a source: repairPublicationMetadata.ts derives each corrected date independently from the source-backed reporting spine and refuses to apply if the derivation disagrees with any line below.",
+  "field": "previousWeekDate",
+  "corrections": [
+    { "asOfDate": "2026-06-19", "expectedRevision": 2, "expectedValue": "2026-08-28", "correctedValue": "2026-06-12" },
+    { "asOfDate": "2026-06-26", "expectedRevision": 3, "expectedValue": "2026-08-28", "correctedValue": "2026-06-19" },
+    { "asOfDate": "2026-07-03", "expectedRevision": 3, "expectedValue": "2026-08-28", "correctedValue": "2026-06-26" },
+    { "asOfDate": "2026-07-10", "expectedRevision": 3, "expectedValue": "2026-08-28", "correctedValue": "2026-07-03" },
+    { "asOfDate": "2026-07-17", "expectedRevision": 3, "expectedValue": "2026-08-28", "correctedValue": "2026-07-10" },
+    { "asOfDate": "2026-07-24", "expectedRevision": 3, "expectedValue": "2026-08-28", "correctedValue": "2026-07-17" },
+    { "asOfDate": "2026-07-31", "expectedRevision": 4, "expectedValue": "2026-08-28", "correctedValue": "2026-07-24" }
+  ]
+}
