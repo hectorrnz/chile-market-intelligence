@@ -679,14 +679,27 @@ describe('follow-up C · H — row history is isolated exactly like a publicatio
   })
 
   test('a paged read never terminates early and calls the rest absent', () => {
-    // A short page ends the walk; a full page asks for another. Stopping on a
-    // server row cap would make every unread identity look ABSENT and turn an
-    // ordinary re-upload into thousands of fabricated insertions.
+    // INVERTED BY FOLLOW-UP F, and it is the same property read the other way.
+    //
+    // This test used to assert `if (batch.length < ROW_HISTORY_PAGE) break` —
+    // the belief that a short page means the end of the table. It does not.
+    // PostgREST caps a response at 1,000 rows on this project, so a 5,000-row
+    // page request ALWAYS came back short and the walk ALWAYS stopped after one
+    // page: 1,000 of 19,757 identities, with the other 18,757 reading as ABSENT
+    // and an identical re-upload proposing them as fresh insertions — precisely
+    // the fabrication the original assertion was written to prevent.
+    //
+    // The walk now terminates on an EMPTY page and advances by rows RECEIVED.
+    // Restoring the old rule fails here.
     const fn = PUB_REPO.slice(
       PUB_REPO.indexOf('export async function listPersistedRowHistory'),
       PUB_REPO.indexOf('export interface RowHistoryStagedRow'),
     )
-    assert.match(fn, /if \(batch\.length < ROW_HISTORY_PAGE\) break/)
+    assert.match(fn, /readAllPages\(/)
+    assert.ok(
+      !/\.length < [A-Z_]*PAGE/.test(fn),
+      'a short server response is not end of table',
+    )
     assert.match(PREVIEW_SERVER, /row_history_read_failed/)
     assert.ok(
       !/persisted: \[\]/.test(PREVIEW_SERVER),

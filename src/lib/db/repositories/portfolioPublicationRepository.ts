@@ -18,6 +18,7 @@
 // function body is the transaction (doc 05 § 6).
 
 import { getSupabaseAdminClient } from '@/lib/supabase/admin'
+import { readAllPages } from '@/lib/db/pagination'
 import { UPLOAD_BUCKET } from './portfolioUploadRepository'
 import type { UploadKind } from '@/lib/familyPortfolio/publication'
 
@@ -74,15 +75,33 @@ type Fail =
  * `portfolioUploadRepository.ts` all cast. The shapes are written out rather
  * than using `any` so a typo in a column list is still a compile error.
  */
+/**
+ * An ordered row query: awaitable as it always was, and now also rangeable, so
+ * `readAllPages` can walk it. A PostgREST builder really is both — a thenable
+ * that still accepts further modifiers — and modelling that is what lets a
+ * console listing page without every call site changing shape.
+ */
+interface AdminRowsQuery
+  extends PromiseLike<{ data: Record<string, unknown>[] | null; error: unknown }> {
+  order: (col: string, o: { ascending: boolean }) => AdminRowsQuery
+  range: (
+    from: number,
+    to: number,
+  ) => Promise<{
+    data: Record<string, unknown>[] | null
+    error: { message?: string } | null
+  }>
+}
+
 interface AdminShape {
   rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string } | null }>
   from: (t: string) => {
     select: (c: string) => {
       eq: (col: string, v: string) => {
         maybeSingle: () => Promise<{ data: Record<string, unknown> | null; error: unknown }>
-        order: (col: string, o: { ascending: boolean }) => Promise<{ data: Record<string, unknown>[] | null; error: unknown }>
+        order: (col: string, o: { ascending: boolean }) => AdminRowsQuery
       }
-      order: (col: string, o: { ascending: boolean }) => Promise<{ data: Record<string, unknown>[] | null; error: unknown }>
+      order: (col: string, o: { ascending: boolean }) => AdminRowsQuery
     }
   }
   storage: {
@@ -225,11 +244,18 @@ export type AdminUploadSummary = Omit<UploadRecord, 'storageObjectPath'>
 export async function listUploads(): Promise<AdminUploadSummary[]> {
   const client = admin()
   if (!client) return []
-  const { data } = await client
-    .from('portfolio_source_uploads')
-    .select(UPLOAD_COLUMNS)
-    .order('uploaded_at', { ascending: false })
-  return (data ?? []).map((row) => {
+  // Newest first, with `id` as the tiebreaker that makes the order TOTAL —
+  // two uploads recorded in the same transaction share `uploaded_at`, and tied
+  // rows reorder between page requests, which drops rows silently (FOLLOW-UP F).
+  const read = await readAllPages(() =>
+    client
+      .from('portfolio_source_uploads')
+      .select(UPLOAD_COLUMNS)
+      .order('uploaded_at', { ascending: false })
+      .order('id', { ascending: false }),
+  )
+  if (!read.ok) return []
+  return read.rows.map((row) => {
     const { storageObjectPath: _omitted, ...summary } = toUpload(row)
     void _omitted
     return summary
@@ -239,11 +265,19 @@ export async function listUploads(): Promise<AdminUploadSummary[]> {
 export async function listPublications(): Promise<PublicationRecord[]> {
   const client = admin()
   if (!client) return []
-  const { data } = await client
-    .from('portfolio_publications')
-    .select(PUBLICATION_COLUMNS)
-    .order('published_at', { ascending: false })
-  return (data ?? []).map(toPublication)
+  // One import can publish eight weeks in a single transaction, so `published_at`
+  // alone is emphatically NOT a total order here — the R13.8 restoration wrote
+  // exactly that. `as_of_date` then `id` settle every tie deterministically.
+  const read = await readAllPages(() =>
+    client
+      .from('portfolio_publications')
+      .select(PUBLICATION_COLUMNS)
+      .order('published_at', { ascending: false })
+      .order('as_of_date', { ascending: false })
+      .order('id', { ascending: false }),
+  )
+  if (!read.ok) return []
+  return read.rows.map(toPublication)
 }
 
 /**
@@ -545,7 +579,25 @@ interface EvolutionReadShape {
       order: (
         col: string,
         o: { ascending: boolean },
-      ) => Promise<{ data: Record<string, unknown>[] | null; error: { message?: string } | null }>
+      ) => {
+        order: (
+          col: string,
+          o: { ascending: boolean },
+        ) => {
+          order: (
+            col: string,
+            o: { ascending: boolean },
+          ) => {
+            range: (
+              from: number,
+              to: number,
+            ) => Promise<{
+              data: Record<string, unknown>[] | null
+              error: { message?: string } | null
+            }>
+          }
+        }
+      }
     }
   }
 }
@@ -571,15 +623,24 @@ export async function listPersistedEvolutionObservations(): Promise<
   const client = getSupabaseAdminClient() as never as EvolutionReadShape | null
   if (!client) return { ok: false, code: 'not_configured' }
 
-  const { data, error } = await client
-    .from('portfolio_evolution_observations')
-    .select('scope, basis, observation_date, value')
-    .order('observation_date', { ascending: true })
-
-  if (error) return { ok: false, code: 'rpc_failed', reason: error.message ?? 'evolution_read_failed' }
+  // FOLLOW-UP F. This read used to fetch ONE unpaged page. It happened to be
+  // whole at 527 rows and would have gone silently short the week the book
+  // crossed the server's 1,000-row cap — five scopes at two bases is roughly ten
+  // observations a week, so the failure was dated, not hypothetical. Paged now,
+  // on the TOTAL order `(observation_date, scope, basis)`: the unique key
+  // re-ordered, so no row ties and none can fall between pages.
+  const read = await readAllPages(() =>
+    client
+      .from('portfolio_evolution_observations')
+      .select('scope, basis, observation_date, value')
+      .order('observation_date', { ascending: true })
+      .order('scope', { ascending: true })
+      .order('basis', { ascending: true }),
+  )
+  if (!read.ok) return { ok: false, code: 'rpc_failed', reason: read.reason }
   return {
     ok: true,
-    observations: (data ?? []).map((o) => ({
+    observations: read.rows.map((o) => ({
       scope: String(o.scope),
       basis: String(o.basis),
       observationDate: String(o.observation_date),
@@ -650,6 +711,15 @@ export async function getStandingPublicationPayload(
   if (rowsResult.error) {
     return { ok: false, code: 'rpc_failed', reason: rowsResult.error.message ?? 'snapshot_read_failed' }
   }
+  // FOLLOW-UP F. One publication is ~197 snapshot rows, well inside the server's
+  // 1,000-row response cap, and this read is bounded by the book's STRUCTURE
+  // rather than its history — so it does not page. It does refuse a capped read,
+  // the same way `listStandingPublicationPayloads` below does: a short payload
+  // here would read as a page full of removed rows and manufacture a restatement
+  // that never happened. A loud refusal is the only safe short answer.
+  if ((rowsResult.data ?? []).length >= TRUNCATION_GUARD) {
+    return { ok: false, code: 'rpc_failed', reason: 'publication_payload_truncated' }
+  }
 
   const perfResult = await client
     .from('portfolio_performance_rows')
@@ -657,6 +727,9 @@ export async function getStandingPublicationPayload(
     .eq('publication_id', standing.id)
   if (perfResult.error) {
     return { ok: false, code: 'rpc_failed', reason: perfResult.error.message ?? 'performance_read_failed' }
+  }
+  if ((perfResult.data ?? []).length >= TRUNCATION_GUARD) {
+    return { ok: false, code: 'rpc_failed', reason: 'publication_payload_truncated' }
   }
 
   return {
@@ -877,17 +950,6 @@ interface RowHistoryReadShape {
 }
 
 /**
- * How many row-history identities one page asks for.
- *
- * The whole table is ~19,757 rows for the current book, so four or five pages
- * cover it. Paging is not an optimisation here — PostgREST caps a response at a
- * server-configured row limit, and a silently short read would make every
- * unread identity look ABSENT, turning an ordinary re-upload into thousands of
- * fabricated insertions.
- */
-const ROW_HISTORY_PAGE = 5000
-
-/**
  * Every row-history identity Production holds, with its value and class.
  *
  * Read through the ADMIN client for the same reason
@@ -895,9 +957,13 @@ const ROW_HISTORY_PAGE = 5000
  * operation an already-authorized administrator performs across every scope,
  * and it never reaches a member surface.
  *
- * A page that comes back exactly full is followed by another request; a page
- * that comes back short ends the walk. That is the only termination rule, so a
- * cap can shorten the work but can never shorten the ANSWER.
+ * FOLLOW-UP F. This walk used to ask for 5,000-row pages and stop as soon as a
+ * page came back short. PostgREST caps a response at 1,000 rows on this project,
+ * so the FIRST page was always short and the walk always stopped — 1,000 of
+ * 19,757 identities, with the other 18,757 reading as ABSENT and an identical
+ * re-upload proposing them as fresh insertions. `readAllPages` terminates on an
+ * EMPTY page and advances by rows RECEIVED, so a cap can shorten the page but
+ * never the answer. See `src/lib/db/pagination.ts`.
  */
 export async function listPersistedRowHistory(): Promise<
   { ok: true; rows: PersistedRowHistoryRead[] } | Fail
@@ -905,33 +971,29 @@ export async function listPersistedRowHistory(): Promise<
   const client = getSupabaseAdminClient() as never as RowHistoryReadShape | null
   if (!client) return { ok: false, code: 'not_configured' }
 
-  const rows: PersistedRowHistoryRead[] = []
-  for (let page = 0; ; page += 1) {
-    const from = page * ROW_HISTORY_PAGE
-    const { data, error } = await client
+  // A TOTAL order. `(observation_date, scope, row_key)` is this table's unique
+  // key re-ordered, so no two rows tie — without every component a row can sit
+  // on two pages or on none, and a missed identity reads as ABSENT.
+  const read = await readAllPages(() =>
+    client
       .from('portfolio_row_history')
       .select('scope, observation_date, row_key, value, value_class')
       .order('observation_date', { ascending: true })
       .order('scope', { ascending: true })
-      .order('row_key', { ascending: true })
-      .range(from, from + ROW_HISTORY_PAGE - 1)
+      .order('row_key', { ascending: true }),
+  )
+  if (!read.ok) return { ok: false, code: 'rpc_failed', reason: read.reason }
 
-    if (error) {
-      return { ok: false, code: 'rpc_failed', reason: error.message ?? 'row_history_read_failed' }
-    }
-    const batch = data ?? []
-    for (const r of batch) {
-      rows.push({
-        scope: String(r.scope),
-        observationDate: String(r.observation_date),
-        rowKey: String(r.row_key),
-        value: r.value === null || r.value === undefined ? null : Number(r.value),
-        valueClass: String(r.value_class),
-      })
-    }
-    if (batch.length < ROW_HISTORY_PAGE) break
+  return {
+    ok: true,
+    rows: read.rows.map((r) => ({
+      scope: String(r.scope),
+      observationDate: String(r.observation_date),
+      rowKey: String(r.row_key),
+      value: r.value === null || r.value === undefined ? null : Number(r.value),
+      valueClass: String(r.value_class),
+    })),
   }
-  return { ok: true, rows }
 }
 
 /**
@@ -1087,15 +1149,17 @@ export interface PersistedPerformanceHistoryRead {
   valueClass: string
 }
 
-const PERFORMANCE_HISTORY_PAGE = 5000
-
 /**
  * Every performance-history identity Production holds, with its value and class.
  *
- * The same admin-client, short-page-terminates walk `listPersistedRowHistory`
- * performs, and for the same reason: planning an import is a whole-book
- * operation an already-authorized administrator performs across every scope, and
- * it never reaches a member surface.
+ * The same admin-client whole-book walk `listPersistedRowHistory` performs, and
+ * for the same reason: planning an import is a whole-book operation an
+ * already-authorized administrator performs across every scope, and it never
+ * reaches a member surface.
+ *
+ * FOLLOW-UP F. It carried the same 5,000-row page and the same
+ * short-page-is-the-end rule, and so read 1,000 of 2,260 identities against a
+ * 1,000-row server cap.
  */
 export async function listPersistedPerformanceHistory(): Promise<
   { ok: true; rows: PersistedPerformanceHistoryRead[] } | Fail
@@ -1103,43 +1167,32 @@ export async function listPersistedPerformanceHistory(): Promise<
   const client = getSupabaseAdminClient() as never as PerformanceHistoryReadShape | null
   if (!client) return { ok: false, code: 'not_configured' }
 
-  const rows: PersistedPerformanceHistoryRead[] = []
-  for (let page = 0; ; page += 1) {
-    const from = page * PERFORMANCE_HISTORY_PAGE
-    // A TOTAL order, so paging is stable. `(observation_date, scope, basis,
-    // metric)` is the unique key re-ordered — without every component a row can
-    // sit on two pages or on none, and a missed identity reads as ABSENT, which
-    // turns an ordinary re-upload into a fabricated insertion.
-    const { data, error } = await client
+  // A TOTAL order, so paging is stable. `(observation_date, scope, basis,
+  // metric)` is the unique key re-ordered — without every component a row can
+  // sit on two pages or on none, and a missed identity reads as ABSENT, which
+  // turns an ordinary re-upload into a fabricated insertion.
+  const read = await readAllPages(() =>
+    client
       .from('portfolio_performance_history')
       .select('scope, basis, metric, observation_date, value, value_class')
       .order('observation_date', { ascending: true })
       .order('scope', { ascending: true })
       .order('basis', { ascending: true })
-      .order('metric', { ascending: true })
-      .range(from, from + PERFORMANCE_HISTORY_PAGE - 1)
+      .order('metric', { ascending: true }),
+  )
+  if (!read.ok) return { ok: false, code: 'rpc_failed', reason: read.reason }
 
-    if (error) {
-      return {
-        ok: false,
-        code: 'rpc_failed',
-        reason: error.message ?? 'performance_history_read_failed',
-      }
-    }
-    const batch = data ?? []
-    for (const r of batch) {
-      rows.push({
-        scope: String(r.scope),
-        basis: String(r.basis),
-        metric: String(r.metric),
-        observationDate: String(r.observation_date),
-        value: r.value === null || r.value === undefined ? null : Number(r.value),
-        valueClass: String(r.value_class),
-      })
-    }
-    if (batch.length < PERFORMANCE_HISTORY_PAGE) break
+  return {
+    ok: true,
+    rows: read.rows.map((r) => ({
+      scope: String(r.scope),
+      basis: String(r.basis),
+      metric: String(r.metric),
+      observationDate: String(r.observation_date),
+      value: r.value === null || r.value === undefined ? null : Number(r.value),
+      valueClass: String(r.value_class),
+    })),
   }
-  return { ok: true, rows }
 }
 
 /**
@@ -1354,7 +1407,20 @@ interface ImportOperationsShape {
       order: (
         col: string,
         o: { ascending: boolean },
-      ) => Promise<{ data: Record<string, unknown>[] | null; error: { message?: string } | null }>
+      ) => {
+        order: (
+          col: string,
+          o: { ascending: boolean },
+        ) => {
+          range: (
+            from: number,
+            to: number,
+          ) => Promise<{
+            data: Record<string, unknown>[] | null
+            error: { message?: string } | null
+          }>
+        }
+      }
     }
   }
 }
@@ -1364,16 +1430,21 @@ export async function listImportOperations(): Promise<ImportOperationRecord[]> {
   const client = getSupabaseAdminClient() as never as ImportOperationsShape | null
   if (!client) return []
 
-  const { data, error } = await client
-    .from('portfolio_import_operations')
-    .select(
-      'id, upload_id, as_of_date, publication_id, previous_publication_id, plan_version, ' +
-        'counts, correction_authorized, correction_reason, created_at, rolled_back_at, rollback_note',
-    )
-    .order('created_at', { ascending: false })
+  // The ledger only ever grows, so it is paged, on a TOTAL order: `created_at`
+  // with `id` settling any tie (FOLLOW-UP F).
+  const read = await readAllPages(() =>
+    client
+      .from('portfolio_import_operations')
+      .select(
+        'id, upload_id, as_of_date, publication_id, previous_publication_id, plan_version, ' +
+          'counts, correction_authorized, correction_reason, created_at, rolled_back_at, rollback_note',
+      )
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false }),
+  )
 
-  if (error) return []
-  return (data ?? []).map((r) => ({
+  if (!read.ok) return []
+  return read.rows.map((r) => ({
     id: String(r.id),
     uploadId: String(r.upload_id),
     asOfDate: String(r.as_of_date),

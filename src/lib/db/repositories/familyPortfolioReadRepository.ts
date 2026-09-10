@@ -35,7 +35,26 @@
 
 import { getSupabaseAdminClient } from '@/lib/supabase/admin'
 import { getSupabaseUserClient } from '@/lib/supabase/server'
+import { readAllPages } from '@/lib/db/pagination'
 import type { UploadKind } from '@/lib/familyPortfolio/publication'
+
+/**
+ * The tail of a read this module PAGES (FOLLOW-UP F).
+ *
+ * Still awaitable, because a bounded read may end here and simply await it; and
+ * rangeable, so `readAllPages` can walk the ones that are not bounded. The reads
+ * that page are the ones whose result grows with the length of the BOOK — one
+ * more row per week, per publication, per observation — because those are the
+ * ones that will cross the server's 1,000-row response cap and, without paging,
+ * go silently short. A read bounded by one publication or one date does not page.
+ */
+type PagedRows<T> = PromiseLike<{ data: T[] | null; error: unknown }> & {
+  order: (col: string, opts: { ascending: boolean }) => PagedRows<T>
+  range: (
+    from: number,
+    to: number,
+  ) => Promise<{ data: T[] | null; error: { message?: string } | null }>
+}
 
 /** Spine metadata of one CURRENT publication — no financial content. */
 export interface CurrentPublication {
@@ -112,39 +131,43 @@ export async function listCurrentPublications(
   const client = getSupabaseAdminClient()
   if (!client) return { ok: false, code: 'not_configured' }
 
-  const { data, error } = await (client as never as {
+  // The spine grows by a publication a week and never shrinks, so it is paged.
+  // `as_of_date` is unique among CURRENT publications of one kind, and `id`
+  // settles any tie the filter could not — a total order, which offset paging
+  // requires or rows slip between pages.
+  const spine = client as never as {
     from: (t: string) => {
       select: (c: string) => {
         eq: (col: string, v: unknown) => {
-          eq: (col: string, v: unknown) => {
-            order: (col: string, opts: { ascending: boolean }) => Promise<{
-              data:
-                | Array<{
-                    id: string
-                    as_of_date: string
-                    revision: number
-                    published_at: string
-                    parser_version: string
-                    metadata: Record<string, unknown> | null
-                  }>
-                | null
-              error: unknown
-            }>
-          }
+          eq: (
+            col: string,
+            v: unknown,
+          ) => PagedRows<{
+            id: string
+            as_of_date: string
+            revision: number
+            published_at: string
+            parser_version: string
+            metadata: Record<string, unknown> | null
+          }>
         }
       }
     }
-  })
-    .from('portfolio_publications')
-    .select('id, as_of_date, revision, published_at, parser_version, metadata')
-    .eq('upload_kind', kind)
-    .eq('is_current', true)
-    .order('as_of_date', { ascending: false })
+  }
+  const read = await readAllPages(() =>
+    spine
+      .from('portfolio_publications')
+      .select('id, as_of_date, revision, published_at, parser_version, metadata')
+      .eq('upload_kind', kind)
+      .eq('is_current', true)
+      .order('as_of_date', { ascending: false })
+      .order('id', { ascending: false }),
+  )
 
-  if (error) return { ok: false, code: 'read_failed' }
+  if (!read.ok) return { ok: false, code: 'read_failed' }
   return {
     ok: true,
-    publications: (data ?? []).map((p) => ({
+    publications: read.rows.map((p) => ({
       id: p.id,
       asOfDate: p.as_of_date,
       revision: p.revision,
@@ -317,7 +340,7 @@ type InScopedSelect<T> = {
   from: (t: string) => {
     select: (c: string) => {
       in: (col: string, v: readonly string[]) => {
-        eq: (col: string, v: unknown) => Promise<{ data: T[] | null; error: unknown }>
+        eq: (col: string, v: unknown) => PagedRows<T>
       }
     }
   }
@@ -336,21 +359,32 @@ export async function getPerformanceBindings(
   const client = await getSupabaseUserClient()
   if (!client) return { ok: false, code: 'not_configured' }
 
-  const { data, error } = await (client as never as InScopedSelect<{
-    publication_id: string
-    basis: string
-    metadata: Record<string, unknown> | null
-  }>)
-    .from('portfolio_performance_rows')
-    .select('publication_id, basis, metadata')
-    .in('publication_id', publicationIds)
-    .eq('scope', scope)
+  // FOLLOW-UP F. One publication contributes up to ten performance rows for
+  // Main, so this read grows by ten a week: it stood at 670 of the server's
+  // 1,000-row cap when the defect was found, i.e. roughly eight months from
+  // silently dropping the newest weeks' bindings — and a missing binding drops
+  // that week from the evolution and weekly-change trends without saying so.
+  // Paged, on the total order `(publication_id, basis, metric)`.
+  const read = await readAllPages(() =>
+    (client as never as InScopedSelect<{
+      publication_id: string
+      basis: string
+      metadata: Record<string, unknown> | null
+    }>)
+      .from('portfolio_performance_rows')
+      .select('publication_id, basis, metadata')
+      .in('publication_id', publicationIds)
+      .eq('scope', scope)
+      .order('publication_id', { ascending: true })
+      .order('basis', { ascending: true })
+      .order('metric', { ascending: true }),
+  )
 
-  if (error) return { ok: false, code: 'read_failed' }
+  if (!read.ok) return { ok: false, code: 'read_failed' }
 
   // One binding per (publication, basis): rows of one block share it.
   const seen = new Map<string, PublicationBinding>()
-  for (const r of data ?? []) {
+  for (const r of read.rows) {
     const key = `${r.publication_id}|${r.basis}`
     const bound = metaString(r.metadata, 'boundRowKey')
     const existing = seen.get(key)
@@ -378,7 +412,7 @@ type InEqEqSelect<T> = {
     select: (c: string) => {
       in: (col: string, v: readonly string[]) => {
         eq: (col: string, v: unknown) => {
-          eq: (col: string, v: unknown) => Promise<{ data: T[] | null; error: unknown }>
+          eq: (col: string, v: unknown) => PagedRows<T>
         }
       }
     }
@@ -413,22 +447,29 @@ export async function getPerformanceMetricSeries(
   const client = await getSupabaseUserClient()
   if (!client) return { ok: false, code: 'not_configured' }
 
-  const { data, error } = await (client as never as InEqEqSelect<{
-    publication_id: string
-    basis: string
-    value: number | null
-    value_class: string | null
-  }>)
-    .from('portfolio_performance_rows')
-    .select('publication_id, basis, value, value_class')
-    .in('publication_id', publicationIds)
-    .eq('scope', scope)
-    .eq('metric', metric)
+  // Paged: one row per (publication, basis) and a publication a week, so this
+  // grows without bound. `(publication_id, basis)` is the whole identity once
+  // scope and metric are fixed — a total order (FOLLOW-UP F).
+  const read = await readAllPages(() =>
+    (client as never as InEqEqSelect<{
+      publication_id: string
+      basis: string
+      value: number | null
+      value_class: string | null
+    }>)
+      .from('portfolio_performance_rows')
+      .select('publication_id, basis, value, value_class')
+      .in('publication_id', publicationIds)
+      .eq('scope', scope)
+      .eq('metric', metric)
+      .order('publication_id', { ascending: true })
+      .order('basis', { ascending: true }),
+  )
 
-  if (error) return { ok: false, code: 'read_failed' }
+  if (!read.ok) return { ok: false, code: 'read_failed' }
   return {
     ok: true,
-    points: (data ?? []).map((r) => ({
+    points: read.rows.map((r) => ({
       publicationId: r.publication_id,
       basis: r.basis,
       value: r.value,
@@ -448,7 +489,7 @@ type InInScopedSelect<T> = {
     select: (c: string) => {
       in: (col: string, v: readonly string[]) => {
         in: (col: string, v: readonly string[]) => {
-          eq: (col: string, v: unknown) => Promise<{ data: T[] | null; error: unknown }>
+          eq: (col: string, v: unknown) => PagedRows<T>
         }
       }
     }
@@ -465,21 +506,28 @@ export async function getSnapshotValuesByKeys(
   const client = await getSupabaseUserClient()
   if (!client) return { ok: false, code: 'not_configured' }
 
-  const { data, error } = await (client as never as InInScopedSelect<{
-    publication_id: string
-    row_key: string
-    value: number | null
-  }>)
-    .from('portfolio_snapshot_rows')
-    .select('publication_id, row_key, value')
-    .in('publication_id', publicationIds)
-    .in('row_key', rowKeys)
-    .eq('scope', scope)
+  // Paged: one row per (publication, requested key), and publications only
+  // accumulate. `(publication_id, row_key)` is the whole identity once scope is
+  // fixed — a total order (FOLLOW-UP F).
+  const read = await readAllPages(() =>
+    (client as never as InInScopedSelect<{
+      publication_id: string
+      row_key: string
+      value: number | null
+    }>)
+      .from('portfolio_snapshot_rows')
+      .select('publication_id, row_key, value')
+      .in('publication_id', publicationIds)
+      .in('row_key', rowKeys)
+      .eq('scope', scope)
+      .order('publication_id', { ascending: true })
+      .order('row_key', { ascending: true }),
+  )
 
-  if (error) return { ok: false, code: 'read_failed' }
+  if (!read.ok) return { ok: false, code: 'read_failed' }
   return {
     ok: true,
-    values: (data ?? []).map((r) => ({
+    values: read.rows.map((r) => ({
       publicationId: r.publication_id,
       rowKey: r.row_key,
       // null stays null — a missing week must surface as a gap, never a 0.
@@ -587,12 +635,7 @@ export interface AlternativesEventRow {
 type OrderedByPublication<T> = {
   from: (t: string) => {
     select: (c: string) => {
-      eq: (col: string, v: unknown) => {
-        order: (
-          col: string,
-          opts: { ascending: boolean },
-        ) => Promise<{ data: T[] | null; error: unknown }>
-      }
+      eq: (col: string, v: unknown) => PagedRows<T>
     }
   }
 }
@@ -665,22 +708,29 @@ export async function getAlternativesEvents(
   const client = await getSupabaseUserClient()
   if (!client) return { ok: false, code: 'not_configured' }
 
-  const { data, error } = await (client as never as OrderedByPublication<{
-    holding_id: string | null
-    event_date: string
-    amount: number
-    currency: string
-    event_type: string
-  }>)
-    .from('alternatives_events')
-    .select('holding_id, event_date, amount, currency, event_type')
-    .eq('publication_id', publicationId)
-    .order('event_date', { ascending: true })
+  // Paged: an alternatives publication carries the WHOLE cash-flow history of
+  // every holding, so this set grows with the book's life rather than its width
+  // — 212 rows already. `event_date` repeats, so `id` makes the order total
+  // (FOLLOW-UP F).
+  const read = await readAllPages(() =>
+    (client as never as OrderedByPublication<{
+      holding_id: string | null
+      event_date: string
+      amount: number
+      currency: string
+      event_type: string
+    }>)
+      .from('alternatives_events')
+      .select('holding_id, event_date, amount, currency, event_type')
+      .eq('publication_id', publicationId)
+      .order('event_date', { ascending: true })
+      .order('id', { ascending: true }),
+  )
 
-  if (error) return { ok: false, code: 'read_failed' }
+  if (!read.ok) return { ok: false, code: 'read_failed' }
   return {
     ok: true,
-    events: (data ?? []).map((e) => ({
+    events: read.rows.map((e) => ({
       holdingId: e.holding_id,
       eventDate: e.event_date,
       amount: e.amount,
@@ -705,12 +755,10 @@ export interface EvolutionObservationRead {
 type EvolutionSelect = {
   from: (t: string) => {
     select: (c: string) => {
-      eq: (col: string, v: unknown) => {
-        order: (col: string, opts: { ascending: boolean }) => Promise<{
-          data: Array<{ basis: string; observation_date: string; value: number }> | null
-          error: unknown
-        }>
-      }
+      eq: (
+        col: string,
+        v: unknown,
+      ) => PagedRows<{ basis: string; observation_date: string; value: number }>
     }
   }
 }
@@ -734,16 +782,22 @@ export async function getEvolutionObservations(
   const client = await getSupabaseUserClient()
   if (!client) return { ok: false, code: 'not_configured' }
 
-  const { data, error } = await (client as never as EvolutionSelect)
-    .from('portfolio_evolution_observations')
-    .select('basis, observation_date, value')
-    .eq('scope', scope)
-    .order('observation_date', { ascending: true })
+  // Paged: two observations a week for Main, one for each personal scope, for
+  // as long as the book runs. `(observation_date, basis)` is the whole identity
+  // once scope is fixed — a total order (FOLLOW-UP F).
+  const read = await readAllPages(() =>
+    (client as never as EvolutionSelect)
+      .from('portfolio_evolution_observations')
+      .select('basis, observation_date, value')
+      .eq('scope', scope)
+      .order('observation_date', { ascending: true })
+      .order('basis', { ascending: true }),
+  )
 
-  if (error) return { ok: false, code: 'read_failed' }
+  if (!read.ok) return { ok: false, code: 'read_failed' }
   return {
     ok: true,
-    observations: (data ?? []).map((o) => ({
+    observations: read.rows.map((o) => ({
       basis: o.basis,
       observationDate: o.observation_date,
       value: o.value,
@@ -847,12 +901,10 @@ export async function getRowHistoryForScope(
 type RowHistoryDateSelect = {
   from: (t: string) => {
     select: (c: string) => {
-      eq: (col: string, v: unknown) => {
-        order: (col: string, opts: { ascending: boolean }) => Promise<{
-          data: Array<{ observation_date: string; row_count: number }> | null
-          error: unknown
-        }>
-      }
+      eq: (
+        col: string,
+        v: unknown,
+      ) => PagedRows<{ observation_date: string; row_count: number }>
     }
   }
 }
@@ -874,16 +926,20 @@ export async function listRowHistoryDates(
   const client = await getSupabaseUserClient()
   if (!client) return { ok: false, code: 'not_configured' }
 
-  const { data, error } = await (client as never as RowHistoryDateSelect)
-    .from('portfolio_row_history_coverage')
-    .select('observation_date, row_count')
-    .eq('scope', scope)
-    .order('observation_date', { ascending: true })
+  // Paged: one row per reporting date, for as long as the book runs.
+  // `observation_date` is unique per scope in the view — already a total order.
+  const read = await readAllPages(() =>
+    (client as never as RowHistoryDateSelect)
+      .from('portfolio_row_history_coverage')
+      .select('observation_date, row_count')
+      .eq('scope', scope)
+      .order('observation_date', { ascending: true }),
+  )
 
-  if (error) return { ok: false, code: 'read_failed' }
+  if (!read.ok) return { ok: false, code: 'read_failed' }
   return {
     ok: true,
-    dates: (data ?? [])
+    dates: read.rows
       .filter((r) => Number(r.row_count) > 0)
       .map((r) => String(r.observation_date)),
   }
@@ -895,17 +951,15 @@ type PerformanceHistorySelect = {
       eq: (col: string, v: unknown) => {
         eq: (col: string, v: unknown) => {
           gt: (col: string, v: unknown) => {
-            lte: (col: string, v: unknown) => {
-              order: (col: string, opts: { ascending: boolean }) => Promise<{
-                data: Array<{
-                  metric: string
-                  observation_date: string
-                  value: number | null
-                  value_class: string
-                }> | null
-                error: unknown
-              }>
-            }
+            lte: (
+              col: string,
+              v: unknown,
+            ) => PagedRows<{
+              metric: string
+              observation_date: string
+              value: number | null
+              value_class: string
+            }>
           }
         }
       }
@@ -946,19 +1000,26 @@ export async function getPerformanceHistoryRange(
   const client = await getSupabaseUserClient()
   if (!client) return { ok: false, code: 'not_configured' }
 
-  const { data, error } = await (client as never as PerformanceHistorySelect)
-    .from('portfolio_performance_history')
-    .select('metric, observation_date, value, value_class')
-    .eq('scope', scope)
-    .eq('basis', basis)
-    .gt('observation_date', fromDate)
-    .lte('observation_date', toDate)
-    .order('observation_date', { ascending: true })
+  // Paged: five metrics a week, so a whole-history window is unbounded even
+  // though a one-year one is not — and Compare offers exactly such a window.
+  // `(observation_date, metric)` is the whole identity once scope and basis are
+  // fixed — a total order (FOLLOW-UP F).
+  const read = await readAllPages(() =>
+    (client as never as PerformanceHistorySelect)
+      .from('portfolio_performance_history')
+      .select('metric, observation_date, value, value_class')
+      .eq('scope', scope)
+      .eq('basis', basis)
+      .gt('observation_date', fromDate)
+      .lte('observation_date', toDate)
+      .order('observation_date', { ascending: true })
+      .order('metric', { ascending: true }),
+  )
 
-  if (error) return { ok: false, code: 'read_failed' }
+  if (!read.ok) return { ok: false, code: 'read_failed' }
   return {
     ok: true,
-    rows: (data ?? []).map((r) => ({
+    rows: read.rows.map((r) => ({
       metric: String(r.metric),
       observationDate: String(r.observation_date),
       // null stays null. A flow the source never stated is not a zero flow, and
@@ -973,12 +1034,10 @@ type PerformanceHistoryDateSelect = {
   from: (t: string) => {
     select: (c: string) => {
       eq: (col: string, v: unknown) => {
-        eq: (col: string, v: unknown) => {
-          order: (col: string, opts: { ascending: boolean }) => Promise<{
-            data: Array<{ observation_date: string; metric_count: number }> | null
-            error: unknown
-          }>
-        }
+        eq: (
+          col: string,
+          v: unknown,
+        ) => PagedRows<{ observation_date: string; metric_count: number }>
       }
     }
   }
@@ -1005,17 +1064,21 @@ export async function listPerformanceHistoryDates(
   const client = await getSupabaseUserClient()
   if (!client) return { ok: false, code: 'not_configured' }
 
-  const { data, error } = await (client as never as PerformanceHistoryDateSelect)
-    .from('portfolio_performance_history_coverage')
-    .select('observation_date, metric_count')
-    .eq('scope', scope)
-    .eq('basis', basis)
-    .order('observation_date', { ascending: true })
+  // Paged: one row per reporting date, for as long as the book runs.
+  // `observation_date` is unique per (scope, basis) in the view — a total order.
+  const read = await readAllPages(() =>
+    (client as never as PerformanceHistoryDateSelect)
+      .from('portfolio_performance_history_coverage')
+      .select('observation_date, metric_count')
+      .eq('scope', scope)
+      .eq('basis', basis)
+      .order('observation_date', { ascending: true }),
+  )
 
-  if (error) return { ok: false, code: 'read_failed' }
+  if (!read.ok) return { ok: false, code: 'read_failed' }
   return {
     ok: true,
-    dates: (data ?? [])
+    dates: read.rows
       .filter((r) => Number(r.metric_count) > 0)
       .map((r) => String(r.observation_date)),
   }
