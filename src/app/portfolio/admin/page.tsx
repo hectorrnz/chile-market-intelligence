@@ -136,7 +136,19 @@ function ReviewPanel({
         if (cancelled) return
         setReview(data.draft)
         setPlan(data.importPlan)
-        if (!data.draft) setError(data.draftError ?? a.error)
+        // FOLLOW-UP G — a refusal code is looked up before it is shown. A draft
+        // that could not be reviewed now says WHY in a sentence, rather than
+        // printing the bare code beside an empty review.
+        if (!data.draft) {
+          const code = data.draftError
+          setError(
+            code == null
+              ? a.error
+              : (a.refusal as Record<string, string>)[code] ??
+                (a.refusalImport as Record<string, string>)[code] ??
+                code,
+          )
+        }
         else setConfirmDate(data.draft.detectedAsOfDate ?? '')
         setLoading(false)
         onLoaded()
@@ -151,7 +163,7 @@ function ReviewPanel({
     return () => {
       cancelled = true
     }
-  }, [upload.id, a.error, onLoaded])
+  }, [upload.id, a.error, a.refusal, a.refusalImport, onLoaded])
 
   const detected = review?.detectedAsOfDate ?? null
   // The note is required exactly when the administrator asserts a date the file
@@ -518,6 +530,10 @@ export default function FamilyPortfolioAdminPage() {
   const [publications, setPublications] = useState<PublicationRow[]>([])
   const [importOperations, setImportOperations] = useState<ImportOperationRow[]>([])
   const [state, setState] = useState<'loading' | 'ready' | 'error' | 'denied'>('loading')
+  // FOLLOW-UP G — WHY the console could not load, when the server said why. The
+  // three index reads now fail loudly rather than answering with empty tables,
+  // and this is what turns that refusal into a sentence.
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [selected, setSelected] = useState<UploadRow | null>(null)
   const [rollbackError, setRollbackError] = useState<string | null>(null)
   // Set by a successful upload so the freshly-created draft opens as soon as the
@@ -551,6 +567,11 @@ export default function FamilyPortfolioAdminPage() {
           return
         }
         if (!res.ok) {
+          const body: { error?: string } = await res.json().catch(() => ({}))
+          const code = body.error
+          setLoadError(
+            code == null ? null : (a.refusal as Record<string, string>)[code] ?? null,
+          )
           setState('error')
           return
         }
@@ -571,7 +592,7 @@ export default function FamilyPortfolioAdminPage() {
     return () => {
       cancelled = true
     }
-  }, [reloadSeq])
+  }, [reloadSeq, a.refusal])
 
   const reload = useCallback(() => setReloadSeq((n) => n + 1), [])
   const onReviewLoaded = useCallback(() => setReviewLoaded(true), [])
@@ -662,7 +683,7 @@ export default function FamilyPortfolioAdminPage() {
       {state === 'denied' && <p className="text-sm text-muted-fg">{a.notAuthorized}</p>}
       {state === 'error' && (
         <p className="text-sm" style={{ color: TONE.blocked }}>
-          {a.error}
+          {loadError ?? a.error}
         </p>
       )}
       {state === 'loading' && <p className="text-sm text-muted-fg">{a.loading}</p>}

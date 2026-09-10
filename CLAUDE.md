@@ -779,6 +779,47 @@ This is now a standing operating procedure, not a development task:
 
 ## Current Phase
 
+**PORTFOLIO MAINTENANCE CLOSED (2026-09-10) — code-only; Production Portfolio data unchanged.**
+The post-R13.8 maintenance run is finished. Its durable outcomes are below; the transient incident
+narrative is not kept.
+
+- **The accidental R13.8 rollback was restored through the canonical importer.** No service-role
+  SQL, no hand-written repair — the same administrator upload path every weekly import uses. The
+  standalone seven-row metadata-repair packet prepared during that work was **cancelled** and never
+  applied; the restoration made it unnecessary.
+- **Current portfolio week: 2026-09-04.** That is the newest current publication, and the endpoint
+  every classification is measured against.
+- **Analytical history is live.** Row history holds 19,757 identities across 107 dates; performance
+  history holds 2,260 across 106 dates. Both were written by their initial backfill and are read
+  whole on every plan.
+- **Rolling 1M is four SOURCE weekly intervals**, never a calendar month and never four calendar
+  weeks. **Weekly Changes is one true source week.** **Compare is a separate sub-tab** with its own
+  period semantics — a custom period is not a weekly interval and is never presented as one.
+- **`previousWeekDate` is prospective.** Each restated week carries its OWN frozen column's anchors.
+  Passing the importing week's anchors is exactly the defect that left seven published weeks naming
+  a previous week two months in their future.
+- **Two year-start anchor cases remain intentionally untouched.** They are recorded, understood and
+  deliberately not corrected; do not "fix" them without a new instruction.
+- **PAGINATION INVARIANT — A SERVER RESPONSE CAP IS NOT END OF TABLE.** PostgREST caps a response at
+  1,000 rows on this project, and no client may encode that number. Every paged read goes through
+  `readAllPages` (`src/lib/db/pagination.ts`): it terminates ONLY on an empty page and advances the
+  offset by the rows ACTUALLY RECEIVED. `rows.length < requestedPageSize` is never end of table.
+  Every paged read also declares a TOTAL order — offset paging over a tie lets a row land on two
+  pages or on none, and a row on none reads as absent.
+- **A FAILED READ IS NOT AN EMPTY TABLE.** Repository reads answer `{ ok: true, … } | Fail`. An
+  empty table is a successful empty answer; an unreadable one is an explicit refusal. A failed read
+  must never reach import planning as absence: `listPublications` feeds the published endpoint that
+  separates NEW from GAP_FILL and feeds restatement detection, and `getUploadFindings` feeds the
+  publish gate, so an unknown book blocks the plan rather than producing one. The administrator
+  console shows an honest unavailable state instead of empty tables.
+- **An identical replay of the authoritative workbook after restoration is `nothing_to_append`** —
+  0 new, 0 gap-fill, 0 changed, 0 restatements, on both the economic and the analytical half.
+
+**Next major workstream: D0 — user provisioning and granular access management**
+(`docs/portfolio-r13/09-open-decisions.md` § D0), unchanged and still REQUIRED NEXT.
+
+---
+
 **R13 CLOSED (2026-09-08) — documentation/repository-hygiene closeout only; no code, migration, or
 Production change in this pass.** Production master `153c322253c81cb1c6a825a60cd6ad45c85100a3`. Both
 R13 workstreams are released and their final state is recorded here for future sessions.

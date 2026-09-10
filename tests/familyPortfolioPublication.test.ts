@@ -1238,7 +1238,14 @@ describe('R13.5 · service-role boundary', () => {
     // field is now dropped at the repository boundary.
     const repo = read('src/lib/db/repositories/portfolioPublicationRepository.ts')
     assert.match(repo, /export type AdminUploadSummary = Omit<UploadRecord, 'storageObjectPath'>/)
-    assert.match(repo, /listUploads\(\): Promise<AdminUploadSummary\[\]>/)
+    // FOLLOW-UP G widened the return to the module's `{ ok } | Fail` form. The
+    // property under test is unchanged and still pinned: whatever wrapper the
+    // listing answers in, the ELEMENT type is the summary that has already had
+    // the object path removed — never the full upload record.
+    assert.match(
+      repo,
+      /listUploads\(\): Promise<\{ ok: true; uploads: AdminUploadSummary\[\] \} \| Fail>/,
+    )
 
     // The four data-returning routes never mention it at all.
     for (const rel of [PUBLISH_ROUTE, ROLLBACK_ROUTE, COMMENTARY_ROUTE, UPLOAD_DETAIL_ROUTE]) {

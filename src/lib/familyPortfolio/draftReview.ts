@@ -123,6 +123,14 @@ export type DraftReviewFailure =
   | { ok: false; code: 'not_found' }
   | { ok: false; code: 'download_failed' }
   | { ok: false; code: 'source_digest_mismatch' }
+  /**
+   * FOLLOW-UP G — the findings recorded at upload time could not be read.
+   *
+   * Not a review with zero findings: those rows carry the blocking findings that
+   * decide publishability, so an unreadable table must refuse the review rather
+   * than present a draft that looks clean.
+   */
+  | { ok: false; code: 'findings_read_failed' }
 
 /** Everything the publish path needs, kept server-side. */
 export interface LoadedDraft {
@@ -362,5 +370,10 @@ export async function buildDraftReview(
   const loaded = await loadDraft(uploadId)
   if (!loaded.ok) return loaded
   const stored = await getUploadFindings(uploadId)
-  return { ok: true, review: summarizeDraft(loaded.draft, stored, decisions), loaded: loaded.draft }
+  if (!stored.ok) {
+    return stored.code === 'not_configured'
+      ? { ok: false, code: 'not_configured' }
+      : { ok: false, code: 'findings_read_failed' }
+  }
+  return { ok: true, review: summarizeDraft(loaded.draft, stored.findings, decisions), loaded: loaded.draft }
 }

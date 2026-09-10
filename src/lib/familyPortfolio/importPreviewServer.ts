@@ -42,6 +42,12 @@ export type ImportPreviewFailure =
   | { ok: false; code: 'evolution_read_failed' }
   | { ok: false; code: 'not_a_portfolio_draft' }
   | { ok: false; code: 'publication_read_failed' }
+  /**
+   * FOLLOW-UP G — the publication ledger itself could not be read, so the
+   * book's published endpoint is unknown. Without it NEW and GAP_FILL cannot be
+   * told apart, so no plan is produced at all.
+   */
+  | { ok: false; code: 'publication_ledger_read_failed' }
   /** R13.8D.1 — the already-published weeks could not be read and compared. */
   | { ok: false; code: 'historical_publication_read_failed' }
   /**
@@ -111,9 +117,20 @@ export async function planImportForDraft(
       : { ok: false, code: 'evolution_read_failed' }
   }
 
+  // FOLLOW-UP G — A FAILED LEDGER READ IS A FAILURE, never an empty ledger.
+  //
+  // `latestPublishedAsOf` is the endpoint that separates NEW from GAP_FILL. An
+  // unreadable ledger read as `[]` yields a null endpoint, and every week in the
+  // workbook — including weeks published years ago — then classifies as NEW.
+  // The plan would be actionable, internally consistent and wrong.
   const publications = await listPublications()
+  if (!publications.ok) {
+    return publications.code === 'not_configured'
+      ? { ok: false, code: 'not_configured' }
+      : { ok: false, code: 'publication_ledger_read_failed' }
+  }
   const latestPublishedAsOf =
-    publications
+    publications.publications
       .filter((p) => p.uploadKind === 'portfolio' && p.isCurrent)
       .map((p) => p.asOfDate)
       .sort()

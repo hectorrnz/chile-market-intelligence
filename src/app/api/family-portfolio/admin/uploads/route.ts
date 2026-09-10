@@ -68,11 +68,30 @@ export async function GET() {
   // other two lists are here: it is one console view, and doc 05 § 7.4 fixes the
   // route architecture. It carries identifiers, dates, counts and a correction
   // reason — no amount. It is what the rollback control names.
-  const [uploads, publications, importOperations] = await Promise.all([
+  const [uploadsRead, publicationsRead, operationsRead] = await Promise.all([
     listUploads(),
     listPublications(),
     listImportOperations(),
   ])
+
+  // FOLLOW-UP G — a failed read is reported as a failure, never served as three
+  // empty tables. An empty console reads as "nothing has ever been uploaded and
+  // nothing has ever been published", which for this book is a false statement
+  // an administrator could act on. The console already has an honest
+  // could-not-load state; this is what puts it on screen.
+  if (!uploadsRead.ok || !publicationsRead.ok || !operationsRead.ok) {
+    const notConfigured =
+      uploadsRead.ok === false && uploadsRead.code === 'not_configured'
+    return fail(
+      notConfigured ? 'not_configured' : 'console_read_failed',
+      503,
+      'the administrator console could not be read',
+    )
+  }
+
+  const uploads = uploadsRead.uploads
+  const publications = publicationsRead.publications
+  const importOperations = operationsRead.operations
 
   // R13.8C § 12 — owner-review fixtures, Preview/development ONLY, and only
   // after the administrator check above. Seven synthetic upload rows and two

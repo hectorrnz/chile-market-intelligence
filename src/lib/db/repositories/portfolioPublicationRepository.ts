@@ -170,15 +170,35 @@ export async function getUpload(uploadId: string): Promise<{ ok: true; upload: U
   return { ok: true, upload: toUpload(data) }
 }
 
-export async function getUploadFindings(uploadId: string): Promise<StoredFinding[]> {
+/**
+ * The findings recorded when this upload was parsed at upload time.
+ *
+ * FOLLOW-UP G — this one is a PUBLISH GATE, not a listing. `summarizeDraft`
+ * folds these into the same refusal set as the live re-parse, on the stated
+ * rule that "a blocking finding recorded at UPLOAD time still blocks now". So
+ * an unreadable findings table answered as `[]` did not merely lose a warning
+ * count: it withdrew every blocking finding the file already had and could turn
+ * an unpublishable draft publishable. The read now fails loudly instead.
+ */
+export async function getUploadFindings(
+  uploadId: string,
+): Promise<{ ok: true; findings: StoredFinding[] } | Fail> {
   const client = admin()
-  if (!client) return []
-  const { data } = await client
+  if (!client) return { ok: false, code: 'not_configured' }
+  const { data, error } = await client
     .from('portfolio_upload_findings')
     .select('severity, code, scope, source_sheet, source_cell, row_label, detail')
     .eq('upload_id', uploadId)
     .order('severity', { ascending: true })
-  return (data ?? []).map((r) => ({
+  if (error) {
+    const message = (error as { message?: unknown }).message
+    return {
+      ok: false,
+      code: 'rpc_failed',
+      reason: refusalCodeOf(typeof message === 'string' ? message : 'findings_read_failed'),
+    }
+  }
+  const findings = (data ?? []).map((r) => ({
     severity: r.severity as StoredFinding['severity'],
     code: String(r.code),
     scope: r.scope === null || r.scope === undefined ? null : String(r.scope),
@@ -187,6 +207,7 @@ export async function getUploadFindings(uploadId: string): Promise<StoredFinding
     rowLabel: r.row_label === null || r.row_label === undefined ? null : String(r.row_label),
     detail: String(r.detail),
   }))
+  return { ok: true, findings }
 }
 
 /**
@@ -241,9 +262,25 @@ export async function getPublication(id: string): Promise<PublicationRecord | nu
  */
 export type AdminUploadSummary = Omit<UploadRecord, 'storageObjectPath'>
 
-export async function listUploads(): Promise<AdminUploadSummary[]> {
+/**
+ * FOLLOW-UP G — A FAILED READ IS NOT AN EMPTY TABLE.
+ *
+ * These three listings used to answer `[]` for both "this table holds nothing"
+ * and "this table could not be read". The two are not the same fact, and the
+ * second one is not a fact at all — it is the absence of one. Every caller then
+ * had to treat an unknown book as an empty one, which is the same silent
+ * fabrication FOLLOW-UP F closed at the pagination layer: `listPublications`
+ * feeds the endpoint that separates a NEW week from a GAP_FILL, and it feeds
+ * restatement detection, where "no publication stands for that week" is the
+ * answer that lets an overwrite through the authorization gate unauthorized.
+ *
+ * They now answer in this module's canonical `{ ok: true; … } | Fail` form. An
+ * empty table is still `{ ok: true, …: [] }` — the honest empty answer is
+ * unchanged and unambiguous.
+ */
+export async function listUploads(): Promise<{ ok: true; uploads: AdminUploadSummary[] } | Fail> {
   const client = admin()
-  if (!client) return []
+  if (!client) return { ok: false, code: 'not_configured' }
   // Newest first, with `id` as the tiebreaker that makes the order TOTAL —
   // two uploads recorded in the same transaction share `uploaded_at`, and tied
   // rows reorder between page requests, which drops rows silently (FOLLOW-UP F).
@@ -254,17 +291,22 @@ export async function listUploads(): Promise<AdminUploadSummary[]> {
       .order('uploaded_at', { ascending: false })
       .order('id', { ascending: false }),
   )
-  if (!read.ok) return []
-  return read.rows.map((row) => {
-    const { storageObjectPath: _omitted, ...summary } = toUpload(row)
-    void _omitted
-    return summary
-  })
+  // The reason is reduced to a stable code first: a driver message can name a
+  // constraint, a column or a host, and must not travel with the refusal.
+  if (!read.ok) return { ok: false, code: 'rpc_failed', reason: refusalCodeOf(read.reason) }
+  return {
+    ok: true,
+    uploads: read.rows.map((row) => {
+      const { storageObjectPath: _omitted, ...summary } = toUpload(row)
+      void _omitted
+      return summary
+    }),
+  }
 }
 
-export async function listPublications(): Promise<PublicationRecord[]> {
+export async function listPublications(): Promise<{ ok: true; publications: PublicationRecord[] } | Fail> {
   const client = admin()
-  if (!client) return []
+  if (!client) return { ok: false, code: 'not_configured' }
   // One import can publish eight weeks in a single transaction, so `published_at`
   // alone is emphatically NOT a total order here — the R13.8 restoration wrote
   // exactly that. `as_of_date` then `id` settle every tie deterministically.
@@ -276,8 +318,8 @@ export async function listPublications(): Promise<PublicationRecord[]> {
       .order('as_of_date', { ascending: false })
       .order('id', { ascending: false }),
   )
-  if (!read.ok) return []
-  return read.rows.map(toPublication)
+  if (!read.ok) return { ok: false, code: 'rpc_failed', reason: refusalCodeOf(read.reason) }
+  return { ok: true, publications: read.rows.map(toPublication) }
 }
 
 /**
@@ -693,8 +735,12 @@ export async function getStandingPublicationPayload(
   const admin = getSupabaseAdminClient()
   if (!admin) return { ok: false, code: 'not_configured' }
 
+  // FOLLOW-UP G — an unreadable ledger is NOT "no publication stands here". The
+  // caller reads a null payload as "there is plainly something to publish", so a
+  // failed read would have manufactured a change out of an unknown.
   const publications = await listPublications()
-  const standing = publications.find(
+  if (!publications.ok) return publications
+  const standing = publications.publications.find(
     (p) => p.uploadKind === 'portfolio' && p.isCurrent && p.asOfDate === asOfDate,
   )
   if (!standing) return { ok: true, payload: null }
@@ -844,8 +890,13 @@ export async function listStandingPublicationPayloads(
   if (asOfDates.length === 0) return { ok: true, payloads: [] }
 
   const wanted = new Set(asOfDates)
+  // FOLLOW-UP G — this is the restatement gate. An unreadable ledger answered as
+  // "none of these weeks is published" reports zero restatements, and an import
+  // that overwrites settled history then passes the correction-authorization
+  // gate without ever asking for authorization. It must fail instead.
   const publications = await listPublications()
-  const standing = publications.filter(
+  if (!publications.ok) return publications
+  const standing = publications.publications.filter(
     (p) => p.uploadKind === 'portfolio' && p.isCurrent && wanted.has(p.asOfDate),
   )
   if (standing.length === 0) return { ok: true, payloads: [] }
@@ -1426,9 +1477,11 @@ interface ImportOperationsShape {
 }
 
 /** The import ledger, newest first. Identifiers, dates and counts — no amounts. */
-export async function listImportOperations(): Promise<ImportOperationRecord[]> {
+export async function listImportOperations(): Promise<
+  { ok: true; operations: ImportOperationRecord[] } | Fail
+> {
   const client = getSupabaseAdminClient() as never as ImportOperationsShape | null
-  if (!client) return []
+  if (!client) return { ok: false, code: 'not_configured' }
 
   // The ledger only ever grows, so it is paged, on a TOTAL order: `created_at`
   // with `id` settling any tie (FOLLOW-UP F).
@@ -1443,8 +1496,8 @@ export async function listImportOperations(): Promise<ImportOperationRecord[]> {
       .order('id', { ascending: false }),
   )
 
-  if (!read.ok) return []
-  return read.rows.map((r) => ({
+  if (!read.ok) return { ok: false, code: 'rpc_failed', reason: refusalCodeOf(read.reason) }
+  const operations = read.rows.map((r) => ({
     id: String(r.id),
     uploadId: String(r.upload_id),
     asOfDate: String(r.as_of_date),
@@ -1458,4 +1511,5 @@ export async function listImportOperations(): Promise<ImportOperationRecord[]> {
     rolledBackAt: r.rolled_back_at == null ? null : String(r.rolled_back_at),
     rollbackNote: r.rollback_note == null ? null : String(r.rollback_note),
   }))
+  return { ok: true, operations }
 }

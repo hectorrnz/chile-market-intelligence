@@ -136,8 +136,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return fail('classification_refused', 422, { rejections: rejected })
   }
 
+  // FOLLOW-UP G — the findings recorded at upload time decide publishability.
+  // An unreadable table must refuse the publish, never be read as "this file had
+  // no blocking findings".
   const stored = await getUploadFindings(id)
-  const review = summarizeDraft(loaded.draft, stored, decisions)
+  if (!stored.ok) {
+    return fail(stored.code === 'not_configured' ? 'not_configured' : 'findings_read_failed', 503)
+  }
+  const review = summarizeDraft(loaded.draft, stored.findings, decisions)
 
   // --- Date. Detection proposes; the administrator confirms; a divergence
   // requires a written justification (doc 02 § 8).
