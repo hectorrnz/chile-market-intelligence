@@ -930,6 +930,10 @@ describe('existing behaviour is unchanged', () => {
       '/alternatives/holdings/page.tsx',
       '/alternatives/layout.tsx',
       '/alternatives/page.tsx',
+      // FOLLOW-UP E — Compare, the period sibling of Weekly Changes. It is a
+      // second view of the SAME entitled data over a range the reader picks,
+      // not a new stage and not a new entitlement.
+      '/compare/page.tsx',
       '/holdings/page.tsx',
       '/layout.tsx',
       '/page.tsx',

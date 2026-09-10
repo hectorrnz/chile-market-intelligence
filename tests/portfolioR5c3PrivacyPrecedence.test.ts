@@ -59,7 +59,8 @@ const PRIVACY_VALUE = 'src/components/fable/PrivacyValue.tsx'
 const SURFACES = [
   'src/app/portfolio/page.tsx',
   'src/app/portfolio/holdings/page.tsx',
-  'src/app/portfolio/weekly-changes/page.tsx',
+  // FOLLOW-UP E — Weekly Changes and Compare render ONE shared surface.
+  'src/components/familyPortfolio/ChangesSurface.tsx',
   'src/app/portfolio/alternatives/page.tsx',
   'src/app/portfolio/alternatives/holdings/page.tsx',
   'src/app/portfolio/alternatives/cash-flows/page.tsx',
@@ -224,7 +225,7 @@ describe('R13.R5C.3 § 1 — the privacy mask comes first', () => {
       ],
       'src/components/familyPortfolio/PerformanceMarketsStrip.tsx': [/formatUsd\(metric\.value!, 2\)/],
       // The hero's own formatter, rendered inside `KpiHero`'s `PrivacyValue`.
-      'src/app/portfolio/weekly-changes/page.tsx': [
+      'src/components/familyPortfolio/ChangesSurface.tsx': [
         /formatValue=\{\(v\) => \(v > 0 \? `\+\$\{formatUsd\(v\)\}` : formatUsd\(v\)\)\}/,
       ],
       // An SVG slice label, where `MaskedAmount` cannot render. It falls back to
@@ -247,7 +248,7 @@ describe('R13.R5C.3 § 1 — the privacy mask comes first', () => {
     const summary = read('src/app/portfolio/page.tsx')
     assert.match(summary, /\) : masked \? \(/, 'the evolution chart is replaced wholesale while masked')
     assert.match(summary, /<PrivacyValue masked className="block text-center text-lg">/)
-    const weekly = read('src/app/portfolio/weekly-changes/page.tsx')
+    const weekly = read('src/components/familyPortfolio/ChangesSurface.tsx')
     assert.match(weekly, /privacyMasked=\{masked\}/)
     assert.match(read('src/components/fable/KpiHero.tsx'), /<PrivacyValue masked=\{privacyMasked\}>/)
     const donut = read('src/components/familyPortfolio/AllocationDonut.tsx')
@@ -314,7 +315,7 @@ describe('R13.R5C.3 § 2 — a scale origin and a sentence are not displayed met
     const PROSE: Array<[string, RegExp]> = [
       ['src/app/portfolio/alternatives/cash-flows/page.tsx', /\{visibleEvents\.length\} \{a\.eventsWord\}/],
       ['src/app/portfolio/alternatives/holdings/page.tsx', /\{group\.holdings\.length\} \{t\.holdingsWord\}/],
-      ['src/app/portfolio/weekly-changes/page.tsx', /\{ranked\.cashRowCount\} \{w\.cashWithheldSuffix\}/],
+      ['src/components/familyPortfolio/ChangesSurface.tsx', /\{ranked\.cashRowCount\} \{w\.cashWithheldSuffix\}/],
       ['src/components/familyPortfolio/AlternativesDrilldowns.tsx', /fill\(a\.breakdownCount, \{ n: breakdown\.events\.length \}\)/],
     ]
     for (const [p, re] of PROSE) assert.match(read(p), re, p)

@@ -54,6 +54,15 @@ export const SCOPE_PARAM = 'scope'
 export const PORTFOLIO_SUMMARY = '/portfolio'
 export const PORTFOLIO_HOLDINGS = '/portfolio/holdings'
 export const PORTFOLIO_WEEKLY_CHANGES = '/portfolio/weekly-changes'
+/**
+ * POST-R13.8 FOLLOW-UP E — comparing two arbitrary source-backed reporting
+ * dates. It is a SIBLING of Weekly Changes, not a mode inside it: the same page
+ * composition over a period the reader picks, with period vocabulary
+ * throughout. It carries `?scope=` for the same reason every other portfolio
+ * view does, and it is protected by the same `/portfolio` module binding —
+ * there is no new entitlement and no new principal concept.
+ */
+export const PORTFOLIO_COMPARE = '/portfolio/compare'
 
 /**
  * The administrator publication console. Scope-free by construction — it is a
@@ -64,13 +73,14 @@ export const PORTFOLIO_WEEKLY_CHANGES = '/portfolio/weekly-changes'
 export const PORTFOLIO_ADMIN = '/portfolio/admin'
 
 /**
- * The three views a Main / Jaime / Andrés / Pablo selection survives across.
+ * The four views a Main / Jaime / Andrés / Pablo selection survives across.
  * Alternatives and Admin are deliberately absent — see the header.
  */
 export const SCOPE_AWARE_ROUTES = [
   PORTFOLIO_SUMMARY,
   PORTFOLIO_HOLDINGS,
   PORTFOLIO_WEEKLY_CHANGES,
+  PORTFOLIO_COMPARE,
 ] as const
 
 /** Anything carrying an `id` — the scopes response, or a bare id list in a test. */

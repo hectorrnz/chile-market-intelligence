@@ -66,6 +66,10 @@ const WEEKLY_ROUTE = read('src/app/api/family-portfolio/weekly-changes/[scope]/r
 const PREVIEW_SERVER = read('src/lib/familyPortfolio/importPreviewServer.ts')
 const PREVIEW_LIB = read('src/lib/familyPortfolio/weeklyImportPreview.ts')
 const READ_REPO = read('src/lib/db/repositories/familyPortfolioReadRepository.ts')
+// FOLLOW-UP E — the two surfaces that consume the endpoint sets: the weekly
+// page reads PUBLICATIONS, Compare reads the eligible set.
+const WEEKLY_PAGE = 'src/app/portfolio/weekly-changes/page.tsx'
+const COMPARE_PAGE = 'src/app/portfolio/compare/page.tsx'
 const PUB_REPO = read('src/lib/db/repositories/portfolioPublicationRepository.ts')
 const CARD = read('src/components/familyPortfolio/PeriodValueChangeCard.tsx')
 const RANGE_LIB = read('src/lib/familyPortfolio/valueChangeRange.ts')
@@ -1146,22 +1150,54 @@ describe('follow-up C · row history is never offered as a publication', () => {
     }
   })
 
-  test('Compare still offers PUBLICATIONS only', () => {
-    // The route's `weeks` list — what the client renders in Compare — is built
-    // from the publication spine and nothing else.
+  test('the WEEK selector still offers publications only', () => {
+    // `weeks` is what the weekly page's one control renders. It is built from
+    // the publication spine and nothing else, so a row-history date can never
+    // be picked as though the book had published it.
     assert.match(WEEKLY_ROUTE, /const weeks = spine\.publications\.map/)
     const weeksLine = WEEKLY_ROUTE.slice(
       WEEKLY_ROUTE.indexOf('const weeks = spine.publications.map'),
-      WEEKLY_ROUTE.indexOf('const publication = {'),
+      WEEKLY_ROUTE.indexOf('// ── WHICH DATE CLOSES THE COMPARISON'),
     )
     assert.ok(!weeksLine.includes('rowHistory'))
+    // The weekly page reads exactly that list, and Compare never does.
+    assert.match(read(WEEKLY_PAGE), /weeks=\{data\.weeks\}/)
+    assert.ok(!read(COMPARE_PAGE).includes('data.weeks'))
   })
 
-  test('the CLOSING endpoint is always a real published week', () => {
-    // A row-history date can open a window; it can never close one, because the
-    // closing week is resolved from the publication spine in every branch.
+  test('FOLLOW-UP E — a row-history date may CLOSE a comparison, and is still not a publication', () => {
+    // The asymmetry is gone: the same persisted rows answer a closing endpoint
+    // exactly as completely as an opening one, and limiting the closing side to
+    // publications hid the four most recent reporting weeks of the real book.
+    assert.match(WEEKLY_ROUTE, /getRowHistoryForScope\(scope, closingDate\)/)
+    assert.match(WEEKLY_ROUTE, /closingSource: 'publication' \| 'row_history'/)
+    // What did NOT change: such a date gains no publication bookkeeping. The
+    // response reports a NULL publication rather than inventing a revision, a
+    // published-at or a parser version for a week the book never published.
+    assert.match(WEEKLY_ROUTE, /closingPublication === null\s*\n?\s*\? null/)
+    // And the WEEKLY basis is still resolved from a publication alone — a
+    // row-history closing endpoint can only ever be a period endpoint.
     assert.match(WEEKLY_ROUTE, /selectWeekPair\(spine\.publications/)
-    assert.match(WEEKLY_ROUTE, /selectComparisonRange\(spine\.publications/)
+    assert.match(WEEKLY_ROUTE, /mode === 'weekly' &&\s*\n?\s*hasSourceWeeklyBasis/)
+  })
+
+  test('FOLLOW-UP E — the eligible set is stated once, and refuses rather than substitutes', () => {
+    // THE RULE: a date is an eligible Compare endpoint when the scope has a
+    // complete source-backed row set at it — a current publication, or a frozen
+    // reporting date in row history.
+    assert.match(
+      WEEKLY_ROUTE,
+      /const compareDates = \[\s*\n?\s*\.\.\.new Set\(\[\.\.\.publicationByDate\.keys\(\), \.\.\.rowHistoryDates\]\),\s*\n?\s*\]\.sort\(\)/,
+    )
+    // Both endpoints are checked against it, and a date outside it is refused
+    // by name — never snapped to a nearest one.
+    for (const code of ['from_not_found', 'week_not_found', 'from_not_before_to']) {
+      assert.ok(WEEKLY_ROUTE.includes(`'${code}'`), `the route must refuse with ${code}`)
+    }
+    // Comments STRIPPED: the route says "never a nearest-date guess" in prose,
+    // which is the opposite of the defect and must not trip its own guard.
+    const routeCode = WEEKLY_ROUTE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+    assert.ok(!/nearest|closest/i.test(routeCode), 'no nearest-date substitution anywhere')
   })
 
   test('the response labels a row-history opening as such', () => {
@@ -1236,7 +1272,10 @@ describe('follow-up C · Z — the read-layer guard is preserved', () => {
   })
 
   test('the weekly basis still refuses an impossible anchor at the route', () => {
-    assert.match(WEEKLY_ROUTE, /hasSourceWeeklyBasis\(currentRows\.rows, current\.previousWeekDate, current\.asOfDate\)/)
+    assert.match(
+      WEEKLY_ROUTE,
+      /hasSourceWeeklyBasis\(closingRowSet, closingPublication\.previousWeekDate, closingPublication\.asOfDate\)/,
+    )
   })
 })
 

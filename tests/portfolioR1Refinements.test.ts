@@ -801,7 +801,9 @@ describe('R13.R1 §§ 10-11 — historical backfill', () => {
   })
 
   test('Weekly Changes keeps its publication-only rule — no alternate UI path', () => {
-    const wc = read('src/app/portfolio/weekly-changes/page.tsx')
+    const wc =
+      read('src/app/portfolio/weekly-changes/page.tsx') +
+      read('src/components/familyPortfolio/ChangesSurface.tsx')
     assert.ok(!wc.includes('parseResumen'), 'the page never parses a workbook')
     assert.ok(!wc.includes('publicationColumnLetter'), 'the page never reads workbook columns')
     assert.ok(!/xlsx/i.test(wc))

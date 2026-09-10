@@ -24,7 +24,12 @@ import { reconcileFlowAndProfit } from '../src/lib/familyPortfolio/weeklyChanges
 const ROOT = join(import.meta.dirname, '..')
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
 
+// FOLLOW-UP E — Weekly Changes split into a thin PAGE (header, week
+// control, fetch) and the SHARED `ChangesSurface` that holds everything
+// below it, which `/portfolio/compare` renders too. Assertions about the
+// weekly surface read both halves together.
 const PAGE = 'src/app/portfolio/weekly-changes/page.tsx'
+const SURFACE = 'src/components/familyPortfolio/ChangesSurface.tsx'
 const ROUTE = 'src/app/api/family-portfolio/weekly-changes/[scope]/route.ts'
 // R13.R3C — `ValueChangeWaterfall` and `DivergingBarChart` are both retired.
 // The shared Contributors and Detractors pair replaces them on this page AND
@@ -36,12 +41,12 @@ const RECON = 'src/components/familyPortfolio/ReconciliationStatus.tsx'
 const DATA_HELPER = 'src/lib/data/familyPortfolio.ts'
 const PURE_MODULE = 'src/lib/familyPortfolio/weeklyChanges.ts'
 
-const STAGE8_UI_FILES = [PAGE, CONTRIB, MODAL, RECON]
+const STAGE8_UI_FILES = [PAGE, SURFACE, CONTRIB, MODAL, RECON]
 
 /** Strips comments so hygiene regexes cannot be tripped by prose. */
 const codeOf = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
 
-const page = read(PAGE)
+const page = `${read(PAGE)}\n${read(SURFACE)}`
 const route = read(ROUTE)
 const contrib = read(CONTRIB)
 const modal = read(MODAL)
@@ -63,9 +68,13 @@ const wEs = dict.es.fp.weeklyChanges
  */
 function ledgerRegion(page: string): string {
   const memoAt = page.indexOf('THE RECONCILIATION LEDGER, CHOSEN BY MODE')
-  const cardEnd = page.indexOf('item 4 · RETIRED')
   const memo = memoAt >= 0 ? page.slice(memoAt, page.indexOf('const reclassifications')) : ''
-  const card = page.slice(page.indexOf('w.periodReconTitle : w.flowReconTitle'), cardEnd)
+  // FOLLOW-UP E — the card runs from the ledger heading to the toolbar that
+  // opens the movers region below it.
+  const card = page.slice(
+    page.indexOf('{labels.reconTitle}'),
+    page.indexOf('§ 6h item 5 · ranked panels'),
+  )
   return memo + card
 }
 
@@ -83,21 +92,25 @@ describe('R13.8 · § 6h page order', () => {
       // R13.R3C.4 — item 2 is the HERO alone: the *Total-level weekly metrics*
       // card that used to follow it is deleted, so the hero's own label is the
       // section's marker.
-      'w.weeklyValueChange', // 2 · total-level weekly metrics
-      // FOLLOW-UP D — the heading is chosen by mode, so the marker is the
-      // expression rather than the weekly key alone.
-      'w.periodReconTitle : w.flowReconTitle', // 3 · flow / result reconciliation
+      // FOLLOW-UP E — every interval-dependent title now resolves through the
+      // ONE presentation contract, so the marker is the contract field rather
+      // than a dictionary key one of the two modes would not use.
+      'labels.valueChange', // 2 · total-level metrics (the hero)
+      'labels.reconTitle', // 3 · flow / result reconciliation
       // 4 · RETIRED — see `R13.R3B.1 · the waterfall is retired from this page`
-      'w.increasesTitle', // 5a · Largest Weekly Value Increases
-      'w.decreasesTitle', // 5b · Largest Weekly Value Decreases
-      'w.hierarchyTitle', // 6 · Weekly Value Change by Portfolio Hierarchy
-      'w.fullTableTitle', // 7 · full changes table
+      'labels.increasesTitle', // 5a · Largest … Value Increases
+      'labels.decreasesTitle', // 5b · Largest … Value Decreases
+      'labels.hierarchyTitle', // 6 · … Value Change by Portfolio Hierarchy
+      'labels.fullTableTitle', // 7 · full changes table
       // 8 · RETIRED (R13.R3C.2) — see `the historical trend chart is retired`
       'w.statusTitle', // 9 · freshness, statuses, sources
       'w.methodologyTitle', // 9 · persistent methodology note
     ]
-    // Skip imports/helpers: measure inside the page component body.
-    const body = page.slice(page.indexOf('function WeeklyChangesPageInner'))
+    // Skip imports/helpers: measure inside the two component bodies, in the
+    // order they render — the page's header first, then the shared surface.
+    const body =
+      read(PAGE).slice(read(PAGE).indexOf('function WeeklyChangesPageInner')) +
+      read(SURFACE).slice(read(SURFACE).indexOf('export function ChangesSurface'))
     let cursor = -1
     for (const marker of markers) {
       const at = body.indexOf(marker)
@@ -110,14 +123,15 @@ describe('R13.8 · § 6h page order', () => {
   test('a single (scope, week) selection drives every section — one fetch, no per-section week', () => {
     const body = codeOf(page)
     const calls = body.match(/fetchFamilyPortfolioWeeklyChanges\(/g) ?? []
-    // One import-free call site: a single effect keyed on the whole selection.
-    // R13.R1.1 § 13 widened that selection to include the custom range's FROM
-    // endpoint; the invariant under test is that there is still exactly ONE
-    // effect and ONE fetch driving every section, not that the key has two
-    // members.
+    // One call site: a single effect keyed on the whole selection.
+    // FOLLOW-UP E narrowed that selection back to (scope, week): the arbitrary
+    // range left this page for `/portfolio/compare`, which owns its own fetch.
+    // The invariant is unchanged — ONE effect, ONE fetch, every section.
     assert.equal(calls.length, 1, 'exactly one fetch call site')
-    assert.match(body, /useEffect\(\(\) => \{[\s\S]*?\}, \[activeScope, asOf, compareFrom\]\)/)
+    assert.match(body, /useEffect\(\(\) => \{[\s\S]*?\}, \[activeScope, asOf\]\)/)
     assert.equal((body.match(/useEffect\(/g) ?? []).length, 1, 'exactly one effect')
+    // The shared surface fetches nothing at all: it is handed a loaded response.
+    assert.ok(!/fetch|useEffect/.test(codeOf(read(SURFACE))), 'the surface never fetches')
     // No component holds its own week: the chart/status components never fetch.
     for (const rel of [CONTRIB, MODAL, RECON]) {
       assert.ok(!/fetch\(/.test(codeOf(read(rel))), `${rel} must not fetch`)
@@ -201,11 +215,10 @@ describe('R13.R3B.1 / R13.R3C · the waterfall is retired, everywhere', () => {
   test('everything the owner asked to preserve is still on the page', () => {
     for (const marker of [
       'WeekSelector', // week selection
-      'compareFrom', // weekly vs custom comparison semantics
-      'w.increasesTitle', // Largest Weekly Value Increases
-      'w.decreasesTitle', // Largest Weekly Value Decreases
-      'w.hierarchyTitle', // change hierarchy
-      'w.fullTableTitle', // full changes table
+      'labels.increasesTitle', // Largest … Value Increases
+      'labels.decreasesTitle', // Largest … Value Decreases
+      'labels.hierarchyTitle', // change hierarchy
+      'labels.fullTableTitle', // full changes table
       'TableSourceFooter', // source / provenance
       'w.methodologyTitle', // methodology
     ]) {
@@ -240,10 +253,16 @@ describe('R13.8 · § 4.2 vocabulary', () => {
     assert.equal(wEn.title, 'Weekly Changes')
     assert.equal(wEs.title, 'Cambios Semanales')
     assert.equal(wEn.hierarchyTitle, 'Weekly Value Change by Portfolio Hierarchy')
-    // The page renders the exact hierarchy/ranked titles from the dict.
-    assert.match(page, /\{w\.hierarchyTitle\}/)
-    assert.match(page, /\{w\.increasesTitle\}|title=\{w\.increasesTitle\}/)
-    assert.match(page, /title=\{w\.decreasesTitle\}/)
+    // The surface renders the exact hierarchy/ranked titles the WEEKLY branch of
+    // the presentation contract resolves — which are these dictionary keys.
+    assert.match(page, /\{labels\.hierarchyTitle\}/)
+    assert.match(page, /title=\{labels\.increasesTitle\}/)
+    assert.match(page, /title=\{labels\.decreasesTitle\}/)
+    const contract = read('src/lib/familyPortfolio/changesPresentation.ts')
+    const weekly = contract.slice(contract.indexOf('  return {\n    title: w.title,'))
+    for (const key of ['hierarchyTitle: w.hierarchyTitle', 'increasesTitle: w.increasesTitle', 'decreasesTitle: w.decreasesTitle']) {
+      assert.ok(weekly.includes(key), `the weekly branch must resolve ${key}`)
+    }
   })
 
   test('Impact on Portfolio Value renders under its own label, never as a return figure', () => {
@@ -371,7 +390,7 @@ describe('R13.8 · § 4.2 vocabulary', () => {
     const table = page.slice(page.indexOf('§ 6h item 7'))
     assert.ok(!table.includes('w.statusColumn'), 'no Status header renders')
     assert.match(table, /\{w\.statusUnavailable\}/)
-    assert.match(table, /reasonText\(n\.unavailableReason, w\)/)
+    assert.match(table, /reasonText\(n\.unavailableReason, labels, w\)/)
     // Six columns now, header and body agreeing — one fewer than before.
     assert.equal((table.match(/<th className=\{`\$\{TH\}/g) ?? []).length, 6)
     assert.equal((table.match(/<td className=\{`\$\{CELL\}/g) ?? []).length, 6)
@@ -419,7 +438,9 @@ describe('R13.8 · § 4.2 vocabulary', () => {
   })
 
   test('the hierarchy chart is captioned with the § 4.2 contribution term — a value change, not a return', () => {
-    assert.match(page, /\{w\.contribution\}/)
+    assert.match(page, /\{labels\.hierarchySubtitle\}/)
+    const contract = read('src/lib/familyPortfolio/changesPresentation.ts')
+    assert.match(contract, /hierarchySubtitle: w\.contribution/)
   })
 })
 
@@ -449,18 +470,24 @@ describe('R13.8 · § 4.3 forbidden vocabulary', () => {
   test('the REQUIRED § 7.3 negation is the ONLY place "return contribution" may appear', () => {
     // Doc 07 § 7.3 mandates the methodology note state plainly that these are
     // "value changes, not return contributions" — a negation, never a label.
+    // FOLLOW-UP E — the period surface states the same negation over its own
+    // interval, so BOTH methodology-level statements are permitted and each must
+    // carry the negation rather than the label.
+    const ALLOWED = new Set(['methodologyLevel', 'periodMethodologyLevel'])
     for (const [key, value] of Object.entries(wEn)) {
       if (/return contribution/i.test(String(value))) {
-        assert.equal(key, 'methodologyLevel')
+        assert.ok(ALLOWED.has(key), `${key} may not carry the phrase`)
         assert.match(String(value), /not a return contribution/)
       }
     }
     for (const [key, value] of Object.entries(wEs)) {
       if (/contribuci[oó]n al retorno/i.test(String(value))) {
-        assert.equal(key, 'methodologyLevel')
+        assert.ok(ALLOWED.has(key), `${key} may not carry the phrase`)
         assert.match(String(value), /no una contribución al retorno/)
       }
     }
+    assert.match(wEn.periodMethodologyLevel, /not a return contribution/)
+    assert.match(wEs.periodMethodologyLevel, /no una contribución al retorno/)
     assert.match(wEn.methodologyLevel, /not a return contribution/)
     assert.match(wEs.methodologyLevel, /no una contribución al retorno/)
   })
@@ -556,7 +583,9 @@ describe('R13.8 · cash toggle', () => {
     assert.match(page, /type="checkbox"/)
     assert.match(page, /checked=\{includeCash\}/)
     assert.match(page, /\{w\.cashToggleLabel\}/)
-    assert.match(page, /\{w\.cashWhy\}/)
+    // FOLLOW-UP E — the economics are the same in both modes; the sentence names
+    // WHEN, so it resolves through the contract.
+    assert.match(page, /\{labels\.cashWhy\}/)
     assert.match(page, /ranked\.cashRowCount > 0/)
     assert.match(page, /\{w\.cashWithheldSuffix\}/)
     assert.match(page, /\{w\.cashIncludedNote\}/)
@@ -594,7 +623,7 @@ describe('R13.8 · View All Changes', () => {
   })
 
   test('unavailable rows carry a visible textual state with the reason — never a fabricated zero', () => {
-    assert.match(page, /reasonText\(n\.unavailableReason, w\)/)
+    assert.match(page, /reasonText\(n\.unavailableReason, labels, w\)/)
     assert.match(page, /\{w\.statusUnavailable\}/)
     assert.ok(!/weeklyValueChange \?\? 0|change \?\? 0/.test(codeOf(page)),
       'an unavailable change must never be coalesced to zero')
@@ -621,7 +650,7 @@ describe('R13.8 · honest states', () => {
 
   test('no_previous_week is an explanation, not an error — and no zero-change page is synthesised', () => {
     const at = page.indexOf("state === 'no_previous_week'")
-    const block = page.slice(at, page.indexOf('showSections ?'))
+    const block = page.slice(at, page.indexOf('showSections && activeScope ?'))
     assert.match(block, /kind="empty"/)
     assert.ok(!/kind="error"/.test(block), 'the earliest week is not an error')
     assert.match(block, /\{w\.noPreviousWeek\}/)
@@ -631,8 +660,11 @@ describe('R13.8 · honest states', () => {
   })
 
   test('the pair disclosure names both real published dates — never an implied seven-day gap', () => {
-    assert.match(page, /formatIsoDateLabel\(prevPub\.asOfDate\)/)
-    assert.match(page, /\{w\.pairNote\}/)
+    // FOLLOW-UP E — both endpoint dates come from the server's own answer, named
+    // by the contract's endpoint labels rather than by a weekly-only key.
+    assert.match(page, /\{labels\.openingLabel\}: \{formatIsoDateLabel\(openingDate\)\}/)
+    assert.match(page, /\{labels\.closingLabel\}:\{' '\}\s*\n?\s*\{formatIsoDateLabel\(closingDate\)\}/)
+    assert.match(page, /w\.pairNote/)
     assert.match(wEn.pairNote, /not necessarily seven calendar days earlier/)
     assert.match(wEs.pairNote, /no necesariamente siete días calendario antes/)
   })
@@ -701,26 +733,31 @@ describe('R13.8 · privacy', () => {
   test('R13.R3C.4 — the ledger reads opening → made → moved → closing, and states nothing else', () => {
     const ledger = ledgerRegion(page)
     assert.ok(ledger.length > 0, 'the reconciliation card exists')
-    const order = ['w.previousValueLabel', 'o.weeklyProfit', 'w.flowLabel', 'w.endingValueLabel']
-    let cursor = -1
-    for (const marker of order) {
-      const at = ledger.indexOf(marker)
-      assert.ok(at >= 0, `${marker} is a row of the ledger`)
-      assert.ok(at > cursor, `${marker} must follow the previous ledger row`)
-      cursor = at
+    // FOLLOW-UP E — the four rows are named by the presentation contract, so
+    // ONE ordered list covers both modes and neither can gain a fifth term or
+    // reorder its own. The interval-specific words are checked in the contract.
+    const order = ['labels.reconOpening', 'labels.reconProfit', 'labels.reconFlow', 'labels.reconClosing']
+    for (const branch of [0, 1]) {
+      let cursor = branch === 0 ? -1 : ledger.indexOf('labels.reconClosing')
+      for (const marker of order) {
+        const at = ledger.indexOf(marker, cursor + 1)
+        assert.ok(at >= 0, `${marker} is a row of ledger branch ${branch}`)
+        assert.ok(at > cursor, `${marker} must follow the previous ledger row`)
+        cursor = at
+      }
     }
-    // FOLLOW-UP D — TWO ledgers of exactly four rows each: the weekly one
-    // above, and the PERIOD one a custom range reads instead. Each closes with
-    // its line set off as the SUM of the three above it, never a fifth term.
-    assert.equal((ledger.match(/\{ label: [wo]\./g) ?? []).length, 8)
+    // TWO branches of exactly four rows each: the weekly ledger, and the PERIOD
+    // one. Each closes with its line set off as the SUM of the three above it.
+    assert.equal((ledger.match(/label: labels\.recon/g) ?? []).length, 8)
     assert.equal((ledger.match(/divider: true/g) ?? []).length, 2)
-    const periodOrder = ['w.periodFromLabel', 'w.periodProfit', 'w.periodFlow', 'w.periodToLabel']
-    let periodCursor = -1
-    for (const marker of periodOrder) {
-      const at = ledger.indexOf(marker)
-      assert.ok(at >= 0, `${marker} is a row of the period ledger`)
-      assert.ok(at > periodCursor, `${marker} must follow the previous period row`)
-      periodCursor = at
+    const contract = read('src/lib/familyPortfolio/changesPresentation.ts')
+    for (const pair of [
+      'reconOpening: w.periodFromLabel', 'reconProfit: w.periodProfit',
+      'reconFlow: w.periodFlow', 'reconClosing: w.periodToLabel',
+      'reconOpening: w.previousValueLabel', 'reconProfit: o.weeklyProfit',
+      'reconFlow: w.flowLabel', 'reconClosing: w.endingValueLabel',
+    ]) {
+      assert.ok(contract.includes(pair), `the contract must resolve ${pair}`)
     }
     // Every ledger amount goes through the mask; none through formatUsd.
     assert.ok(!ledger.includes('formatUsd('), 'the ledger never formats an amount itself')
@@ -728,9 +765,9 @@ describe('R13.8 · privacy', () => {
 
     // THE YEAR IS NOT ON THIS PAGE. Both YTD figures went with the metrics
     // card; Summary reports them over a period the reader chooses.
-    const body = page.slice(page.indexOf('function WeeklyChangesPageInner'))
+    const body = read(SURFACE).slice(read(SURFACE).indexOf('export function ChangesSurface'))
     for (const dead of ['o.ytdProfit', 'o.ytdReturn', 'w.totalsTitle']) {
-      assert.ok(!body.includes(dead), `${dead} must not render on the weekly page`)
+      assert.ok(!body.includes(dead), `${dead} must not render on either surface`)
     }
     // And the dead copy is removed from the dictionary, never left orphaned.
     for (const lang of [dict.en, dict.es]) {
@@ -748,7 +785,7 @@ describe('R13.8 · privacy', () => {
     // the identity because the card stopped printing it.
     assert.match(route, /reconcileFlowAndProfit\(/)
     assert.match(route, /flowReconciliation/)
-    assert.match(page, /const flowRecon = data\?\.flowReconciliation \?\? null/)
+    assert.match(page, /const flowRecon = data\.flowReconciliation \?\? null/)
     // The two figures are gone from the CARD…
     const ledger = ledgerRegion(page)
     assert.ok(!/expectedCurrent/.test(ledger), 'the implied value is no longer printed')
@@ -760,7 +797,7 @@ describe('R13.8 · privacy', () => {
     // amount, so the note above it can never assert an identity the rows deny.
     // FOLLOW-UP D — the weekly residual note is now explicitly weekly-only; a
     // custom range gets its own cross-check line instead.
-    assert.match(page, /!isCustomRange && flowRecon\?\.status === 'residual'/)
+    assert.match(page, /!isPeriod && flowRecon\?\.status === 'residual'/)
     assert.match(page, /periodPerf\?\.profitCrossCheck === 'mismatch'/)
     assert.match(page, /\{w\.flowReconResidual\}/)
   })
@@ -920,7 +957,10 @@ describe('R13.R3C · hierarchy drill-down is a popup, not a breadcrumb', () => {
   test('a new (scope, week) request resets the subject and closes the popup', () => {
     assert.match(page, /setSubjectKey\(COMBINED_SUBJECT\)/)
     assert.match(page, /setOpenKey\(null\)/)
-    assert.match(page, /prevRequestKey !== requestKey/)
+    // FOLLOW-UP E — the surface keys the reset on the COMPARISON itself (scope
+    // plus both endpoint dates) rather than on the page's request key, so it
+    // works identically whichever page rendered it.
+    assert.match(page, /prevComparison !== comparisonKey/)
   })
 })
 
@@ -945,7 +985,7 @@ describe('R13.8 · responsive & accessibility', () => {
     assert.match(page, /grid-cols-1 xl:grid-cols-\[minmax\(0,1fr\)_minmax\(0,1\.15fr\)\] gap-4 items-stretch/)
     assert.match(page, /minWidth=\{760\}/)
     assert.match(page, /maxHeight=\{640\}/)
-    assert.match(read(PAGE), /minWidth=\{560\}/)
+    assert.match(read(SURFACE), /minWidth=\{560\}/)
   })
 
   test('R13.R3C.4 — the divider is VERTICAL on a wide card and horizontal once it stacks', () => {
@@ -964,10 +1004,10 @@ describe('R13.8 · responsive & accessibility', () => {
     // utility anywhere in this block would mean the seen order and the read
     // order can disagree — for a screen reader, a keyboard, or print.
     assert.ok(!/xl:order-[12]/.test(page), 'no order utility reverses the two halves')
-    const hero = page.indexOf('isCustomRange ? w.customTitle : w.weeklyValueChange')
-    const ledger = page.indexOf('w.periodReconTitle : w.flowReconTitle')
+    const hero = page.indexOf('label={labels.valueChange}')
+    const ledger = page.indexOf('{labels.reconTitle}')
     assert.ok(hero > 0 && ledger > 0)
-    assert.ok(hero < ledger, 'the Weekly Value Change headline precedes the reconciliation')
+    assert.ok(hero < ledger, 'the value-change headline precedes the reconciliation')
   })
 
   test('post-R13.8 — the headline is vertically centred while its text stays left-aligned', () => {
@@ -979,7 +1019,7 @@ describe('R13.8 · responsive & accessibility', () => {
     assert.match(page, heroClass)
     const block = page.slice(
       page.indexOf('grid-cols-1 xl:grid-cols-[minmax(0,0.8fr)_1fr]'),
-      page.indexOf('isCustomRange ? w.periodReconNote : w.flowReconNote'),
+      page.indexOf('{labels.reconNote}'),
     )
     assert.ok(!/text-center/.test(block), 'the headline block never centres its text')
     assert.ok(!/items-center/.test(block), 'no cross-axis centring turns the left-aligned text central')
@@ -1081,7 +1121,7 @@ describe('R13.8 · route and boundaries', () => {
     // ROW SET - the source's own previous-week column in weekly mode, a second
     // publication's rows in custom mode - but it is still the SAME pure helper,
     // and it still fails closed on a missing or currency-changed bound row.
-    assert.match(route, /resolvePreviousPortfolioTotal\(currentRows\.rows, previousRowSet, boundKey\)/)
+    assert.match(route, /resolvePreviousPortfolioTotal\(closingRowSet, previousRowSet, boundKey\)/)
   })
 
   test('Stage 8 never touches the Alternatives surface, even now that Stage 9 exists', () => {
@@ -1111,7 +1151,13 @@ describe('R13.8 · route and boundaries', () => {
 
 describe('R13.8 · methodology & i18n', () => {
   test('the methodology note is persistent — all five statements always render, never a tooltip', () => {
-    assert.match(page, /\[w\.methodologyLevel, w\.methodologyPair, w\.methodologyImpact, w\.methodologyDrivers, w\.methodologyCash\]/)
+    // FOLLOW-UP E — three of the five name an interval and resolve through the
+    // contract; two are interval-independent and stay dictionary reads. All five
+    // still render, always, as list items.
+    assert.match(
+      page,
+      /labels\.methodologyLevel,\s*\n?\s*labels\.methodologyPair,\s*\n?\s*labels\.methodologyImpact,\s*\n?\s*w\.methodologyDrivers,\s*\n?\s*w\.methodologyCash,/,
+    )
     // Rendered as list items in the flow of section 9 — not inside a title.
     assert.ok(!/title=\{w\.methodology/.test(page))
   })

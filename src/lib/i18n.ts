@@ -264,6 +264,10 @@ export const dict = {
       navOverview:    'Summary',
       navPortfolio:   'Holdings',
       navWeeklyChanges: 'Weekly Changes',
+      // FOLLOW-UP E — Compare is its own surface, directly beside Weekly
+      // Changes: the same page composition over a period the reader picks,
+      // rather than a mode hidden behind a switch on a weekly page.
+      navCompare:     'Compare',
       navAlternatives:  'Alternatives',
       navAdmin:       'Admin',
       /** `{scope}` is the server-supplied scope label; word order differs by language. */
@@ -451,6 +455,11 @@ export const dict = {
         colBoY:       'Beginning of Year',
         colPrev:      'Previous Week',
         colThis:      'This Week',
+        // FOLLOW-UP E — Compare's own two value columns. A period listing
+        // that said "Previous Week / This Week" would name the wrong
+        // interval for every figure beneath it.
+        colFrom:      'From Value',
+        colTo:        'To Value',
         colDiff:      'Difference',
         valuesInUsd:  'Values in USD',
         diffNote:     'Difference = This Week − Previous Week, computed by NMI from the two published columns.',
@@ -849,18 +858,15 @@ export const dict = {
         pairNote:           'Compared against the immediately preceding published week — not necessarily seven calendar days earlier.',
         sourcePairNote:     'Compared against the week the source itself closed immediately before this one — one week, taken from this week’s own published record.',
         weeklyOpeningUnpublished:
-                            'That week is part of the book’s history but has no published snapshot of its own, so it cannot be chosen as a Compare endpoint. Compare offers published weeks only.',
-        // R13.R1.1 § 13 — a custom range is never titled a "Weekly Change".
-        compareModeLabel:   'Comparison',
-        compareCustom:      'Custom range',
-        // The switch that hands both endpoints to the reader. Off, the page is
-        // the standard weekly comparison and both dates are read-only; the old
-        // "Weekly" pseudo-range option is gone with the dropdown that held it.
-        compareToggle:      'Compare',
+                            'That week is part of the book’s history but has no published snapshot of its own; this comparison is read from the selected week’s own published record.',
+        // FOLLOW-UP E — the compare SWITCH is gone, with the mode it toggled.
+        // Weekly Changes is one source week and holds no range; Compare is its
+        // own route, and being on it already means a period. What survives is
+        // the two endpoint NAMES, which Compare's own selectors carry.
         compareFrom:        'From',
         compareTo:          'To',
         customTitle:        'Portfolio Value Change',
-        customPairNote:     'A custom range between two published weeks. Both endpoints are weeks the book actually holds — no nearest-date substitution.',
+        customPairNote:     'Values are compared between two source-backed reporting dates. Period flows and investment results accumulate across every source reporting interval after the From date through the To date. Both endpoints are dates the book actually holds — there is no nearest-date substitution.',
         customFlowNote:     'Net flows and investment result are accumulated across every source reporting interval after the From date and through the To date. The From week’s own flow already sits inside the From portfolio value and is not counted again.',
         // FOLLOW-UP D -- the PERIOD vocabulary. Compare mode is not a weekly
         // view, so nothing here says "week": a custom range that called itself a
@@ -878,7 +884,38 @@ export const dict = {
         periodReturnUnavailable: 'Period return is unavailable: the source did not state a weekly return for every reporting interval in this range.',
         periodReturnNote:   'The period return compounds the source’s own weekly returns, so a contribution or withdrawal made during the period does not distort it.',
         periodIntervals:    'source reporting intervals',
-        rangeInvalid:       'Select an earlier published week to compare from.',
+        // ── FOLLOW-UP E · THE REST OF THE PERIOD LEXICON ──────────────────
+        // Compare is the Weekly Changes composition over a period, so every
+        // block it shares needs its own interval-correct name. These are not
+        // decorative renames: a ranked panel headed "Largest Weekly Value
+        // Increases" over a five-month range states the wrong interval for
+        // every figure under it.
+        periodValueChange:  'Period Value Change',
+        periodIncreasesTitle: 'Largest Period Value Increases',
+        periodDecreasesTitle: 'Largest Period Value Decreases',
+        periodNoIncreases:  'No qualifying increases over the selected period.',
+        periodNoDecreases:  'No qualifying decreases over the selected period.',
+        periodRankNote:     'Ranked by absolute dollar Period Value Change; the row\'s own % change is secondary context. Up to five rows; never padded.',
+        periodCashWhy:      'Caja y Equivalentes absorbs deposits and withdrawals before they are deployed, so it is excluded from these rankings by default — including it would present money moving in or out over the period as a portfolio event.',
+        periodHierarchyTitle: 'Period Value Change by Portfolio Hierarchy',
+        periodContribution: 'Contribution to Portfolio Value Change over the selected period',
+        periodFullTableTitle: 'All Period Value Changes',
+        periodReasonMissingCurrent:  'No source-backed value at the To date.',
+        periodReasonMissingPrevious: 'No source-backed value at the From date.',
+        periodReasonMissingBoth:     'No source-backed value at either endpoint.',
+        periodMethodologyLevel: 'Below the portfolio total, every figure on this page is a dollar value change between the two endpoints, not a return contribution — the source provides no per-asset flows, so per-asset returns are not derivable.',
+        periodMethodologyPair:  'Both endpoints are source-backed reporting dates the book actually holds, and neither is snapped to a nearest date. NMI recomputes each change from the two sets of source-backed values, never from the workbook\'s own difference column.',
+        periodMethodologyImpact: 'Impact on Portfolio Value is a row\'s dollar change divided by the portfolio total at the From date. It does not measure the row\'s own return.',
+        // The state Preview is in until the analytical-history migration is
+        // applied: the two portfolio values and every row change are real, and
+        // only the three period aggregates are missing. Said plainly, because a
+        // reconciliation whose rows simply vanished would be indistinguishable
+        // from a page that had decided the period did not reconcile.
+        periodHistoryUnavailable: 'Period net flows, result and return are unavailable: the source-backed weekly performance history this range needs has not been loaded for this portfolio yet. The two portfolio values and every row change on this page are unaffected.',
+        compareTitle:       'Compare',
+        compareEndpointsNote: 'The endpoints offered are the reporting dates this portfolio holds complete source-backed values for. A date the book does not hold is never offered and never substituted.',
+        compareNeedsTwo:    'This portfolio has only one source-backed reporting date, so there is nothing to compare it against.',
+        compareFromAfterTo: 'The From date must be earlier than the To date.',
         newPosition:        'New position',
         exitedPosition:     'Exited position',
         lifecycleNote:      'A position held in only one of the two weeks is compared against zero — established because a published snapshot contains every row the portfolio held that week.',
@@ -2433,6 +2470,7 @@ export const dict = {
       navOverview:    'Resumen',
       navPortfolio:   'Posiciones',
       navWeeklyChanges: 'Cambios Semanales',
+      navCompare:     'Comparar',
       navAlternatives:  'Alternativos',
       navAdmin:       'Admin',
       scopeHeading:   'PORTAFOLIO {scope}',
@@ -2572,6 +2610,8 @@ export const dict = {
         colBoY:       'Inicio de Año',
         colPrev:      'Semana Anterior',
         colThis:      'Esta Semana',
+        colFrom:      'Valor Desde',
+        colTo:        'Valor Hasta',
         colDiff:      'Diferencia',
         valuesInUsd:  'Valores en USD',
         diffNote:     'Diferencia = Esta Semana − Semana Anterior, calculada por NMI a partir de las dos columnas publicadas.',
@@ -2825,14 +2865,11 @@ export const dict = {
         pairNote:           'Comparado contra la semana publicada inmediatamente anterior — no necesariamente siete días calendario antes.',
         sourcePairNote:     'Comparado contra la semana que la propia fuente cerró inmediatamente antes de esta — una semana, tomada del registro publicado de esta misma semana.',
         weeklyOpeningUnpublished:
-                            'Esa semana forma parte del historial del libro pero no tiene una publicación propia, por lo que no puede elegirse como extremo en Comparar. Comparar ofrece solo semanas publicadas.',
-        compareModeLabel:   'Comparación',
-        compareCustom:      'Rango personalizado',
-        compareToggle:      'Comparar',
+                            'Esa semana forma parte del historial del libro pero no tiene una publicación propia; esta comparación se lee del registro publicado de la propia semana seleccionada.',
         compareFrom:        'Desde',
         compareTo:          'Hasta',
         customTitle:        'Variación del Valor del Portafolio',
-        customPairNote:     'Un rango personalizado entre dos semanas publicadas. Ambos extremos son semanas que el libro efectivamente contiene — sin sustitución por fecha más cercana.',
+        customPairNote:     'Los valores se comparan entre dos fechas de reporte respaldadas por la fuente. Los flujos y resultados de inversión del período se acumulan a través de cada intervalo de reporte de la fuente posterior a la fecha Desde y hasta la fecha Hasta. Ambos extremos son fechas que el libro efectivamente contiene — no hay sustitución por fecha más cercana.',
         customFlowNote:     'Los flujos netos y el resultado de inversión se acumulan a través de cada intervalo de reporte de la fuente posterior a la fecha Desde y hasta la fecha Hasta. El flujo de la propia semana Desde ya está contenido en el valor del portafolio Desde y no se cuenta de nuevo.',
         periodReconTitle:   'Conciliación de flujos y resultado de inversión',
         periodFromLabel:    'Valor del Portafolio Desde',
@@ -2847,7 +2884,27 @@ export const dict = {
         periodReturnUnavailable: 'El retorno del período no está disponible: la fuente no declaró un retorno semanal para cada intervalo de reporte de este rango.',
         periodReturnNote:   'El retorno del período encadena los retornos semanales de la propia fuente, de modo que un aporte o retiro realizado durante el período no lo distorsiona.',
         periodIntervals:    'intervalos de reporte de la fuente',
-        rangeInvalid:       'Seleccione una semana publicada anterior para comparar.',
+        periodValueChange:  'Variación de Valor del Período',
+        periodIncreasesTitle: 'Mayores Aumentos de Valor del Período',
+        periodDecreasesTitle: 'Mayores Disminuciones de Valor del Período',
+        periodNoIncreases:  'Sin aumentos que califiquen en el período seleccionado.',
+        periodNoDecreases:  'Sin disminuciones que califiquen en el período seleccionado.',
+        periodRankNote:     'Ordenado por Variación de Valor del Período absoluta en dólares; la variación % propia de la fila es contexto secundario. Hasta cinco filas; nunca se rellena.',
+        periodCashWhy:      'Caja y Equivalentes absorbe aportes y retiros antes de ser desplegados, por lo que se excluye de estos rankings por defecto — incluirla presentaría el dinero que entró o salió durante el período como si fuera un evento del portafolio.',
+        periodHierarchyTitle: 'Variación de Valor del Período por Jerarquía del Portafolio',
+        periodContribution: 'Contribución a la Variación del Valor del Portafolio en el período seleccionado',
+        periodFullTableTitle: 'Todas las Variaciones de Valor del Período',
+        periodReasonMissingCurrent:  'Sin valor respaldado por la fuente en la fecha Hasta.',
+        periodReasonMissingPrevious: 'Sin valor respaldado por la fuente en la fecha Desde.',
+        periodReasonMissingBoth:     'Sin valor respaldado por la fuente en ninguno de los dos extremos.',
+        periodMethodologyLevel: 'Bajo el total del portafolio, cada cifra de esta página es una variación de valor en dólares entre los dos extremos, no una contribución al retorno — la fuente no provee flujos por activo, por lo que los retornos por activo no son derivables.',
+        periodMethodologyPair:  'Ambos extremos son fechas de reporte respaldadas por la fuente que el libro efectivamente contiene, y ninguno se ajusta a una fecha más cercana. NMI recalcula cada variación a partir de los dos conjuntos de valores respaldados por la fuente, nunca desde la columna de diferencias de la propia planilla.',
+        periodMethodologyImpact: 'El Impacto en el Valor del Portafolio es la variación en dólares de una fila dividida por el total del portafolio en la fecha Desde. No mide el retorno propio de la fila.',
+        periodHistoryUnavailable: 'Los flujos netos, el resultado y el retorno del período no están disponibles: el historial semanal de desempeño respaldado por la fuente que este rango necesita aún no ha sido cargado para este portafolio. Los dos valores del portafolio y cada variación de fila de esta página no se ven afectados.',
+        compareTitle:       'Comparar',
+        compareEndpointsNote: 'Los extremos ofrecidos son las fechas de reporte para las cuales este portafolio tiene valores completos respaldados por la fuente. Una fecha que el libro no contiene nunca se ofrece ni se sustituye.',
+        compareNeedsTwo:    'Este portafolio tiene solo una fecha de reporte respaldada por la fuente, por lo que no hay nada con qué compararla.',
+        compareFromAfterTo: 'La fecha Desde debe ser anterior a la fecha Hasta.',
         newPosition:        'Posición nueva',
         exitedPosition:     'Posición vendida',
         lifecycleNote:      'Una posición mantenida en solo una de las dos semanas se compara contra cero — establecido porque una instantánea publicada contiene todas las filas que el portafolio tenía esa semana.',

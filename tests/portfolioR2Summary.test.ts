@@ -1138,7 +1138,11 @@ describe('R13.R2 · regression', () => {
   test('Alternatives and Weekly Changes pages were not redesigned', () => {
     for (const p of [
       'src/app/portfolio/alternatives/page.tsx',
+      // FOLLOW-UP E — Weekly Changes is a thin page over a shared surface;
+      // both halves must stay clear of the Summary's composition.
       'src/app/portfolio/weekly-changes/page.tsx',
+      'src/components/familyPortfolio/ChangesSurface.tsx',
+      'src/app/portfolio/compare/page.tsx',
     ]) {
       const src = read(p)
       // R13.R2F5 § C is the first R13.R2-series change these two pages have

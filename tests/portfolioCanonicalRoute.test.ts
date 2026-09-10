@@ -45,6 +45,7 @@ import {
   PORTFOLIO_SUMMARY,
   PORTFOLIO_HOLDINGS,
   PORTFOLIO_WEEKLY_CHANGES,
+  PORTFOLIO_COMPARE,
   PORTFOLIO_ADMIN,
   SCOPE_AWARE_ROUTES,
   SCOPE_PARAM,
@@ -80,6 +81,8 @@ const CANONICAL_ROUTES = [
   PORTFOLIO_SUMMARY,
   PORTFOLIO_HOLDINGS,
   PORTFOLIO_WEEKLY_CHANGES,
+  // FOLLOW-UP E — Compare sits directly beside Weekly Changes in the rail.
+  PORTFOLIO_COMPARE,
   ALTERNATIVES_ROOT,
   ALTERNATIVES_HOLDINGS,
   ALTERNATIVES_CASH_FLOWS,
@@ -454,6 +457,7 @@ describe('POST-R13.5 · the canonical route map is real and consistently named',
       [PORTFOLIO_SUMMARY, 'src/app/portfolio/page.tsx'],
       [PORTFOLIO_HOLDINGS, 'src/app/portfolio/holdings/page.tsx'],
       [PORTFOLIO_WEEKLY_CHANGES, 'src/app/portfolio/weekly-changes/page.tsx'],
+      [PORTFOLIO_COMPARE, 'src/app/portfolio/compare/page.tsx'],
       [ALTERNATIVES_ROOT, 'src/app/portfolio/alternatives/page.tsx'],
       [ALTERNATIVES_HOLDINGS, 'src/app/portfolio/alternatives/holdings/page.tsx'],
       [ALTERNATIVES_CASH_FLOWS, 'src/app/portfolio/alternatives/cash-flows/page.tsx'],
@@ -471,7 +475,10 @@ describe('POST-R13.5 · the canonical route map is real and consistently named',
   test('the route constants are the ONLY place a Portfolio path is spelled', () => {
     // Every page path lives in one of the two route modules. A literal anywhere
     // else is how a link and its target drift apart.
-    assert.deepEqual([...SCOPE_AWARE_ROUTES], ['/portfolio', '/portfolio/holdings', '/portfolio/weekly-changes'])
+    assert.deepEqual(
+      [...SCOPE_AWARE_ROUTES],
+      ['/portfolio', '/portfolio/holdings', '/portfolio/weekly-changes', '/portfolio/compare'],
+    )
     const nav = read('src/components/familyPortfolio/FamilyPortfolioNav.tsx')
     assert.doesNotMatch(nav, /'\/portfolio/, 'the rail must name constants, not literals')
     assert.match(nav, /PORTFOLIO_ADMIN/)
@@ -486,6 +493,7 @@ describe('POST-R13.5 · the canonical route map is real and consistently named',
       { key: 'overview', path: PORTFOLIO_SUMMARY },
       { key: 'portfolio', path: PORTFOLIO_HOLDINGS },
       { key: 'weekly-changes', path: PORTFOLIO_WEEKLY_CHANGES },
+      { key: 'compare', path: PORTFOLIO_COMPARE },
       { key: 'alternatives', path: ALTERNATIVES_ROOT },
       { key: 'admin', path: PORTFOLIO_ADMIN },
     ]
@@ -497,6 +505,7 @@ describe('POST-R13.5 · the canonical route map is real and consistently named',
     assert.equal(activeKey('/portfolio'), 'overview')
     assert.equal(activeKey('/portfolio/holdings'), 'portfolio')
     assert.equal(activeKey('/portfolio/weekly-changes'), 'weekly-changes')
+    assert.equal(activeKey('/portfolio/compare'), 'compare')
     assert.equal(activeKey('/portfolio/alternatives'), 'alternatives')
     assert.equal(activeKey('/portfolio/alternatives/holdings'), 'alternatives')
     assert.equal(activeKey('/portfolio/alternatives/cash-flows'), 'alternatives')

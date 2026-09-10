@@ -616,13 +616,14 @@ describe('R13.R1.1 § 13 — weekly default and arbitrary comparison', () => {
   })
 
   test('the surface titles a multi-week range differently', () => {
-    const page = read('src/app/portfolio/weekly-changes/page.tsx')
-    assert.match(page, /isCustomRange \? w\.customTitle : w\.title/)
-    for (const lang of ['en', 'es'] as const) {
-      const i18n = read('src/lib/i18n.ts')
-      assert.ok(i18n.includes('customTitle:'), `${lang} carries the custom title`)
-    }
-    assert.ok(!/Weekly Change/.test(read('src/lib/i18n.ts').split('customTitle:')[1].split('\n')[0]))
+    // FOLLOW-UP E — the two titles are no longer a ternary on one page: a week
+    // and a period are different routes, each with its own fixed title, so a
+    // multi-week range CANNOT reach the weekly title at all.
+    assert.match(read('src/app/portfolio/weekly-changes/page.tsx'), /title=\{w\.title\}/)
+    assert.match(read('src/app/portfolio/compare/page.tsx'), /title=\{w\.customTitle\}/)
+    const i18n = read('src/lib/i18n.ts')
+    assert.ok(i18n.includes('customTitle:'), 'both languages carry the period title')
+    assert.ok(!/Weekly Change/.test(i18n.split('customTitle:')[1].split('\n')[0]))
   })
 })
 
@@ -821,7 +822,13 @@ describe('R13.R1.1 §§ 11, 12, 17 — backfill, selector and future uploads', (
   test('the comparison route accepts a custom range and reports the mode', () => {
     const route = code('src/app/api/family-portfolio/weekly-changes/[scope]/route.ts')
     assert.match(route, /searchParams\.get\('from'\)/)
-    assert.match(route, /selectComparisonRange/)
+    // FOLLOW-UP E — the ordering and membership checks are stated inline, over
+    // the ELIGIBLE set, because that set now includes source-backed reporting
+    // dates `selectComparisonRange` cannot see. Both endpoints are still
+    // refused rather than substituted.
+    assert.match(route, /\? 'from_not_found'/)
+    assert.match(route, /\? 'week_not_found'/)
+    assert.match(route, /\? 'from_not_before_to'/)
     assert.match(route, /mode/)
     assert.match(route, /suppressSingleWeekMetrics/)
     assert.match(route, /detectReclassifications/)

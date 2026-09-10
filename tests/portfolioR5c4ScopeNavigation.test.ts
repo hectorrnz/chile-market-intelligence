@@ -27,6 +27,7 @@ import {
   PORTFOLIO_HOLDINGS,
   PORTFOLIO_SUMMARY,
   PORTFOLIO_WEEKLY_CHANGES,
+  PORTFOLIO_COMPARE,
   SCOPE_AWARE_ROUTES,
   SCOPE_PARAM,
   activeScope,
@@ -45,7 +46,8 @@ const LAYOUT = 'src/app/portfolio/layout.tsx'
 const SUMMARY = 'src/app/portfolio/page.tsx'
 const HOLDINGS = 'src/app/portfolio/holdings/page.tsx'
 const WEEKLY = 'src/app/portfolio/weekly-changes/page.tsx'
-const SCOPE_PAGES = [SUMMARY, HOLDINGS, WEEKLY]
+const COMPARE = 'src/app/portfolio/compare/page.tsx'
+const SCOPE_PAGES = [SUMMARY, HOLDINGS, WEEKLY, COMPARE]
 
 /** A caller entitled to everything — the shape `/api/family-portfolio/scopes` returns. */
 const ALL = [
@@ -231,17 +233,22 @@ describe('R13.R5C.4 § 3 — the scope lives in the URL, so the browser handles 
 // ───────────────────────────────────────────────────────────────────────────
 
 describe('R13.R5C.4 § 4 — scope boundaries', () => {
-  test('14 · the rail scopes exactly the three views, and no others', () => {
+  test('14 · the rail scopes exactly the four views, and no others', () => {
     const nav = code(read(NAV))
     const scoped = [...nav.matchAll(/scoped\('([^']+)', ([A-Z_]+),/g)].map((m) => [m[1], m[2]])
     assert.deepEqual(scoped, [
       ['overview', 'PORTFOLIO_SUMMARY'],
       ['portfolio', 'PORTFOLIO_HOLDINGS'],
       ['weekly-changes', 'PORTFOLIO_WEEKLY_CHANGES'],
+      // FOLLOW-UP E — Compare is a fourth SCOPED view: it reads the same
+      // entitled portfolio over a range, so the reader's scope must survive a
+      // click onto it exactly as it does onto its neighbour.
+      ['compare', 'PORTFOLIO_COMPARE'],
     ])
     const sharedItems = [...nav.matchAll(/shared\('([^']+)',/g)].map((m) => m[1])
     assert.deepEqual(sharedItems, ['alternatives', 'admin'])
-    assert.equal(SCOPE_AWARE_ROUTES.length, 3)
+    assert.equal(SCOPE_AWARE_ROUTES.length, 4)
+    assert.ok((SCOPE_AWARE_ROUTES as readonly string[]).includes(PORTFOLIO_COMPARE))
   })
 
   test('15 · Alternatives and Admin never receive a personal scope', () => {

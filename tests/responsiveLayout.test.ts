@@ -357,7 +357,9 @@ function fpFiles(): string[] {
 const FP_SURFACES = {
   summary: 'src/app/portfolio/page.tsx',
   holdings: 'src/app/portfolio/holdings/page.tsx',
-  weeklyChanges: 'src/app/portfolio/weekly-changes/page.tsx',
+  // FOLLOW-UP E — the responsive composition of Weekly Changes AND Compare
+  // is one shared surface; both pages render it, so it is measured once.
+  weeklyChanges: 'src/components/familyPortfolio/ChangesSurface.tsx',
   altDashboard: 'src/app/portfolio/alternatives/page.tsx',
   altHoldings: 'src/app/portfolio/alternatives/holdings/page.tsx',
   altCashFlows: 'src/app/portfolio/alternatives/cash-flows/page.tsx',

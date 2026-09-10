@@ -29,7 +29,6 @@ import { getFamilyPortfolioEntitlement } from '@/lib/portfolioAccess/getEntitlem
 import { canReadScope } from '@/lib/portfolioAccess/entitlements'
 import {
   selectWeekPair,
-  selectComparisonRange,
   buildChangeNodes,
   buildTotalMetrics,
   suppressSingleWeekMetrics,
@@ -125,97 +124,254 @@ export async function GET(request: Request, context: { params: Promise<{ scope: 
   // becomes the opening endpoint. Absent, the surface keeps its default and
   // compares with the immediately preceding published week.
   const from = url.searchParams.get('from')
+  // FOLLOW-UP E — `period=1` asks for PERIOD semantics without naming an
+  // opening endpoint. It exists because `/portfolio/compare` opens on a real
+  // comparison rather than an empty form, and the DEFAULT opening endpoint is
+  // the one immediately before the closing date IN THE ELIGIBLE SET — which
+  // only this route knows, because only this route has read the row-history
+  // spine. A client that guessed it would be guessing against a list it has
+  // not been given yet.
+  //
+  // It never changes what a range MEANS: with an explicit `from` it is
+  // redundant, and it is refused the weekly page's basis either way.
+  const wantPeriod = url.searchParams.get('period') === '1'
   const grouping = parseGrouping(url.searchParams.get('grouping'), scope)
 
   // --- Publication spine (operational metadata only, after entitlement).
   const spine = await listCurrentPublications('portfolio')
   if (!spine.ok) return fail(spine.code, spine.code === 'not_configured' ? 503 : 502)
 
-  // Both endpoints must be weeks the book actually holds; neither is snapped to
+  // Both endpoints must be dates the book actually holds; neither is snapped to
   // a nearest date (§ 12), so a stale bookmark fails loudly instead of quietly
   // reporting a different period under the dates that were asked for.
   const latest = spine.publications.reduce<string | null>(
     (a, p) => (a === null || p.asOfDate > a ? p.asOfDate : a),
     null,
   )
-  // ── R13.8E — WHICH REPORTING WEEKS CAN OPEN A ROLLING WINDOW ──────────────
+
+  // ── FOLLOW-UP E · THE COMPARE DATE UNIVERSE ───────────────────────────────
   //
-  // A frozen reporting week the source closed but the book never published now
-  // carries persisted row-level values. That is enough to OPEN a multi-week
-  // comparison — the rolling 1M contributors window opens at 2026-08-07, a week
-  // with no publication and no revision.
+  // R13.8E gave a frozen reporting week the source closed but the book never
+  // published a full set of persisted row-level values, and let one OPEN a
+  // rolling window. The closing side stayed publications-only, which made the
+  // eligible set asymmetric for no reason the data supports: the same
+  // `portfolio_row_history` rows answer a closing endpoint exactly as
+  // completely as an opening one.
   //
-  // It is NOT enough to make that week a publication, and this route never
-  // treats it as one: the closing endpoint is always a published week, the
-  // `weeks` list the client offers in Compare is still publications only, and a
-  // row-history opening is labelled as such in the response.
+  // So the rule is now stated once, on both sides:
+  //
+  //   A DATE IS AN ELIGIBLE COMPARE ENDPOINT FOR THIS SCOPE WHEN THE SCOPE HAS
+  //   A COMPLETE SOURCE-BACKED ROW SET AT IT — a current publication, or a
+  //   frozen reporting date in `portfolio_row_history`.
+  //
+  // Measured on the real book that is 107 dates rather than 103: the four
+  // catch-up weeks of the last import (2026-08-07 through 2026-08-28) are
+  // genuine source-backed reporting dates that no publication names, and the
+  // gap grows with every future catch-up import.
+  //
+  // WHAT ELIGIBILITY IS NOT. It is not a claim that the PERIOD AGGREGATES can
+  // be built: flows, result and return additionally need
+  // `portfolio_performance_history` stated at every interval in the window, and
+  // where that is incomplete the surface reports them unavailable and names the
+  // reason. Row-level comparison and period aggregation degrade independently,
+  // because they genuinely depend on different tables.
+  //
+  // A row-history date is still NOT a publication: it has no revision, no
+  // published-at and no parser version, it never enters `weeks` (the weekly
+  // selector's list), and the response says which side it came from.
   //
   // A failed read yields an EMPTY list, so a window that cannot be opened is
   // reported as unbuildable rather than opened from somewhere else.
   const rowHistory = await listRowHistoryDates(scope)
   const rowHistoryDates = rowHistory.ok ? rowHistory.dates : []
-  const publishedDates = new Set(spine.publications.map((p) => p.asOfDate))
-  const rowHistoryOpening =
-    from !== null && !publishedDates.has(from) && rowHistoryDates.includes(from) ? from : null
+  const publicationByDate = new Map(spine.publications.map((p) => [p.asOfDate, p]))
+  const compareDates = [
+    ...new Set([...publicationByDate.keys(), ...rowHistoryDates]),
+  ].sort()
 
-  const pair =
-    from !== null && latest !== null && rowHistoryOpening === null
-      ? selectComparisonRange(spine.publications, from, asOf ?? latest)
-      : selectWeekPair(spine.publications, rowHistoryOpening !== null ? (asOf ?? latest) : asOf)
-  if (!pair.ok) {
-    return NextResponse.json(
-      { scope, state: pair.code, weeks: [], publication: null, previousPublication: null },
-      { status: pair.code === 'no_publications' ? 200 : 404, headers: NO_STORE },
-    )
-  }
-  // The ordering check `selectComparisonRange` performs, applied to the opening
-  // endpoint it never sees. An opening that is not strictly before the closing
-  // week is a bad request, not a window of zero length.
-  if (rowHistoryOpening !== null && !(rowHistoryOpening < pair.selection.current.asOfDate)) {
-    return NextResponse.json(
-      { scope, state: 'from_not_before_to', weeks: [], publication: null, previousPublication: null },
-      { status: 404, headers: NO_STORE },
-    )
-  }
-
-  const mode = from !== null ? 'custom' : 'weekly'
-  const { current, previous } = pair.selection
+  const mode = from !== null || wantPeriod ? 'custom' : 'weekly'
   const weeks = spine.publications.map((p) => ({ asOfDate: p.asOfDate, revision: p.revision }))
-  const publication = {
-    id: current.id,
-    asOfDate: current.asOfDate,
-    revision: current.revision,
-    publishedAt: current.publishedAt,
-    parserVersion: current.parserVersion,
+
+  // ── WHICH DATE CLOSES THE COMPARISON, AND WHERE ITS ROWS COME FROM ────────
+  //
+  // WEEKLY resolves the pair exactly as it always has — a published week and
+  // the week the source closed before it. Nothing in this branch changed.
+  //
+  // CUSTOM checks both endpoints against the eligible set above and refuses a
+  // date outside it. `selectComparisonRange` is still the ordering authority
+  // for a publication-to-publication range; the explicit checks cover the
+  // ranges it cannot see, and both refuse rather than substitute.
+  let closingPublication: (typeof spine.publications)[number] | null = null
+  let closingDate: string
+  let previousPublicationRow: (typeof spine.publications)[number] | null = null
+  /** The resolved OPENING endpoint of a period — explicit or defaulted. */
+  let openingRequested: string | null = null
+
+  if (mode === 'custom') {
+    if (latest === null) {
+      return NextResponse.json(
+        { scope, state: 'no_publications', weeks: [], publication: null, previousPublication: null },
+        { headers: NO_STORE },
+      )
+    }
+    const to = asOf ?? latest
+    // The DEFAULT opening endpoint: the eligible date immediately before the
+    // closing one. One interval is a real period — its flows are the closing
+    // date's own — and the reader widens it from there. Never a nearest-date
+    // guess: this is an exact member of the eligible set or nothing at all.
+    const openingRequest =
+      from ?? [...compareDates].reverse().find((d) => d < to) ?? null
+    if (openingRequest === null) {
+      // Exactly one eligible reporting date. There is nothing to compare it
+      // with, and a range of zero length is not manufactured.
+      return NextResponse.json(
+        {
+          scope,
+          state: 'no_previous_week',
+          weeks,
+          compareDates,
+          publication: null,
+          previousPublication: null,
+          mode,
+        },
+        { headers: NO_STORE },
+      )
+    }
+    const bad = !compareDates.includes(openingRequest)
+      ? 'from_not_found'
+      : !compareDates.includes(to)
+        ? 'week_not_found'
+        : !(openingRequest < to)
+          ? 'from_not_before_to'
+          : null
+    if (bad !== null) {
+      return NextResponse.json(
+        { scope, state: bad, weeks, publication: null, previousPublication: null, compareDates },
+        { status: 404, headers: NO_STORE },
+      )
+    }
+    openingRequested = openingRequest
+    closingDate = to
+    closingPublication = publicationByDate.get(to) ?? null
+    previousPublicationRow = publicationByDate.get(openingRequest) ?? null
+  } else {
+    const pair = selectWeekPair(spine.publications, asOf)
+    if (!pair.ok) {
+      return NextResponse.json(
+        { scope, state: pair.code, weeks: [], publication: null, previousPublication: null },
+        { status: pair.code === 'no_publications' ? 200 : 404, headers: NO_STORE },
+      )
+    }
+    closingPublication = pair.selection.current
+    closingDate = pair.selection.current.asOfDate
+    previousPublicationRow = pair.selection.previous
   }
 
-  // --- The selected week's own rows first: in WEEKLY mode they may already
-  //     answer the whole question, and a second publication read would then be
-  //     both unnecessary and wrong (see `WeeklyBasis`).
-  const [currentRows, performance] = await Promise.all([
-    getSnapshotRowsForScope(current.id, scope),
-    getPerformanceRowsForScope(current.id, scope),
-  ])
-  if (!currentRows.ok) return fail(currentRows.code, currentRows.code === 'not_configured' ? 503 : 502)
-  if (!performance.ok) return fail(performance.code, performance.code === 'not_configured' ? 503 : 502)
+  /** WHERE the closing endpoint's rows came from. Reported, never guessed. */
+  const closingSource: 'publication' | 'row_history' =
+    closingPublication !== null ? 'publication' : 'row_history'
+  /** The closing endpoint as the surface labels it — a date, and a timestamp
+   *  only where one genuinely exists. */
+  const closingEndpoint = {
+    asOfDate: closingDate,
+    publishedAt: closingPublication?.publishedAt ?? null,
+  }
+  const publication =
+    closingPublication === null
+      ? null
+      : {
+          id: closingPublication.id,
+          asOfDate: closingPublication.asOfDate,
+          revision: closingPublication.revision,
+          publishedAt: closingPublication.publishedAt,
+          parserVersion: closingPublication.parserVersion,
+        }
 
-  // ── THE WEEKLY BASIS ──────────────────────────────────────────────────────
-  //
-  // CUSTOM compare always reads two publications: the reader chose both
-  // endpoints and the range is deliberately multi-week.
-  //
-  // WEEKLY prefers this publication's OWN previous-week column. That is the
-  // week the source actually closed before this one — 2026-08-28 for the
-  // 2026-09-04 publication — which after a catch-up import is NOT the previous
-  // publication (2026-07-31, five weeks back). Reading it here keeps the level
-  // change, the source's one-week flow/profit figures and the reconciliation
-  // identity all describing the SAME interval, without publishing a single
-  // catch-up week or touching the locked import architecture.
-  const sourcePreviousDate =
-    mode === 'weekly' &&
-    hasSourceWeeklyBasis(currentRows.rows, current.previousWeekDate, current.asOfDate)
-      ? current.previousWeekDate
-      : null
+  const basis = basisFor(scope)
+
+  // Every publication's performance binding, read once. The trend below needs
+  // it, and so does a ROW-HISTORY closing endpoint, which has no performance
+  // block of its own: the binding names WHICH hierarchy row carries the
+  // portfolio total for this basis — a structural fact of the source layout,
+  // not a value — and it is taken from the newest publication at or before the
+  // closing date rather than from whichever one happens to be latest.
+  const publicationIds = spine.publications.map((p) => p.id)
+  const bindings = await getPerformanceBindings(publicationIds, scope)
+
+  // --- The closing endpoint's own rows. A publication brings its performance
+  //     block with it; a row-history date brings only rows, and its bound key
+  //     is resolved from the spine above.
+  let closingRowSet: WeeklyChangeInputRow[]
+  let perfRows: Array<{ basis: string; metric: string; value: number | null; boundRowKey: string | null }>
+  let sourcePreviousDate: string | null = null
+
+  if (closingPublication !== null) {
+    const [currentRows, performance] = await Promise.all([
+      getSnapshotRowsForScope(closingPublication.id, scope),
+      getPerformanceRowsForScope(closingPublication.id, scope),
+    ])
+    if (!currentRows.ok) return fail(currentRows.code, currentRows.code === 'not_configured' ? 503 : 502)
+    if (!performance.ok) return fail(performance.code, performance.code === 'not_configured' ? 503 : 502)
+    closingRowSet = currentRows.rows
+    perfRows = performance.rows.map((p) => ({
+      basis: p.basis,
+      metric: p.metric,
+      value: p.value,
+      boundRowKey: p.boundRowKey,
+    }))
+    // ── THE WEEKLY BASIS ────────────────────────────────────────────────────
+    //
+    // WEEKLY prefers this publication's OWN previous-week column. That is the
+    // week the source actually closed before this one — 2026-08-28 for the
+    // 2026-09-04 publication — which after a catch-up import is NOT the
+    // previous publication (2026-07-31, five weeks back). Reading it here keeps
+    // the level change, the source's one-week flow/profit figures and the
+    // reconciliation identity all describing the SAME interval, without
+    // publishing a single catch-up week or touching the locked import
+    // architecture.
+    //
+    // CUSTOM never takes this path: the reader chose both endpoints, and the
+    // range is a period by construction.
+    sourcePreviousDate =
+      mode === 'weekly' &&
+      hasSourceWeeklyBasis(closingRowSet, closingPublication.previousWeekDate, closingPublication.asOfDate)
+        ? closingPublication.previousWeekDate
+        : null
+  } else {
+    const closingRows = await getRowHistoryForScope(scope, closingDate)
+    if (!closingRows.ok) return fail(closingRows.code, closingRows.code === 'not_configured' ? 503 : 502)
+    if (closingRows.rows.length === 0) {
+      return NextResponse.json(
+        {
+          scope,
+          state: 'closing_not_available',
+          weeks,
+          compareDates,
+          publication: null,
+          closingEndpoint,
+          previousPublication: null,
+          mode,
+          rowHistoryDates,
+        },
+        { headers: NO_STORE },
+      )
+    }
+    closingRowSet = closingRows.rows
+    const boundForBasis =
+      bindings.ok
+        ? (spine.publications
+            .filter((p) => p.asOfDate <= closingDate)
+            .sort((a, b) => (a.asOfDate < b.asOfDate ? 1 : -1))
+            .map((p) => bindings.bindings.find((b) => b.publicationId === p.id && b.basis === basis))
+            .find((b) => b !== undefined && b.boundRowKey !== null)?.boundRowKey ?? null)
+        : null
+    // ONE synthetic row, carrying the binding and NO figure. Every source-stated
+    // weekly metric belongs to a publication; inventing a null-valued metric row
+    // here would be a value claim, so this row states only which row is the
+    // total and lets `buildTotalMetrics` report every metric as unavailable.
+    perfRows = [{ basis, metric: 'binding', value: null, boundRowKey: boundForBasis }]
+  }
+
   const weeklyBasis: WeeklyBasis =
     sourcePreviousDate !== null ? 'source_previous_week' : 'adjacent_publication'
 
@@ -228,17 +384,29 @@ export async function GET(request: Request, context: { params: Promise<{ scope: 
   if (sourcePreviousDate !== null) {
     // One week, out of this publication alone.
     openingEndpoint = { asOfDate: sourcePreviousDate, publishedAt: null }
-    previousRowSet = sourcePreviousWeekRows(currentRows.rows)
+    previousRowSet = sourcePreviousWeekRows(closingRowSet)
     openingSource = 'source_previous_week'
-  } else if (rowHistoryOpening !== null) {
-    // R13.8E — a frozen reporting week with persisted row-level values and no
-    // publication. The rolling contributors window opens here.
-    const openingRows = await getRowHistoryForScope(scope, rowHistoryOpening)
+  } else if (previousPublicationRow !== null) {
+    // An earlier full publication — a custom range, or a week whose own
+    // previous-week column is unusable.
+    openingEndpoint = {
+      asOfDate: previousPublicationRow.asOfDate,
+      publishedAt: previousPublicationRow.publishedAt,
+    }
+    const previousRows = await getSnapshotRowsForScope(previousPublicationRow.id, scope)
+    if (!previousRows.ok) return fail(previousRows.code, previousRows.code === 'not_configured' ? 503 : 502)
+    previousRowSet = previousRows.rows
+    openingSource = 'publication'
+  } else if (mode === 'custom' && openingRequested !== null) {
+    // R13.8E — a frozen reporting date with persisted row-level values and no
+    // publication. The rolling contributors window opens here, and so does any
+    // Compare range whose From date the book never published.
+    const openingRows = await getRowHistoryForScope(scope, openingRequested)
     if (!openingRows.ok) {
       return fail(openingRows.code, openingRows.code === 'not_configured' ? 503 : 502)
     }
     if (openingRows.rows.length === 0) {
-      // The coverage view said this week had rows and the scope-filtered read
+      // The coverage view said this date had rows and the scope-filtered read
       // returned none. Honest emptiness — never a comparison against nothing,
       // which would report every position as newly created.
       return NextResponse.json(
@@ -246,7 +414,9 @@ export async function GET(request: Request, context: { params: Promise<{ scope: 
           scope,
           state: 'opening_not_available',
           weeks,
+          compareDates,
           publication,
+          closingEndpoint,
           previousPublication: null,
           mode,
           weeklyBasis,
@@ -255,49 +425,55 @@ export async function GET(request: Request, context: { params: Promise<{ scope: 
         { headers: NO_STORE },
       )
     }
-    openingEndpoint = { asOfDate: rowHistoryOpening, publishedAt: null }
+    openingEndpoint = { asOfDate: openingRequested, publishedAt: null }
     previousRowSet = openingRows.rows
     openingSource = 'row_history'
-  } else if (previous !== null) {
-    // The publication before this one — a custom range, or a week whose own
-    // previous-week column is unusable.
-    openingEndpoint = { asOfDate: previous.asOfDate, publishedAt: previous.publishedAt }
-    const previousRows = await getSnapshotRowsForScope(previous.id, scope)
-    if (!previousRows.ok) return fail(previousRows.code, previousRows.code === 'not_configured' ? 503 : 502)
-    previousRowSet = previousRows.rows
-    openingSource = 'publication'
   } else {
     // The earliest published week genuinely has no comparison, and the source
     // states no preceding one. An honest state, never a zero change (doc 07 § 6b).
     return NextResponse.json(
-      { scope, state: 'no_previous_week', weeks, publication, previousPublication: null, mode, weeklyBasis, rowHistoryDates },
+      {
+        scope,
+        state: 'no_previous_week',
+        weeks,
+        compareDates,
+        publication,
+        closingEndpoint,
+        previousPublication: null,
+        mode,
+        weeklyBasis,
+        rowHistoryDates,
+      },
       { headers: NO_STORE },
     )
   }
 
-  if (currentRows.rows.length === 0) {
+  if (closingRowSet.length === 0) {
     return NextResponse.json(
-      { scope, state: 'empty', weeks, publication, previousPublication: openingEndpoint, mode, weeklyBasis, rowHistoryDates },
+      {
+        scope,
+        state: 'empty',
+        weeks,
+        compareDates,
+        publication,
+        closingEndpoint,
+        previousPublication: openingEndpoint,
+        mode,
+        weeklyBasis,
+        rowHistoryDates,
+      },
       { headers: NO_STORE },
     )
   }
-
-  const basis = basisFor(scope)
-  const perfRows = performance.rows.map((p) => ({
-    basis: p.basis,
-    metric: p.metric,
-    value: p.value,
-    boundRowKey: p.boundRowKey,
-  }))
 
   // The portfolio's OPENING value — the denominator of Impact on Portfolio
   // Value. Resolved through the previous week's own rows and this week's
   // binding, never assumed; the pure helper fails closed if the bound row is
   // missing from either week or changed currency between them.
   const boundKey = perfRows.find((p) => p.basis === basis && p.boundRowKey !== null)?.boundRowKey ?? null
-  const previousTotal = resolvePreviousPortfolioTotal(currentRows.rows, previousRowSet, boundKey)
+  const previousTotal = resolvePreviousPortfolioTotal(closingRowSet, previousRowSet, boundKey)
 
-  const nodes = buildChangeNodes(currentRows.rows, previousRowSet, previousTotal)
+  const nodes = buildChangeNodes(closingRowSet, previousRowSet, previousTotal)
   // Over a custom range the source's own single-week flow/profit describe the
   // wrong period and are withheld (§ 13); the value change itself is derived
   // from the two snapshots and is correct over any span.
@@ -330,7 +506,7 @@ export async function GET(request: Request, context: { params: Promise<{ scope: 
   if (mode === 'custom') {
     const [spineDates, metrics] = await Promise.all([
       listPerformanceHistoryDates(scope, basis),
-      getPerformanceHistoryRange(scope, basis, openingEndpoint.asOfDate, current.asOfDate),
+      getPerformanceHistoryRange(scope, basis, openingEndpoint.asOfDate, closingDate),
     ])
     // A FAILED READ IS NOT AN EMPTY PERIOD. Both degrade to `null`, which the
     // surface renders as unavailable and names — never a flow of zero, which
@@ -343,7 +519,7 @@ export async function GET(request: Request, context: { params: Promise<{ scope: 
 
       periodPerformance = buildPeriodPerformance({
         fromDate: openingEndpoint.asOfDate,
-        toDate: current.asOfDate,
+        toDate: closingDate,
         // The spine of THIS basis, so a window is never judged incomplete for
         // weeks that were never part of this series. Main's
         // `with_chilean_equities` block only begins at 2026-01-02.
@@ -357,10 +533,8 @@ export async function GET(request: Request, context: { params: Promise<{ scope: 
     }
   }
 
-  // --- Historical weekly-change trend: each week through its OWN binding.
-  const publicationIds = spine.publications.map((p) => p.id)
-  const bindings = await getPerformanceBindings(publicationIds, scope)
-
+  // --- Historical weekly-change trend: each week through its OWN binding,
+  //     from the one bindings read above.
   let trend: Array<{ date: string; value: number }> = []
   if (bindings.ok) {
     const boundByPublication = new Map<string, string | null>()
@@ -385,7 +559,23 @@ export async function GET(request: Request, context: { params: Promise<{ scope: 
       scope,
       state: 'ok',
       weeks,
+      /**
+       * FOLLOW-UP E — every date this scope may use as a COMPARE endpoint:
+       * publications and source-backed row-history dates together, ascending.
+       * Distinct from `weeks`, which is the publication list the weekly
+       * selector offers and which never gains a row-history date.
+       */
+      compareDates,
       publication,
+      /**
+       * FOLLOW-UP E — the closing endpoint, always present in an `ok` state.
+       * Mirrors `previousPublication`: a date, and a publication timestamp only
+       * where one genuinely exists. `publication` above is null when the
+       * closing endpoint is a row-history date rather than a published week.
+       */
+      closingEndpoint,
+      /** `publication` or `row_history` — see `closingEndpoint`. */
+      closingSource,
       previousPublication: openingEndpoint,
       /**
        * WHICH TWO THINGS THE CHANGE IS A DIFFERENCE OF.

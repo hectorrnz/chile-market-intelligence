@@ -57,7 +57,16 @@ const PGTAP = read('supabase/tests/database/portfolio_analytical_history_test.sq
 const PERF_LIB = read('src/lib/familyPortfolio/performanceHistory.ts')
 const PERIOD_LIB = read('src/lib/familyPortfolio/periodPerformance.ts')
 const WEEKLY_ROUTE = read('src/app/api/family-portfolio/weekly-changes/[scope]/route.ts')
-const WEEKLY_PAGE = read('src/app/portfolio/weekly-changes/page.tsx')
+// FOLLOW-UP E — Weekly Changes split into a thin PAGE (header, week
+// control, fetch) and the SHARED `ChangesSurface` that holds everything
+// below it, which `/portfolio/compare` renders too. Assertions about the
+// weekly surface read both halves together.
+const CHANGES_SURFACE = 'src/components/familyPortfolio/ChangesSurface.tsx'
+const WEEKLY_PAGE = [
+  read('src/app/portfolio/weekly-changes/page.tsx'),
+  read('src/components/familyPortfolio/ChangesSurface.tsx'),
+  read('src/app/portfolio/compare/page.tsx'),
+].join('\n')
 const PUBLISH_ROUTE = read('src/app/api/family-portfolio/admin/uploads/[id]/publish/route.ts')
 const PREVIEW_SERVER = read('src/lib/familyPortfolio/importPreviewServer.ts')
 const PREVIEW_LIB = read('src/lib/familyPortfolio/weeklyImportPreview.ts')
@@ -129,8 +138,16 @@ describe('Aâ€“C Â· custom range vocabulary', () => {
     // The headline reads the mode. `customTitle` is the period title in both
     // dictionaries and `weeklyValueChange` is the weekly one; the component must
     // choose between them rather than always printing the weekly label.
-    assert.match(WEEKLY_PAGE, /label=\{isCustomRange \? w\.customTitle : w\.weeklyValueChange\}/)
+    // FOLLOW-UP E — a period no longer BORROWS the weekly page's headline: it
+    // has its own route, whose title is fixed, and the shared hero reads the one
+    // presentation contract rather than a ternary.
+    assert.match(WEEKLY_PAGE, /label=\{labels\.valueChange\}/)
+    const contract = read('src/lib/familyPortfolio/changesPresentation.ts')
+    assert.match(contract, /valueChange: w\.periodValueChange/)
+    assert.match(contract, /valueChange: w\.weeklyValueChange/)
+    assert.match(read('src/app/portfolio/compare/page.tsx'), /title=\{w\.customTitle\}/)
     assert.equal(dict.en.fp.weeklyChanges.customTitle, 'Portfolio Value Change')
+    assert.equal(dict.en.fp.weeklyChanges.periodValueChange, 'Period Value Change')
     assert.equal(dict.en.fp.weeklyChanges.weeklyValueChange, 'Weekly Value Change')
   })
 
@@ -143,6 +160,13 @@ describe('Aâ€“C Â· custom range vocabulary', () => {
       'periodFlow',
       'periodReturn',
       'periodReconTitle',
+      // FOLLOW-UP E — the rest of the period lexicon, held to the same rule.
+      'periodValueChange',
+      'periodIncreasesTitle',
+      'periodDecreasesTitle',
+      'periodHierarchyTitle',
+      'periodContribution',
+      'periodFullTableTitle',
     ] as const) {
       assert.doesNotMatch(
         en[key],
@@ -151,20 +175,34 @@ describe('Aâ€“C Â· custom range vocabulary', () => {
       )
     }
     const es = dict.es.fp.weeklyChanges
-    for (const key of ['periodFromLabel', 'periodToLabel', 'periodProfit', 'periodFlow', 'periodReturn'] as const) {
+    for (const key of [
+      'periodFromLabel', 'periodToLabel', 'periodProfit', 'periodFlow', 'periodReturn',
+      'periodValueChange', 'periodIncreasesTitle', 'periodDecreasesTitle',
+      'periodHierarchyTitle', 'periodContribution', 'periodFullTableTitle',
+    ] as const) {
       assert.doesNotMatch(es[key], /semanal|semana/i, `${key}: ${es[key]}`)
     }
   })
 
   test('C Â· the weekly ledger rows are never rendered in Compare mode', () => {
     // The ledger is built ONCE, by mode, so the weekly rows are structurally
-    // unreachable when `isCustomRange` â€” not merely styled away.
-    assert.match(WEEKLY_PAGE, /if \(isCustomRange\) \{[\s\S]*?w\.periodFromLabel/)
-    assert.match(WEEKLY_PAGE, /w\.periodToLabel[\s\S]*?\}\s*\n\s*if \(flowRecon === null\) return null/)
-    // And the weekly labels sit strictly after that early return.
-    const customBranch = WEEKLY_PAGE.indexOf('if (isCustomRange) {')
-    const weeklyRows = WEEKLY_PAGE.indexOf('w.previousValueLabel, value: flowRecon.previousValue')
-    assert.ok(customBranch > -1 && weeklyRows > customBranch)
+    // unreachable in a period â€” not merely styled away. FOLLOW-UP E: the two
+    // branches now sit in the shared surface, and the WORDS they carry are
+    // resolved by the presentation contract, which cannot mix them.
+    const surface = read(CHANGES_SURFACE)
+    assert.match(surface, /if \(mode === 'period'\) \{[\s\S]*?labels\.reconOpening/)
+    const periodBranch = surface.indexOf("if (mode === 'period') {")
+    const weeklyRows = surface.indexOf('value: flowRecon?.previousValue ?? null')
+    assert.ok(periodBranch > -1 && weeklyRows > periodBranch)
+    // The contract resolves each branch's words from disjoint keys.
+    const contract = read('src/lib/familyPortfolio/changesPresentation.ts')
+    const period = contract.slice(
+      contract.indexOf("if (mode === 'period') {"),
+      contract.indexOf('  return {\n    title: w.title,'),
+    )
+    for (const weeklyOnly of ['w.previousValueLabel', 'o.weeklyProfit', 'w.flowLabel', 'w.endingValueLabel']) {
+      assert.ok(!period.includes(weeklyOnly), `the period branch must not read ${weeklyOnly}`)
+    }
   })
 
   test('C Â· both period-mode headings exist in EN and ES', () => {
@@ -1073,8 +1111,11 @@ describe('Tâ€“V Â· weekly mode is unchanged', () => {
   test('T Â· the default weekly view still compares the sourceâ€™s own two weeks', () => {
     // The default remains 2026-08-28 â†’ 2026-09-04 from the publication's OWN
     // source columns, never 2026-07-31 â†’ 2026-09-04.
-    assert.match(WEEKLY_ROUTE, /const sourcePreviousDate =\s*\n\s*mode === 'weekly' &&/)
-    assert.match(WEEKLY_ROUTE, /hasSourceWeeklyBasis\(currentRows\.rows, current\.previousWeekDate, current\.asOfDate\)/)
+    assert.match(WEEKLY_ROUTE, /sourcePreviousDate =\s*\n?\s*mode === 'weekly' &&/)
+    assert.match(
+      WEEKLY_ROUTE,
+      /hasSourceWeeklyBasis\(closingRowSet, closingPublication\.previousWeekDate, closingPublication\.asOfDate\)/,
+    )
   })
 
   test('T Â· the period reconciliation is computed ONLY in custom mode', () => {
@@ -1085,20 +1126,28 @@ describe('Tâ€“V Â· weekly mode is unchanged', () => {
   test('U Â· the weekly reconciliation function is untouched by this stage', () => {
     // Weekly mode still reads `flowReconciliation`, whose residual note is its
     // own. Nothing here replaces a published weekly figure with a derived one.
-    assert.match(WEEKLY_PAGE, /if \(flowRecon === null\) return null/)
-    assert.match(WEEKLY_PAGE, /!isCustomRange && flowRecon\?\.status === 'residual'/)
+    // FOLLOW-UP E â€” the weekly branch reads `flowReconciliation` unchanged, and
+    // its residual note is still weekly-only.
+    assert.match(WEEKLY_PAGE, /value: flowRecon\?\.previousValue \?\? null/)
+    assert.match(WEEKLY_PAGE, /!isPeriod && flowRecon\?\.status === 'residual'/)
   })
 
   test('V Â· weekly terminology survives in non-Compare mode', () => {
-    assert.match(WEEKLY_PAGE, /w\.previousValueLabel, value: flowRecon\.previousValue/)
-    assert.match(WEEKLY_PAGE, /w\.endingValueLabel, value: flowRecon\.actualCurrent/)
+    const contract = read('src/lib/familyPortfolio/changesPresentation.ts')
+    assert.match(contract, /reconOpening: w\.previousValueLabel/)
+    assert.match(contract, /reconClosing: w\.endingValueLabel/)
+    assert.match(WEEKLY_PAGE, /value: flowRecon\?\.actualCurrent \?\? null/)
     assert.equal(dict.en.fp.weeklyChanges.previousValueLabel, 'Previous Week Portfolio Value')
     assert.equal(dict.en.fp.weeklyChanges.endingValueLabel, 'Ending Week Portfolio Value')
     assert.equal(dict.en.fp.overview.weeklyReturn, 'Weekly Return')
   })
 
   test('V Â· the weekly headline still shows the sourceâ€™s own weekly return', () => {
-    assert.match(WEEKLY_PAGE, /: `\$\{formatRatioPct\(total\.weeklyReturn\)\} \$\{o\.weeklyReturn\}`/)
+    // The rate is the one FIGURE the mode chooses; its label is the contract's.
+    assert.match(WEEKLY_PAGE, /isPeriod \? \(periodPerf\?\.periodReturn \?\? null\) : \(total\?\.weeklyReturn \?\? null\)/)
+    const contract = read('src/lib/familyPortfolio/changesPresentation.ts')
+    assert.match(contract, /returnLabel: o\.weeklyReturn/)
+    assert.match(contract, /returnLabel: w\.periodReturn/)
   })
 })
 
@@ -1109,14 +1158,14 @@ describe('Tâ€“V Â· weekly mode is unchanged', () => {
 describe('the rolling 1M contributor window still reads ROW history', () => {
   test('performance history does not replace row history for contributors', () => {
     // 1M opens from row-level values, which performance history does not carry.
-    assert.match(WEEKLY_ROUTE, /const openingRows = await getRowHistoryForScope\(scope, rowHistoryOpening\)/)
-    assert.doesNotMatch(WEEKLY_ROUTE, /getPerformanceHistoryRange[\s\S]{0,200}rowHistoryOpening/)
+    assert.match(WEEKLY_ROUTE, /const openingRows = await getRowHistoryForScope\(scope, openingRequested\)/)
+    assert.doesNotMatch(WEEKLY_ROUTE, /getPerformanceHistoryRange[\s\S]{0,200}openingRequested/)
   })
 
   test('the period reconciliation never feeds the contributor decomposition', () => {
     // `periodPerformance` is a total-level reconciliation. The nodes are built
     // from the two row sets alone, exactly as before.
-    assert.match(WEEKLY_ROUTE, /const nodes = buildChangeNodes\(currentRows\.rows, previousRowSet, previousTotal\)/)
+    assert.match(WEEKLY_ROUTE, /const nodes = buildChangeNodes\(closingRowSet, previousRowSet, previousTotal\)/)
   })
 })
 

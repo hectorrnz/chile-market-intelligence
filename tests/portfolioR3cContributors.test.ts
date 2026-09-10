@@ -68,7 +68,11 @@ const CHART = 'src/components/familyPortfolio/ContributionChart.tsx'
 const MODAL = 'src/components/familyPortfolio/ContributionBreakdownModal.tsx'
 const CARD = 'src/components/familyPortfolio/PeriodValueChangeCard.tsx'
 const SUMMARY = 'src/app/portfolio/page.tsx'
-const WEEKLY = 'src/app/portfolio/weekly-changes/page.tsx'
+// FOLLOW-UP E — Weekly Changes split into a thin PAGE (header, week
+// control, fetch) and the SHARED `ChangesSurface` that holds everything
+// below it, which `/portfolio/compare` renders too. Assertions about the
+// weekly surface read both halves together.
+const WEEKLY = 'src/components/familyPortfolio/ChangesSurface.tsx'
 const PURE_CHART = 'src/lib/familyPortfolio/contributionChart.ts'
 const PURE_SUBJECT = 'src/lib/familyPortfolio/portfolioSubject.ts'
 
@@ -1579,7 +1583,7 @@ describe('R13.R3C.2 · presentation', () => {
     const page = read(WEEKLY)
     const row = page.slice(page.indexOf('items 2–3'), page.indexOf('§ 6h items 5–6'))
     assert.ok(row.length > 0, 'the combined block exists')
-    for (const marker of ['<KpiHero', 'w.flowReconTitle']) {
+    for (const marker of ['<KpiHero', 'labels.reconTitle']) {
       assert.ok(row.includes(marker), `${marker} belongs to the combined block`)
     }
     assert.ok(!row.includes('w.totalsTitle'), 'the metrics card is deleted, not moved')
@@ -1587,12 +1591,16 @@ describe('R13.R3C.2 · presentation', () => {
     // second GlassSurface, which the material rules forbid outright.
     assert.equal((row.match(/<GlassSurface/g) ?? []).length, 1, 'one card, not two')
     assert.match(row, /<KpiHero\s*\n\s*bare/)
-    // Weekly return stays the hero's own change chip, stated once.
-    // FOLLOW-UP D — the chip is chosen by mode; weekly keeps the source's own
-    // stated weekly return, and a custom range gets the chain-linked one.
-    assert.match(row, /`\$\{formatRatioPct\(total\.weeklyReturn\)\} \$\{o\.weeklyReturn\}`/)
-    assert.match(row, /`\$\{formatRatioPct\(periodPerf\.periodReturn\)\} \$\{w\.periodReturn\}`/)
-    assert.equal((row.match(/o\.weeklyReturn/g) ?? []).length, 1, 'weekly return is stated once')
+    // The return stays the hero's own change chip, stated ONCE.
+    // FOLLOW-UP E — which RATE it shows is chosen by mode (the source's own
+    // stated weekly return, or the chain-linked period one); the LABEL beside it
+    // comes from the presentation contract, so there is one chip either way.
+    assert.match(
+      row,
+      /isPeriod \? \(periodPerf\?\.periodReturn \?\? null\) : \(total\?\.weeklyReturn \?\? null\)/,
+    )
+    assert.match(row, /\} \$\{labels\.returnLabel\}`/)
+    assert.equal((row.match(/labels\.returnLabel/g) ?? []).length, 1, 'the return is stated once')
   })
 
   test('R13.R3C.4 — the ledger emphasises the week\'s ENDPOINTS, not its movements', () => {
@@ -1600,16 +1608,22 @@ describe('R13.R3C.2 · presentation', () => {
     const row = combinedBlock(page)
     // Exactly the two endpoint rows are `strong`; the two movements between
     // them are not — that is the whole emphasis rule, in one flag.
-    assert.match(row, /\{ label: w\.previousValueLabel,[^}]*strong: true/)
-    assert.match(row, /\{ label: w\.endingValueLabel,[^}]*strong: true/)
-    assert.ok(!/\{ label: o\.weeklyProfit,[^}]*strong/.test(row), 'weekly P&L is not an endpoint')
-    assert.ok(!/\{ label: w\.flowLabel,[^}]*strong/.test(row), 'net flows are not an endpoint')
-    // Two ledgers now — weekly and period — each with exactly two endpoints.
+    //
+    // FOLLOW-UP E — the four row labels resolve through the presentation
+    // contract, so the rule is stated once and holds for BOTH intervals rather
+    // than being re-asserted per dictionary key.
+    assert.equal((row.match(/label: labels\.reconOpening,[\s\S]{0,140}?strong: true/g) ?? []).length, 2)
+    assert.equal((row.match(/label: labels\.reconClosing,[\s\S]{0,180}?strong: true/g) ?? []).length, 2)
+    assert.ok(
+      !/label: labels\.reconProfit,[^}]*strong/.test(row),
+      'the result of the interval is not an endpoint',
+    )
+    assert.ok(
+      !/label: labels\.reconFlow,[^}]*strong/.test(row),
+      'net flows are not an endpoint',
+    )
+    // Two ledgers — weekly and period — each with exactly two endpoints.
     assert.equal((row.match(/strong: true/g) ?? []).length, 4)
-    assert.match(row, /\{ label: w\.periodFromLabel,[^}]*strong: true/)
-    assert.match(row, /\{ label: w\.periodToLabel,[^}]*strong: true/)
-    assert.ok(!/\{ label: w\.periodProfit,[^}]*strong/.test(row), 'period P&L is not an endpoint')
-    assert.ok(!/\{ label: w\.periodFlow,[^}]*strong/.test(row), 'period flows are not an endpoint')
     // And `strong` is what actually enlarges the figure, not just its label.
     assert.match(row, /r\.strong \? 'text-base font-semibold' : ''/)
     assert.match(row, /r\.strong \? 'text-sm' : 'text-xs'/)
@@ -1623,14 +1637,14 @@ describe('R13.R3C.2 · presentation', () => {
     const row = combinedBlock(page)
     const code = row.replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
     for (const figure of [
-      'flowRecon.previousValue',
-      'flowRecon.profit',
-      'flowRecon.flow',
-      'flowRecon.actualCurrent',
-      'total.weeklyValueChange',
+      'flowRecon?.previousValue',
+      'flowRecon?.profit',
+      'flowRecon?.flow',
+      'flowRecon?.actualCurrent',
+      'total?.weeklyValueChange',
     ]) {
       assert.equal(
-        (code.match(new RegExp(figure.replace(/\./g, '\\.'), 'g')) ?? []).length,
+        (code.match(new RegExp(figure.replace(/[.?]/g, (c) => `\\${c}`), 'g')) ?? []).length,
         1,
         `${figure} must be stated exactly once`,
       )
@@ -1644,9 +1658,9 @@ describe('R13.R3C.2 · presentation', () => {
   test('increases sit ABOVE decreases, with the hierarchy chart beside them — and level with them', () => {
     const page = read(WEEKLY)
     const region = page.slice(page.indexOf('§ 6h items 5–6'))
-    const inc = region.indexOf('w.increasesTitle')
-    const dec = region.indexOf('w.decreasesTitle')
-    const chart = region.indexOf('w.hierarchyTitle')
+    const inc = region.indexOf('labels.increasesTitle')
+    const dec = region.indexOf('labels.decreasesTitle')
+    const chart = region.indexOf('labels.hierarchyTitle')
     assert.ok(inc >= 0 && dec > inc, 'decreases render directly after increases')
     assert.ok(chart > dec, 'the hierarchy card follows both, as the second column')
     // The two panels share ONE column; the chart is the other.

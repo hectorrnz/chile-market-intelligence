@@ -57,6 +57,11 @@ const codeOf = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/
 
 const WEEKLY_ROUTE = 'src/app/api/family-portfolio/weekly-changes/[scope]/route.ts'
 const WEEKLY_PAGE = 'src/app/portfolio/weekly-changes/page.tsx'
+// FOLLOW-UP E — the range left this page for `/portfolio/compare`, and the body
+// both pages render is one shared surface. The BASIS under test is unchanged;
+// only where its disclosure is written moved.
+const COMPARE_PAGE = 'src/app/portfolio/compare/page.tsx'
+const CHANGES_SURFACE = 'src/components/familyPortfolio/ChangesSurface.tsx'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A miniature of the real book, at the real dates.
@@ -320,22 +325,26 @@ describe('follow-up B · compare mode', () => {
   test('the route applies the source basis in WEEKLY mode only', () => {
     const route = codeOf(read(WEEKLY_ROUTE))
     assert.match(route, /mode === 'weekly' &&\s*\n?\s*hasSourceWeeklyBasis/)
-    // A custom range reads the second publication, as it always did.
-    assert.match(route, /getSnapshotRowsForScope\(previous\.id, scope\)/)
+    // A period range reads a second endpoint — an earlier publication, or the
+    // row history of a reporting date the book never published.
+    assert.match(route, /getSnapshotRowsForScope\(previousPublicationRow\.id, scope\)/)
+    assert.match(route, /getRowHistoryForScope\(scope, openingRequested\)/)
     // And it reports which basis it used, so the client never has to guess.
     assert.match(route, /weeklyBasis,/)
   })
 
-  test('the compare controls survive this pass unchanged in shape', () => {
-    // FROM before TO in the source order, one switch, both read-only while off.
-    const page = read(WEEKLY_PAGE)
-    const from = page.indexOf('label={w.compareFrom}')
-    const to = page.indexOf('label={w.compareTo}')
+  test('FOLLOW-UP E — the compare controls moved to Compare, whole', () => {
+    // FROM before TO in the source order, and no switch: being on that route is
+    // the mode. The weekly page keeps a single WEEK control and nothing else.
+    const compare = read(COMPARE_PAGE)
+    const from = compare.indexOf('label={w.compareFrom}')
+    const to = compare.indexOf('label={w.compareTo}')
     assert.ok(from > 0 && to > from, 'FROM must be rendered before TO')
-    assert.match(page, /disabled=\{loading \|\| !compareOn\}/)
-    assert.equal((page.match(/disabled=\{loading \|\| !compareOn\}/g) ?? []).length, 2)
-    // No "Weekly" range option was reintroduced.
-    assert.ok(!/WEEKLY_DEFAULT/.test(page))
+    assert.ok(!/<Switch\b/.test(compare))
+    assert.ok(!/WEEKLY_DEFAULT/.test(compare))
+    const weekly = codeOf(read(WEEKLY_PAGE))
+    assert.ok(!/label=\{w\.compare(From|To)\}/.test(weekly), 'no endpoint controls remain')
+    assert.equal((weekly.match(/<WeekSelector/g) ?? []).length, 1)
   })
 })
 
@@ -361,7 +370,7 @@ describe('follow-up B · the R13.8 architecture is preserved', () => {
     const route = codeOf(read(WEEKLY_ROUTE))
     // The previous week's values come out of the SAME row set RLS already
     // released for the current publication — no extra scope, no extra table.
-    assert.match(route, /previousRowSet = sourcePreviousWeekRows\(currentRows\.rows\)/)
+    assert.match(route, /previousRowSet = sourcePreviousWeekRows\(closingRowSet\)/)
   })
 })
 
@@ -371,10 +380,13 @@ describe('follow-up B · the R13.8 architecture is preserved', () => {
 
 describe('follow-up B · disclosure', () => {
   test('the pair note is chosen by the BASIS the server reported', () => {
-    const page = read(WEEKLY_PAGE)
-    // Two bases, two accurate sentences. The page never guesses which one
+    const surface = read(CHANGES_SURFACE)
+    // Two bases, two accurate sentences. The surface never guesses which one
     // applies — the server says, and the note follows.
-    assert.match(page, /data\?\.weeklyBasis === 'source_previous_week' \? w\.sourcePairNote : w\.pairNote/)
+    assert.match(
+      surface,
+      /data\.weeklyBasis === 'source_previous_week'\s*\n?\s*\? w\.sourcePairNote\s*\n?\s*: w\.pairNote/,
+    )
     for (const lang of ['en', 'es'] as const) {
       const w = dict[lang].fp.weeklyChanges
       assert.ok(w.sourcePairNote.length > 40, `${lang} source pair note must be a real sentence`)
@@ -386,13 +398,15 @@ describe('follow-up B · disclosure', () => {
   })
 
   test('an unpublished weekly opening week is EXPLAINED, not silently unselectable', () => {
-    const page = read(WEEKLY_PAGE)
-    // It renders only when the opening week is genuinely absent from the
-    // publication list, so it appears for the catch-up shape and disappears
-    // once the book catches up.
-    assert.match(page, /const weeklyOpeningUnpublished =/)
-    assert.match(page, /!\(data\?\.weeks \?\? \[\]\)\.some\(\(x\) => x\.asOfDate === prevPub\.asOfDate\)/)
-    assert.match(page, /\{w\.weeklyOpeningUnpublished\}/)
+    const surface = read(CHANGES_SURFACE)
+    // FOLLOW-UP E — the condition is now the SERVER's own answer rather than a
+    // membership test the client re-derived: `openingSource` says where the
+    // opening rows came from, and `source_previous_week` is exactly the case
+    // where the opening week has no publication of its own.
+    assert.match(surface, /data\.openingSource === 'source_previous_week'/)
+    assert.match(surface, /\{w\.weeklyOpeningUnpublished\}/)
+    // It cannot appear on the period surface, where the sentence would be false.
+    assert.match(surface, /!isPeriod && data\.openingSource === 'source_previous_week'/)
     for (const lang of ['en', 'es'] as const) {
       const msg = dict[lang].fp.weeklyChanges.weeklyOpeningUnpublished
       assert.ok(msg.length > 60, `${lang} explanation must be a real sentence`)
@@ -432,7 +446,10 @@ describe('follow-up B · impossible anchor dates are dropped at the read layer',
     // Two layers, because the read layer serves several surfaces and the route
     // decides a financial basis. Neither relies on the other having run.
     const route = codeOf(read(WEEKLY_ROUTE))
-    assert.match(route, /hasSourceWeeklyBasis\(currentRows\.rows, current\.previousWeekDate, current\.asOfDate\)/)
+    assert.match(
+      route,
+      /hasSourceWeeklyBasis\(closingRowSet, closingPublication\.previousWeekDate, closingPublication\.asOfDate\)/,
+    )
     assert.equal(hasSourceWeeklyBasis(CURRENT_ROWS, '2026-08-28', '2026-07-17'), false)
   })
 })

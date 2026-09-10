@@ -44,7 +44,7 @@ const code = (src: string) =>
 const SURFACES = [
   'src/app/portfolio/page.tsx',                          // Summary
   'src/app/portfolio/holdings/page.tsx',                // Holdings
-  'src/app/portfolio/weekly-changes/page.tsx',           // Weekly Changes
+  'src/components/familyPortfolio/ChangesSurface.tsx',    // Weekly Changes + Compare (FOLLOW-UP E: one surface)
   'src/app/portfolio/alternatives/page.tsx',             // Alternatives Dashboard
   'src/app/portfolio/alternatives/holdings/page.tsx',    // Alternatives Holdings
   'src/app/portfolio/alternatives/cash-flows/page.tsx',  // Alternatives Cash Flows
@@ -395,7 +395,7 @@ describe('R13.R5C.2 § 3 — one convention on every surface', () => {
     for (const p of [
       'src/app/portfolio/page.tsx',
       'src/app/portfolio/holdings/page.tsx',
-      'src/app/portfolio/weekly-changes/page.tsx',
+      'src/components/familyPortfolio/ChangesSurface.tsx',
     ]) {
       assert.match(read(p), /zeroDashNote/, p)
     }

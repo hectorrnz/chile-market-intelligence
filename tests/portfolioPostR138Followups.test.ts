@@ -45,12 +45,20 @@ const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
 const codeOf = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
 
 const WEEKLY_PAGE = 'src/app/portfolio/weekly-changes/page.tsx'
+// FOLLOW-UP E — the arbitrary range left Weekly Changes for its own route, and
+// everything below either page's header is now ONE shared surface. § 3 below is
+// the follow-up B compare-control suite INVERTED: the same boundary, guarded
+// from the other side — Weekly holds no range, Compare holds nothing weekly.
+const COMPARE_PAGE = 'src/app/portfolio/compare/page.tsx'
+const CHANGES_SURFACE = 'src/components/familyPortfolio/ChangesSurface.tsx'
 const HOLDINGS_PAGE = 'src/app/portfolio/holdings/page.tsx'
 const SELECTOR = 'src/components/familyPortfolio/WeekSelector.tsx'
 const CARD = 'src/components/familyPortfolio/PeriodValueChangeCard.tsx'
 const WEEKLY_ROUTE = 'src/app/api/family-portfolio/weekly-changes/[scope]/route.ts'
 
 const weeklyPage = read(WEEKLY_PAGE)
+const comparePage = read(COMPARE_PAGE)
+const surface = read(CHANGES_SURFACE)
 const holdings = read(HOLDINGS_PAGE)
 const selector = read(SELECTOR)
 const card = read(CARD)
@@ -308,12 +316,31 @@ describe('post-R13.8 · date-only week selectors', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('post-R13.8 · compare controls', () => {
-  test('Compare is OFF by default and is not persisted', () => {
-    assert.match(weeklyPage, /const \[compareOn, setCompareOn\] = useState\(false\)/)
-    // A comparison is a question, not a preference: it must not be restored
-    // from storage on the next visit.
-    assert.ok(!/usePersistentState<[^>]*>\('cmi\.fpCompare/.test(weeklyPage))
-    assert.ok(!/compareOn.*usePersistentState/.test(weeklyPage))
+  test('the range is not persisted — a comparison is a question, not a preference', () => {
+    // Unchanged from follow-up B, moved to the page that now holds the range: a
+    // reader returning next month must not find last month's endpoints.
+    assert.ok(!/usePersistentState<[^>]*>\('cmi\.fpCompare/.test(comparePage))
+    assert.ok(!/(fromDate|toDate).*usePersistentState/.test(comparePage))
+    assert.match(comparePage, /const \[fromDate, setFromDate\] = useState<string \| null>\(null\)/)
+    assert.match(comparePage, /const \[toDate, setToDate\] = useState<string \| null>\(null\)/)
+  })
+
+  test('FOLLOW-UP E — Weekly Changes holds no range at all', () => {
+    // The inverted assertion. Every control the follow-up B suite required on
+    // this page is now required to be ABSENT from it.
+    const code = codeOf(weeklyPage)
+    for (const gone of ['compareOn', 'setCompareOn', 'compareFrom', 'setCompareFrom', '<Switch']) {
+      assert.ok(!code.includes(gone), `the weekly page must no longer carry ${gone}`)
+    }
+    // One date control, and it is the WEEK — not an endpoint of a range.
+    assert.equal((code.match(/<WeekSelector/g) ?? []).length, 1)
+    assert.ok(!/label=\{w\.compare(From|To)\}/.test(code), 'no FROM/TO endpoint labels')
+    // And the switch's own strings are deleted, not merely unused.
+    for (const lang of ['en', 'es'] as const) {
+      const d = dict[lang].fp.weeklyChanges as Record<string, unknown>
+      assert.ok(!('compareToggle' in d), `${lang}: the toggle label is gone`)
+      assert.ok(!('compareModeLabel' in d), `${lang}: the mode label is gone`)
+    }
   })
 
   test('the "Weekly" pseudo-range option is GONE, control and string alike', () => {
@@ -329,91 +356,82 @@ describe('post-R13.8 · compare controls', () => {
     }
   })
 
-  test('FROM and TO are both read-only while Compare is off', () => {
-    // One expression, used by both selects: the page is loading, or compare is
-    // off. Neither endpoint can be changed in standard weekly mode.
-    assert.equal((weeklyPage.match(/disabled=\{loading \|\| !compareOn\}/g) ?? []).length, 2)
+  test('both endpoints are live controls — there is no mode left to be off', () => {
+    // Follow-up B disabled both selects unless the switch was on. With the
+    // switch gone, being on this route IS the mode and both are always usable.
+    assert.ok(!/!compareOn/.test(comparePage))
+    assert.equal((comparePage.match(/disabled=\{loading\}/g) ?? []).length, 2)
   })
 
   test('FROM sits physically LEFT of TO', () => {
-    const toggle = weeklyPage.indexOf('w.compareToggle')
-    const from = weeklyPage.indexOf('label={w.compareFrom}')
-    const to = weeklyPage.indexOf('label={w.compareTo}')
-    assert.ok(toggle > 0 && from > 0 && to > 0, 'all three controls render')
-    assert.ok(toggle < from, 'the switch introduces the pair')
+    const from = comparePage.indexOf('label={w.compareFrom}')
+    const to = comparePage.indexOf('label={w.compareTo}')
+    assert.ok(from > 0 && to > 0, 'both endpoint controls render')
     assert.ok(from < to, 'FROM precedes TO in the control row')
+    // …and no switch introduces them, because there is nothing to switch.
+    assert.ok(!/<Switch\b/.test(comparePage))
   })
 
-  test('off compare, the endpoints are the page\'s own — latest week, preceding week', () => {
-    // Nothing is chosen: `asOf` null resolves to the latest publication and
-    // `compareFrom` null to the immediately preceding one, server-side.
-    const pair = selectWeekPair(spine, null)
-    assert.ok(pair.ok)
-    assert.equal(pair.selection.current.asOfDate, '2026-09-04')
-    assert.equal(pair.selection.previous?.asOfDate, '2026-07-31')
-    // Turning compare off resets BOTH endpoints, so the page returns to exactly
-    // that pair rather than stranding the reader on a week they cannot leave.
-    assert.match(weeklyPage, /setCompareOn\(false\)\s*\n\s*setCompareFrom\(null\)\s*\n\s*setAsOf\(null\)/)
+  test('Compare opens on a REAL pair, resolved by the server, not an empty form', () => {
+    // With neither endpoint chosen the page asks for period semantics and lets
+    // the server pick the opening endpoint from the eligible set — which only
+    // the server has read.
+    assert.match(comparePage, /fetchFamilyPortfolioWeeklyChanges\(activeScope, toDate, fromDate, true\)/)
+    assert.match(read(WEEKLY_ROUTE), /const wantPeriod = url\.searchParams\.get\('period'\) === '1'/)
+    assert.match(read(WEEKLY_ROUTE), /const mode = from !== null \|\| wantPeriod \? 'custom' : 'weekly'/)
+    // The default opening endpoint is the eligible date immediately BEFORE the
+    // closing one — an exact member of the set, never a nearest-date guess.
+    assert.match(
+      read(WEEKLY_ROUTE),
+      /from \?\? \[\.\.\.compareDates\]\.reverse\(\)\.find\(\(d\) => d < to\) \?\? null/,
+    )
   })
 
-  test('turning Compare on opens on a real PUBLICATION pair, not the weekly one', () => {
-    // Compare is an endpoint comparison, so it must open on two endpoints that
-    // can carry one. The weekly opening endpoint is the source's own
-    // previous-week column — a week the book never published — so entering
-    // compare seeds FROM with the most recent earlier PUBLICATION instead.
-    assert.match(weeklyPage, /setAsOf\(pub\.asOfDate\)\s*\n\s*setCompareFrom\(earlierWeeks\[0\]\.asOfDate\)\s*\n\s*setCompareOn\(true\)/)
-    // The FROM select always shows a real date — never a blank, never a
-    // sentinel word — from whichever option list the current mode supplies.
-    assert.match(weeklyPage, /value=\{compareFrom \?\? fromOptions\[0\]\.asOfDate\}/)
-  })
-
-  test('FROM offers publications in compare, and the resolved weekly week off it', () => {
-    // OFF: one read-only option, the week the page is actually measuring from.
-    // That week is deliberately absent from the publication list after a
-    // catch-up import, so the control carries it rather than rendering blank.
-    assert.match(weeklyPage, /if \(compareOn \|\| prevPub === null\) return earlierWeeks/)
-    assert.match(weeklyPage, /asOfDate: prevPub\.asOfDate, revision: 0/)
-    // ON: only published weeks, because a custom comparison needs a full
-    // snapshot at both ends. No evolution-only week is ever offered.
-    assert.match(weeklyPage, /weeks=\{fromOptions\}/)
+  test('the endpoint universe is the ELIGIBLE set, not the publication list', () => {
+    const route = read(WEEKLY_ROUTE)
+    // FOLLOW-UP E — a date is eligible when the scope has a complete
+    // source-backed row set at it: a current publication, or a frozen reporting
+    // date in row history. Measured on the real book that is 107 rather than
+    // 103, and the four extra are the most recent weeks in it.
+    assert.match(route, /const compareDates = \[\s*\n?\s*\.\.\.new Set\(\[\.\.\.publicationByDate\.keys\(\), \.\.\.rowHistoryDates\]\),\s*\n?\s*\]\.sort\(\)/)
+    // The client renders that set and nothing else.
+    assert.match(comparePage, /const allDates = useMemo\(\(\) => data\?\.compareDates \?\? \[\], \[data\]\)/)
+    // `weeks` stays the PUBLICATION list — it is what the weekly selector reads,
+    // and a row-history date must never be offered as a published week.
+    assert.match(route, /const weeks = spine\.publications\.map\(\(p\) => \(\{ asOfDate: p\.asOfDate, revision: p\.revision \}\)\)/)
   })
 
   test('a reversed range cannot be built in the UI, and is refused server-side', () => {
-    // The FROM list holds only weeks strictly earlier than the selected TO…
-    assert.match(weeklyPage, /\.filter\(\(x\) => selectedWeek !== null && x\.asOfDate < selectedWeek\)/)
+    // The FROM list holds only dates strictly earlier than the resolved TO…
+    assert.match(comparePage, /allDates\.filter\(\(d\) => d < resolvedTo\)/)
     // …and moving TO onto or before the chosen FROM drops FROM rather than
     // carrying an impossible pair.
-    assert.match(weeklyPage, /if \(compareFrom !== null && compareFrom >= next\) setCompareFrom\(null\)/)
+    assert.match(comparePage, /if \(fromDate !== null && fromDate >= next\) setFromDate\(null\)/)
     // The server refuses independently, whatever any client sends.
-    assert.equal(selectComparisonRange(spine, '2026-09-04', '2026-07-31').ok, false)
+    assert.match(read(WEEKLY_ROUTE), /: !\(openingRequest < to\)\s*\n?\s*\? 'from_not_before_to'/)
+    // And the pure range selector still refuses a reversed or zero-length pair.
     const reversed = selectComparisonRange(spine, '2026-09-04', '2026-07-31')
     assert.equal(reversed.ok === false && reversed.code, 'from_not_before_to')
-    assert.equal(
-      selectComparisonRange(spine, '2026-07-31', '2026-07-31').ok === false &&
-        (selectComparisonRange(spine, '2026-07-31', '2026-07-31') as { code: string }).code,
-      'from_not_before_to',
-    )
-    // A valid explicit pair still resolves, and reports itself as custom.
+    const zero = selectComparisonRange(spine, '2026-07-31', '2026-07-31')
+    assert.equal(zero.ok === false && zero.code, 'from_not_before_to')
     const ok = selectComparisonRange(spine, '2026-06-19', '2026-09-04')
     assert.ok(ok.ok)
     assert.equal(ok.selection.mode, 'custom')
   })
 
   test('a scope switch resets the comparison rather than carrying it across', () => {
-    assert.match(
-      weeklyPage,
-      /setCompareFrom\(null\)\s*\n\s*setAsOf\(null\)\s*\n\s*setCompareOn\(false\)/,
-    )
+    assert.match(comparePage, /setPrevScope\(activeScope\)\s*\n\s*setFromDate\(null\)\s*\n\s*setToDate\(null\)/)
+    // And on the weekly page the same rule applies to the one thing it holds.
+    assert.match(weeklyPage, /setPrevScope\(activeScope\)\s*\n\s*setAsOf\(null\)/)
   })
 
-  test('the toggle is a real switch, named in both languages', () => {
-    assert.match(weeklyPage, /<Switch\b/)
-    assert.match(weeklyPage, /aria-label=\{w\.compareModeLabel\}/)
+  test('Compare is a real navigation destination, named in both languages', () => {
+    assert.match(read('src/components/familyPortfolio/FamilyPortfolioNav.tsx'), /PORTFOLIO_COMPARE, t\.fp\.navCompare/)
     for (const lang of ['en', 'es'] as const) {
-      const d = dict[lang].fp.weeklyChanges
-      assert.equal(typeof d.compareToggle, 'string')
-      assert.ok(d.compareToggle.length > 0)
-      assert.equal(typeof d.compareModeLabel, 'string')
+      const label = dict[lang].fp.navCompare
+      assert.equal(typeof label, 'string')
+      assert.ok(label.length > 0)
+      assert.ok(!/week|semana/i.test(label), `${lang}: the tab is not named after a week`)
     }
   })
 
@@ -435,8 +453,10 @@ describe('post-R13.8 · copy', () => {
       const note = dict[lang].fp.weeklyChanges.pairNote
       assert.ok(/preceding|anterior/i.test(note), `${lang}: names the preceding published week`)
     }
-    assert.match(weeklyPage, /w\.pairNote/)
-    assert.match(weeklyPage, /w\.customPairNote/)
+    // Both notes live in the shared surface, which chooses between them by the
+    // mode it was rendered in rather than by re-deriving one.
+    assert.match(surface, /w\.pairNote/)
+    assert.match(surface, /w\.customPairNote/)
   })
 
   test('no copy anywhere still describes a "Weekly" range option', () => {
@@ -452,23 +472,32 @@ describe('post-R13.8 · copy', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('post-R13.8 · catch-up weeks stay evolution-only', () => {
-  test('CUSTOM compare still needs a full publication at BOTH endpoints', () => {
+  test('FOLLOW-UP E — a catch-up week is an ANALYTICAL endpoint, never a publication', () => {
     const route = codeOf(read(WEEKLY_ROUTE))
-    // Every snapshot read is keyed by a PUBLICATION ID, so an evolution-only
-    // week can never be a selectable custom endpoint — the catch-up
-    // architecture is preserved, not worked around.
-    assert.match(route, /getSnapshotRowsForScope\(current\.id, scope\)/)
-    assert.match(route, /getSnapshotRowsForScope\(previous\.id, scope\)/)
+    // The eligible set widened; the architecture did not. A publication endpoint
+    // is still read by PUBLICATION ID, and a row-history endpoint is read from
+    // `portfolio_row_history` — never from a manufactured publication.
+    assert.match(route, /getSnapshotRowsForScope\(closingPublication\.id, scope\)/)
+    assert.match(route, /getSnapshotRowsForScope\(previousPublicationRow\.id, scope\)/)
+    assert.match(route, /getRowHistoryForScope\(scope, closingDate\)/)
+    assert.match(route, /getRowHistoryForScope\(scope, openingRequested\)/)
     assert.match(route, /listCurrentPublications\('portfolio'\)/)
+    // A row-history endpoint carries NO publication bookkeeping — the response
+    // says so with a null publication rather than inventing a revision.
+    assert.match(route, /closingPublication === null\s*\n?\s*\? null/)
+    assert.match(route, /closingSource: 'publication' \| 'row_history'/)
   })
 
   test('WEEKLY default reads the source previous-week column, not a second publication', () => {
     const route = codeOf(read(WEEKLY_ROUTE))
     // The one-week comparison comes out of the SELECTED publication alone:
     // its recorded previous-week date plus each row's own previous value.
-    assert.match(route, /hasSourceWeeklyBasis\(currentRows\.rows, current\.previousWeekDate, current\.asOfDate\)/)
-    assert.match(route, /previousRowSet = sourcePreviousWeekRows\(currentRows\.rows\)/)
-    // And it applies ONLY in weekly mode — a custom range is two real endpoints.
+    assert.match(
+      route,
+      /hasSourceWeeklyBasis\(closingRowSet, closingPublication\.previousWeekDate, closingPublication\.asOfDate\)/,
+    )
+    assert.match(route, /previousRowSet = sourcePreviousWeekRows\(closingRowSet\)/)
+    // And it applies ONLY in weekly mode — a period is two real endpoints.
     assert.match(route, /mode === 'weekly' &&\s*\n?\s*hasSourceWeeklyBasis/)
   })
 

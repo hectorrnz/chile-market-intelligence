@@ -36,8 +36,10 @@ const PAGES_WITH_TABLES = [
   'src/app/portfolio/admin/page.tsx',
   'src/app/portfolio/holdings/page.tsx',
   'src/app/portfolio/page.tsx',
-  // R13.R5G — the remaining R13 table-bearing surfaces.
-  'src/app/portfolio/weekly-changes/page.tsx',
+  // R13.R5G — the remaining R13 table-bearing surfaces. FOLLOW-UP E: the
+  // Weekly Changes and Compare tables both render from the ONE shared
+  // surface, so the convention is asserted there rather than twice.
+  'src/components/familyPortfolio/ChangesSurface.tsx',
   'src/app/portfolio/alternatives/page.tsx',
   'src/app/portfolio/alternatives/holdings/page.tsx',
   'src/app/portfolio/alternatives/cash-flows/page.tsx',
@@ -180,7 +182,7 @@ describe('structured notes — one source line, not four', () => {
 // change.
 
 const FP_TABLE_SURFACES = [
-  'src/app/portfolio/weekly-changes/page.tsx',
+  'src/components/familyPortfolio/ChangesSurface.tsx',
   'src/app/portfolio/alternatives/page.tsx',
   'src/app/portfolio/alternatives/holdings/page.tsx',
   'src/app/portfolio/alternatives/cash-flows/page.tsx',

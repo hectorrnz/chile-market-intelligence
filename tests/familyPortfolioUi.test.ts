@@ -24,7 +24,13 @@ const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
 const LAYOUT = 'src/app/portfolio/layout.tsx'
 const OVERVIEW_PAGE = 'src/app/portfolio/page.tsx'
 const PORTFOLIO_PAGE = 'src/app/portfolio/holdings/page.tsx'
+// FOLLOW-UP E — Weekly Changes split into a thin PAGE (header, week
+// control, fetch) and the SHARED `ChangesSurface` that holds everything
+// below it, which `/portfolio/compare` renders too. Assertions about the
+// weekly surface read both halves together.
 const WEEKLY_PAGE = 'src/app/portfolio/weekly-changes/page.tsx'
+const CHANGES_SURFACE = 'src/components/familyPortfolio/ChangesSurface.tsx'
+const COMPARE_PAGE = 'src/app/portfolio/compare/page.tsx'
 const ALTERNATIVES_PAGE = 'src/app/portfolio/alternatives/page.tsx'
 const SCOPES_ROUTE = 'src/app/api/family-portfolio/scopes/route.ts'
 const WEEKS_ROUTE = 'src/app/api/family-portfolio/[scope]/weeks/route.ts'
@@ -80,7 +86,8 @@ const ALT_DRILLDOWNS = 'src/components/familyPortfolio/AlternativesDrilldowns.ts
 
 /** Every CLIENT file the module ships — pages, components, the fetch helper. */
 const CLIENT_FILES = [
-  LAYOUT, OVERVIEW_PAGE, PORTFOLIO_PAGE, WEEKLY_PAGE, ALTERNATIVES_PAGE,
+  LAYOUT, OVERVIEW_PAGE, PORTFOLIO_PAGE, WEEKLY_PAGE, COMPARE_PAGE, CHANGES_SURFACE,
+  ALTERNATIVES_PAGE,
   PROVIDER, NAV, GATE, TABLE, WEEK_SELECTOR, DATA_HELPER,
   MASKED_AMOUNT, DONUT, FRESHNESS,
   RECON_STATUS, CONTRIB_CHART, CONTRIB_MODAL, PERIOD_CARD,
@@ -98,7 +105,12 @@ const codeOf = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/
 
 describe('R13.6 · module shell', () => {
   test('the shell exists: layout + five pages, provider mounted once', () => {
-    for (const rel of [LAYOUT, OVERVIEW_PAGE, PORTFOLIO_PAGE, WEEKLY_PAGE, ALTERNATIVES_PAGE]) {
+    for (const rel of [
+      LAYOUT, OVERVIEW_PAGE, PORTFOLIO_PAGE, WEEKLY_PAGE,
+      // FOLLOW-UP E — Compare is the sixth page, and the surface both it and
+      // Weekly Changes render.
+      COMPARE_PAGE, CHANGES_SURFACE, ALTERNATIVES_PAGE,
+    ]) {
       assert.ok(existsSync(join(ROOT, rel)), `${rel} must exist`)
     }
     const layout = read(LAYOUT)
@@ -150,7 +162,7 @@ describe('R13.6 · module shell', () => {
     assert.match(overview, /const portfolioScopes = portfolioScopesOf\(scopes\)/,
       'scope options come from the SERVER-FILTERED entitlement, never a client list')
     assert.match(overview, /MemberGate/)
-    const weekly = read(WEEKLY_PAGE)
+    const weekly = `${read(WEEKLY_PAGE)}\n${read(CHANGES_SURFACE)}`
     assert.match(weekly, /fetchFamilyPortfolioWeeklyChanges/,
       'Weekly Changes is now the real Stage-8 page')
     assert.match(weekly, /MemberGate/)
@@ -598,7 +610,7 @@ describe('R13.6 · portfolio page', () => {
     //   * DONUT formats a slice's value label, but only inside a branch gated
     //     on `!wantsValue || maskedEffective`, so an amount is unreachable
     //     while the page is masked (asserted directly below).
-    const MAY_FORMAT_AMOUNTS = new Set([TABLE, MASKED_AMOUNT, OVERVIEW_PAGE, WEEKLY_PAGE, STRIP, DONUT])
+    const MAY_FORMAT_AMOUNTS = new Set([TABLE, MASKED_AMOUNT, OVERVIEW_PAGE, CHANGES_SURFACE, STRIP, DONUT])
     for (const rel of CLIENT_FILES) {
       const src = codeOf(read(rel))
       assert.ok(!src.includes('toLocaleString'),

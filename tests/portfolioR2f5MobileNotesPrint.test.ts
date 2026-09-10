@@ -40,7 +40,8 @@ const CSS_CODE = CSS.replace(/\/\*[\s\S]*?\*\//g, '')
 const PORTFOLIO_TAB = [
   'src/app/portfolio/page.tsx',
   'src/app/portfolio/holdings/page.tsx',
-  'src/app/portfolio/weekly-changes/page.tsx',
+  // FOLLOW-UP E — the note bands live in the shared Changes surface now.
+  'src/components/familyPortfolio/ChangesSurface.tsx',
   // R13.R4A split Alternatives into three views. § C says to treat the tab as
   // ONE surface, so all three join the band conventions — a note packed
   // differently on one of them is exactly the drift this section exists to stop.

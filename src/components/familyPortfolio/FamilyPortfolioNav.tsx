@@ -1,7 +1,13 @@
 'use client'
 
-// R13.6 — Family Portfolio module navigation (doc 08 Stage 6; doc 05 § 7.2):
-// `Overview · Portfolio · Weekly Changes · Alternatives · Admin`.
+// R13.6 — Family Portfolio module navigation (doc 08 Stage 6; doc 05 § 7.2).
+//
+// POST-R13.8 FOLLOW-UP E — the rail is now
+// `Summary · Holdings · Weekly Changes · Compare · Alternatives · Admin`.
+// Compare sits directly beside Weekly Changes because it is the same page over
+// a period the reader picks, and the pair reads as one idea split by interval.
+// It carries `?scope=` exactly as its neighbour does, in the same pill
+// language, with no styling of its own.
 //
 // Items are derived from the SERVER-FILTERED entitlement in
 // FamilyPortfolioProvider — the browser never holds a scope it was not
@@ -34,6 +40,7 @@ import { ALTERNATIVES_ROOT } from '@/lib/familyPortfolio/alternativesRoutes'
 import {
   ALTERNATIVES_SCOPE,
   PORTFOLIO_ADMIN,
+  PORTFOLIO_COMPARE,
   PORTFOLIO_HOLDINGS,
   PORTFOLIO_SUMMARY,
   PORTFOLIO_WEEKLY_CHANGES,
@@ -88,6 +95,7 @@ export function FamilyPortfolioNav() {
   if (hasPortfolioScope) {
     items.push(scoped('portfolio', PORTFOLIO_HOLDINGS, t.fp.navPortfolio))
     items.push(scoped('weekly-changes', PORTFOLIO_WEEKLY_CHANGES, t.fp.navWeeklyChanges))
+    items.push(scoped('compare', PORTFOLIO_COMPARE, t.fp.navCompare))
   }
   if (hasAlternatives) {
     items.push(shared('alternatives', ALTERNATIVES_ROOT, t.fp.navAlternatives))

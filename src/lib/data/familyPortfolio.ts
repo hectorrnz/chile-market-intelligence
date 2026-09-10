@@ -465,11 +465,22 @@ export type WeeklyChangesState =
    *  no rows to this reader. Honest emptiness, never a comparison against
    *  nothing, which would report every position as newly created. */
   | 'opening_not_available'
+  /** FOLLOW-UP E - the same, on the closing side of a Compare range. */
+  | 'closing_not_available'
 
 export interface WeeklyChangesResponse {
   scope: string
   state: WeeklyChangesState
   weeks: FamilyPortfolioWeek[]
+  /** FOLLOW-UP E — every date this scope may use as a COMPARE endpoint:
+   *  publications and source-backed row-history dates together, ascending.
+   *  Distinct from `weeks`, which is the publication list the WEEKLY selector
+   *  offers and which never gains a row-history date. */
+  compareDates?: string[]
+  /** The closing endpoint's PUBLICATION, when it has one. Null when the closing
+   *  endpoint is a source-backed row-history date, which carries no revision,
+   *  no published-at and no parser version. Weekly Changes always closes on a
+   *  publication, so this is never null there. */
   publication: {
     id: string
     asOfDate: string
@@ -477,6 +488,12 @@ export interface WeeklyChangesResponse {
     publishedAt: string
     parserVersion: string
   } | null
+  /** FOLLOW-UP E — the closing endpoint itself, present in every `ok` state.
+   *  Mirrors `previousPublication`: a date, and a publication timestamp only
+   *  where one genuinely exists. */
+  closingEndpoint?: { asOfDate: string; publishedAt: string | null }
+  /** Where the closing endpoint's rows came from. */
+  closingSource?: 'publication' | 'row_history'
   /** The opening endpoint — the preceding week in `weekly` mode, the chosen
    *  `from` week in `custom`. Null on the earliest published week.
    *  `publishedAt` is null when the endpoint is the source's own previous-week
@@ -519,17 +536,26 @@ export interface WeeklyChangesResponse {
  * week; omitted → the latest current publication. There is deliberately no
  * nearest-week fallback — an unknown week is the server's 404, surfaced as-is.
  *
- * `from` opts into CUSTOM COMPARE (R13.R1.1 § 13): the comparison then runs
- * from that published week to `asOf`, however many weeks apart they are.
+ * `from` opts into CUSTOM COMPARE (R13.R1.1 § 13; FOLLOW-UP E): the comparison
+ * then runs from that reporting date to `asOf`, however far apart they are.
+ * Either endpoint may be a source-backed row-history date rather than a
+ * publication — see `compareDates`.
  */
 export function fetchFamilyPortfolioWeeklyChanges(
   scope: string,
   asOf?: string | null,
   from?: string | null,
+  /** FOLLOW-UP E — ask for PERIOD semantics with no opening endpoint chosen
+   *  yet. `/portfolio/compare` sends it on first load so the server resolves
+   *  the default opening endpoint from the eligible set, which only the server
+   *  has read. Redundant once `from` is given, and never sent by the weekly
+   *  page. */
+  period?: boolean,
 ): Promise<FetchResult<WeeklyChangesResponse>> {
   const params = new URLSearchParams()
   if (asOf) params.set('asOf', asOf)
   if (from) params.set('from', from)
+  if (period) params.set('period', '1')
   const qs = params.toString()
   return get(`/api/family-portfolio/weekly-changes/${encodeURIComponent(scope)}${qs ? `?${qs}` : ''}`)
 }
