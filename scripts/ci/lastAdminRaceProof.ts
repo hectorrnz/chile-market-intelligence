@@ -209,11 +209,36 @@ update public.user_profiles
 /**
  * The count this whole stage exists to keep above zero, expressed with the SAME
  * predicate the guard uses rather than a simplified re-statement of it.
+ *
+ * Deliberately GLOBAL rather than scoped to the fixtures: the guard counts every
+ * administrator in the table, so a proof that counted only its own rows would
+ * report a healthy population the guard itself would disagree with.
  */
 const COUNT_ACTIVE_ADMINS = `
 select count(*) from public.user_profiles p
 where p.role = 'administrator'
   and public.nmi_profile_usable(p.username::text, p.activated_at, p.disabled_at);
+`
+
+/**
+ * ISOLATION, AND WHY THE PROOF IS WORTHLESS WITHOUT IT.
+ *
+ * Earlier steps in this workflow commit their own rows into `user_profiles`, and
+ * at least one of them is an active administrator. The guard counts the WHOLE
+ * table, so with a third administrator present neither racing transaction is ever
+ * removing the last one — both are legitimately allowed, no refusal is expected,
+ * and every assertion below would pass or fail for reasons that have nothing to
+ * do with serialisation. The first run of this script proved exactly that: the
+ * control committed both demotions and still left an administrator standing.
+ *
+ * So the population under test is reduced to the two fixtures. This runs AFTER
+ * they are inserted, which is what makes it legal: demoting the leftovers is
+ * permitted precisely because A and B already exist to take their place.
+ */
+const NEUTRALISE_OTHER_ADMINS = `
+update public.user_profiles set role = 'user'
+ where role = 'administrator'
+   and id not in ('${ADMIN_A}', '${ADMIN_B}');
 `
 
 /**
@@ -307,7 +332,29 @@ async function main(): Promise<void> {
   const psql = resolvePsql(url)
   console.log(`D0C last-administrator race proof - ${psql.how}\n`)
 
-  sql(psql, CREATE_IDENTITIES)
+  const identities = sql(psql, CREATE_IDENTITIES)
+  if (!identities.ok) throw new Error(`could not create the fixture identities: ${identities.stderr}`)
+
+  const seeded = sql(psql, RESET_FIXTURES)
+  if (!seeded.ok) throw new Error(`could not seed the fixtures: ${seeded.stderr}`)
+
+  const neutralised = sql(psql, NEUTRALISE_OTHER_ADMINS)
+  if (!neutralised.ok) throw new Error(`could not isolate the population: ${neutralised.stderr}`)
+
+  // Asserted, not assumed. If a later change to this workflow leaves another
+  // administrator behind, this fails loudly here rather than quietly turning
+  // every assertion below into a test of nothing.
+  const baseline = Number.parseInt(sql(psql, COUNT_ACTIVE_ADMINS).stdout, 10)
+  check(
+    baseline === 2,
+    'the population under test is exactly the two fixture administrators',
+    `activeAdmins=${baseline}; another step in this workflow left an administrator behind`,
+  )
+  if (baseline !== 2) {
+    console.error('cannot prove anything about a last-administrator rule without knowing who the administrators are')
+    process.exit(1)
+  }
+  console.log('')
 
   // -- A . CONTROL ---------------------------------------------------------
   console.log('A . control: the PRE-D0C guard permits the write skew')

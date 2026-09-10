@@ -211,6 +211,25 @@ describe('D0C · D — the concurrency proof is real, and non-vacuous', () => {
   it('counts administrators with the SAME predicate the guard uses', () => {
     assert.match(proof, /public\.nmi_profile_usable\(p\.username::text, p\.activated_at, p\.disabled_at\)/)
   })
+
+  it('counts the WHOLE table, not just its own fixtures', () => {
+    // The guard counts every administrator, so a proof that counted only its own
+    // rows could report a population the guard itself disagrees with.
+    const count = proof.slice(proof.indexOf('const COUNT_ACTIVE_ADMINS'))
+    const body = count.slice(0, count.indexOf('`\n', count.indexOf('`') + 1))
+    assert.doesNotMatch(body, /ADMIN_A|ADMIN_B|MEMBER_C/)
+  })
+
+  it('isolates the population first, and refuses to continue if it cannot', () => {
+    // Earlier steps in the same workflow commit administrator rows. With a third
+    // administrator present neither racing transaction removes the last one, so
+    // every assertion would pass for the wrong reason. This is what the first CI
+    // run of this script actually hit.
+    assert.match(proof, /NEUTRALISE_OTHER_ADMINS/)
+    assert.match(proof, /id not in \('\$\{ADMIN_A\}', '\$\{ADMIN_B\}'\)/)
+    assert.match(proof, /baseline === 2/)
+    assert.match(proof, /the population under test is exactly the two fixture administrators/)
+  })
 })
 
 describe('D0C · E — the gate actually runs it', () => {
