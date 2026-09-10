@@ -718,7 +718,27 @@ describe('C · public self-registration is removed at both layers', () => {
 
   test('no sample credentials or public-invitation wording survives', () => {
     assert.doesNotMatch(LOGIN, /demo|sample credential|test@|password123/i)
-    assert.doesNotMatch(LOGIN, /invite|invitation|sign up|signup|register/i)
+    assert.doesNotMatch(LOGIN, /sign up|signup|register/i)
+
+    // D0C NARROWED THIS, AND NARROWED IT RATHER THAN RELAXING IT.
+    //
+    // The property is that this page never offers a way to get yourself an
+    // account. A blanket ban on the substring "invit" also caught the one thing
+    // that is the OPPOSITE of that offer: the message an already-invited person
+    // sees when their link is expired, spent or superseded. Without it they are
+    // told "Authentication failed. Please sign in again." — advice they cannot
+    // follow, having never had a password.
+    //
+    // So instead of allowing the word, this pins the EXACT set of references
+    // permitted. Any other mention of an invitation on the login page — a
+    // "request an invitation" link, a self-service form, a marketing line — adds
+    // a token to this list and fails.
+    const invitationRefs = [...new Set(LOGIN.match(/[\w.']*invit[\w.']*/gi) ?? [])].sort()
+    assert.deepEqual(
+      invitationRefs,
+      ["'invite_link_invalid'", 't.auth.errInviteLinkInvalid'],
+      'the only invitation references may be the dead-link error mapping',
+    )
   })
 
   test('no service-role secret can reach client code', () => {

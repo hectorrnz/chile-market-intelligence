@@ -98,6 +98,12 @@ function callbackErrorToMessage(t: ReturnType<typeof useLang>['t'], code: string
     // a denial — so it must not read like one.
     case 'module_access_unavailable':
       return t.auth.errAccessUnavailable
+    // D0C — the invitation link did not redeem: expired, already used, or
+    // superseded by a newer invitation. A fourth distinct message, because the
+    // generic one below tells the reader to sign in again and an invitee has no
+    // password to sign in WITH. The remedy is a new invitation, so it says that.
+    case 'invite_link_invalid':
+      return t.auth.errInviteLinkInvalid
     default:
       return t.auth.errorCallback
   }

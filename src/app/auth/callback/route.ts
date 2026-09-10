@@ -159,6 +159,28 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       error.message,
       error.status,
     )
+
+    // D0C — AN INVITATION THAT FAILS TO REDEEM IS NOT A FAILED SIGN-IN.
+    //
+    // GoTrue enforces the one-time link's expiry, and it refuses a token that has
+    // expired, that was already redeemed, or that a later invitation superseded.
+    // All three arrive here identically, and all three used to redirect to the
+    // generic `callback_failed`, whose message is "Authentication failed. Please
+    // sign in again."
+    //
+    // For an invited person that instruction is impossible to follow: they have
+    // never had a password, so there is nothing to sign in again WITH. The remedy
+    // is a fresh invitation from an administrator, and the message has to say so
+    // or the invitee is left at a dead end on the one screen they can reach.
+    //
+    // Deliberately ONE code for all three causes. Telling an unauthenticated
+    // caller whether a token was expired, already used, or superseded describes
+    // the state of somebody else's invitation to whoever holds the link.
+    if (hasOtp && otpType === 'invite') {
+      const failed = NextResponse.redirect(new URL('/login?error=invite_link_invalid', request.url))
+      failed.headers.set('Cache-Control', NO_STORE)
+      return failed
+    }
   }
 
   return NextResponse.redirect(new URL('/login?error=callback_failed', request.url))

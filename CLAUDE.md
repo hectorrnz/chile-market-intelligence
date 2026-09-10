@@ -833,6 +833,33 @@ there is exactly one functional administrator and no owner work-email account. T
 never leave zero functional administrators: provision and fully verify the real administrator
 first, confirm two functional administrators exist, and only then change the Test User.
 
+**D0C — THE LAST-ADMINISTRATOR GUARD SERIALISES (`20260824000000`).** The R13.6F guard tested the
+resulting population but took no lock, so two administrators removed in overlapping transactions
+each saw the other as still present and both were allowed: a write skew that empties the set. It
+was unreachable with one administrator and becomes reachable the moment D0B creates the second,
+which is why it landed first. **The invariant is now: every mutation that could empty the active
+administrator set takes one transaction-scoped advisory key
+(`nmi_lock_administrator_population`) BEFORE it counts who is left, so the decisions take turns and
+the loser counts against a settled world.** The key is taken only on the population-reducing path —
+both early returns stay ahead of it — so ordinary edits, promotions and member changes never queue
+behind it. Nothing else moved: not the definition of an administrator, of approval, activation or
+the disabled state, and not the bare `last_administrator` refusal. pgTAP cannot express a write
+skew from one session, so the behavioural proof is `scripts/ci/lastAdminRaceProof.ts`, which drives
+two real backends through the interleaving and reproduces the defect with the pre-D0C guard before
+proving the shipped one refuses it.
+
+**An unredeemable invitation now says so.** An expired, spent or superseded invite link used to
+land on "Authentication failed. Please sign in again." — advice an invitee cannot follow, never
+having had a password. It now answers `invite_link_invalid` and tells them to ask for a new
+invitation. One code for all three causes: which one it was is somebody else's account state.
+
+**D0B is gated on invite email, which is NOT yet proven.** The invite link is delivered only by
+email and is never shown in the console, so a delivery failure strands the account with no
+recovery path. Production has never sent one: 64 monitoring runs, zero sends. Before D0B the owner
+must confirm `RESEND_API_KEY` is set in Production and that `NOTIFICATION_EMAIL_FROM` is an address
+on a Resend-verified domain — the fallback `onboarding@resend.dev` only reaches the Resend
+account's own address and will not deliver to a work-email domain.
+
 ---
 
 **R13 CLOSED (2026-09-08) — documentation/repository-hygiene closeout only; no code, migration, or

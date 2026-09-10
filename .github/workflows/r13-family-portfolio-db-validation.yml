@@ -35,6 +35,11 @@ on:
       # multi-week catch-up commits or rolls back as ONE transaction. That claim
       # is about real PostgreSQL behaviour, so it must clear this gate.
       - 'feat/r13-8-**'
+      # D0 — user access management. It changes the last-administrator guard, a
+      # rule that exists only in PostgreSQL, and adds a two-connection race proof
+      # that cannot run anywhere but a real database. Named explicitly because a
+      # branch matching no pattern here pushes migrations with no gate at all.
+      - 'feat/d0-**'
   pull_request:
     paths:
       - 'supabase/migrations/**'
@@ -325,6 +330,21 @@ jobs:
       # disposable stack rather than assumed.
       - name: Prove the Auth Admin invite contract (R13.6F § 28)
         run: node scripts/ci/authInviteProof.ts
+
+      # D0C — the last-administrator guard protects a POPULATION, and until this
+      # stage it decided without serialising. Two administrators removed in
+      # overlapping transactions each saw the other as still present and both were
+      # allowed, emptying the set. That is a property of two transactions that
+      # cannot see each other, so pgTAP — one session, one transaction — is
+      # structurally unable to express it. This drives two real backends through
+      # the interleaving, and it FIRST reinstalls the pre-D0C guard to prove the
+      # defect is genuinely reproduced before claiming it is fixed.
+      #
+      # It runs AFTER the pgTAP suites deliberately: it commits fixtures rather
+      # than rolling them back, because uncommitted rows are invisible to the
+      # second connection, which is the whole point.
+      - name: Prove the last-administrator guard serialises (D0C)
+        run: node scripts/ci/lastAdminRaceProof.ts
 
       # Both halves of the SQL <-> TypeScript parity contract must agree. The SQL
       # half executed during `db reset`; this is the TypeScript half.
