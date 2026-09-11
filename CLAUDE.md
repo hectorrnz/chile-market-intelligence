@@ -853,12 +853,29 @@ land on "Authentication failed. Please sign in again." — advice an invitee can
 having had a password. It now answers `invite_link_invalid` and tells them to ask for a new
 invitation. One code for all three causes: which one it was is somebody else's account state.
 
-**D0B is gated on invite email, which is NOT yet proven.** The invite link is delivered only by
-email and is never shown in the console, so a delivery failure strands the account with no
-recovery path. Production has never sent one: 64 monitoring runs, zero sends. Before D0B the owner
-must confirm `RESEND_API_KEY` is set in Production and that `NOTIFICATION_EMAIL_FROM` is an address
-on a Resend-verified domain — the fallback `onboarding@resend.dev` only reaches the Resend
-account's own address and will not deliver to a work-email domain.
+**D0B1 — ONBOARDING NO LONGER DEPENDS ON OUTBOUND EMAIL.** Automated notifications and a verified
+sending domain are DEFERRED at the owner's instruction. An invitation now carries an explicit
+delivery mode: `email` (the unchanged R13.6F path) or `manual`, where the server skips the mail
+provider and returns the one-time invitation URL for the administrator to pass on themselves.
+Manual is the console's default, because Production has never successfully sent an email — 64
+monitoring runs, zero sends — and the fallback sender `onboarding@resend.dev` only reaches the
+Resend account's own address. The Resend integration is retained, unchanged, for when a domain
+exists.
+
+**The manual URL is a bearer credential and is treated as one.** It is the SAME canonical link
+email mode would have sent, built by `buildInviteAcceptUrl` from the request origin and redeemed by
+the same `/auth/callback` `verifyOtp` — there is one onboarding path, not two. It is returned
+exactly once, on the response to the administrator request that created it, and the application
+keeps NO copy: no database column, no audit row, no log line, no later GET. Losing it is not
+recoverable by design — re-inviting mints a fresh token, which supersedes the old one and makes the
+lost link stop working. `tests/manualInvitation.test.ts` proves the containment behaviourally by
+pushing a sentinel token through the real runtime binding and scanning every RPC parameter, console
+line and response body for it; two deliberate leaks (into the provisioning call, and into the
+directory response) were injected and caught before release.
+
+**Next: D0B2 — provision the owner's real administrator through manual onboarding.** Production
+still holds exactly one application account, the R1.5 Test User, and it stays the sole functional
+administrator until D0B2 creates the second. Only then may the Test User be changed.
 
 ---
 

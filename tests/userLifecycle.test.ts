@@ -616,8 +616,11 @@ describe('R13.6F § 19 — permanent delete is DEFERRED, on evidence', () => {
     // And it is never reachable from a success path. Bounded to the tail of
     // `runInvite` itself — slicing to end-of-file would run into `compensate`'s own
     // body and make the assertion meaningless.
-    const start = orch.indexOf('const send = await ports.sendInvite')
-    const end = orch.indexOf('async function compensate')
+    //
+    // D0B1 — the tail now begins at the manual-delivery branch, so BOTH success
+    // returns (manual and email) fall inside the slice.
+    const start = orch.indexOf("if (delivery === 'manual')")
+    const end = orch.indexOf('async function deliver')
     assert.ok(start > 0 && end > start, 'the success tail is locatable')
     assert.doesNotMatch(orch.slice(start, end), /deleteAuthUser/)
 

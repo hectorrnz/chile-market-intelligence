@@ -23,6 +23,12 @@
 // Both are rendered as SIBLINGS of the main shell, not children, so their
 // `position: fixed` overlay can never be trapped by an ancestor transform.
 //
+// D0B1 — RE-INVITING CAN PRODUCE A LINK INSTEAD OF AN EMAIL. Both mint a fresh
+// one-time token and supersede the previous one; neither can recover an old link,
+// because none is stored. The manual URL is a BEARER CREDENTIAL: it lives in this
+// component's state only, is rendered once, and `dismiss()` drops it before the
+// dialog closes, so reopening the same account cannot show it again.
+//
 // A DISABLED ACCOUNT'S ACCESS FORM IS LOCKED. The directory payload flattens a
 // disabled account's effective access (that is what the platform would really
 // grant: nothing), so editing role/principal/modules from that flattened view
@@ -45,6 +51,8 @@ import {
   accountShapeOf,
   provisioningErrorMessage,
 } from './AccountAccessFields'
+import { InvitationLinkPanel } from './InvitationLinkPanel'
+import type { InviteDeliveryMode } from '@/lib/admin/inviteDelivery'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
@@ -56,7 +64,10 @@ interface LifecycleResponse {
   ok?: boolean
   changed?: boolean
   status?: string | null
+  delivery?: unknown
   emailSent?: boolean
+  /** Present only on a manual re-invitation, and only on that one response. */
+  invitationUrl?: unknown
   error?: unknown
 }
 
@@ -80,6 +91,8 @@ export function ManageUserDialog({ open, user, onClose, reload }: ManageUserDial
   const [confirmDisable, setConfirmDisable] = useState(false)
   const [lifecycleBusy, setLifecycleBusy] = useState(false)
   const [resend, setResend] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle')
+  /** The one-time URL from a manual re-invitation. Cleared by `dismiss()`. */
+  const [manualUrl, setManualUrl] = useState<string | null>(null)
 
   // Re-seed the draft whenever the dialog opens on a (possibly different)
   // account — the render-time previous-value pattern, never an effect.
@@ -97,6 +110,7 @@ export function ManageUserDialog({ open, user, onClose, reload }: ManageUserDial
       setConfirmDisable(false)
       setLifecycleBusy(false)
       setResend('idle')
+      setManualUrl(null)
     }
   }
 
@@ -192,22 +206,54 @@ export function ManageUserDialog({ open, user, onClose, reload }: ManageUserDial
     }
   }
 
-  async function resendInvitation() {
+  /**
+   * Re-invites this account in the requested mode.
+   *
+   * Always a FRESH token — GoTrue supersedes the previous one — so this is also
+   * the recovery when a manual link was lost or given to the wrong person: the
+   * old URL stops working and cannot be produced again.
+   */
+  async function reinvite(mode: InviteDeliveryMode) {
     if (!user || resend === 'sending') return
     setResend('sending')
     setError(null)
+    // Any URL already on screen belongs to the token this call is about to
+    // supersede. Drop it before asking, so a failure cannot leave a dead link
+    // sitting there looking usable.
+    setManualUrl(null)
     try {
-      const res = await fetch(`/api/admin/users/${user.id}/invitation`, { method: 'POST' })
+      const res = await fetch(`/api/admin/users/${user.id}/invitation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ delivery: mode }),
+      })
       const json = (await res.json().catch(() => null)) as LifecycleResponse | null
-      if (res.ok && json?.ok === true && json.emailSent === true) {
-        setResend('sent')
-      } else {
+      if (!res.ok || json?.ok !== true) {
         setResend('failed')
         if (json?.error) setError(provisioningErrorMessage(t, json.error))
+        return
       }
+      if (mode === 'manual') {
+        const url = typeof json.invitationUrl === 'string' ? json.invitationUrl : null
+        if (!url) {
+          setResend('failed')
+          return
+        }
+        setManualUrl(url)
+        setResend('idle')
+        return
+      }
+      setResend(json.emailSent === true ? 'sent' : 'failed')
     } catch {
       setResend('failed')
     }
+  }
+
+  /** Closes the dialog, dropping the one-time URL first (§3). */
+  function dismiss() {
+    setManualUrl(null)
+    setResend('idle')
+    onClose()
   }
 
   const statusDot: Record<DirectoryUser['status'], string> = {
@@ -226,7 +272,7 @@ export function ManageUserDialog({ open, user, onClose, reload }: ManageUserDial
     <>
       <ModalShell
         open={open}
-        onClose={onClose}
+        onClose={dismiss}
         title={user.displayName ?? user.username ?? user.id}
         description={
           user.username ? (
@@ -252,7 +298,7 @@ export function ManageUserDialog({ open, user, onClose, reload }: ManageUserDial
                 {error}
               </span>
             )}
-            <ChipButton onClick={onClose} disabled={busy}>
+            <ChipButton onClick={dismiss} disabled={busy}>
               {t.usersAccess.close}
             </ChipButton>
             <button
@@ -285,15 +331,24 @@ export function ManageUserDialog({ open, user, onClose, reload }: ManageUserDial
               )}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {/* Resend exists ONLY while the invitation is still the account's state. */}
+              {/* Re-inviting exists ONLY while the invitation is still the account's state. */}
               {user.status === 'invited' && (
-                <ChipButton
-                  onClick={() => void resendInvitation()}
-                  disabled={busy}
-                  aria-busy={resend === 'sending' || undefined}
-                >
-                  {resend === 'sending' ? t.usersAccess.resendingInvite : t.usersAccess.resendInvite}
-                </ChipButton>
+                <>
+                  <ChipButton
+                    onClick={() => void reinvite('manual')}
+                    disabled={busy}
+                    aria-busy={resend === 'sending' || undefined}
+                  >
+                    {t.usersAccess.newInviteLink}
+                  </ChipButton>
+                  <ChipButton
+                    onClick={() => void reinvite('email')}
+                    disabled={busy}
+                    aria-busy={resend === 'sending' || undefined}
+                  >
+                    {resend === 'sending' ? t.usersAccess.resendingInvite : t.usersAccess.resendInvite}
+                  </ChipButton>
+                </>
               )}
               {(user.status === 'active' || user.status === 'invited') && (
                 <ChipButton
@@ -318,6 +373,15 @@ export function ManageUserDialog({ open, user, onClose, reload }: ManageUserDial
                 <span className="ui-meta text-negative">{t.usersAccess.resendNotDelivered}</span>
               )}
             </div>
+            {/* The fresh one-time URL, shown once and dropped on close. */}
+            {manualUrl && (
+              <div className="pt-1 min-w-0">
+                <InvitationLinkPanel
+                  url={manualUrl}
+                  recipient={user.displayName ?? user.username ?? user.email ?? user.id}
+                />
+              </div>
+            )}
             {isDisabled && (
               <p className="ui-meta text-muted-fg rounded-[var(--radius-input)] border border-[var(--nv-chipbd)] bg-[var(--nv-chip)] px-3 py-2.5">
                 {t.usersAccess.disabledEditNote}

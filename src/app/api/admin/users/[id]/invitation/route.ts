@@ -20,6 +20,15 @@
 //              the disable.
 //
 // Both refuse with a stable code and change nothing.
+//
+// D0B1 — RE-INVITATION IS ALSO HOW A MANUAL LINK IS RETIRED
+// ─────────────────────────────────────────────────────────
+// A manual invitation URL is shown once and never stored, so there is no way to
+// look an old one up — by design (§3). Re-inviting is the recovery: it mints a
+// FRESH token through the same `generateLink` call, GoTrue supersedes the
+// previous one, and the new URL comes back on this response. A link that was
+// lost, mistyped or handed to the wrong person is therefore not merely
+// irretrievable, it stops working.
 
 import { NextResponse, type NextRequest } from 'next/server'
 import { guardAdministrator } from '@/lib/auth/moduleApiGuard'
@@ -29,6 +38,11 @@ import { NO_STORE_HEADERS } from '@/lib/auth/apiGuard'
 import { buildInviteRedirectUrl, isUsableOrigin } from '@/lib/admin/inviteLink'
 import { buildInvitePorts } from '@/lib/admin/inviteRuntime'
 import { runResend } from '@/lib/admin/inviteOrchestration'
+import {
+  parseInviteDelivery,
+  resendSuccessBody,
+  inviteErrorBody,
+} from '@/lib/admin/inviteDelivery'
 import { accountStatusOf } from '@/lib/admin/userDirectory'
 
 export const runtime = 'nodejs'
@@ -53,12 +67,20 @@ export async function POST(
   const admin = getSupabaseAdminClient()
   const session = await getSupabaseUserClient()
   if (!admin || !session) {
-    return NextResponse.json({ error: 'not_configured' }, { status: 503, headers: NO_STORE_HEADERS })
+    return NextResponse.json(inviteErrorBody('not_configured'), { status: 503, headers: NO_STORE_HEADERS })
+  }
+
+  // The body is OPTIONAL — the pre-D0B1 console posts none at all, and that must
+  // keep meaning exactly what it meant before: send by email.
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
+  const delivery = parseInviteDelivery(body?.delivery)
+  if (!delivery.ok) {
+    return NextResponse.json(inviteErrorBody(delivery.code), { status: 400, headers: NO_STORE_HEADERS })
   }
 
   const { id } = await context.params
   if (typeof id !== 'string' || id.trim().length === 0) {
-    return NextResponse.json({ error: 'invalid_target' }, { status: 400, headers: NO_STORE_HEADERS })
+    return NextResponse.json(inviteErrorBody('invalid_target'), { status: 400, headers: NO_STORE_HEADERS })
   }
 
   const { data, error } = await (session as never as {
@@ -79,29 +101,29 @@ export async function POST(
   // account is missing when the database simply did not answer sends them to
   // recreate an account that already exists.
   if (error) {
-    return NextResponse.json({ error: 'read_failed' }, { status: 503, headers: NO_STORE_HEADERS })
+    return NextResponse.json(inviteErrorBody('read_failed'), { status: 503, headers: NO_STORE_HEADERS })
   }
   if (!data) {
-    return NextResponse.json({ error: 'target_not_found' }, { status: 404, headers: NO_STORE_HEADERS })
+    return NextResponse.json(inviteErrorBody('target_not_found'), { status: 404, headers: NO_STORE_HEADERS })
   }
 
   const status = accountStatusOf(data)
   if (status === 'active') {
-    return NextResponse.json({ error: 'already_activated' }, { status: 409, headers: NO_STORE_HEADERS })
+    return NextResponse.json(inviteErrorBody('already_activated'), { status: 409, headers: NO_STORE_HEADERS })
   }
   if (status === 'disabled') {
-    return NextResponse.json({ error: 'account_disabled' }, { status: 409, headers: NO_STORE_HEADERS })
+    return NextResponse.json(inviteErrorBody('account_disabled'), { status: 409, headers: NO_STORE_HEADERS })
   }
 
   const email = (data.email ?? '').trim()
   const username = (data.username ?? '').trim()
   if (!email || !username) {
-    return NextResponse.json({ error: 'target_incomplete' }, { status: 409, headers: NO_STORE_HEADERS })
+    return NextResponse.json(inviteErrorBody('target_incomplete'), { status: 409, headers: NO_STORE_HEADERS })
   }
 
   const origin = request.nextUrl.origin
   if (!isUsableOrigin(origin)) {
-    return NextResponse.json({ error: 'invalid_origin' }, { status: 500, headers: NO_STORE_HEADERS })
+    return NextResponse.json(inviteErrorBody('invalid_origin'), { status: 500, headers: NO_STORE_HEADERS })
   }
 
   // Same identity, fresh link. `generateLink` is called for an address that already
@@ -110,15 +132,18 @@ export async function POST(
   const outcome = await runResend({
     identity: { username, email, displayName: (data.display_name ?? username).trim() || username },
     redirectTo: buildInviteRedirectUrl(origin),
+    delivery: delivery.mode,
     ports: buildInvitePorts(admin as never, session as never),
   })
 
   if (!outcome.ok) {
-    return NextResponse.json({ error: outcome.code }, { status: outcome.status, headers: NO_STORE_HEADERS })
+    return NextResponse.json(
+      inviteErrorBody(outcome.code),
+      { status: outcome.status, headers: NO_STORE_HEADERS },
+    )
   }
 
-  return NextResponse.json(
-    { ok: true, emailSent: outcome.emailSent, emailFailure: outcome.emailFailure },
-    { headers: NO_STORE_HEADERS },
-  )
+  // Carries a bearer credential in manual mode, and only here. `NO_STORE_HEADERS`
+  // keeps it out of every cache between this server and the administrator.
+  return NextResponse.json(resendSuccessBody(outcome), { headers: NO_STORE_HEADERS })
 }

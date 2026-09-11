@@ -91,8 +91,11 @@ function ports(over: Partial<InvitePorts> = {}, trace?: Trace): InvitePorts {
   }
 }
 
+// Every test in THIS file exercises the EMAIL path, exactly as it behaved before
+// D0B1. That is deliberate: this suite is the no-regression proof for email mode.
+// Manual delivery has its own suite (tests/manualInvitation.test.ts).
 const invite = (p: InvitePorts) =>
-  runInvite({ identity: IDENTITY, shape: SHAPE, redirectTo: REDIRECT, ports: p })
+  runInvite({ identity: IDENTITY, shape: SHAPE, redirectTo: REDIRECT, delivery: 'email', ports: p })
 
 describe('R13.6F § 11 — the invitation destination', () => {
   it('is built from the REQUEST origin, so a Preview invite lands on that Preview', () => {
@@ -390,9 +393,15 @@ describe('R13.6F § 13 / § 29 — email failure is reported honestly', () => {
   })
 
   it('the route forwards emailSent rather than flattening it to success', () => {
+    // D0B1 — the body is projected by one shared builder so both creation paths
+    // answer identically. The property is unchanged: the route reports what the
+    // orchestration actually observed, never an unqualified success.
     const route = code(read('src/app/api/admin/users/route.ts'))
-    assert.match(route, /emailSent: outcome\.emailSent/)
-    assert.match(route, /emailFailure: outcome\.emailFailure/)
+    assert.match(route, /inviteSuccessBody\(outcome\)/)
+    const projection = code(read('src/lib/admin/inviteDelivery.ts'))
+    assert.match(projection, /emailSent: outcome\.emailSent/)
+    assert.match(projection, /emailFailure: outcome\.emailFailure/)
+    assert.doesNotMatch(projection, /emailSent: true/, 'never hardcoded')
   })
 })
 
@@ -481,7 +490,7 @@ describe('R13.6F § 29 — the email boundary', () => {
     assert.ok(described.length <= 120)
   })
 
-  it('the orchestrator never returns the link to its caller', async () => {
+  it('the orchestrator never returns the link to its caller IN EMAIL MODE', async () => {
     const r = await invite(ports())
     assert.doesNotMatch(JSON.stringify(r), /SECRET-ONE-TIME-TOKEN/)
   })
@@ -513,7 +522,7 @@ describe('R13.6F § 29 — the email boundary', () => {
 describe('R13.6F § 20 — resend', () => {
   it('mints a fresh link and sends it, changing NO access', async () => {
     const t: Trace = { generated: 0, provisioned: 0, deleted: [], profileChecked: [], sent: 0 }
-    const r = await runResend({ identity: IDENTITY, redirectTo: REDIRECT, ports: ports({}, t) })
+    const r = await runResend({ identity: IDENTITY, redirectTo: REDIRECT, delivery: 'email', ports: ports({}, t) })
     assert.equal(r.ok, true)
     assert.equal(r.ok && r.emailSent, true)
     assert.equal(t.provisioned, 0, 'resend must not re-provision')
@@ -524,6 +533,7 @@ describe('R13.6F § 20 — resend', () => {
     const r = await runResend({
       identity: IDENTITY,
       redirectTo: REDIRECT,
+      delivery: 'email',
       ports: ports({
         async sendInvite() { return { sent: false, configured: true, failure: 'refused' } },
       }),
@@ -536,6 +546,7 @@ describe('R13.6F § 20 — resend', () => {
     const r = await runResend({
       identity: IDENTITY,
       redirectTo: REDIRECT,
+      delivery: 'email',
       ports: ports({ async generateInviteLink() { return { ok: false, code: 'invite_link_failed' } } }),
     })
     assert.equal(r.ok, false)

@@ -37,6 +37,11 @@ import { buildInviteRedirectUrl, isUsableOrigin } from '@/lib/admin/inviteLink'
 import { buildInvitePorts } from '@/lib/admin/inviteRuntime'
 import { runInvite } from '@/lib/admin/inviteOrchestration'
 import {
+  parseInviteDelivery,
+  inviteSuccessBody,
+  inviteErrorBody,
+} from '@/lib/admin/inviteDelivery'
+import {
   normalizeUsername,
   isValidUsername,
   isValidEmail,
@@ -192,6 +197,13 @@ export async function GET(): Promise<NextResponse> {
  * A 200 with `emailSent: false` is a REAL outcome, not a soft failure: the account
  * exists and is correctly restricted, but nobody has the link yet. Reporting that
  * as an unqualified success is exactly what §13 forbids.
+ *
+ * D0B1 — `delivery: 'manual'` skips the email provider and returns the one-time
+ * invitation URL on THIS response and nowhere else. It is a bearer credential:
+ * the administrator who created the invitation receives it once, over their own
+ * authenticated request, and the application keeps no copy. Nothing stores it, so
+ * no later read can return it; if it is lost, a re-invitation mints a new one and
+ * supersedes the old.
  */
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const denied = await guardAdministrator()
@@ -222,13 +234,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'invalid_display_name' }, { status: 400, headers: NO_STORE_HEADERS })
   }
 
+  // How the invitation should travel. Absent means the pre-D0B1 behaviour.
+  const delivery = parseInviteDelivery(body.delivery)
+  if (!delivery.ok) {
+    return NextResponse.json(inviteErrorBody(delivery.code), { status: 400, headers: NO_STORE_HEADERS })
+  }
+
   const shaped = resolveAccountShape({
     role: body.role,
     principal: body.principal ?? null,
     modules: body.modules ?? [],
   })
   if (!shaped.ok) {
-    return NextResponse.json({ error: shaped.code }, { status: 400, headers: NO_STORE_HEADERS })
+    return NextResponse.json(inviteErrorBody(shaped.code), { status: 400, headers: NO_STORE_HEADERS })
   }
 
   // The origin of THIS request — so a Preview invitation lands on that Preview and
@@ -242,24 +260,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     identity: { username, email, displayName },
     shape: shaped.shape,
     redirectTo: buildInviteRedirectUrl(origin),
+    delivery: delivery.mode,
     ports: buildInvitePorts(admin as never, session as never),
   })
 
   if (!outcome.ok) {
+    // A failure body cannot carry a URL: `inviteErrorBody` is never given one.
     return NextResponse.json(
-      { error: outcome.code, authIdentity: outcome.authIdentity },
+      inviteErrorBody(outcome.code, outcome.authIdentity),
       { status: outcome.status, headers: NO_STORE_HEADERS },
     )
   }
 
-  return NextResponse.json(
-    {
-      ok: true,
-      userId: outcome.userId,
-      emailSent: outcome.emailSent,
-      emailFailure: outcome.emailFailure,
-      reusedAuthIdentity: outcome.reusedAuthIdentity,
-    },
-    { headers: NO_STORE_HEADERS },
-  )
+  // `NO_STORE_HEADERS` matters more on this response than on any other in the
+  // app: it is the only one that ever carries a credential, and a cached copy of
+  // it would be exactly the recoverable copy §3 forbids.
+  return NextResponse.json(inviteSuccessBody(outcome), { headers: NO_STORE_HEADERS })
 }

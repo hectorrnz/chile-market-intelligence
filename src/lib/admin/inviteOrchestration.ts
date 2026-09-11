@@ -55,7 +55,8 @@
 // nuisance; a deleted account with its audit trail is not recoverable.
 
 import type { AccountShape } from './userProvisioning.ts'
-import type { InviteSendResult } from './inviteEmail.ts'
+import { describeSendFailure, type InviteSendResult } from './inviteEmail.ts'
+import type { InviteDeliveryMode } from './inviteDelivery.ts'
 
 /** Identity of the account being invited. */
 export interface InviteIdentity {
@@ -109,10 +110,20 @@ export type InviteOutcome =
       readonly ok: true
       /** The provisioned account. */
       readonly userId: string
+      /** How this invitation was asked to travel. */
+      readonly delivery: InviteDeliveryMode
       /** False when the account is provisioned but the email did not go out. */
       readonly emailSent: boolean
       /** Short, link-free reason when `emailSent` is false. */
       readonly emailFailure: string | null
+      /**
+       * The one-time invitation URL — a BEARER CREDENTIAL.
+       *
+       * Non-null ONLY for a manual invitation, and only on the response to the
+       * request that created it. Null in email mode, where it went to the
+       * recipient's inbox and must not also come back to the caller.
+       */
+      readonly invitationUrl: string | null
       /** True when an existing Auth identity was reused rather than created. */
       readonly reusedAuthIdentity: boolean
     }
@@ -143,9 +154,11 @@ export async function runInvite(args: {
   identity: InviteIdentity
   shape: AccountShape
   redirectTo: string
+  /** D0B1 — `manual` skips step 4 entirely and hands the URL back instead. */
+  delivery: InviteDeliveryMode
   ports: InvitePorts
 }): Promise<InviteOutcome> {
-  const { identity, shape, redirectTo, ports } = args
+  const { identity, shape, redirectTo, delivery, ports } = args
 
   // 1 · Does an Auth identity already exist for this address?
   //
@@ -178,18 +191,72 @@ export async function runInvite(args: {
     return { ok: false, code: provisioned.code, status: provisioned.status, authIdentity }
   }
 
-  // 4 · Deliver. A failure here does NOT undo the account: it is provisioned,
-  //     correctly restricted, and cannot be used by anyone until its owner follows
-  //     a link they have not yet received. Resending is the remedy, and the
-  //     administrator is told plainly so they can.
-  const send = await ports.sendInvite({ identity, actionLink: link.actionLink })
+  // 4 · Deliver.
+  //
+  //     MANUAL (D0B1). The account is provisioned and the link exists; the
+  //     administrator will carry it themselves. `sendInvite` is not called at
+  //     all — not attempted-and-skipped, not called with a flag — so there is no
+  //     code path on which a manual invitation can reach an email provider. The
+  //     tests assert that by counting transport invocations, not by reading this
+  //     comment.
+  if (delivery === 'manual') {
+    return {
+      ok: true,
+      userId: link.userId,
+      delivery: 'manual',
+      emailSent: false,
+      // Nothing was attempted, so there is nothing that failed. Reporting a
+      // delivery failure here would send the administrator chasing an email
+      // they deliberately did not ask for.
+      emailFailure: null,
+      invitationUrl: link.actionLink,
+      reusedAuthIdentity: existedBefore,
+    }
+  }
+
+  //     EMAIL. Unchanged. A failure here does NOT undo the account: it is
+  //     provisioned, correctly restricted, and cannot be used by anyone until its
+  //     owner follows a link they have not yet received. Resending is the remedy,
+  //     and the administrator is told plainly so they can. There is deliberately
+  //     NO fallback to manual: an administrator who asked for email and got a
+  //     silent link would believe a message went out that did not.
+  const send = await deliver(ports, identity, link.actionLink)
 
   return {
     ok: true,
     userId: link.userId,
+    delivery: 'email',
     emailSent: send.sent,
     emailFailure: send.sent ? null : (send.failure ?? 'delivery_failed'),
+    invitationUrl: null,
     reusedAuthIdentity: existedBefore,
+  }
+}
+
+/**
+ * Sends the invitation, and contains a port that breaks its contract by throwing.
+ *
+ * `InvitePorts` says no port throws, and the real transport honours that — but
+ * "the contract says so" is not a control. An exception escaping here would
+ * travel to the route handler and be logged by the framework WITH ITS MESSAGE,
+ * and the most likely such message is a mail provider quoting back the request
+ * body it refused. That body contains the action link.
+ *
+ * So a thrown value is reduced to the same short, redacted reason a refused send
+ * produces (`describeSendFailure` strips anything URL-shaped), and the invitation
+ * reports the state that is actually true: the account exists, correctly
+ * restricted, and nobody has the link yet. That is a recoverable state with a
+ * remedy the administrator is offered. A 500 is not.
+ */
+async function deliver(
+  ports: Pick<InvitePorts, 'sendInvite'>,
+  identity: InviteIdentity,
+  actionLink: string,
+): Promise<InviteSendResult> {
+  try {
+    return await ports.sendInvite({ identity, actionLink })
+  } catch (e) {
+    return { sent: false, configured: true, failure: describeSendFailure(e) }
   }
 }
 
@@ -231,20 +298,45 @@ async function compensate(
 export async function runResend(args: {
   identity: InviteIdentity
   redirectTo: string
+  /** D0B1 — `manual` returns the fresh URL instead of mailing it. */
+  delivery: InviteDeliveryMode
   ports: Pick<InvitePorts, 'generateInviteLink' | 'sendInvite'>
 }): Promise<
-  | { ok: true; emailSent: boolean; emailFailure: string | null }
+  | {
+      ok: true
+      delivery: InviteDeliveryMode
+      emailSent: boolean
+      emailFailure: string | null
+      invitationUrl: string | null
+    }
   | { ok: false; code: string; status: number }
 > {
-  const { identity, redirectTo, ports } = args
+  const { identity, redirectTo, delivery, ports } = args
 
+  // A FRESH token every time, minted through the same `generateLink` call the
+  // first invitation used. GoTrue supersedes the previous one, so a re-invitation
+  // is also how a manual link that was lost, mistyped or sent to the wrong place
+  // is retired — the old URL stops working, and nothing in this application can
+  // produce it again.
   const link = await ports.generateInviteLink(identity.email, redirectTo)
   if (!link.ok) return { ok: false, code: link.code, status: 502 }
 
-  const send = await ports.sendInvite({ identity, actionLink: link.actionLink })
+  if (delivery === 'manual') {
+    return {
+      ok: true,
+      delivery: 'manual',
+      emailSent: false,
+      emailFailure: null,
+      invitationUrl: link.actionLink,
+    }
+  }
+
+  const send = await deliver(ports, identity, link.actionLink)
   return {
     ok: true,
+    delivery: 'email',
     emailSent: send.sent,
     emailFailure: send.sent ? null : (send.failure ?? 'delivery_failed'),
+    invitationUrl: null,
   }
 }

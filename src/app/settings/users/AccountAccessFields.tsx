@@ -97,6 +97,10 @@ export function provisioningErrorMessage(t: Translation, code: unknown): string 
     case 'username_taken': return t.usersAccess.errUsernameTaken
     case 'already_activated': return t.usersAccess.errAlreadyActivated
     case 'invite_link_failed': return t.usersAccess.errInviteLinkFailed
+    // Same thing from the administrator's side: no usable link was produced, and
+    // nothing was changed. The distinction is a diagnostic one, not theirs.
+    case 'invite_link_incomplete': return t.usersAccess.errInviteLinkFailed
+    case 'invalid_delivery': return t.usersAccess.errInvalidDelivery
     case 'last_administrator': return t.usersAccess.errLastAdministrator
     case 'account_disabled': return t.usersAccess.errAccountDisabled
     case 'target_not_found': return t.usersAccess.errTargetNotFound

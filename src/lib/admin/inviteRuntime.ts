@@ -21,7 +21,7 @@
 
 import type { InvitePorts } from './inviteOrchestration.ts'
 import { sendInviteEmail } from './inviteEmail.ts'
-import { sendNotificationEmail } from '../notifications/emailProvider'
+import { sendNotificationEmail } from '../notifications/emailProvider.ts'
 import { classifyRpcError } from './adminRpc.ts'
 import { buildInviteAcceptUrl } from './inviteLink.ts'
 
