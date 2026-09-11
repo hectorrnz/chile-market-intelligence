@@ -1,123 +1,123 @@
 [
   {
     "sector": "Banking",
-    "dayChangePct": 7.23,
-    "ytdChangePct": 19.9,
+    "dayChangePct": 7.4,
+    "ytdChangePct": 20.1,
     "numberOfStocks": 4,
     "topContributor": "ITAUCL",
-    "topContributorPct": 13.45,
+    "topContributorPct": 12.03,
     "worstContributor": "CHILE",
-    "worstContributorPct": 3.47,
-    "lastUpdated": "2026-09-10"
+    "worstContributorPct": 4.76,
+    "lastUpdated": "2026-09-11"
   },
   {
     "sector": "Retail",
-    "dayChangePct": 6.33,
-    "ytdChangePct": -6.6,
+    "dayChangePct": 7.49,
+    "ytdChangePct": -5.6,
     "numberOfStocks": 3,
     "topContributor": "RIPLEY",
-    "topContributorPct": 10.19,
+    "topContributorPct": 11.0,
     "worstContributor": "CENCOSUD",
-    "worstContributorPct": 0.81,
-    "lastUpdated": "2026-09-10"
+    "worstContributorPct": 2.01,
+    "lastUpdated": "2026-09-11"
   },
   {
     "sector": "Utilities",
-    "dayChangePct": 2.19,
-    "ytdChangePct": 1.4,
+    "dayChangePct": 1.85,
+    "ytdChangePct": 1.0,
     "numberOfStocks": 4,
     "topContributor": "COLBUN",
-    "topContributorPct": 7.84,
-    "worstContributor": "ENELAM",
-    "worstContributorPct": -0.64,
-    "lastUpdated": "2026-09-10"
+    "topContributorPct": 6.45,
+    "worstContributor": "AGUAS-A",
+    "worstContributorPct": -0.02,
+    "lastUpdated": "2026-09-11"
   },
   {
     "sector": "Mining / Lithium",
-    "dayChangePct": -3.89,
-    "ytdChangePct": -7.4,
+    "dayChangePct": -5.04,
+    "ytdChangePct": -8.5,
     "numberOfStocks": 2,
     "topContributor": "SQM-B",
-    "topContributorPct": 3.98,
+    "topContributorPct": 2.67,
     "worstContributor": "CAP",
-    "worstContributorPct": -11.76,
-    "lastUpdated": "2026-09-10"
+    "worstContributorPct": -12.74,
+    "lastUpdated": "2026-09-11"
   },
   {
     "sector": "Pulp & Forestry",
-    "dayChangePct": -6.34,
-    "ytdChangePct": -27.6,
+    "dayChangePct": -5.25,
+    "ytdChangePct": -26.7,
     "numberOfStocks": 1,
     "topContributor": "CMPC",
-    "topContributorPct": -6.34,
+    "topContributorPct": -5.25,
     "worstContributor": "CMPC",
-    "worstContributorPct": -6.34,
-    "lastUpdated": "2026-09-10"
+    "worstContributorPct": -5.25,
+    "lastUpdated": "2026-09-11"
   },
   {
     "sector": "Industrials",
-    "dayChangePct": 7.03,
-    "ytdChangePct": 9.1,
+    "dayChangePct": 6.81,
+    "ytdChangePct": 8.8,
     "numberOfStocks": 2,
-    "topContributor": "VAPORES",
-    "topContributorPct": 7.96,
-    "worstContributor": "COPEC",
-    "worstContributorPct": 6.09,
-    "lastUpdated": "2026-09-10"
+    "topContributor": "COPEC",
+    "topContributorPct": 6.89,
+    "worstContributor": "VAPORES",
+    "worstContributorPct": 6.73,
+    "lastUpdated": "2026-09-11"
   },
   {
     "sector": "Real Estate / Malls",
-    "dayChangePct": -3.48,
-    "ytdChangePct": 27.6,
+    "dayChangePct": -3.58,
+    "ytdChangePct": 27.9,
     "numberOfStocks": 2,
     "topContributor": "MALLPLAZA",
-    "topContributorPct": -1.76,
+    "topContributorPct": -1.13,
     "worstContributor": "PARAUCO",
-    "worstContributorPct": -5.2,
-    "lastUpdated": "2026-09-10"
+    "worstContributorPct": -6.03,
+    "lastUpdated": "2026-09-11"
   },
   {
     "sector": "Telecom",
-    "dayChangePct": 2.82,
-    "ytdChangePct": -14.6,
+    "dayChangePct": 3.1,
+    "ytdChangePct": -14.4,
     "numberOfStocks": 2,
     "topContributor": "ENTEL",
-    "topContributorPct": 5.68,
+    "topContributorPct": 6.2,
     "worstContributor": "SONDA",
-    "worstContributorPct": -0.04,
-    "lastUpdated": "2026-09-10"
+    "worstContributorPct": 0.0,
+    "lastUpdated": "2026-09-11"
   },
   {
     "sector": "Consumer",
-    "dayChangePct": 4.52,
-    "ytdChangePct": 2.4,
+    "dayChangePct": 4.73,
+    "ytdChangePct": 2.6,
     "numberOfStocks": 3,
     "topContributor": "CONCHATORO",
-    "topContributorPct": 9.99,
+    "topContributorPct": 10.87,
     "worstContributor": "ANDINA-B",
-    "worstContributorPct": -2.13,
-    "lastUpdated": "2026-09-10"
+    "worstContributorPct": -1.65,
+    "lastUpdated": "2026-09-11"
   },
   {
     "sector": "Healthcare",
-    "dayChangePct": 11.29,
-    "ytdChangePct": -20.0,
+    "dayChangePct": 0.0,
+    "ytdChangePct": -28.1,
     "numberOfStocks": 1,
     "topContributor": "LAS-CONDES",
-    "topContributorPct": 11.29,
+    "topContributorPct": 0.0,
     "worstContributor": "LAS-CONDES",
-    "worstContributorPct": 11.29,
-    "lastUpdated": "2026-09-10"
+    "worstContributorPct": 0.0,
+    "lastUpdated": "2026-09-11"
   },
   {
     "sector": "Transport / Airlines",
-    "dayChangePct": -3.04,
-    "ytdChangePct": -2.6,
+    "dayChangePct": -2.88,
+    "ytdChangePct": -2.5,
     "numberOfStocks": 1,
     "topContributor": "LTM",
-    "topContributorPct": -3.04,
+    "topContributorPct": -2.88,
     "worstContributor": "LTM",
-    "worstContributorPct": -3.04,
-    "lastUpdated": "2026-09-10"
+    "worstContributorPct": -2.88,
+    "lastUpdated": "2026-09-11"
   }
 ]
