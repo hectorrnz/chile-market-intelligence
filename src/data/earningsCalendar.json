@@ -1,6 +1,6 @@
 {
   "status": "live",
-  "asOf": "2026-09-20T15:33:35.845Z",
+  "asOf": "2026-09-21T17:55:53.044Z",
   "source": "Comisión para el Mercado Financiero (CMF)",
   "events": [
     {
@@ -232,6 +232,11 @@
       "ticker": "LAS-CONDES",
       "reportDate": "2026-09-07",
       "period": "Q2"
+    },
+    {
+      "ticker": "SONDA",
+      "reportDate": "2026-10-23",
+      "period": "Q3"
     },
     {
       "ticker": "CHILE",
