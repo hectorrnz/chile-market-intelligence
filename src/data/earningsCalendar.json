@@ -1,6 +1,6 @@
 {
   "status": "live",
-  "asOf": "2026-09-21T17:55:53.044Z",
+  "asOf": "2026-09-22T16:24:13.602Z",
   "source": "Comisión para el Mercado Financiero (CMF)",
   "events": [
     {
@@ -239,11 +239,6 @@
       "period": "Q3"
     },
     {
-      "ticker": "CHILE",
-      "reportDate": "2026-10-29",
-      "period": "Q3"
-    },
-    {
       "ticker": "PARAUCO",
       "reportDate": "2026-10-29",
       "period": "Q3"
@@ -254,8 +249,18 @@
       "period": "Q3"
     },
     {
+      "ticker": "CHILE",
+      "reportDate": "2026-10-30",
+      "period": "Q3"
+    },
+    {
       "ticker": "ENTEL",
       "reportDate": "2026-11-02",
+      "period": "Q3"
+    },
+    {
+      "ticker": "CCU",
+      "reportDate": "2026-11-03",
       "period": "Q3"
     },
     {
