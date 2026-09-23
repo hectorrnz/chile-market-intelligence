@@ -1,6 +1,6 @@
 {
   "status": "live",
-  "asOf": "2026-09-22T16:24:13.602Z",
+  "asOf": "2026-09-23T16:14:13.007Z",
   "source": "Comisión para el Mercado Financiero (CMF)",
   "events": [
     {
@@ -236,6 +236,11 @@
     {
       "ticker": "SONDA",
       "reportDate": "2026-10-23",
+      "period": "Q3"
+    },
+    {
+      "ticker": "ANDINA-B",
+      "reportDate": "2026-10-27",
       "period": "Q3"
     },
     {
