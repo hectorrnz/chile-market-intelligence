@@ -1,6 +1,6 @@
 {
   "status": "live",
-  "asOf": "2026-09-24T16:36:46.659Z",
+  "asOf": "2026-09-25T16:42:00.643Z",
   "source": "Comisión para el Mercado Financiero (CMF)",
   "events": [
     {
@@ -241,6 +241,21 @@
     {
       "ticker": "ANDINA-B",
       "reportDate": "2026-10-27",
+      "period": "Q3"
+    },
+    {
+      "ticker": "COLBUN",
+      "reportDate": "2026-10-27",
+      "period": "Q3"
+    },
+    {
+      "ticker": "ENELCHILE",
+      "reportDate": "2026-10-28",
+      "period": "Q3"
+    },
+    {
+      "ticker": "ENELAM",
+      "reportDate": "2026-10-29",
       "period": "Q3"
     },
     {
