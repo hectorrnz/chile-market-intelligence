@@ -1,6 +1,6 @@
 {
   "status": "live",
-  "asOf": "2026-09-29T17:45:21.214Z",
+  "asOf": "2026-09-30T17:41:19.087Z",
   "source": "Comisión para el Mercado Financiero (CMF)",
   "events": [
     {
@@ -271,6 +271,11 @@
     {
       "ticker": "CHILE",
       "reportDate": "2026-10-30",
+      "period": "Q3"
+    },
+    {
+      "ticker": "CONCHATORO",
+      "reportDate": "2026-11-02",
       "period": "Q3"
     },
     {
