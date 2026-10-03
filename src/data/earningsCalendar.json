@@ -1,6 +1,6 @@
 {
   "status": "live",
-  "asOf": "2026-10-02T17:32:50.755Z",
+  "asOf": "2026-10-03T15:49:08.947Z",
   "source": "Comisión para el Mercado Financiero (CMF)",
   "events": [
     {
@@ -285,6 +285,11 @@
     },
     {
       "ticker": "CCU",
+      "reportDate": "2026-11-03",
+      "period": "Q3"
+    },
+    {
+      "ticker": "LTM",
       "reportDate": "2026-11-03",
       "period": "Q3"
     },
