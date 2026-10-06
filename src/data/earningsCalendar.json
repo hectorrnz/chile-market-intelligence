@@ -1,6 +1,6 @@
 {
   "status": "live",
-  "asOf": "2026-10-04T16:31:24.053Z",
+  "asOf": "2026-10-06T17:59:51.799Z",
   "source": "Comisión para el Mercado Financiero (CMF)",
   "events": [
     {
@@ -299,7 +299,17 @@
       "period": "Q3"
     },
     {
+      "ticker": "CENCOSUD",
+      "reportDate": "2026-11-05",
+      "period": "Q3"
+    },
+    {
       "ticker": "CMPC",
+      "reportDate": "2026-11-05",
+      "period": "Q3"
+    },
+    {
+      "ticker": "COPEC",
       "reportDate": "2026-11-05",
       "period": "Q3"
     },
