@@ -1,6 +1,6 @@
 {
   "status": "live",
-  "asOf": "2026-10-14T16:40:01.792Z",
+  "asOf": "2026-10-15T16:25:28.521Z",
   "source": "Comisión para el Mercado Financiero (CMF)",
   "events": [
     {
@@ -321,6 +321,11 @@
     {
       "ticker": "FALABELLA",
       "reportDate": "2026-11-10",
+      "period": "Q3"
+    },
+    {
+      "ticker": "RIPLEY",
+      "reportDate": "2026-11-17",
       "period": "Q3"
     },
     {
