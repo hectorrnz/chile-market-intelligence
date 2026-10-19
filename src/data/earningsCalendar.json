@@ -1,6 +1,6 @@
 {
   "status": "live",
-  "asOf": "2026-10-18T15:28:02.166Z",
+  "asOf": "2026-10-19T18:24:26.721Z",
   "source": "Comisión para el Mercado Financiero (CMF)",
   "events": [
     {
@@ -334,6 +334,11 @@
       "period": "Q3"
     },
     {
+      "ticker": "LAS-CONDES",
+      "reportDate": "2026-11-20",
+      "period": "Q3"
+    },
+    {
       "ticker": "VAPORES",
       "reportDate": "2026-11-20",
       "period": "Q3"
@@ -341,11 +346,6 @@
     {
       "ticker": "AGUAS-A",
       "reportDate": "2026-11-26",
-      "period": "Q3"
-    },
-    {
-      "ticker": "LAS-CONDES",
-      "reportDate": "2026-11-27",
       "period": "Q3"
     },
     {
