@@ -8,7 +8,7 @@
     "topContributorPct": -1.03,
     "worstContributor": "BCI",
     "worstContributorPct": -3.2,
-    "lastUpdated": "2026-11-06"
+    "lastUpdated": "2026-11-07"
   },
   {
     "sector": "Retail",
@@ -19,7 +19,7 @@
     "topContributorPct": 2.3,
     "worstContributor": "CENCOSUD",
     "worstContributorPct": -1.36,
-    "lastUpdated": "2026-11-06"
+    "lastUpdated": "2026-11-07"
   },
   {
     "sector": "Utilities",
@@ -30,18 +30,18 @@
     "topContributorPct": 1.26,
     "worstContributor": "AGUAS-A",
     "worstContributorPct": -1.84,
-    "lastUpdated": "2026-11-06"
+    "lastUpdated": "2026-11-07"
   },
   {
     "sector": "Mining / Lithium",
-    "dayChangePct": -1.63,
-    "ytdChangePct": -27.5,
+    "dayChangePct": -1.46,
+    "ytdChangePct": -27.4,
     "numberOfStocks": 2,
     "topContributor": "SQM-B",
     "topContributorPct": 1.12,
     "worstContributor": "CAP",
-    "worstContributorPct": -4.39,
-    "lastUpdated": "2026-11-06"
+    "worstContributorPct": -4.03,
+    "lastUpdated": "2026-11-07"
   },
   {
     "sector": "Pulp & Forestry",
@@ -52,7 +52,7 @@
     "topContributorPct": -0.66,
     "worstContributor": "CMPC",
     "worstContributorPct": -0.66,
-    "lastUpdated": "2026-11-06"
+    "lastUpdated": "2026-11-07"
   },
   {
     "sector": "Industrials",
@@ -63,7 +63,7 @@
     "topContributorPct": -2.22,
     "worstContributor": "VAPORES",
     "worstContributorPct": -3.09,
-    "lastUpdated": "2026-11-06"
+    "lastUpdated": "2026-11-07"
   },
   {
     "sector": "Real Estate / Malls",
@@ -74,7 +74,7 @@
     "topContributorPct": -1.34,
     "worstContributor": "PARAUCO",
     "worstContributorPct": -1.35,
-    "lastUpdated": "2026-11-06"
+    "lastUpdated": "2026-11-07"
   },
   {
     "sector": "Telecom",
@@ -85,7 +85,7 @@
     "topContributorPct": -1.85,
     "worstContributor": "ENTEL",
     "worstContributorPct": -3.27,
-    "lastUpdated": "2026-11-06"
+    "lastUpdated": "2026-11-07"
   },
   {
     "sector": "Consumer",
@@ -96,7 +96,7 @@
     "topContributorPct": 0.04,
     "worstContributor": "CCU",
     "worstContributorPct": -0.85,
-    "lastUpdated": "2026-11-06"
+    "lastUpdated": "2026-11-07"
   },
   {
     "sector": "Healthcare",
@@ -107,7 +107,7 @@
     "topContributorPct": -2.3,
     "worstContributor": "LAS-CONDES",
     "worstContributorPct": -2.3,
-    "lastUpdated": "2026-11-06"
+    "lastUpdated": "2026-11-07"
   },
   {
     "sector": "Transport / Airlines",
@@ -118,6 +118,6 @@
     "topContributorPct": 0.0,
     "worstContributor": "LTM",
     "worstContributorPct": 0.0,
-    "lastUpdated": "2026-11-06"
+    "lastUpdated": "2026-11-07"
   }
 ]
