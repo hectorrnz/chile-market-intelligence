@@ -1,6 +1,6 @@
 {
   "status": "live",
-  "asOf": "2026-11-26T20:59:38.235Z",
+  "asOf": "2026-11-27T20:44:30.704Z",
   "source": "Comisión para el Mercado Financiero (CMF)",
   "events": [
     {
@@ -376,6 +376,11 @@
     {
       "ticker": "BCI",
       "reportDate": "2027-02-26",
+      "period": "Annual"
+    },
+    {
+      "ticker": "VAPORES",
+      "reportDate": "2027-03-24",
       "period": "Annual"
     }
   ],
